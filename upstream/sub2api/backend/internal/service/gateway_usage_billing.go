@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"log/slog"
 	"strings"
 	"time"
@@ -184,7 +185,13 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		}
 	} else {
 		if cost.ActualCost > 0 {
-			if err := deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost); err != nil {
+			var err error
+			if deps.quotaWallet != nil {
+				_, err = deps.quotaWallet.ConsumeUsage(billingCtx, UsageConsumptionInput{UserID: p.User.ID, AmountUSD: decimal.NewFromFloat(cost.ActualCost), IdempotencyKey: p.LogicalRequestID, ReferenceType: "usage_consumption", ReferenceID: p.LogicalRequestID})
+			} else {
+				err = deps.userRepo.DeductBalance(billingCtx, p.User.ID, cost.ActualCost)
+			}
+			if err != nil {
 				slog.Error("deduct balance failed", "user_id", p.User.ID, "error", err)
 			} else if deps.billingCacheService != nil {
 				if err := deps.billingCacheService.InvalidateUserBalance(billingCtx, p.User.ID); err != nil {
@@ -613,6 +620,7 @@ type billingDeps struct {
 	deferredService       *DeferredService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	quotaWallet           QuotaWalletService
 	cfg                   *config.Config
 }
 
@@ -625,6 +633,7 @@ func (s *GatewayService) billingDeps() *billingDeps {
 		deferredService:       s.deferredService,
 		balanceNotifyService:  s.balanceNotifyService,
 		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
+		quotaWallet:           s.quotaWallet,
 		cfg:                   s.cfg,
 	}
 }

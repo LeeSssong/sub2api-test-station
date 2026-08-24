@@ -70,6 +70,8 @@ type Tx struct {
 	PromoCodeUsage *PromoCodeUsageClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
+	// QuotaIdempotencyRecord is the client for interacting with the QuotaIdempotencyRecord builders.
+	QuotaIdempotencyRecord *QuotaIdempotencyRecordClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
@@ -98,8 +100,12 @@ type Tx struct {
 	UserAttributeValue *UserAttributeValueClient
 	// UserPlatformQuota is the client for interacting with the UserPlatformQuota builders.
 	UserPlatformQuota *UserPlatformQuotaClient
+	// UserQuotaLedgerEntry is the client for interacting with the UserQuotaLedgerEntry builders.
+	UserQuotaLedgerEntry *UserQuotaLedgerEntryClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
 	UserSubscription *UserSubscriptionClient
+	// UserWallet is the client for interacting with the UserWallet builders.
+	UserWallet *UserWalletClient
 
 	// lazily loaded.
 	client     *Client
@@ -259,6 +265,7 @@ func (tx *Tx) init() {
 	tx.PromoCode = NewPromoCodeClient(tx.config)
 	tx.PromoCodeUsage = NewPromoCodeUsageClient(tx.config)
 	tx.Proxy = NewProxyClient(tx.config)
+	tx.QuotaIdempotencyRecord = NewQuotaIdempotencyRecordClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
@@ -273,7 +280,9 @@ func (tx *Tx) init() {
 	tx.UserAttributeDefinition = NewUserAttributeDefinitionClient(tx.config)
 	tx.UserAttributeValue = NewUserAttributeValueClient(tx.config)
 	tx.UserPlatformQuota = NewUserPlatformQuotaClient(tx.config)
+	tx.UserQuotaLedgerEntry = NewUserQuotaLedgerEntryClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
+	tx.UserWallet = NewUserWalletClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

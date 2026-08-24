@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/shopspring/decimal"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -78,7 +79,13 @@ ON CONFLICT (user_id, provider_type, grant_reason) DO NOTHING`,
 	}
 
 	if providerDefaults.Balance != 0 {
-		if err := client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx); err != nil {
+		var err error
+		if s.quotaWallet != nil {
+			_, err = s.quotaWallet.LegacyAdjust(ctx, LegacyBalanceAdjustmentInput{UserID: userID, Mode: "add", AmountUSD: decimal.NewFromFloat(providerDefaults.Balance), IdempotencyKey: fmt.Sprintf("first-bind:%s:%d", providerType, userID), ReferenceType: "payment_fulfillment", ReferenceID: providerType})
+		} else {
+			err = client.User.UpdateOneID(userID).AddBalance(providerDefaults.Balance).Exec(ctx)
+		}
+		if err != nil {
 			return fmt.Errorf("apply first bind balance default: %w", err)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 // UserWithConcurrency wraps AdminUser with current concurrency info
@@ -34,6 +35,15 @@ type UserHandler struct {
 	totpService           *service.TotpService                // 角色提升为管理员的 step-up 门控
 	userService           *service.UserService
 	settingService        *service.SettingService // step-up 功能开关
+	quotaWallet           service.QuotaWalletService
+}
+
+// SetQuotaWalletService attaches the native quota wallet without changing the
+// legacy constructor used by existing admin handler tests.
+func (h *UserHandler) SetQuotaWalletService(svc service.QuotaWalletService) {
+	if h != nil {
+		h.quotaWallet = svc
+	}
 }
 
 // NewUserHandler creates a new admin user handler
@@ -93,6 +103,52 @@ type UpdateBalanceRequest struct {
 	Balance   float64 `json:"balance" binding:"required,gt=0"`
 	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
 	Notes     string  `json:"notes"`
+}
+
+type QuotaLedgerMutationRequest struct {
+	RecordType   string  `json:"record_type" binding:"required"`
+	AmountCNY    float64 `json:"amount_cny"`
+	GiftQuotaUSD float64 `json:"gift_quota_usd"`
+	Note         string  `json:"note"`
+}
+
+type quotaSummaryResponse struct {
+	UserID               int64  `json:"user_id"`
+	CashBalanceCNY       string `json:"cash_balance_cny"`
+	PaidQuotaBalanceUSD  string `json:"paid_quota_balance_usd"`
+	GiftQuotaBalanceUSD  string `json:"gift_quota_balance_usd"`
+	TotalQuotaBalanceUSD string `json:"total_quota_balance_usd"`
+	WalletVersion        int64  `json:"wallet_version"`
+	UpdatedAt            string `json:"updated_at"`
+}
+
+type quotaLedgerEntryResponse struct {
+	ID                int64  `json:"id"`
+	UserID            int64  `json:"user_id"`
+	RecordType        string `json:"record_type"`
+	CashDeltaCNY      string `json:"cash_delta_cny"`
+	PaidQuotaDeltaUSD string `json:"paid_quota_delta_usd"`
+	GiftQuotaDeltaUSD string `json:"gift_quota_delta_usd"`
+	CashBeforeCNY     string `json:"cash_before_cny"`
+	CashAfterCNY      string `json:"cash_after_cny"`
+	PaidBeforeUSD     string `json:"paid_before_usd"`
+	PaidAfterUSD      string `json:"paid_after_usd"`
+	GiftBeforeUSD     string `json:"gift_before_usd"`
+	GiftAfterUSD      string `json:"gift_after_usd"`
+	ReferenceType     string `json:"reference_type"`
+	ReferenceID       string `json:"reference_id"`
+	Note              string `json:"note"`
+	OperatorID        *int64 `json:"operator_id,omitempty"`
+	Status            string `json:"status"`
+	CreatedAt         string `json:"created_at"`
+}
+
+func quotaSummaryDTO(s service.QuotaSummary) quotaSummaryResponse {
+	return quotaSummaryResponse{UserID: s.UserID, CashBalanceCNY: s.CashBalanceCNY.String(), PaidQuotaBalanceUSD: s.PaidQuotaBalanceUSD.String(), GiftQuotaBalanceUSD: s.GiftQuotaBalanceUSD.String(), TotalQuotaBalanceUSD: s.TotalQuotaBalanceUSD.String(), WalletVersion: s.WalletVersion, UpdatedAt: s.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+}
+
+func quotaLedgerEntryDTO(e service.QuotaLedgerEntry) quotaLedgerEntryResponse {
+	return quotaLedgerEntryResponse{ID: e.ID, UserID: e.UserID, RecordType: e.RecordType, CashDeltaCNY: e.CashDeltaCNY.String(), PaidQuotaDeltaUSD: e.PaidQuotaDeltaUSD.String(), GiftQuotaDeltaUSD: e.GiftQuotaDeltaUSD.String(), CashBeforeCNY: e.CashBeforeCNY.String(), CashAfterCNY: e.CashAfterCNY.String(), PaidBeforeUSD: e.PaidBeforeUSD.String(), PaidAfterUSD: e.PaidAfterUSD.String(), GiftBeforeUSD: e.GiftBeforeUSD.String(), GiftAfterUSD: e.GiftAfterUSD.String(), ReferenceType: e.ReferenceType, ReferenceID: e.ReferenceID, Note: e.Note, OperatorID: e.OperatorID, Status: e.Status, CreatedAt: e.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 type BindUserAuthIdentityRequest struct {
@@ -410,6 +466,104 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		}
 		return dto.UserFromServiceAdmin(user), nil
 	})
+}
+
+// GetQuotaSummary returns the split native wallet projection.
+// GET /api/v1/admin/users/:id/quota-summary
+func (h *UserHandler) GetQuotaSummary(c *gin.Context) {
+	if h == nil || h.quotaWallet == nil {
+		response.InternalError(c, "quota wallet service not available")
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+	summary, err := h.quotaWallet.GetSummary(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, quotaSummaryDTO(summary))
+}
+
+// CreateQuotaLedgerEntry records a manual recharge or refund through the
+// wallet coordinator. The legacy /balance endpoint remains separate.
+// POST /api/v1/admin/users/:id/quota-ledger
+func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
+	if h == nil || h.quotaWallet == nil {
+		response.InternalError(c, "quota wallet service not available")
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if key == "" {
+		response.BadRequest(c, "Idempotency-Key header is required")
+		return
+	}
+	var req QuotaLedgerMutationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if req.RecordType != service.QuotaRecordRecharge && req.RecordType != service.QuotaRecordRefund {
+		response.BadRequest(c, "record_type must be recharge or refund")
+		return
+	}
+	if req.AmountCNY < 0 || req.GiftQuotaUSD < 0 {
+		response.BadRequest(c, "amounts must not be negative")
+		return
+	}
+	actor := getAdminIDFromContext(c)
+	var actorID *int64
+	if actor > 0 {
+		actorID = &actor
+	}
+	var result service.QuotaMutationResult
+	if req.RecordType == service.QuotaRecordRecharge {
+		result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: key, ReferenceType: "admin_manual", Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+	} else {
+		if req.GiftQuotaUSD != 0 {
+			response.BadRequest(c, "gift_quota_usd is only valid for recharge")
+			return
+		}
+		result, err = h.quotaWallet.Refund(c.Request.Context(), service.RefundInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), IdempotencyKey: key, ReferenceType: "admin_manual", Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ledger_entry_id": result.LedgerEntryID, "idempotent": result.Idempotent, "summary": quotaSummaryDTO(result.Summary)})
+}
+
+// GetQuotaLedger lists sanitized quota entries for an administrator.
+// GET /api/v1/admin/users/:id/quota-ledger
+func (h *UserHandler) GetQuotaLedger(c *gin.Context) {
+	if h == nil || h.quotaWallet == nil {
+		response.InternalError(c, "quota wallet service not available")
+		return
+	}
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	entries, total, err := h.quotaWallet.ListLedger(c.Request.Context(), userID, page, pageSize, strings.TrimSpace(c.Query("type")))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	out := make([]quotaLedgerEntryResponse, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, quotaLedgerEntryDTO(entry))
+	}
+	response.Paginated(c, out, int64(total), page, pageSize)
 }
 
 // GetUserAPIKeys handles getting user's API keys

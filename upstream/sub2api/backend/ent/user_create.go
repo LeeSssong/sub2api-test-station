@@ -18,12 +18,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/quotaidempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/ent/userwallet"
 )
 
 // UserCreate is the builder for creating a User entity.
@@ -547,6 +550,70 @@ func (_c *UserCreate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddPlatformQuotaIDs(ids...)
+}
+
+// SetWalletID sets the "wallet" edge to the UserWallet entity by ID.
+func (_c *UserCreate) SetWalletID(id int64) *UserCreate {
+	_c.mutation.SetWalletID(id)
+	return _c
+}
+
+// SetNillableWalletID sets the "wallet" edge to the UserWallet entity by ID if the given value is not nil.
+func (_c *UserCreate) SetNillableWalletID(id *int64) *UserCreate {
+	if id != nil {
+		_c = _c.SetWalletID(*id)
+	}
+	return _c
+}
+
+// SetWallet sets the "wallet" edge to the UserWallet entity.
+func (_c *UserCreate) SetWallet(v *UserWallet) *UserCreate {
+	return _c.SetWalletID(v.ID)
+}
+
+// AddQuotaLedgerEntryIDs adds the "quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (_c *UserCreate) AddQuotaLedgerEntryIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddQuotaLedgerEntryIDs(ids...)
+	return _c
+}
+
+// AddQuotaLedgerEntries adds the "quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_c *UserCreate) AddQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddQuotaLedgerEntryIDs(ids...)
+}
+
+// AddOperatedQuotaLedgerEntryIDs adds the "operated_quota_ledger_entries" edge to the UserQuotaLedgerEntry entity by IDs.
+func (_c *UserCreate) AddOperatedQuotaLedgerEntryIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddOperatedQuotaLedgerEntryIDs(ids...)
+	return _c
+}
+
+// AddOperatedQuotaLedgerEntries adds the "operated_quota_ledger_entries" edges to the UserQuotaLedgerEntry entity.
+func (_c *UserCreate) AddOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddOperatedQuotaLedgerEntryIDs(ids...)
+}
+
+// AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
+func (_c *UserCreate) AddQuotaIdempotencyRecordIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddQuotaIdempotencyRecordIDs(ids...)
+	return _c
+}
+
+// AddQuotaIdempotencyRecords adds the "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
+func (_c *UserCreate) AddQuotaIdempotencyRecords(v ...*QuotaIdempotencyRecord) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddQuotaIdempotencyRecordIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -1073,6 +1140,70 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.WalletIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.WalletTable,
+			Columns: []string{user.WalletColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userwallet.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.QuotaLedgerEntriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaLedgerEntriesTable,
+			Columns: []string{user.QuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.OperatedQuotaLedgerEntriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.OperatedQuotaLedgerEntriesTable,
+			Columns: []string{user.OperatedQuotaLedgerEntriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.QuotaIdempotencyRecordsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaIdempotencyRecordsTable,
+			Columns: []string{user.QuotaIdempotencyRecordsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(quotaidempotencyrecord.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

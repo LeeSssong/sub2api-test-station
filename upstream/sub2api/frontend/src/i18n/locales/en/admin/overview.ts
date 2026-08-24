@@ -629,6 +629,8 @@ export default {
       withdraw: 'Withdraw',
       depositAmount: 'Deposit Amount',
       withdrawAmount: 'Withdraw Amount',
+      giftQuota: 'Gift Quota',
+      refundGiftClears: 'Refund clears all remaining gift quota; gift quota is not converted to cash.',
       withdrawAll: 'All',
       currentBalance: 'Current Balance',
       depositNotesPlaceholder:
@@ -649,6 +651,9 @@ export default {
       useDepositWithdrawButtons: 'Please use deposit/withdraw buttons to adjust balance',
       // Balance History
       balanceHistory: 'Recharge History',
+      legacyHistory: 'Legacy History',
+      quotaLedger: 'Quota Ledger',
+      noQuotaLedger: 'No quota ledger entries',
       balanceHistoryTip: 'Click to open recharge history',
       columnAlwaysVisible: 'This column is always visible',
       // Per-platform usage breakdown (hover tooltip)

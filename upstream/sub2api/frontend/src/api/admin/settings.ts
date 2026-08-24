@@ -20,6 +20,16 @@ export type OpenAISchedulerGroupPolicyMode = "custom" | "preset";
 export type LegacyOpenAISchedulerGroupPolicyMode = "weighted_override" | "fair";
 export type OpenAISchedulerPreset = "special_offer" | "balanced" | "pro";
 export type OpenAISchedulerPresetID = `builtin:${OpenAISchedulerPreset}` | `custom:${string}` | `custom:new:${string}`;
+export const OPENAI_SCHEDULER_LIMITS = {
+  topK: { min: 1, max: 32, step: 1 },
+  weight: { min: 0, max: 10, step: 0.1 },
+  explorationRatio: { min: 0, max: 100, step: 1 },
+  starvationThreshold: { min: 0, max: 86400, step: 300 },
+  fairnessWeight: { min: 0, max: 10, step: 0.1 },
+} as const;
+
+export const OPENAI_SCHEDULER_POOL_MODES = ["top_k", "all_eligible", "hybrid"] as const;
+
 export interface OpenAISchedulerFairnessOverride {
   candidate_pool_mode?: "top_k" | "all_eligible" | "hybrid";
   exploration_ratio?: number;

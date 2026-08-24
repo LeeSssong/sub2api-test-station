@@ -51,6 +51,8 @@ func TestNormalizeChannelMonitorMode(t *testing.T) {
 	require.Equal(t, ChannelMonitorModeV1, normalizeChannelMonitorMode(""))
 	require.Equal(t, ChannelMonitorModeV1, normalizeChannelMonitorMode("v1"))
 	require.Equal(t, ChannelMonitorModeV2, normalizeChannelMonitorMode("v2"))
+	require.Equal(t, ChannelMonitorModeNativeProbe, normalizeChannelMonitorMode("native_probe"))
+	require.Equal(t, ChannelMonitorModeHybridPerformance, normalizeChannelMonitorMode("hybrid_performance"))
 	require.Equal(t, ChannelMonitorModeV1, normalizeChannelMonitorMode("invalid"))
 	require.Equal(t, ChannelMonitorModeV1, normalizeChannelMonitorMode(" V1 "))
 }
@@ -60,4 +62,7 @@ func TestChannelMonitorRuntimeActiveProbesAllowed(t *testing.T) {
 	require.True(t, (ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeV1}).ActiveProbesAllowed())
 	require.False(t, (ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeV2}).ActiveProbesAllowed())
 	require.True(t, (ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeV2}).PassiveAggregationAllowed())
+	require.True(t, (ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeNativeProbe}).ActiveProbesAllowed())
+	require.True(t, (ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeHybridPerformance}).ActiveProbesAllowed())
+	require.False(t, (ChannelMonitorRuntime{Enabled: true, Mode: ChannelMonitorModeHybridPerformance}).PassiveAggregationAllowed())
 }

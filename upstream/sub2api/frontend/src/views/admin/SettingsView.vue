@@ -7124,12 +7124,40 @@
                   >
                     {{ t('admin.settings.features.channelMonitor.modeV1') }}
                   </button>
+                  <button
+                    type="button"
+                    class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
+                    :class="
+                      form.channel_monitor_mode === 'native_probe'
+                        ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
+                        : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
+                    "
+                    @click="form.channel_monitor_mode = 'native_probe'"
+                  >
+                    {{ t('admin.settings.features.channelMonitor.modeNativeProbe') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
+                    :class="
+                      form.channel_monitor_mode === 'hybrid_performance'
+                        ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
+                        : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
+                    "
+                    @click="form.channel_monitor_mode = 'hybrid_performance'"
+                  >
+                    {{ t('admin.settings.features.channelMonitor.modeHybrid') }}
+                  </button>
                 </div>
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   {{
                     form.channel_monitor_mode === 'v1'
                       ? t('admin.settings.features.channelMonitor.modeV1Hint')
-                      : t('admin.settings.features.channelMonitor.modeV2Hint')
+                      : form.channel_monitor_mode === 'v2'
+                        ? t('admin.settings.features.channelMonitor.modeV2Hint')
+                        : form.channel_monitor_mode === 'native_probe'
+                          ? t('admin.settings.features.channelMonitor.modeNativeProbeHint')
+                          : t('admin.settings.features.channelMonitor.modeHybridHint')
                   }}
                 </p>
                 <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
@@ -9865,7 +9893,7 @@ const form = reactive<SettingsForm>({
   account_quota_notify_emails: [] as NotifyEmailEntry[],
   // Channel Monitor feature switch
   channel_monitor_enabled: true,
-  channel_monitor_mode: 'v1' as 'v1' | 'v2',
+  channel_monitor_mode: 'v1' as 'v1' | 'v2' | 'native_probe' | 'hybrid_performance',
   channel_monitor_default_interval_seconds: 60,
   monitor_page_refresh_interval_seconds: 60,
   channel_monitor_hide_throughput: false,
@@ -11250,7 +11278,11 @@ async function loadSettings() {
     form.login_agreement_mode =
       settings.login_agreement_mode === "checkbox" ? "checkbox" : "modal";
     form.channel_monitor_mode =
-      settings.channel_monitor_mode === "v2" ? "v2" : "v1";
+      settings.channel_monitor_mode === "v2" ||
+      settings.channel_monitor_mode === "native_probe" ||
+      settings.channel_monitor_mode === "hybrid_performance"
+        ? settings.channel_monitor_mode
+        : "v1";
     form.channel_monitor_hide_throughput = Boolean(
       settings.channel_monitor_hide_throughput
     );
@@ -11921,7 +11953,7 @@ async function saveSettings() {
       ).filter((e) => e.email.trim() !== ""),
       // Channel Monitor feature switch
       channel_monitor_enabled: form.channel_monitor_enabled,
-      channel_monitor_mode: form.channel_monitor_mode === 'v1' ? 'v1' : 'v2',
+      channel_monitor_mode: form.channel_monitor_mode,
       channel_monitor_default_interval_seconds:
         Number(form.channel_monitor_default_interval_seconds) || 60,
       monitor_page_refresh_interval_seconds:

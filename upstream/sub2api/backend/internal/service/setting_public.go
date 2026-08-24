@@ -378,13 +378,17 @@ const (
 	defaultChannelMonitorMode      = ChannelMonitorModeV1
 )
 
-// normalizeChannelMonitorMode accepts only v1/v2; empty/invalid → v1 (safe default).
+// normalizeChannelMonitorMode accepts all supported choices; empty/invalid → v1 (safe default).
 func normalizeChannelMonitorMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case ChannelMonitorModeV1, "":
 		return ChannelMonitorModeV1
 	case ChannelMonitorModeV2:
 		return ChannelMonitorModeV2
+	case ChannelMonitorModeNativeProbe:
+		return ChannelMonitorModeNativeProbe
+	case ChannelMonitorModeHybridPerformance:
+		return ChannelMonitorModeHybridPerformance
 	default:
 		return defaultChannelMonitorMode
 	}
@@ -418,15 +422,15 @@ func clampChannelMonitorInterval(v int) int {
 // consumed by the runner, V2 aggregator, and user-facing handlers.
 type ChannelMonitorRuntime struct {
 	Enabled                bool
-	Mode                   string // ChannelMonitorModeV1 or ChannelMonitorModeV2
+	Mode                   string // one of the four ChannelMonitorMode constants
 	DefaultIntervalSeconds int
 	// HideThroughput: when true, user-facing V2 APIs omit RPM/TPM scale signals.
 	HideThroughput bool
 }
 
-// ActiveProbesAllowed reports whether V1 active provider probes may run.
+// ActiveProbesAllowed reports whether an active provider probe mode may run.
 func (r ChannelMonitorRuntime) ActiveProbesAllowed() bool {
-	return r.Enabled && r.Mode == ChannelMonitorModeV1
+	return r.Enabled && (r.Mode == ChannelMonitorModeV1 || r.Mode == ChannelMonitorModeNativeProbe || r.Mode == ChannelMonitorModeHybridPerformance)
 }
 
 // PassiveAggregationAllowed reports whether V2 passive aggregation may run.

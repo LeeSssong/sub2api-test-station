@@ -411,9 +411,13 @@ const (
 	// "v1" active probes, "v2" passive aggregation. Default "v1" (opt-in to v2).
 	SettingKeyChannelMonitorMode = "channel_monitor_mode"
 
-	// ChannelMonitorModeV1/V2 are the only accepted mode values.
-	ChannelMonitorModeV1 = "v1"
-	ChannelMonitorModeV2 = "v2"
+	// ChannelMonitorModeV1/V2 preserve the legacy choices. The explicit modes
+	// make the native active page and hybrid performance page independently
+	// selectable without changing legacy routing semantics.
+	ChannelMonitorModeV1                = "v1"
+	ChannelMonitorModeV2                = "v2"
+	ChannelMonitorModeNativeProbe       = "native_probe"
+	ChannelMonitorModeHybridPerformance = "hybrid_performance"
 
 	// SettingKeyChannelMonitorDefaultIntervalSeconds controls the default interval (seconds)
 	// pre-filled when creating a new channel monitor from the admin UI. Range: [15, 3600].

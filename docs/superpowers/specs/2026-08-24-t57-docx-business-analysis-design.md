@@ -1,8 +1,8 @@
 # T57 DOCX 经营分析总览规格
 
-**状态：** 已完成设计，自审通过，根总控代审批准（2026-08-24）  
-**需求源：** `/Users/gongtengxinwen/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_9944479444511_c3ab/msg/file/2026-08/星桥AI-Link-经营分析开发需求.docx`  
-**基线：** `main@e1a0039b0`  
+**状态：** 已完成设计，自审通过，根总控代审批准（2026-08-24）
+**需求源：** `/Users/gongtengxinwen/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/wxid_9944479444511_c3ab/msg/file/2026-08/星桥AI-Link-经营分析开发需求.docx`
+**基线：** `main@e1a0039b0`
 **任务边界：** T57 只交付 DOCX 的经营总览查询和页面；T55 交付额度钱包、手动充值/退款和额度流水。两个任务独立 worktree 并行，整合、部署和线上验收单车道。
 
 ## 1. 问题证据与目标

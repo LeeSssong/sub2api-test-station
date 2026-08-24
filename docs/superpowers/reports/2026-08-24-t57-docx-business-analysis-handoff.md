@@ -4,7 +4,7 @@
 
 `READY_FOR_ROOT_REVIEW`
 
-刷新基线：`main@8eb56326b`（T55 代码已合入根 main；候选最终提交：`785d7a388438b02686a582e55249f61529265dc8`，tree：`be6aa553a357cca7b0a1eab4556a3d12f1bda77a`）。
+刷新基线：`main@8eb56326b`（T55 代码已合入根 main；候选最终提交：`a26cb5ab4440d6a15c75bfd22a756c25059d233a`，tree：`c6b4ebe8cc6c011d5e3a94f735e392a408551c02`）。
 
 本报告只交接 T57 候选，不授权合并、推送、部署或线上验收。
 

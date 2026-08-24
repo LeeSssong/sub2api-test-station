@@ -2,11 +2,11 @@
 
 ## 当前经营任务（2026-08-24，T57 DOCX 经营分析总览）
 
-- **T57 DOCX 经营分析总览**：状态 `READY_FOR_ROOT_REVIEW`。候选 worktree `codex/t57-docx-business-analysis` 已刷新到根 `main@8eb56326b`；T57 实现提交与刷新证据记录在候选 handoff 中。经营总览后端/前端专项测试、后端构建、前端 typecheck/build、`git diff --check main...HEAD` 与源代码范围门禁均通过。T55 代码已在根 main 并已隔离 admin-lab 验证，但主站生产尚未发布；按单车道规则，T57 暂不合并、推送、部署或线上验收，待 T55 完成主站生产发布与线上验收后再进入整合车道。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。
+- **T57 DOCX 经营分析总览**：状态 `READY_FOR_ROOT_REVIEW`（已合并，未单独生产发布）。T57 已刷新到包含 T55 修复的 `main@00291ce98`，合并提交为 `main@36c3753a3`；合并后后端/前端专项测试、4/4 前端测试、后端构建、typecheck、build 与 `git diff --check` 均通过。主站当前生产源为 `main@00291ce98`，T57 代码尚未随独立发布上线；恢复 bundle 为 `/Users/gongtengxinwen/Documents/sub2api-archives/t57-docx-business-analysis-adbc4837.bundle`。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。
 
 ## 当前暂停任务（2026-08-23，T54-R2 调度预设与参数中文化）
 
-- **T54-R2 调度预设语义、中文参数与有界校验**：状态 `DONE`。三个内置预设已在生产管理员设置 API 中确认展示为“体验优先 / 体验均衡 / 利润优先”，内部 ID `builtin:special_offer / builtin:balanced / builtin:pro` 保持兼容；中文参数标签、区间限制和旧值读取归一化的直接相关测试、后端构建、前端 SettingsView、typecheck/build 与 diff-check 已通过。根 `main@bcc6f8878` 已推送并经既有本地/宿主蓝绿链发布，宿主记录 `/var/lib/sub2api/release-records/20260823T205048Z-production-2811848.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 200，生产管理员 settings API 返回 200。0600 生产证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-bcc6f887-t54-r2-production.json`。候选 worktree 仅作历史证据保留，不再进入发布车道。
+- **T54-R2 调度预设语义、中文参数与有界校验**：状态 `DONE`。生产源现为 `main@00291ce98`（后续 T55 迁移兼容修复），宿主记录 `/var/lib/sub2api/release-records/20260824T031405Z-production-3653683.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均 200。管理员 settings API 只读确认三个中文预设“体验优先 / 体验均衡 / 利润优先”，内部 ID 保持兼容。恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/t54-r2-scheduler-labels-a4f7c906.bundle`。
 
 ## 当前紧急修复（2026-08-23，T56 Responses custom-tool ID namespace repair）
 
@@ -14,7 +14,7 @@
 
 ## 当前设计任务（2026-08-23，T55 原生额度钱包与手动充值退款账本）
 
-- **T55 原生额度钱包与手动充值退款账本**：状态 `VERIFYING`（当前仅测试站）。2026-08-23T23:23Z 已从根 `main@74f24b5467cfc1b8dfe54a7f4ba41ac2eeaaa125` 将前后端镜像 `release-74f24b5467cfc1b8dfe54a7f4ba41ac2eeaaa125` 切换到隔离 admin-lab，8 个隔离服务 healthy，并完成登录、用户列表、额度摘要、额度流水、充值、同键幂等重放和退款线上核验；重放未新增流水，最终余额恢复为现金 21、付费额度 21、赠送额度 0。主站生产仍保持活动槽 green、Caddy upstream `sub2api-green:8080`，未迁移、未重启、未切换；生产发布仍暂缓，待用户恢复主站范围后再按迁移停机门禁继续；T57 只能读取 T55 稳定契约，不能修改 T55 worktree。
+- **T55 原生额度钱包与手动充值退款账本**：状态 `DONE`（主站已部署并验收）。候选迁移兼容修复保留历史负余额/技术透支语义，避免 `users.balance < 0` 阻断 `user_wallets` 初始化；根提交 `main@00291ce98` 已推送并通过受控维护发布，宿主记录 `/var/lib/sub2api/release-records/20260824T031405Z-production-3653683.json` 返回 `succeeded/promoted`、`rolled_back=false`，迁移哈希为 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`。线上健康端点、钱包摘要、钱包流水、T54 设置 API 均通过；生产用户钱包按旧 `users.balance` 初始化，无历史流水回填。测试证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-main-00291ce98-t55-overdraft-fix-production.json`。恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/t55-native-quota-ledger-7766644a.bundle`。
 
 ## 当前返修任务（2026-08-23，T54-R1 分组调度三步流程与命名预设）
 

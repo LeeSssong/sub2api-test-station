@@ -2,7 +2,7 @@
 
 ## 当前经营任务（2026-08-24，T57 DOCX 经营分析总览）
 
-- **T57 DOCX 经营分析总览**：状态 `READY_FOR_ROOT_REVIEW`。候选已刷新到根 `main@8eb56326b`，最终候选 `codex/t57-docx-business-analysis@b104f94f6`；经营总览后端/前端专项测试、后端构建、前端 typecheck/build、`git diff --check main...HEAD` 与源代码范围门禁均通过。T55 代码已在根 main 并已隔离 admin-lab 验证，但主站生产尚未发布；按单车道规则，T57 暂不合并、推送、部署或线上验收，待 T55 完成主站生产发布与线上验收后再进入整合车道。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。
+- **T57 DOCX 经营分析总览**：状态 `READY_FOR_ROOT_REVIEW`。候选 worktree `codex/t57-docx-business-analysis` 已刷新到根 `main@8eb56326b`；T57 实现提交与刷新证据记录在候选 handoff 中。经营总览后端/前端专项测试、后端构建、前端 typecheck/build、`git diff --check main...HEAD` 与源代码范围门禁均通过。T55 代码已在根 main 并已隔离 admin-lab 验证，但主站生产尚未发布；按单车道规则，T57 暂不合并、推送、部署或线上验收，待 T55 完成主站生产发布与线上验收后再进入整合车道。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。
 
 ## 当前暂停任务（2026-08-23，T54-R2 调度预设与参数中文化）
 

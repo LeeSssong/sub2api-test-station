@@ -5,7 +5,7 @@
 `READY_FOR_ROOT_REVIEW`
 
 候选分支：`codex/t54-r2-scheduler-labels`
-候选提交：`42eb0776e`
+候选提交：`adbf0b2c0`
 预计发布属性：无迁移、无生产业务数据写入、`downtime_required=false`
 
 ## 已实现

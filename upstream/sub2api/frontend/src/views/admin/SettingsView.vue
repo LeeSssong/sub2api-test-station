@@ -10047,11 +10047,13 @@ function presetDefinition(id: OpenAISchedulerPresetID): OpenAISchedulerPresetDef
 function snapshotValuesForPolicy(policy: OpenAISchedulerGroupPolicy, presetId: OpenAISchedulerPresetID): OpenAISchedulerPolicyValues | undefined {
   const definition = presetDefinition(presetId);
   if (!definition) return undefined;
-  return {
+  return valuesFromDraft({
+    mode: "preset",
+    preset_id: presetId,
     top_k: Number(policy.top_k) || definition.values.top_k,
     weight_overrides: { ...definition.values.weight_overrides, ...(policy.weight_overrides || {}) },
     fairness: { ...definition.values.fairness, ...(policy.fairness || {}) },
-  };
+  });
 }
 
 function cloneSchedulerPolicyDraft(source: SchedulerPolicyDraft): SchedulerPolicyDraft {
@@ -10085,18 +10087,11 @@ function normalizeSchedulerPolicy(policy?: OpenAISchedulerGroupPolicy): Schedule
     const values = snapshotValuesForPolicy(policy, presetId);
     return values ? draftFromValues(values, "preset", presetId) : cloneSchedulerPolicyDraft(schedulerPolicyPresetValues.balanced);
   }
-  return {
-    mode: "custom",
-    preset_id: "builtin:balanced",
+  return draftFromValues({
     top_k: Number(policy.top_k) || Number(form.openai_advanced_scheduler_effective_lb_top_k) || 7,
     weight_overrides: { ...(policy.weight_overrides || {}) },
-    fairness: {
-      candidate_pool_mode: policy.fairness?.candidate_pool_mode || "hybrid",
-      exploration_ratio: Number(policy.fairness?.exploration_ratio) || schedulerPolicyDraft.fairness.exploration_ratio,
-      starvation_threshold_seconds: Number(policy.fairness?.starvation_threshold_seconds) || schedulerPolicyDraft.fairness.starvation_threshold_seconds,
-      fairness_weight: Number(policy.fairness?.fairness_weight) || schedulerPolicyDraft.fairness.fairness_weight,
-    },
-  };
+    fairness: normalizeSchedulerFairness(policy.fairness || schedulerPolicyDraft.fairness),
+  }, "custom", "builtin:balanced");
 }
 
 function storeSchedulerPolicyDraft(): void {
@@ -10216,7 +10211,7 @@ function serializeSchedulerPolicies(): Record<string, OpenAISchedulerGroupPolicy
       mode: "custom",
       top_k: Math.min(32, Math.max(1, Math.trunc(draft.top_k))),
       weight_overrides: weightOverrides,
-      fairness: { ...draft.fairness },
+      fairness: normalizeSchedulerFairness(draft.fairness),
     };
   }
   return policies;
@@ -10237,11 +10232,9 @@ function validateSchedulerPolicyDraft(): boolean {
   for (const value of Object.values(schedulerPolicyDraft.weight_overrides)) {
     if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 10)) return false;
   }
-  if (schedulerPolicyDraft.mode === "preset") {
-    const fairness = schedulerPolicyDraft.fairness;
-    if (fairness.exploration_ratio < 0 || fairness.exploration_ratio > 100 || fairness.fairness_weight < 0 || fairness.fairness_weight > 10) return false;
-    if (fairness.starvation_threshold_seconds !== 0 && (fairness.starvation_threshold_seconds < 300 || fairness.starvation_threshold_seconds > 86400)) return false;
-  }
+  const fairness = schedulerPolicyDraft.fairness;
+  if (fairness.exploration_ratio < 0 || fairness.exploration_ratio > 100 || fairness.fairness_weight < 0 || fairness.fairness_weight > 10) return false;
+  if (fairness.starvation_threshold_seconds !== 0 && (fairness.starvation_threshold_seconds < 300 || fairness.starvation_threshold_seconds > 86400)) return false;
   return true;
 }
 

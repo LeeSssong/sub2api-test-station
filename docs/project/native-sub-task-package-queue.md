@@ -85,7 +85,7 @@
 
 - **T37 渠道状态用户可见专属分组裁剪**：状态 `DONE`。最终发布源 `main@daf965a0e1fbe421e002493b1d64a239de914f0a`、tested tree `0b6c34e9727102ca2a11bec3a95eb0cde6ae115e`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-daf965a0-t37-feedback.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T045028Z-production-862102.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`；Sub 原生配置分组语义、当前用户专属授权裁剪及 tooltip 下置已部署，健康端点均 200。无迁移、配置 schema 或生产数据写入；真机验收由用户自行完成。
 - **T38 可调度账号最近原生探测评分保留**：状态 `DONE`。发布源 `main@b010e6b2df57efe453b8e8551a108164cfd06a93`、tested tree `5d6ce56585540900ecbc0b961e414e8ab541c63c`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-b010e6b2-t38.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T042911Z-production-841669.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、活动槽 `green`；评分状态分离与原生探测评分保留已部署，健康端点均 200。无迁移、配置、前端、依赖或生产数据写入；真机验收由用户自行完成。
-- **根总控当前车道（2026-08-20）**：T37、T38、T41、T42 已完成合并、推送、无停机蓝绿发布和线上健康验证；T39/T40 保持 BACKLOG；T44/T45 已完成发布，分别处理时间线/卡片稳定性和 CodexRadar 白天模式。用户真机验收作为后续反馈，不阻塞后续设计准备。
+- **根总控历史车道（2026-08-20）**：T37、T38、T41、T42、T44、T45 后续均已完成；T39/T40 的历史 BACKLOG 记录已由 2026-08-24 独立任务收口。
 
 - **根总控最近车道（2026-08-20，T36）**：独立用户可见任务 `01a01b65-be8f-7f53-b169-d9ee55456c37` 已完成规格、计划、实现、根合并、推送、无停机蓝绿发布和线上验收，当前为 `DONE`。生产源 `main@12641c3281289ce66eed48f60e46b67f19d6d356`、tested tree `6375dc0a23bc1bf779114b895ea1b5caa60359fe`；合并提交 `808be1901fb4fcb65869336041b777c76d9ee5e8`。范围仅补充中英文界面文案、组件直接测试和发布验收；不改账务公式、金额、API、查询、数据或采购链路。真机验收仍由用户自行执行，不阻塞后续任务。
 - **根总控当前车道（2026-08-20）**：T34、T35 均已完成无停机部署、线上健康验证并保持 `DONE`；T34 发布源为 `main@c1f102312cd35440a5a14c57ef8356b4cdcb5b7b`。真机验收按用户指令不阻塞后续；发布预检仅在 `downtime_required=true` 时暂停。
@@ -99,8 +99,8 @@
 
 ## 当前状态
 
-- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T49、T51、T51-R1、T52、T53-R2、T53-R3 与 T54-R1 均为 `DONE`；T39/T40 保持 `BACKLOG`。其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
-- 当前实施：T54-R1 已完成推送、无停机蓝绿部署和线上专项验收；最终源 `main@3ab2c3fae90c13a90990f7cb91874cfbb09b6620`，tested tree `5d9b463fcf6a235e601431c3902655f56b35775b`，0600 测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-3ab2c3fae-t54-r1-scheduler-preset.json`，宿主记录 `/var/lib/sub2api/release-records/20260823T160921Z-production-2213574.json`；发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`，三项公网健康均 200。T39/T40 保持 BACKLOG，仅登记不提前实现；T55 继续停在 DESIGNING，不占用整合/部署/验收车道。
+- 队列状态：S1-R2、S2、S3、T15、T16、T17、T18、T19、T20、T21、T22、T23、T24、T25、T26、T26-R1、T27、T28、T29、T30、T31、T32、T33、T34、T35、T36、T37、T38、T39、T40、T49、T50、T51、T51-R1、T52、T53-R2、T53-R3、T54、T54-R1、T54-R2、T55、T56 与 T57 均为 `DONE`；其他历史任务状态以各自条目为准。所有发布继续禁止使用 GitHub Actions。
+- 当前实施：T39/T40 已完成合并、推送、无停机蓝绿部署和线上专项验收；当前没有未过时的功能发布车道，根总控只保留历史证据和恢复 bundle。
 - 唯一发布总控：根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main`。只有发布总控可以修改全局队列/总账、根 `main`、发布证据和生产状态记录。
 - 当前发布状态：T53-R3 生产源 `main@4e05195e2a42547dbad04591d5ed4615698f16d9`、tree `a32293c649163a73ae17e8809c4d7e73a5b0b14b`、迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；蓝绿链返回 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `green`，API、worker 与 model-detector 使用同源不可变镜像且健康。宿主记录为 `/var/lib/sub2api/release-records/20260823T083812Z-production-1250022.json`；隔离站管理员正向登录、会话 Cookie 和匿名拒绝均通过，公网三项健康均 HTTP 200；本地 0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-4e05195e2-t53-r3-admin-only.json`。
 - 非 `main` worktree 清理：T28/T29 两个功能 worktree、两个临时发布 worktree和两条已合并本地分支均已在生产验收后移除；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t28-t29-final-e0b2d99b/t28-t29-refs.bundle`，SHA-256 `a7815ce5a9111b07aea9026c6456f2d830019baacc142f46a5660451f086e741`，`git bundle verify` 通过。更早任务的清理证据沿用既有归档记录；当前仅保留用户指定保护的 `/private/tmp/sub2api-monitor-v3-preview` dirty detached 视觉证据。

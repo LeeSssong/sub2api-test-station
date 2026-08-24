@@ -1,12 +1,14 @@
 # 项目全局进度总账
 
+**最终状态审计（2026-08-24）：** 当前任务队列的全部任务包均已标记 `DONE`，没有仍需合并、推送、部署或线上验收的当前任务；本文件后部早期日期的“进行中/准备完成”条目是历史过程快照，不覆盖当前队列和本段最新收口记录。根 `main` 与 `origin/main` 同步，唯一 worktree 干净，最新生产发布为 T40 的 `succeeded/promoted` 记录。
+
 **T40 错误码/边缘错误中文映射补齐（2026-08-24）：** 状态：`DONE`。候选 `bcf78cfe6785698e2e9906116023ac79cba85d13` 已合并为 `main@f3f3d6b40`、推送并通过无停机预加载蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260824T044525Z-production-3857843.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`。应用侧 402、507、520–525 JSON/SSE 中文投影、499 上传中断、管理员诊断脱敏和健康端点已验收；Cloudflare 边缘 HTML 413 不在范围。
 
-**T40 错误码/边缘错误中文映射补齐（2026-08-24）：** 状态：`DESIGNING`。用户可见独立顶层任务 `01a031fa-eb70-7a90-8396-6136f674e710` 在 `/Users/gongtengxinwen/.codex/worktrees/c92f/sub2api搭建` 从 T39 最新生产源启动，执行完整规格、计划、TDD、直接相关验证和候选交接。范围仅覆盖应用侧 402、507、520、521、522、523、524、525 的 JSON/SSE 中文投影、499 保留和 Cloudflare HTML 413 边界；不修改 T39、迁移、生产数据或 GitHub Actions。根发布总控保留唯一合并与生产车道。
+**T40 任务启动记录（2026-08-24）：** 已由独立顶层任务 `01a031fa-eb70-7a90-8396-6136f674e710` 完成规格、TDD、候选交接、根合并、推送、生产发布和线上验收；当前状态见上方 `DONE` 收口记录。原 `DESIGNING` 文字仅为过程快照。
 
 **T39 Responses 流式 413 二次错误映射修复（2026-08-24）：** 状态：`DONE`。候选 `89864b95728e55bd0e3ec8399ac89a139150d5e1` 已合并为 `main@d22e6705e`、推送并通过无停机预加载蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260824T041150Z-production-3782765.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`。应用内 413 的 JSON 与 Responses SSE 直接回归、生产健康三项和匿名管理接口隔离均通过；未向生产发送 128MB 级请求，Cloudflare 边缘 HTML 413 不在范围。
 
-**T39 Responses 流式 413 二次错误映射修复（2026-08-24）：** 状态：`DESIGNING`。用户可见独立顶层任务 `01a031e3-1d55-7351-a6e3-fd0103ba4fbf` 在 `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建` 开始执行完整规格、计划、TDD、直接相关验证和候选交接。范围仅覆盖应用内 413 的 JSON/Responses SSE 中文语义、机器分类、终止事件与脱敏；不包含 T40、Cloudflare 边缘 HTML、迁移、生产数据或 GitHub Actions。根发布总控保留唯一合并与生产车道。
+**T39 任务启动记录（2026-08-24）：** 已由独立顶层任务 `01a031e3-1d55-7351-a6e3-fd0103ba4fbf` 完成规格、TDD、候选交接、根合并、推送、生产发布和线上验收；当前状态见上方 `DONE` 收口记录。原 `DESIGNING` 文字仅为过程快照。
 
 **根总控更新（2026-08-24）：** T57 已从生产源 `main@f217db218` 通过既有本地/宿主预加载蓝绿链无停机发布，活动槽 `green`；公网三项健康均 200。经营总览 `today`/`7d` 管理员接口、真实 `pending_split` 语义、5 个分组、7 天趋势及前端 `BusinessOverviewView` 资源均线上通过。当前唯一根 worktree 干净；T54/T55/T57 非 main worktree 均已制作并验证完整恢复 bundle 后清理。
 
@@ -44,9 +46,9 @@
 
 **全局错误兜底规则紧急回退与发布固化（2026-08-20）：** 状态：`DONE`。用户确认 2026-08-16 配置的全局 `ErrorPassthroughRule` 方案尚不成熟且已影响用户；生产证据表明规则在原生 `UpstreamFailoverError` 进入账号故障转移前直接写回响应，存在把原本可重试的 5xx/限流等失败提前终止的风险。该批 15 条全局规则已通过 Sub 原生管理员 API 全部切换为 `enabled=false`，规则内容保留、未删除；发布后 API 与 PostgreSQL 回读均为 `total=15/enabled=0`，配置更新通过 Redis 发布订阅刷新各 API 实例本地缓存。变更前快照 `/var/lib/sub2api/config-snapshots/20260820T141419Z-error-passthrough-rules-{api,db}-before.json`，变更后快照 `/var/lib/sub2api/config-snapshots/20260820T141700Z-error-passthrough-rules-{api,db}-after.json`，均为 `0600 root:root`。用户随后明确要求“部署生效”；资格证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-fea78b738-error-rule-rollback-deploy.json` 绑定 `main@fea78b7380354f09ec304a5378754cdb79b96fd5`、tree `ea4656914d7e592ee29fcdcd76318d4f351b3058` 和迁移哈希 `18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f`；当前主线相对原生产 `9b4d5b7f6` 仅有项目文档变化，`upstream/sub2api` 与 `ops` 无差异。首次控制器执行在生产切换前因 47.5 MB 预加载制品单次 SCP 超过 600 秒而停止；同一制品随后拆分串行传输并逐块重组，完整 SHA-256 `f88aa03edcb889e25fe691509b7a66a5bc020e4c9d64879becf70297c6f02670` 校验通过，再由已审宿主蓝绿执行器完成无停机发布。宿主记录 `/var/lib/sub2api/release-records/20260820T155707Z-production-1387400.json` 为 `succeeded/promoted`、`rolled_back=false`，活动槽 `blue`，运行镜像 `release-fea78b738…-d625b007…`；PostgreSQL、Redis、Caddy 身份保持不变，blue/green、worker、model-detector 及共享服务均健康、重启计数 0，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。最终核验 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-fea78b738-error-rule-rollback-production-verification-final.txt`；未发送人工失败流量，短观察窗未自然出现跨账号故障转移失败样本。恢复方式为按变更前快照逐条恢复原 `enabled` 状态。
 
-**T39 Responses 流式 413 二次错误映射修复（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用内入站/上游 413 的 JSON 与 Responses SSE 二次投影，保持中文“请求内容过大”语义、错误类型、终止事件和脱敏；Cloudflare 边缘 HTML 413 不在应用接管范围。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
+**T39 历史排队记录（快速迭代-10）：** 已完成，当前状态见上方 `DONE` 收口记录。
 
-**T40 错误码/边缘错误中文映射补齐（快速迭代-10）：** 状态：`BACKLOG`。范围锁定应用侧 402、507、520、521、522、523、524、525 规则与 JSON/SSE/管理员诊断合同，保留 499 客户端断开分类，并明确 Cloudflare HTML 413 不误判/不泄露。依赖：无；允许与 T38 设计/实现并行准备，整合、部署、线上验证仍单车道。无迁移、生产数据写入，预计 `downtime_required=false`。
+**T40 历史排队记录（快速迭代-10）：** 已完成，当前状态见上方 `DONE` 收口记录。
 
 **T37 渠道状态按当前用户裁剪专属分组（2026-08-20）：** 状态：`DONE`。最终发布源 `main@daf965a0e1fbe421e002493b1d64a239de914f0a`、tested tree `0b6c34e9727102ca2a11bec3a95eb0cde6ae115e`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-20-main-daf965a0-t37-feedback.json`，宿主记录 `/var/lib/sub2api/release-records/20260820T045028Z-production-862102.json`。蓝绿链 `downtime_required=false`、`result=succeeded`、`state=promoted`、`rolled_back=false`，活动槽 `blue`；镜像 `ghcr.io/leesssong/xingqiao-sub2api:release-daf965a0e1fbe421e002493b1d64a239de914f0a-165c5e8d6e4fb93397a56aac7c746ed4571d52df96cdc691defdf214526644e2`。Sub 原生 `channel_monitor_v2_config` enabled/group_ids 语义、当前用户专属授权裁剪、tooltip 下置和解释文案删除已生效；后端 Monitor V2/handler/routes、cmd/server、前端 13/13、typecheck、production build、健康 `/healthz` `/readyz` `/health` 均通过。无迁移、配置 schema 或生产数据写入；真机登录态验收按用户指令由用户自行完成，不阻塞收口。
 

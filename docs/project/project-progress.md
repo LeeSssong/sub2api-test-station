@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T40 错误码/边缘错误中文映射补齐（2026-08-24）：** 状态：`DESIGNING`。用户可见独立顶层任务 `01a031fa-eb70-7a90-8396-6136f674e710` 在 `/Users/gongtengxinwen/.codex/worktrees/c92f/sub2api搭建` 从 T39 最新生产源启动，执行完整规格、计划、TDD、直接相关验证和候选交接。范围仅覆盖应用侧 402、507、520、521、522、523、524、525 的 JSON/SSE 中文投影、499 保留和 Cloudflare HTML 413 边界；不修改 T39、迁移、生产数据或 GitHub Actions。根发布总控保留唯一合并与生产车道。
+
 **T39 Responses 流式 413 二次错误映射修复（2026-08-24）：** 状态：`DONE`。候选 `89864b95728e55bd0e3ec8399ac89a139150d5e1` 已合并为 `main@d22e6705e`、推送并通过无停机预加载蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260824T041150Z-production-3782765.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`。应用内 413 的 JSON 与 Responses SSE 直接回归、生产健康三项和匿名管理接口隔离均通过；未向生产发送 128MB 级请求，Cloudflare 边缘 HTML 413 不在范围。
 
 **T39 Responses 流式 413 二次错误映射修复（2026-08-24）：** 状态：`DESIGNING`。用户可见独立顶层任务 `01a031e3-1d55-7351-a6e3-fd0103ba4fbf` 在 `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建` 开始执行完整规格、计划、TDD、直接相关验证和候选交接。范围仅覆盖应用内 413 的 JSON/Responses SSE 中文语义、机器分类、终止事件与脱敏；不包含 T40、Cloudflare 边缘 HTML、迁移、生产数据或 GitHub Actions。根发布总控保留唯一合并与生产车道。

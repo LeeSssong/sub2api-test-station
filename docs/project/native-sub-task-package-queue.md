@@ -2,7 +2,7 @@
 
 ## 当前经营任务（2026-08-24，T57 DOCX 经营分析总览）
 
-- **T57 DOCX 经营分析总览**：状态 `READY_FOR_ROOT_REVIEW`（已合并，未单独生产发布）。T57 已刷新到包含 T55 修复的 `main@00291ce98`，合并提交为 `main@36c3753a3`；合并后后端/前端专项测试、4/4 前端测试、后端构建、typecheck、build 与 `git diff --check` 均通过。主站当前生产源为 `main@00291ce98`，T57 代码尚未随独立发布上线；恢复 bundle 为 `/Users/gongtengxinwen/Documents/sub2api-archives/t57-docx-business-analysis-adbc4837.bundle`。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。
+- **T57 DOCX 经营分析总览**：状态 `DONE`。生产源 `main@f217db218` 已推送并通过既有本地/宿主预加载蓝绿链无停机发布，活动槽 `green`，迁移哈希保持 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`；0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-main-f217db218-t57-business-overview-production.json`。公网 `/healthz`、`/readyz`、`/health` 均 200；管理员经营总览 `today`/`7d` 均返回 200，真实数据正确投影 `revenue_status=pending_split`、5 个分组和 7 天趋势，前端 `BusinessOverviewView` 资源已上线。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/t57-docx-business-analysis-adbc4837.bundle`。
 
 ## 当前暂停任务（2026-08-23，T54-R2 调度预设与参数中文化）
 

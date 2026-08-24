@@ -1,10 +1,10 @@
 # 项目全局进度总账
 
-**根总控更新（2026-08-24）：** 当前 `main@36c3753a3` 已推送到 `origin/main`，唯一根 worktree 干净；T54/T55/T57 非 main worktree 均已制作并验证完整恢复 bundle 后清理。主站已从 `main@00291ce98` 通过受控维护发布切换，宿主记录 `/var/lib/sub2api/release-records/20260824T031405Z-production-3653683.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均 200。T57 已合并到 main 但未单独生产发布，保持 `READY_FOR_ROOT_REVIEW`，不得宣称已上线。
+**根总控更新（2026-08-24）：** T57 已从生产源 `main@f217db218` 通过既有本地/宿主预加载蓝绿链无停机发布，活动槽 `green`；公网三项健康均 200。经营总览 `today`/`7d` 管理员接口、真实 `pending_split` 语义、5 个分组、7 天趋势及前端 `BusinessOverviewView` 资源均线上通过。当前唯一根 worktree 干净；T54/T55/T57 非 main worktree 均已制作并验证完整恢复 bundle 后清理。
 
 **T55 原生额度钱包与手动充值退款账本（2026-08-23）：** 状态：`DONE`。主站维护发布前发现历史 `users.balance < 0` 会触发 T55 钱包迁移 CHECK 失败；已用 RED/GREEN 修复移除付费额度及其流水快照的非负约束，保留技术透支并更新受控迁移路径。根 `main@00291ce98` 已推送并发布，迁移哈希 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`；生产健康、钱包摘要、钱包流水和 T54 设置 API 均验收通过。证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-main-00291ce98-t55-overdraft-fix-production.json`。
 
-**T57 DOCX 经营分析总览（2026-08-24）：** 状态：`READY_FOR_ROOT_REVIEW`（已合并，未单独生产发布）。候选刷新到包含 T55 修复的 `main@00291ce98` 后合并为 `main@36c3753a3`；合并后后端/前端专项测试、4/4 前端测试、构建、typecheck 与 diff-check 通过。T57 继续只读 `usage_logs` 与 T55 钱包契约，不写账本、支付或生产数据；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t57-docx-business-analysis-adbc4837.bundle`。
+**T57 DOCX 经营分析总览（2026-08-24）：** 状态：`DONE`。合并后代码经 `main@f217db218` 推送、无停机发布和线上专项验收；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-main-f217db218-t57-business-overview-production.json`。T57 继续只读 `usage_logs` 与 T55 钱包契约，不写账本、支付或生产数据；恢复 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/t57-docx-business-analysis-adbc4837.bundle`。
 
 **T54-R2 调度预设语义、中文参数与有界校验（2026-08-23）：** 状态：`DONE`。三个内置预设已在生产管理员设置 API 中确认展示为“体验优先 / 体验均衡 / 利润优先”，内部 `builtin:special_offer / builtin:balanced / builtin:pro` ID 保持兼容；中文参数标签、区间限制和旧值读取归一化的直接相关测试、后端构建、前端 SettingsView、typecheck/build 与 diff-check 已通过。根 `main@bcc6f8878` 已推送并经既有本地/宿主蓝绿链发布，宿主记录 `/var/lib/sub2api/release-records/20260823T205048Z-production-2811848.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 200，生产管理员 settings API 返回 200。0600 生产证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-23-main-bcc6f887-t54-r2-production.json`。候选 worktree 仅作历史证据保留，不再进入发布车道。
 

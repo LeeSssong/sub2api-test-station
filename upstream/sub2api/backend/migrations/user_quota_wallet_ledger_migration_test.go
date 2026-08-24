@@ -25,7 +25,7 @@ func TestUserQuotaWalletLedgerMigration(t *testing.T) {
 		"id bigserial primary key",
 		"user_id bigint not null unique references users(id) on delete cascade",
 		"cash_balance_cny decimal(20,8) not null default 0 check (cash_balance_cny >= 0)",
-		"paid_quota_balance_usd decimal(20,8) not null default 0 check (paid_quota_balance_usd >= 0)",
+		"paid_quota_balance_usd decimal(20,8) not null default 0",
 		"gift_quota_balance_usd decimal(20,8) not null default 0 check (gift_quota_balance_usd >= 0)",
 		"create table if not exists user_quota_ledger_entries (",
 		"user_id bigint not null references users(id) on delete cascade",
@@ -59,5 +59,29 @@ func TestUserQuotaWalletLedgerMigration(t *testing.T) {
 	}
 	if strings.Contains(sql, "insert into user_quota_ledger_entries") {
 		t.Fatal("migration must not backfill historical ledger entries")
+	}
+}
+
+func TestUserQuotaWalletLedgerMigrationPreservesLegacyOverdrafts(t *testing.T) {
+	sql := normalizedUserQuotaWalletLedgerSQL(t)
+
+	for _, forbidden := range []string{
+		"check (paid_quota_balance_usd >= 0)",
+		"check (paid_before_usd >= 0)",
+		"check (paid_after_usd >= 0)",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("legacy overdrafts must remain representable; found %q", forbidden)
+		}
+	}
+
+	for _, required := range []string{
+		"cash_balance_cny decimal(20,8) not null default 0 check (cash_balance_cny >= 0)",
+		"gift_quota_balance_usd decimal(20,8) not null default 0 check (gift_quota_balance_usd >= 0)",
+		"select users.id, 0, users.balance, 0, 1, now(), now() from users",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("migration lost non-negative cash/gift or exact legacy balance contract %q", required)
+		}
 	}
 }

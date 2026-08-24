@@ -4,7 +4,7 @@
 
 `READY_FOR_ROOT_REVIEW`
 
-刷新基线：`main@8eb56326b`（T55 代码已合入根 main；候选刷新提交：`dc288a421501502fee3c4b0fe932161ed8c0d8b4`，tree：`4a93a8fa0c49856631fc0657a628beeada0dcf79`）。
+刷新基线：`main@8eb56326b`（T55 代码已合入根 main；候选最终提交：`785d7a388438b02686a582e55249f61529265dc8`，tree：`be6aa553a357cca7b0a1eab4556a3d12f1bda77a`）。
 
 本报告只交接 T57 候选，不授权合并、推送、部署或线上验收。
 
@@ -24,7 +24,7 @@
 - 前端：`pnpm vitest run src/api/__tests__/admin.businessOverview.spec.ts src/views/admin/__tests__/BusinessOverviewView.spec.ts --reporter=dot`，4/4 通过。
 - 前端：`pnpm typecheck` 通过。
 - 前端：`pnpm build` 通过，产物包含 `BusinessOverviewView` chunk。
-- `git diff --check` 通过。
+- `git diff --check main...HEAD` 通过；并完成源代码范围门禁，未发现迁移、钱包/支付写入、外部控制面、凭据或上游名称泄漏。
 - 刷新到 T55 代码后的同一组后端/前端专项验证仍全部通过；刷新只引入根 main 的 T55 代码与发布门禁变更，未改写 T57 经营分析逻辑。
 
 ## 发布边界

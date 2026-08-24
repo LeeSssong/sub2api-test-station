@@ -1,6 +1,10 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
+    hybrid: {
+      title: '渠道性能监控', updated: '更新于 {time}', availability: '可用性', monitoring: '持续监控',
+      ttftP95: '首字 P95', latencyP95: '总耗时 P95', sampleCount: '基于 {count} 次真实请求', multiplier: '倍率：{value}x', empty: '暂无可见分组',
+    },
     title: '渠道监控',
     updating: '正在更新数据',
     updatedTo: '更新至 {time}',

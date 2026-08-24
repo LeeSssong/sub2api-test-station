@@ -56,6 +56,7 @@ type Handlers struct {
 	Announcement        *AnnouncementHandler
 	ChannelMonitor      *ChannelMonitorUserHandler
 	MonitorV2           *MonitorV2Handler
+	MonitorV4           *MonitorV4Handler
 	CodexRadar          *CodexRadarInsightsHandler
 	CodexRadarCommunity *CodexRadarCommunityHandler
 	ChannelMonitorV2    *ChannelMonitorV2Handler

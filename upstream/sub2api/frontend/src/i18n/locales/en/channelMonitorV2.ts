@@ -1,6 +1,10 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
+    hybrid: {
+      title: 'Channel performance monitor', updated: 'Updated {time}', availability: 'Availability', monitoring: 'Monitoring',
+      ttftP95: 'First token P95', latencyP95: 'Total duration P95', sampleCount: 'Based on {count} real requests', multiplier: 'Multiplier: {value}x', empty: 'No visible groups',
+    },
     title: 'Channel Monitor',
     updating: 'Updating data',
     updatedTo: 'Updated to {time}',

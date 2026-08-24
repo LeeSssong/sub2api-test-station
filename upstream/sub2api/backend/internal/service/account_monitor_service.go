@@ -286,6 +286,24 @@ func (s *AccountMonitorService) ProjectMonitorV2Groups(
 	if err != nil {
 		return nil, fmt.Errorf("load account monitor settings for monitor v2: %w", err)
 	}
+	scopes, err := s.monitorGroupScopes(ctx, groupIDs)
+	if err != nil {
+		return nil, err
+	}
+	freshSince := end.Add(-2 * time.Duration(settings.IntervalSeconds) * time.Second)
+	projection, err := nativeRepo.ProjectMonitorV2Groups(ctx, scopes, start, end, freshSince, bucketSize)
+	if err != nil {
+		return nil, fmt.Errorf("project native monitor v2 groups: %w", err)
+	}
+	return projection, nil
+}
+
+// monitorGroupScopes is shared by the native and hybrid projections. It keeps
+// the scheduler's exact schedulable-account semantics at snapshot time.
+func (s *AccountMonitorService) monitorGroupScopes(ctx context.Context, groupIDs []int64) ([]MonitorV2GroupAccountScope, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, errors.New("account monitor account repository unavailable")
+	}
 	accounts, err := s.listMonitorAccounts(ctx)
 	if err != nil {
 		return nil, err
@@ -330,10 +348,35 @@ func (s *AccountMonitorService) ProjectMonitorV2Groups(
 		}
 		return scopes[i].GroupID < scopes[j].GroupID
 	})
-	freshSince := end.Add(-2 * time.Duration(settings.IntervalSeconds) * time.Second)
-	projection, err := nativeRepo.ProjectMonitorV2Groups(ctx, scopes, start, end, freshSince, bucketSize)
+	return scopes, nil
+}
+
+// ProjectMonitorV4Groups returns the unified active-probe and strict
+// successful-user-request projection for the hybrid monitor.
+func (s *AccountMonitorService) ProjectMonitorV4Groups(
+	ctx context.Context,
+	groupIDs []int64,
+	start, end time.Time,
+	bucketSize time.Duration,
+) (map[int64]MonitorV4GroupProjection, error) {
+	result := make(map[int64]MonitorV4GroupProjection)
+	if s == nil || s.repo == nil || s.accountRepo == nil {
+		return nil, errors.New("account monitor hybrid projection unavailable")
+	}
+	if len(groupIDs) == 0 || !end.After(start) || bucketSize <= 0 {
+		return result, nil
+	}
+	hybridRepo, ok := s.repo.(AccountMonitorHybridProjectionRepository)
+	if !ok {
+		return nil, errors.New("account monitor hybrid projection repository unavailable")
+	}
+	scopes, err := s.monitorGroupScopes(ctx, groupIDs)
 	if err != nil {
-		return nil, fmt.Errorf("project native monitor v2 groups: %w", err)
+		return nil, err
+	}
+	projection, err := hybridRepo.ProjectMonitorV4Groups(ctx, scopes, start, end, bucketSize)
+	if err != nil {
+		return nil, fmt.Errorf("project hybrid monitor v4 groups: %w", err)
 	}
 	return projection, nil
 }

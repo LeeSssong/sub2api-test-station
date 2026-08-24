@@ -244,6 +244,21 @@ type MonitorV2NativeGroupProjection struct {
 	Timeline               []MonitorV2NativeTimelinePoint
 }
 
+// MonitorV4GroupProjection is the unified probe plus real-request projection
+// used by the hybrid performance monitor. Metrics are always concrete values;
+// the service supplies historical or zero fallbacks when the current window
+// has no performance samples.
+type MonitorV4GroupProjection struct {
+	AvailabilityBucketCount int
+	TotalBucketCount        int
+	TTFTP95MS               float64
+	LatencyP95MS            float64
+	SampleCount             int
+	SourceUpdatedAt         *time.Time
+	CurrentOperational      bool
+	MetricFallback          bool
+}
+
 // AccountMonitorGroupProbeRepository is the native read path used by Monitor V2.
 // It is optional so existing Account Monitor repository adapters remain source-compatible.
 type AccountMonitorGroupProbeRepository interface {
@@ -253,6 +268,17 @@ type AccountMonitorGroupProbeRepository interface {
 		start, end, freshSince time.Time,
 		bucketSize time.Duration,
 	) (map[int64]MonitorV2NativeGroupProjection, error)
+}
+
+// AccountMonitorHybridProjectionRepository is optional so existing account
+// monitor adapters remain source-compatible while the v4 read path rolls out.
+type AccountMonitorHybridProjectionRepository interface {
+	ProjectMonitorV4Groups(
+		ctx context.Context,
+		scopes []MonitorV2GroupAccountScope,
+		start, end time.Time,
+		bucketSize time.Duration,
+	) (map[int64]MonitorV4GroupProjection, error)
 }
 
 type AccountMonitorMultiplier struct {

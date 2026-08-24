@@ -1,9 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getMonitorV2Snapshot, isChannelMonitorV2Mode } = vi.hoisted(() => ({
+const { getMonitorV2Snapshot, isChannelMonitorV2Mode, isChannelMonitorHybridMode } = vi.hoisted(() => ({
   getMonitorV2Snapshot: vi.fn(),
   isChannelMonitorV2Mode: vi.fn(),
+  isChannelMonitorHybridMode: vi.fn(),
 }))
 
 vi.mock('../api', async () => {
@@ -21,6 +22,7 @@ vi.mock('@/utils/featureFlags', async () => {
   return {
     ...actual,
     isChannelMonitorV2Mode,
+    isChannelMonitorHybridMode,
   }
 })
 
@@ -29,6 +31,10 @@ vi.mock('@/views/user/ChannelStatusView.vue', () => ({
     name: 'ChannelStatusView',
     template: '<section data-test="native-channel-status">原生渠道状态</section>',
   },
+}))
+
+vi.mock('@/features/monitor-v4/HybridPerformanceView.vue', () => ({
+  default: { name: 'HybridPerformanceView', template: '<section data-test="hybrid-performance">混合性能监控</section>' },
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -80,7 +86,9 @@ describe('MonitorV2RouteView', () => {
   beforeEach(() => {
     getMonitorV2Snapshot.mockReset()
     isChannelMonitorV2Mode.mockReset()
+    isChannelMonitorHybridMode.mockReset()
     isChannelMonitorV2Mode.mockReturnValue(false)
+    isChannelMonitorHybridMode.mockReturnValue(false)
   })
 
   it('renders the official aggregated status page without requesting the custom snapshot in v2 mode', async () => {
@@ -90,6 +98,14 @@ describe('MonitorV2RouteView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="native-channel-status"]').exists()).toBe(true)
+    expect(getMonitorV2Snapshot).not.toHaveBeenCalled()
+  })
+
+  it('renders the hybrid performance page without requesting the legacy snapshot', async () => {
+    isChannelMonitorHybridMode.mockReturnValue(true)
+    const wrapper = mountRoute()
+    await flushPromises()
+    expect(wrapper.find('[data-test="hybrid-performance"]').exists()).toBe(true)
     expect(getMonitorV2Snapshot).not.toHaveBeenCalled()
   })
 

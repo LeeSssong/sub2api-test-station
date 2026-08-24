@@ -211,6 +211,10 @@ func ProvideMonitorV2Handler(monitorV2Service *service.MonitorV2Service) *Monito
 	return NewMonitorV2Handler(monitorV2Service)
 }
 
+func ProvideMonitorV4Handler(monitorV4Service *service.MonitorV4Service) *MonitorV4Handler {
+	return NewMonitorV4Handler(monitorV4Service)
+}
+
 func ProvideCodexRadarInsightsHandler(codexRadarInsightsService *service.CodexRadarInsightsService) *CodexRadarInsightsHandler {
 	return NewCodexRadarInsightsHandler(codexRadarInsightsService)
 }
@@ -297,6 +301,7 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementHandler,
 	NewChannelMonitorUserHandler,
 	ProvideMonitorV2Handler,
+	ProvideMonitorV4Handler,
 	ProvideCodexRadarInsightsHandler,
 	ProvideCodexRadarCommunityHandler,
 	NewChannelMonitorV2Handler,

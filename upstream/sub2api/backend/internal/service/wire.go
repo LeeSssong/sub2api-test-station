@@ -1080,6 +1080,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideMonitorV2Service,
+	ProvideMonitorV4Service,
 	ProvideChannelMonitorRunner,
 	ProvideAccountMonitorAccountRepository,
 	ProvideAccountMonitorService,
@@ -1154,6 +1155,16 @@ func ProvideMonitorV2Service(
 	settingService *SettingService,
 ) *MonitorV2Service {
 	return NewMonitorV2Service(groupRepo, apiKeyService, native, settingService, channelMonitorV2Repository)
+}
+
+func ProvideMonitorV4Service(
+	groupRepo GroupRepository,
+	apiKeyService *APIKeyService,
+	channelMonitorV2Repository ChannelMonitorV2Repository,
+	native *AccountMonitorService,
+	settingService *SettingService,
+) *MonitorV4Service {
+	return NewMonitorV4Service(groupRepo, apiKeyService, native, settingService, channelMonitorV2Repository)
 }
 
 // ProvideChannelMonitorRunner 创建并启动渠道监控调度器。

@@ -278,6 +278,158 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 	return out, nil
 }
 
+// ProjectMonitorV4Groups combines successful active probes with strict
+// successful usage-log requests. Availability is bucketed independently from
+// the shared performance sample so a successful request without timings still
+// makes its five-minute bucket operational.
+func (r *accountMonitorRepository) ProjectMonitorV4Groups(
+	ctx context.Context,
+	scopes []service.MonitorV2GroupAccountScope,
+	start, end time.Time,
+	bucketSize time.Duration,
+) (map[int64]service.MonitorV4GroupProjection, error) {
+	out := make(map[int64]service.MonitorV4GroupProjection)
+	if len(scopes) == 0 {
+		return out, nil
+	}
+	if r == nil || r.db == nil {
+		return nil, errors.New("nil account monitor repository")
+	}
+	if start.IsZero() || end.IsZero() || !end.After(start) || bucketSize <= 0 {
+		return nil, errors.New("monitor v4 projection requires a valid time range and bucket")
+	}
+	seen := make(map[service.MonitorV2GroupAccountScope]struct{}, len(scopes))
+	groupIDs := make([]int64, 0, len(scopes))
+	accountIDs := make([]int64, 0, len(scopes))
+	for _, scope := range scopes {
+		if scope.GroupID <= 0 || scope.AccountID <= 0 {
+			return nil, errors.New("monitor v4 projection scope ids must be positive")
+		}
+		if _, exists := seen[scope]; exists {
+			return nil, fmt.Errorf("duplicate monitor v4 projection scope %d/%d", scope.GroupID, scope.AccountID)
+		}
+		seen[scope] = struct{}{}
+		groupIDs = append(groupIDs, scope.GroupID)
+		accountIDs = append(accountIDs, scope.AccountID)
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+WITH scopes AS (
+  SELECT group_id, account_id
+  FROM unnest($4::bigint[], $5::bigint[]) AS scope(group_id, account_id)
+), groups AS (
+  SELECT DISTINCT group_id FROM scopes
+), buckets AS (
+  SELECT bucket_start
+  FROM generate_series($1::timestamptz, $2::timestamptz - $3::interval, $3::interval) AS series(bucket_start)
+), events AS (
+  SELECT s.group_id, r.checked_at AS observed_at,
+         date_bin($3::interval, r.checked_at, $1::timestamptz) AS bucket_start,
+         (r.status = 'success') AS successful,
+         r.ttft_ms AS first_token_ms,
+         r.latency_ms AS duration_ms
+  FROM scopes s
+  JOIN account_monitor_results r ON r.account_id = s.account_id
+  WHERE r.checked_at >= ($1::timestamptz - interval '90 days') AND r.checked_at < $2
+  UNION ALL
+  SELECT s.group_id, u.created_at AS observed_at,
+         date_bin($3::interval, u.created_at, $1::timestamptz) AS bucket_start,
+         TRUE AS successful,
+         u.first_token_ms,
+         u.duration_ms
+  FROM scopes s
+  JOIN usage_logs u ON u.account_id = s.account_id AND u.group_id = s.group_id
+  WHERE u.created_at >= ($1::timestamptz - interval '90 days') AND u.created_at < $2
+    AND u.actual_cost > 0
+    AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+), bucket_state AS (
+  SELECT g.group_id, b.bucket_start,
+         (COUNT(*) FILTER (WHERE e.successful) > 0) AS available
+  FROM groups g CROSS JOIN buckets b
+  LEFT JOIN events e ON e.group_id = g.group_id AND e.bucket_start = b.bucket_start
+  GROUP BY g.group_id, b.bucket_start
+), availability AS (
+  SELECT group_id,
+         COUNT(*) FILTER (WHERE available)::int AS available_buckets,
+         COUNT(*)::int AS total_buckets
+  FROM bucket_state
+  GROUP BY group_id
+), current_success AS (
+  SELECT group_id,
+         COUNT(*) FILTER (WHERE successful AND observed_at >= ($2::timestamptz - $3::interval)) > 0 AS current_operational,
+         MAX(observed_at) FILTER (WHERE successful) AS source_updated_at
+  FROM events
+  GROUP BY group_id
+), current_samples AS (
+  SELECT group_id,
+         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL AND duration_ms IS NOT NULL) AS ttft_p95_ms,
+         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL AND duration_ms IS NOT NULL) AS latency_p95_ms,
+         COUNT(*) FILTER (WHERE successful AND first_token_ms IS NOT NULL AND duration_ms IS NOT NULL)::int AS sample_count
+  FROM events
+  WHERE bucket_start >= $1 AND bucket_start < $2
+  GROUP BY group_id
+), fallback_bucket AS (
+  SELECT group_id, MAX(bucket_start) AS bucket_start
+  FROM events
+  WHERE successful AND bucket_start < $1
+  GROUP BY group_id
+), fallback_samples AS (
+  SELECT e.group_id,
+         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY e.first_token_ms) FILTER (WHERE e.first_token_ms IS NOT NULL AND e.duration_ms IS NOT NULL) AS ttft_p95_ms,
+         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY e.duration_ms) FILTER (WHERE e.first_token_ms IS NOT NULL AND e.duration_ms IS NOT NULL) AS latency_p95_ms,
+         COUNT(*) FILTER (WHERE e.first_token_ms IS NOT NULL AND e.duration_ms IS NOT NULL)::int AS sample_count
+  FROM events e
+  JOIN fallback_bucket f ON f.group_id = e.group_id AND f.bucket_start = e.bucket_start
+  WHERE e.successful
+  GROUP BY e.group_id
+)
+SELECT g.group_id,
+       a.available_buckets,
+       a.total_buckets,
+       COALESCE(cs.ttft_p95_ms, fs.ttft_p95_ms, 0)::double precision,
+       COALESCE(cs.latency_p95_ms, fs.latency_p95_ms, 0)::double precision,
+       CASE WHEN COALESCE(cs.sample_count, 0) > 0 THEN cs.sample_count ELSE COALESCE(fs.sample_count, 0) END::int,
+       COALESCE(cu.current_operational, FALSE),
+       cu.source_updated_at,
+       (COALESCE(cs.sample_count, 0) = 0 AND fs.sample_count IS NOT NULL AND fs.sample_count > 0) AS metric_fallback
+FROM groups g
+JOIN availability a ON a.group_id = g.group_id
+LEFT JOIN current_samples cs ON cs.group_id = g.group_id
+LEFT JOIN fallback_samples fs ON fs.group_id = g.group_id
+LEFT JOIN current_success cu ON cu.group_id = g.group_id
+ORDER BY g.group_id
+`, start.UTC(), end.UTC(), bucketSize.String(), pq.Array(groupIDs), pq.Array(accountIDs))
+	if err != nil {
+		return nil, fmt.Errorf("query hybrid monitor v4 groups: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			groupID, availableBuckets, totalBuckets, sampleCount int
+			ttftP95, latencyP95                                  float64
+			currentOperational, metricFallback                   bool
+			sourceUpdatedAt                                      sql.NullTime
+		)
+		if err := rows.Scan(&groupID, &availableBuckets, &totalBuckets, &ttftP95, &latencyP95, &sampleCount, &currentOperational, &sourceUpdatedAt, &metricFallback); err != nil {
+			return nil, fmt.Errorf("scan hybrid monitor v4 groups: %w", err)
+		}
+		out[int64(groupID)] = service.MonitorV4GroupProjection{
+			AvailabilityBucketCount: availableBuckets,
+			TotalBucketCount:        totalBuckets,
+			TTFTP95MS:               ttftP95,
+			LatencyP95MS:            latencyP95,
+			SampleCount:             sampleCount,
+			SourceUpdatedAt:         accountMonitorNullableTime(sourceUpdatedAt),
+			CurrentOperational:      currentOperational,
+			MetricFallback:          metricFallback,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate hybrid monitor v4 groups: %w", err)
+	}
+	return out, nil
+}
+
 func accountMonitorNullableTime(value sql.NullTime) *time.Time {
 	if !value.Valid {
 		return nil

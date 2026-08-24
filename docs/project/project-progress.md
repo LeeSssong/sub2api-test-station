@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T39 Responses 流式 413 二次错误映射修复（2026-08-24）：** 状态：`DESIGNING`。用户可见独立顶层任务 `01a031e3-1d55-7351-a6e3-fd0103ba4fbf` 在 `/Users/gongtengxinwen/.codex/worktrees/98b0/sub2api搭建` 开始执行完整规格、计划、TDD、直接相关验证和候选交接。范围仅覆盖应用内 413 的 JSON/Responses SSE 中文语义、机器分类、终止事件与脱敏；不包含 T40、Cloudflare 边缘 HTML、迁移、生产数据或 GitHub Actions。根发布总控保留唯一合并与生产车道。
+
 **根总控更新（2026-08-24）：** T57 已从生产源 `main@f217db218` 通过既有本地/宿主预加载蓝绿链无停机发布，活动槽 `green`；公网三项健康均 200。经营总览 `today`/`7d` 管理员接口、真实 `pending_split` 语义、5 个分组、7 天趋势及前端 `BusinessOverviewView` 资源均线上通过。当前唯一根 worktree 干净；T54/T55/T57 非 main worktree 均已制作并验证完整恢复 bundle 后清理。
 
 **T55 原生额度钱包与手动充值退款账本（2026-08-23）：** 状态：`DONE`。主站维护发布前发现历史 `users.balance < 0` 会触发 T55 钱包迁移 CHECK 失败；已用 RED/GREEN 修复移除付费额度及其流水快照的非负约束，保留技术透支并更新受控迁移路径。根 `main@00291ce98` 已推送并发布，迁移哈希 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`；生产健康、钱包摘要、钱包流水和 T54 设置 API 均验收通过。证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-main-00291ce98-t55-overdraft-fix-production.json`。

@@ -21,6 +21,15 @@ func TestProjectNativeUserErrorCategories(t *testing.T) {
 		{"bad request", NativeUserErrorInput{Status: 400, Type: "invalid_request_error", Message: "Failed to parse request body"}, "请求参数或格式不正确，请检查后重试。"},
 		{"too large", NativeUserErrorInput{Status: 413, Type: "invalid_request_error", Message: "request body too large"}, "请求内容过大，请缩短内容后重试。"},
 		{"selected account too large", NativeUserErrorInput{Status: 413, Type: "invalid_request_error", Message: "proxy limit secret=must-not-leak", Stage: "upstream", Ownership: "provider", AccountSelected: true}, "请求内容过大，请缩短内容后重试。"},
+		{"payment required", NativeUserErrorInput{Status: 402, Type: "payment_required", Message: "payment required", AccountSelected: true}, "余额或额度不足，请充值或检查额度后重试。"},
+		{"insufficient storage", NativeUserErrorInput{Status: 507, Type: "api_error", Message: "Insufficient Storage", AccountSelected: true}, "服务资源暂时不足，请稍后重试。"},
+		{"cloudflare unknown", NativeUserErrorInput{Status: 520, Type: "upstream_error", Message: "unknown web server returned an unknown error", AccountSelected: true}, "服务暂时异常，请稍后重试。"},
+		{"cloudflare down", NativeUserErrorInput{Status: 521, Type: "upstream_error", Message: "Web server is down", AccountSelected: true}, "上游服务暂时不可用，请稍后重试。"},
+		{"cloudflare connect timeout", NativeUserErrorInput{Status: 522, Type: "upstream_error", Message: "Connection timed out", AccountSelected: true}, "连接上游服务超时，请稍后重试。"},
+		{"cloudflare unreachable", NativeUserErrorInput{Status: 523, Type: "upstream_error", Message: "Origin is unreachable", AccountSelected: true}, "上游服务暂时不可达，请稍后重试。"},
+		{"cloudflare origin timeout", NativeUserErrorInput{Status: 524, Type: "upstream_error", Message: "A timeout occurred", AccountSelected: true}, "上游服务处理超时，请稍后重试。"},
+		{"cloudflare ssl", NativeUserErrorInput{Status: 525, Type: "upstream_error", Message: "SSL handshake failed", AccountSelected: true}, "上游安全连接失败，请稍后重试。"},
+		{"client closed", NativeUserErrorInput{Status: 499, Type: "client_closed", Message: "client closed request"}, "请求上传中断，请检查网络后重试。"},
 		{"local capacity", NativeUserErrorInput{Status: 503, Type: "local_capacity_exhausted", Message: "No available accounts"}, "服务暂时繁忙，请稍后重试。"},
 		{"selected account balance", NativeUserErrorInput{Status: 429, Type: "upstream_error", Message: "insufficient account balance", AccountSelected: true}, "服务暂时异常，请稍后重试。"},
 		{"provider overload", NativeUserErrorInput{Status: 529, Type: "upstream_error", Message: "Upstream overloaded", AccountSelected: true}, "服务暂时繁忙，请稍后重试。"},
@@ -31,6 +40,21 @@ func TestProjectNativeUserErrorCategories(t *testing.T) {
 			got := ProjectNativeUserError(tt.input)
 			require.Equal(t, tt.want, got.Message)
 			require.NotEmpty(t, got.Type)
+		})
+	}
+}
+
+func TestProjectNativeUserErrorStatusMarkersWinOverSelectedAccountFallback(t *testing.T) {
+	for _, tt := range []struct {
+		name, message, want string
+	}{
+		{"payment marker", "payment required by upstream", "余额或额度不足，请充值或检查额度后重试。"},
+		{"storage marker", "insufficient storage capacity", "服务资源暂时不足，请稍后重试。"},
+		{"timeout marker", "origin connection timed out", "连接上游服务超时，请稍后重试。"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ProjectNativeUserError(NativeUserErrorInput{Type: "upstream_error", Message: tt.message, AccountSelected: true})
+			require.Equal(t, tt.want, got.Message)
 		})
 	}
 }

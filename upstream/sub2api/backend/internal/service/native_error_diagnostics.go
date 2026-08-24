@@ -87,6 +87,21 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 		detail.Message, detail.Type, detail.Source, detail.UpstreamErrorMessage, detail.UpstreamErrorDetail,
 		detail.DiagnosisUpstreamErrorMessage, detail.DiagnosisUpstreamErrorDetail,
 	}, " "))
+	status := 0
+	if detail.UpstreamStatusCode != nil {
+		status = *detail.UpstreamStatusCode
+	} else {
+		status = detail.StatusCode
+	}
+	if (status == 499 || containsAnyNativeErrorMarker(text, "client closed", "client disconnected", "upload interrupted", "broken pipe")) &&
+		(strings.EqualFold(strings.TrimSpace(detail.Phase), "request") || status == 499) {
+		return NativeErrorClassUploadInterrupted
+	}
+	if !accountSelected && strings.EqualFold(strings.TrimSpace(detail.Phase), "request") &&
+		(strings.EqualFold(strings.TrimSpace(detail.Owner), "client") &&
+			(status == 402 || containsAnyNativeErrorMarker(text, "payment required", "payment_required", "insufficient balance", "account balance", "quota exhausted", "billing required"))) {
+		return NativeErrorClassLocalLimit
+	}
 	if !accountSelected && detail.Phase == "request" &&
 		(strings.Contains(text, "failed to read request body") ||
 			strings.Contains(text, "request body read") ||
@@ -109,10 +124,7 @@ func classifyNativeError(detail *OpsErrorLogDetail) string {
 	if (!accountSelected && localLimitEvidence) || selectedLocalLimitEvidence {
 		return NativeErrorClassLocalLimit
 	}
-	status := 0
-	if detail.UpstreamStatusCode != nil {
-		status = *detail.UpstreamStatusCode
-	} else if accountSelected {
+	if detail.UpstreamStatusCode == nil && accountSelected {
 		// List queries expose COALESCE(upstream_status_code, status_code) as
 		// StatusCode, while detail queries retain the original upstream field.
 		status = detail.StatusCode
@@ -212,7 +224,7 @@ func nativeLocalLimitExplanation(detail *OpsErrorLogDetail) (code, meaning, sugg
 		text = strings.ToLower(strings.Join([]string{detail.Message, detail.Source}, " "))
 	}
 	if errType == "billing_error" || errType == "subscription_error" || containsAnyNativeErrorMarker(text,
-		"balance", "quota", "usage limit", "subscription", "额度", "限额") {
+		"balance", "quota", "usage limit", "subscription", "payment required", "payment_required", "额度", "限额") {
 		return "LOCAL_LIMIT", "额度或订阅不可用", "请检查余额、额度或订阅状态"
 	}
 	if errType == "cyber_policy" || containsAnyNativeErrorMarker(text,

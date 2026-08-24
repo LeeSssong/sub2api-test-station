@@ -25,6 +25,23 @@ func TestGatewayErrorResponseProjectsLocalBalanceToChinese(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "Insufficient balance")
 }
 
+func TestGatewayErrorResponseProjectsApplication402WithoutUpstreamLeak(t *testing.T) {
+	c, recorder := nativeUserErrorTestContext(t, "/v1/messages")
+	c.Set(opsAccountIDKey, int64(23))
+	(&GatewayHandler{}).errorResponse(c, http.StatusPaymentRequired, "payment_required", "payment required provider=https://secret.example")
+	require.Contains(t, recorder.Body.String(), "余额或额度不足，请充值或检查额度后重试。")
+	require.NotContains(t, recorder.Body.String(), "secret.example")
+}
+
+func TestResponsesStreamErrorProjectsApplication524WithoutUpstreamLeak(t *testing.T) {
+	c, recorder := nativeUserErrorTestContext(t, "/v1/responses")
+	c.Set(opsAccountIDKey, int64(23))
+	(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, 524, "upstream_error", "A timeout occurred request_id=req_secret", true)
+	require.Contains(t, recorder.Body.String(), "event: response.failed")
+	require.Contains(t, recorder.Body.String(), "上游服务处理超时，请稍后重试。")
+	require.NotContains(t, recorder.Body.String(), "req_secret")
+}
+
 func TestOpenAIErrorResponseHidesSelectedAccountEvidence(t *testing.T) {
 	c, recorder := nativeUserErrorTestContext(t, "/v1/chat/completions")
 	c.Set(opsAccountIDKey, int64(23))

@@ -5,14 +5,14 @@
 
 ## 任务
 
-- [ ] 1. 在 `upstream/sub2api/backend/internal/service/native_user_error_projection_test.go` 先加入 RED：402、507、520–525 的状态/关键词/正文矩阵、已选账号优先级、敏感正文不泄露，以及 499 用户语义。
-- [ ] 2. 在 `upstream/sub2api/backend/internal/service/native_user_error_projection.go` 实现最小状态与 marker 映射；保持 T39 的 413 优先、机器 type/code 保留和统一安全过滤。
-- [ ] 3. 在 `upstream/sub2api/backend/internal/service/native_error_diagnostics_test.go` 先加入 RED：499 `upload_interrupted`、402 本地额度/上游边界、507 与 520–525 的状态/正文分类和列表/详情一致性。
-- [ ] 4. 在 `upstream/sub2api/backend/internal/service/native_error_diagnostics.go` 扩展既有分类/解释函数，不新增诊断 class，不改变管理员脱敏边界。
-- [ ] 5. 在 `upstream/sub2api/backend/internal/handler` 相关直接测试加入 JSON、通用 SSE、Responses SSE 的映射合同；确认唯一 `response.failed`、机器 code 和用户消息，不回归 T39 413。
-- [ ] 6. 运行直接相关 Go 测试，修复失败并保持 TDD GREEN；运行 `go build ./cmd/server`、`gofmt`、`git diff --check`。
-- [ ] 7. 做 diff/范围自审：确认仅规格、计划、handoff、service/handler 测试与实现变更；无迁移、配置、前端、生产、GitHub Actions 或全局队列/总账变更。
-- [ ] 8. 写 handoff，绑定基线、最终 HEAD、变更文件、测试证据、未验证项、迁移/配置、`downtime_required` 预期、回滚和剩余风险；提交干净候选并将状态写为 `READY_FOR_ROOT_REVIEW`。
+- [x] 1. 在 `upstream/sub2api/backend/internal/service/native_user_error_projection_test.go` 先加入 RED：402、507、520–525 的状态/关键词/正文矩阵、已选账号优先级、敏感正文不泄露，以及 499 用户语义。
+- [x] 2. 在 `upstream/sub2api/backend/internal/service/native_user_error_projection.go` 实现最小状态与 marker 映射；保持 T39 的 413 优先、机器 type/code 保留和统一安全过滤。
+- [x] 3. 在 `upstream/sub2api/backend/internal/service/native_error_diagnostics_test.go` 先加入 RED：499 `upload_interrupted`、402 本地额度/上游边界、507 与 520–525 的状态/正文分类和列表/详情一致性。
+- [x] 4. 在 `upstream/sub2api/backend/internal/service/native_error_diagnostics.go` 扩展既有分类/解释函数，不新增诊断 class，不改变管理员脱敏边界。
+- [x] 5. 在 `upstream/sub2api/backend/internal/handler` 相关直接测试加入 JSON、通用 SSE、Responses SSE 的映射合同；确认唯一 `response.failed`、机器 code 和用户消息，不回归 T39 413。
+- [x] 6. 运行直接相关 Go 测试，修复失败并保持 TDD GREEN；运行 `go build ./cmd/server`、`gofmt`、`git diff --check`。
+- [x] 7. 做 diff/范围自审：确认仅规格、计划、handoff、service/handler 测试与实现变更；无迁移、配置、前端、生产、GitHub Actions 或全局队列/总账变更。
+- [x] 8. 写 handoff，绑定基线、最终 HEAD、变更文件、测试证据、未验证项、迁移/配置、`downtime_required` 预期、回滚和剩余风险；提交干净候选并将状态写为 `READY_FOR_ROOT_REVIEW`。
 
 ## 验证命令
 

@@ -28,11 +28,11 @@
 
 ## 当前新增任务（2026-08-23，T54 分组调度策略与乐观体验卡）
 
-> 根总控状态：`INTEGRATING`；合并提交 `04a146e08` 已进入根 `main`，待推送、发布预检、蓝绿部署和线上专项验收。
+> 根总控状态：`DONE`；合并提交 `04a146e08` 已随之后生产版本持续生效。
 
 > 生产收口：状态 `DONE`。已推送 `main@67a41463fdadc4ef05dc1b97c52bc0a328586c37`，测试树 `8a5e5a8a2396fcb509f801a511a99a47f4e2556c`；预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`。宿主记录 `/var/lib/sub2api/release-records/20260822T204341Z-production-3918367.json` 的 requested source/tree/tested tree 与本次发布一致；公网 `/healthz`、`/readyz`、`/health` 均 200，管理员设置 API 读取 200，乐观监控资源验收通过。无迁移、无配置 schema 变化、无生产数据写入、无 GitHub Actions。
 
-- **T54 分组调度策略与乐观体验卡**：状态 `IMPLEMENTING`。范围锁定为按分组配置调度策略：权值覆盖与公平调度二选一；公平模式提供特惠、均衡、Pro 三个预设并自动回填权值；公平探索增加最长闲置保护，继续复用原生 S1/S2、sticky、并发和故障域边界。体验卡只展示乐观可用性、首字速度、平均耗时和成功时间线，不展示探测样本数、失败数、失败原因、失败状态或探测旁证；主动探测仅保留后台资格和健康判定用途。规格与计划已获用户确认，独立 worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t54-group-scheduler-policy`、分支 `codex/t54-group-scheduler-policy` 使用 fresh subagent 逐任务实施；尚未合并、推送、部署或线上验收。预计无迁移、无生产数据写入，`downtime_required=false`。
+- **T54 分组调度策略与乐观体验卡**：状态 `DONE`。原合并提交 `04a146e08` 与生产收口 `main@67a41463` 均为当前 `main` 祖先；其调度策略、乐观体验卡和后续 T54-R1/R2 修订已持续包含在当前生产源。原生产记录 `/var/lib/sub2api/release-records/20260822T204341Z-production-3918367.json` 为 `succeeded/promoted`、`downtime_required=false`，后续 T57 生产源 `main@f217db218` 继续包含该功能。
 
 ## 当前新增任务（2026-08-22，T53 管理员隔离测试站）
 
@@ -52,7 +52,7 @@
 
 ## 当前新增任务（2026-08-22，T50 Monitor V2 可用性字段文案精简）
 
-- **T50 Monitor V2 可用性字段文案精简**：状态 `READY_FOR_ROOT_REVIEW`。用户确认移除性能监测服务行中的“运行中”状态胶囊，并在可用率百分比旁增加小号“可用性”字段说明；范围仅限 `MonitorV2GroupCard` 展示结构、既有 locale 和直接相关组件测试，不改 API、状态计算、时间线、数据源、迁移或配置。候选 `codex/t50-monitor-availability-label@041af7d072acbab09ed86c006426504be2638a30` 已合并到根 `main@461844764018250d8dd878573082dccbcd0ebd72`；Monitor V2 9 个测试文件 43/43、`pnpm typecheck`、`pnpm build`、`git diff --check` 通过。无迁移、无配置和生产数据变更；待根门禁、推送、无停机发布和线上验收。
+- **T50 Monitor V2 可用性字段文案精简**：状态 `DONE`。合并提交 `main@461844764` 为当前 `main` 祖先并已随多个后续版本生产生效；当前 `MonitorV2GroupCard` 专项测试通过，生产 `MonitorV2RouteView` 资源包含 `availabilityLabel` 且不含 `monitor-group-status`。功能保持仅移除“运行中”状态胶囊并增加“可用性”标签，无 API、数据源、迁移、配置或生产数据变化。
 
 ## 当前新增任务（2026-08-22，T49 失败流水展示热修）
 

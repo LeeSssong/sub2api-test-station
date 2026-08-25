@@ -1,5 +1,10 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前进行中任务（2026-08-25，T65/T66）
+
+- **T65 账号监控历史最终结果回退**：状态 `DESIGNING`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间。不新增事实源。
+- **T66 Responses 安全切号与账号故障隔离**：状态 `DESIGNING`。范围仅包括余额不足账号立即隔离、502/503 账号短时冷却与请求级排除，以及 Responses 仅在 `response.failed` 且无 usage/扣费/语义输出时同请求切号；已产生 usage、扣费或 `unsafe_to_replay` 时禁止切号。
+
 ## 当前进行中任务（2026-08-25，T64 用户导航与账号监控混合证据）
 
 - **T64 用户导航与账号监控混合证据**：状态 `DONE`。隐藏用户“我的订阅”菜单，统一“分组性能监控”文案，将分组性能监控默认时间窗改为 24 小时，移除管理员“经营分析-账号盈利”菜单挂载；同时将账号监控质量数据从仅主动探测改为真实调用与主动探测混合聚合；P95 改为秒单位并保留两位小数。保留相关路由、页面、API 和代码。原始基线 `main@fbe32c725`，发布前已刷新至 `main@6c632e036`，候选 `codex/t64-nav-monitor-hybrid@48041f572`，根合并提交 `main@1140e3563` 已推送。直接相关测试、typecheck、build、diff-check 已通过；测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-1140e3563-t64.json`。生产发布记录 `/var/lib/sub2api/release-records/20260825T100637Z-production-3355302.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均返回 HTTP 200。登录态线上验收确认用户导航无“我的订阅”、经营分析展开后无“账号盈利”、导航显示“分组性能监控”，页面默认选中“24 小时”且展示秒单位指标。无迁移、配置或生产数据写入。

@@ -89,7 +89,7 @@
               <button class="w-full cursor-help text-left" type="button" :title="scoreTooltip" :aria-label="scoreTooltip">
                 <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ scoreTitle }}</div>
                 <div class="mt-1 flex items-baseline gap-1.5"><strong class="font-mono text-2xl font-semibold text-gray-900 dark:text-white">{{ scoreLabel }}</strong><span class="text-xs font-semibold text-gray-500 dark:text-slate-400">/ 100</span></div>
-        <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400">{{ evidenceDetail }}</p>
+        <p class="mt-2 text-[10px] text-gray-500 dark:text-slate-400" data-test="score-evidence-detail">{{ evidenceDetail }}</p>
               </button>
             </template>
             <div data-test="score-breakdown-tooltip">{{ scoreTooltip }}</div>
@@ -348,6 +348,9 @@ const statusHeaderClass = computed(() => ({
   'border-red-100 bg-red-50 dark:border-red-900/50 dark:bg-red-950/20': statusLabel.value === '不可用',
 }))
 const evidenceDetail = computed(() => {
+  if (props.account.evidence_source === 'historical_final') {
+    return `${t('admin.accounts.monitor.historyFallback')} · ${t('admin.accounts.monitor.historyFallbackAt')} ${checkedAtLabel.value}`
+  }
   return props.account.quality_score == null ? '评分暂不可用' : '当前服务表现'
 })
 const manualCost = computed(() => {
@@ -409,6 +412,7 @@ const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetectio
 const modelDetectionStatusHint = computed(() => {
   if (modelDetectionStatus.value === 'service_unconfigured') return t('admin.accounts.modelDetection.detectorUnconfigured')
   if (modelDetectionStatus.value === 'service_unavailable') return t('admin.accounts.modelDetection.detectorUnavailable')
+  if (props.account.model_detection?.recent?.source === 'historical_final') return t('admin.accounts.modelDetection.historicalFallback')
   return modelDetectionStatus.value === 'abnormal' ? t('admin.accounts.modelDetection.observedAbnormal') : props.account.model_detection?.recent?.error_message ?? t('admin.accounts.modelDetection.viewRecent')
 })
 const modelDetectionStatusClass = computed(() => ({ 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': modelDetectionStatus.value === 'normal', 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': ['queued', 'running', 'abnormal', 'insufficient'].includes(modelDetectionStatus.value), 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': ['failed', 'service_unavailable'].includes(modelDetectionStatus.value), 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': ['untested', 'unsupported', 'service_unconfigured'].includes(modelDetectionStatus.value) }))

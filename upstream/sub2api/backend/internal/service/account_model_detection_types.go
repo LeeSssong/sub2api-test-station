@@ -53,6 +53,7 @@ type AccountModelDetectionSummary struct {
 	StartedAt             *time.Time     `json:"started_at,omitempty"`
 	FinishedAt            *time.Time     `json:"finished_at,omitempty"`
 	RunID                 string         `json:"run_id,omitempty"`
+	Source                string         `json:"source,omitempty"`
 }
 
 type AccountModelDetectionProjection struct {
@@ -61,6 +62,7 @@ type AccountModelDetectionProjection struct {
 	Settings      AccountModelDetectionSettings      `json:"settings"`
 	ModelOptions  []AccountModelDetectionModelOption `json:"model_options"`
 	Recent        *AccountModelDetectionSummary      `json:"recent,omitempty"`
+	Current       *AccountModelDetectionSummary      `json:"current,omitempty"`
 }
 
 type AccountModelDetectionRun struct {

@@ -4,9 +4,9 @@
 
 - **T64 用户导航与账号监控混合证据**：状态 `IMPLEMENTING`。隐藏用户“我的订阅”菜单，统一“分组性能监控”文案，将分组性能监控默认时间窗改为 24 小时，移除管理员“经营分析-账号盈利”菜单挂载；同时将账号监控质量数据从仅主动探测改为真实调用与主动探测混合聚合。保留相关路由、页面、API 和代码。基线 `main@fbe32c725`；候选 worktree `.worktrees/t64-nav-monitor-hybrid`，预期 `downtime_required=false`，无迁移、配置或生产数据写入；尚未合并、推送、部署或线上验收。
 
-## 当前发布任务（2026-08-25，T63 经营总览移除待确认并统一空值为 0）
+## 当前完成任务（2026-08-25，T63 经营总览移除待确认并统一空值为 0）
 
-- **T63 经营总览移除待确认并统一空值为 0**：状态 `INTEGRATING`。用户已确认重新设计：经营总览不再使用“待确认/口径待确认”语义；站内收入直接复用 `usage_logs.actual_cost`，上游成本继续复用 Sub 原生有效账号成本表达式，毛利与毛利率始终计算，时间范围内无充值/消费/成本记录统一按 ¥0.00 展示；历史充值不回填、不参与收入判断。基线 `main@fbe32c725`；候选 worktree `.worktrees/t63-business-overview-zero-default`，分支 `codex/t63-business-overview-zero-default`，候选提交 `a7eb7e6a7`；暂无迁移、配置或生产数据写入，预期 `downtime_required=false`。已完成候选专项验证，正在合入主分支。
+- **T63 经营总览移除待确认并统一空值为 0**：状态 `DONE`。用户已确认重新设计：经营总览不再使用“待确认/口径待确认”语义；站内收入直接复用 `usage_logs.actual_cost`，上游成本继续复用 Sub 原生有效账号成本表达式，毛利与毛利率始终计算，时间范围内无充值/消费/成本记录统一按 ¥0.00 展示；历史充值不回填、不参与收入判断。实现已合入并推送 `main@89fe934e5623b6bb915bc5904429c32adb49cb1b`；发布证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-89fe934e-t63-business-overview-production.json`；宿主记录 `/var/lib/sub2api/release-records/20260825T092426Z-production-3258944.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 200，经营总览 `today` 管理员接口返回 `revenue_status=confirmed`、收入/成本/毛利/毛利率数值、pending counters 为 0，趋势 1 天、分组 4 个，无可见“待确认”文案。无迁移、配置或生产数据写入；候选已归档后清理。
 
 ## 当前返修任务（2026-08-25，T62 第四套性能监测深色主题与呼吸动效优化）
 

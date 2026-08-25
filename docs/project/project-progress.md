@@ -1,6 +1,16 @@
 # 项目全局进度总账
 
+**T59 第四套混合性能监测（2026-08-25）：** 状态：`INTEGRATING`。候选 `codex/t59-hybrid-monitor-v4@35926b400` 已快进合入根 `main`，包含四模式设置、主动探测与严格真实请求五分钟统一聚合、P95 性能指标、`/monitor-v4` API、呼吸圆环卡片和直接相关测试；当前等待合并后发布门禁与生产线上验证。
+
+**T58 主站经营分析与原生额度能力推广（2026-08-25）：** 状态：`DONE`。最新 `main@2df7882820bb6407ab33e3ef239d746d383fa406` 已推送并通过既有预加载蓝绿链无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260824T175402Z-production-1252623.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`。发布前修复了已批准的 Caddy 路由状态漂移：按 release-state 将现有 Caddy 容器内上游从 blue 受控 reload 到 green，容器 ID 未变；正式发布后 Caddy、PostgreSQL、Redis 身份均保持不变。0600 测试证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2df788282-t58-business-quota-v2.json`，经营总览、原生额度钱包/充值退款/消费算法直接测试、迁移兼容测试、后端构建、前端专项测试、typecheck、production build 和 diff-check 均通过。线上 `/healthz`、`/readyz`、`/health` 均返回真实 JSON `200`；管理员经营总览 `today`、用户额度摘要/额度流水 API 均 `200` 且有真实数据；生产前端资源包含 `BusinessOverviewView`。经营分析继续复用 `usage_logs` 与 T55 原生钱包/账本，未引入第二账务源；根工作区既有未提交文档改动原样保留。
+
+**第二终端 Codex SSH 接入（2026-08-24）：** 状态：已配置并验证。为另一台终端生成独立 Ed25519 公钥并加入生产 \`ubuntu\` 用户的 \`authorized_keys\`；只读验证新密钥登录成功且 \`sudo -n\` 可用。私钥、known-hosts 和传输 bundle 均保存在本机受限目录，不进入仓库或聊天；非秘密接入手册见 \`docs/runbooks/sub2api-secondary-codex-access.md\`，可移交 bundle 为 \`~/.config/sub2api/codex-secondary-access-20260824-portable.tgz\`（SHA-256：\`7415b8db577f804c50e7e5f515309e3e8c27fb455fa66002fd4226394ff5d635\`）。撤销标识：公钥注释 \`codex-secondary-sub2api-20260824\`。
+
 **最终状态审计（2026-08-24）：** 当前任务队列的全部任务包均已标记 `DONE`，没有仍需合并、推送、部署或线上验收的当前任务；本文件后部早期日期的“进行中/准备完成”条目是历史过程快照，不覆盖当前队列和本段最新收口记录。根 `main` 与 `origin/main` 同步，唯一 worktree 干净，最新生产发布为 T40 的 `succeeded/promoted` 记录。
+
+**T58 充值错误详情显示修复（2026-08-24）：** 状态：已部署测试站并验证生效（主站未变更）。用户反馈隔离 admin-lab 手动充值确认后仅显示通用“错误”；已确认前端 Axios 业务错误对象与 `UserBalanceModal` 的读取契约不一致，导致后端 `message/reason/metadata` 被吞掉。候选提交 `5650eb0fc3d2082a9656ddf989fd1a9d53272ef5` 在 `abca9bf4f` 基础上新增仅针对 `227_user_quota_wallet_ledger.sql` 已知历史 checksum 的精确兼容白名单与回归测试；不修改迁移 SQL、不写钱包账务、不执行真实充值/退款。直接验证：前端组件 1/1、API client/admin users 27/27、后端迁移/校验测试、`go build ./cmd/server`、typecheck、production build、`git diff --check` 均通过。测试站发布链返回 `result=succeeded`、`downtime_required=false`、`lab_html_contract=passed`；API、worker、frontend、gateway、PostgreSQL、Redis、mock upstream、mock payment 全部 healthy，运行镜像为 `release-5650eb0fc3d2082a9656ddf989fd1a9d53272ef5`。公网 `/admin/lab/` 302 到 `/admin/lab/login`，登录页 200 且使用 `/admin/lab/assets/`；登录态只读验收 `auth/me`、用户列表和额度摘要均 200，摘要为 paid=21、gift=0、total=21。当前候选工作区：`.worktrees/t58-recharge-error-display`，分支：`codex/t58-recharge-error-display`；未合并到主站、未推送生产。
+
+**性能监测计算口径说明文档（2026-08-24）：** 状态：准备完成。已以线上 `/custom/performance-monitor` 页面、服务监控卡片/时间线和 CodexRadar 推荐区的实际可见字段与接口契约为准，重写页面专属计算口径说明。仅新增 `docs/product/performance-monitoring-calculation.md`，未修改运行时代码、数据库、配置或生产数据。当前工作区：根 `main`。该文档未推送、部署或线上验收。
 
 **T40 错误码/边缘错误中文映射补齐（2026-08-24）：** 状态：`DONE`。候选 `bcf78cfe6785698e2e9906116023ac79cba85d13` 已合并为 `main@f3f3d6b40`、推送并通过无停机预加载蓝绿发布；宿主记录 `/var/lib/sub2api/release-records/20260824T044525Z-production-3857843.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`。应用侧 402、507、520–525 JSON/SSE 中文投影、499 上传中断、管理员诊断脱敏和健康端点已验收；Cloudflare 边缘 HTML 413 不在范围。
 

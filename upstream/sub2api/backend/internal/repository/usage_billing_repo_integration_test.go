@@ -65,6 +65,13 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
 	require.InDelta(t, 98.75, balance, 0.000001)
 
+	var usageConsumptionLedgerCount int
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM user_quota_ledger_entries WHERE user_id = $1 AND record_type = 'usage_consumption'",
+		user.ID,
+	).Scan(&usageConsumptionLedgerCount))
+	require.Zero(t, usageConsumptionLedgerCount)
+
 	var quotaUsed float64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT quota_used FROM api_keys WHERE id = $1", apiKey.ID).Scan(&quotaUsed))
 	require.InDelta(t, 1.25, quotaUsed, 0.000001)

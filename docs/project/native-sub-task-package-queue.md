@@ -4,9 +4,9 @@
 
 - **T71 调度设置独立页面与交互修复**：状态 `DESIGNING`。修复 T68 已上线页面的选中态与预览反馈，并将调度配置从 `系统设置 -> 网关服务` 移到管理员独立路由 `/admin/scheduler-settings`，侧栏文案为“调度设置”。继续复用 Sub2API 原生管理员权限、现有 settings API 及 `openai_advanced_scheduler_*` 字段；不改变调度算法、服务不中断护栏、数据库、配置事实源或生产数据。已确认视觉契约：以 T68 交互稿为基础的紧凑单卡工作台、清晰选中与焦点态、场景化预览、浅深色自适应和移动端单列。规格和实施计划待用户审阅批准；当前未创建候选、未进入合并、部署或线上验收车道。T69 发布记录虽标记待根审，其候选提交已在当前 `main` 祖先链中，根总控须先独立核对该历史状态，T71 不与其合并发布。
 
-## 当前设计任务（2026-08-26，T70）
+## 已完成任务（2026-08-25，T70）
 
-- **T70 账号检测分层监测与记录面板**：状态 `INTEGRATING`，当前等待停机授权。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已基于 `main@7e33e50d2` 完成功能实现、直接相关测试和交接，并已合并推送为 `main@1fc442b41`。基于 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1），接入 medium 日常、low 手动、high 异常升级，新增结构化证据字段、228 迁移、历史 `limit/cursor/status/profile/mode` 查询和桌面抽屉/窄屏时间线面板；旧记录保持 historical/unknown，敏感字段不落库或渲染。Go 直接相关测试、server build、前端 103 项检测相关测试、typecheck、production build、gofmt 与 diff-check 通过。发布预检已返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒；发布链在停服前停止，尚未部署或线上验收。继续发布需要用户明确停机授权。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。许可边界保持不变：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；未配置合法制品时保持“检测器未接入”语义。
+- **T70 账号检测分层监测与记录面板**：状态 `DONE`。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已合并并推送为 `main@a5fb192a1a1ea52e0f34858a0a0ae7d86f891df6`，tested tree `b49c6e8b65a2552e0779d498a205ac44e2808e52`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-a5fb192a1-t70.json`，迁移哈希 `59628d84dd909c8a91949eab2015dc216a8fe76027a2bcc8c996b504eb055e80`。基于 `chen-006/gpt56_api_detector` v4.1.1 接入 medium 日常、low 手动、high 异常升级，新增结构化证据字段、228 迁移、历史 `limit/cursor/status/profile/mode` 查询和桌面抽屉/窄屏时间线面板；旧记录保持 historical/unknown，敏感字段不落库或渲染。Go/前端直接相关测试、server build、typecheck、production build、gofmt/diff-check，以及 T70 维护迁移白名单和发布控制器合同测试通过。授权停机发布已通过既有蓝绿维护路径生效，宿主记录 `/var/lib/sub2api/release-records/20260825T182804Z-production-260083.json` 为 `succeeded/promoted`、`rolled_back=false`、活动槽 `blue`；登录态线上确认桌面表格抽屉、移动时间线、详情展开和 390px 无横向溢出。许可边界保持不变：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；未配置合法制品时保持“检测器未接入”语义。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。
 
 ## 当前待根审任务（2026-08-25，T69）
 

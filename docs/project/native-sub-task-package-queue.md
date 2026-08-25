@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前设计任务（2026-08-26，T70）
+
+- **T70 账号检测分层监测与记录面板**：状态 `DESIGNING`。基于 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1）与现有 Sub 原生账号监控/模型检测 sidecar，目标是将中档作为日常监测、低档作为手动快速复核、高档作为异常升级，并把“点击查看最近 xxx”改为完整检测记录面板。用户已确认响应式混合形态：桌面右侧抽屉使用表格列表并展开双证据详情，窄屏切换为全屏时间线。规格书待用户审阅；未进入实施、合并、部署或线上验收车道。许可边界：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；执行器继续通过私网 sidecar 合同接入，未配置合法制品时保持“检测器未接入”语义。
+
 ## 当前待根审任务（2026-08-25，T69）
 
 - **T69 账号监控证据与评分回退**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t69-account-monitor-evidence-fallback@861113395` 已完成直接相关 service/repository/admin 测试、`go build ./cmd/server` 与 `git diff --check`；尚未推送、部署或线上验收。此前并发产生的本地合并提交 `474ddb2af` 已由根总控可逆回退，保留恢复分支 `codex/t69-unapproved-merge-preserved`，未进入 T67 生产源。真实调用样本来源区分 `real_request`/`monitor_probe`/`hybrid`，没有新鲜主动探测时不参与当前排名；历史最终评分可供暂停/不可调度账号展示但不改变调度资格；`evidence_insufficient` 与历史最终状态分开表达。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。

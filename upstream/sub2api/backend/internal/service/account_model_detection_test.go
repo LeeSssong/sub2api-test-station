@@ -172,6 +172,32 @@ func TestProjectionKeepsOAuthUnsupportedEvenWithHistoricalResult(t *testing.T) {
 	}
 }
 
+func TestProjectionUsesLatestCompletedFinalDetectionWhenCurrentEvidenceIsInsufficient(t *testing.T) {
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
+	now := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
+	currentFinished := now.Add(-time.Minute)
+	previousFinished := now.Add(-time.Hour)
+	repo := &detectionRepoStub{recent: []AccountModelDetectionRun{
+		{ID: "current", AccountID: 7, Status: AccountModelDetectionStatusInsufficient, ModelID: "gpt-5.6-sol", ClaimedModel: "gpt-5.6-sol", FinishedAt: &currentFinished, QueuedAt: currentFinished.Add(-time.Second)},
+		{ID: "previous", AccountID: 7, Status: AccountModelDetectionStatusNormal, ModelID: "gpt-5.6-sol", ClaimedModel: "gpt-5.6-sol", JuiceStatus: "ok", DetectorVersion: "detector-1", FinishedAt: &previousFinished, QueuedAt: previousFinished.Add(-time.Second)},
+	}}
+	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{account: account}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
+
+	projection, err := svc.ProjectionForAccount(context.Background(), account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Status != AccountModelDetectionStatusInsufficient {
+		t.Fatalf("current status = %q, want insufficient", projection.Status)
+	}
+	if projection.Recent == nil || projection.Recent.RunID != "previous" || projection.Recent.Source != "historical_final" {
+		t.Fatalf("effective recent = %#v, want previous historical final", projection.Recent)
+	}
+	if projection.Current == nil || projection.Current.RunID != "current" || projection.Current.Status != AccountModelDetectionStatusInsufficient {
+		t.Fatalf("current projection = %#v", projection.Current)
+	}
+}
+
 func TestCatalogFailureIsCachedForFiveMinutes(t *testing.T) {
 	sidecar := &detectionSidecarStub{catalogErr: errors.New("offline")}
 	svc := NewAccountModelDetectionService(&detectionRepoStub{}, &detectionAccountReaderStub{}, sidecar)

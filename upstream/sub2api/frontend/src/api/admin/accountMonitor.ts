@@ -239,6 +239,7 @@ export interface AccountModelDetectionSummary {
   started_at?: string
   finished_at?: string
   run_id?: string
+  source?: 'current' | 'historical_final' | string
 }
 
 export interface AccountModelDetectionProjection {
@@ -247,6 +248,7 @@ export interface AccountModelDetectionProjection {
   settings: AccountModelDetectionSettings
   model_options: AccountModelDetectionModelOption[]
   recent?: AccountModelDetectionSummary | null
+  current?: AccountModelDetectionSummary | null
 }
 
 export interface AccountModelDetectionModelsResponse {

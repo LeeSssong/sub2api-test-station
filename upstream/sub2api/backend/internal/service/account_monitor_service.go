@@ -433,12 +433,21 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor probe aggregates: %w", err)
 	}
 	recommendationAggregates := probeAggregates
+	historicalAggregates := map[int64]AccountMonitorAggregate(nil)
 	if rangeValue != AccountMonitorRange7Days {
 		recommendationSince := observedAt.Add(-7 * 24 * time.Hour)
 		recommendationAggregates, err = s.repo.ListAggregates(ctx, ids, recommendationSince, observedAt)
 		if err != nil {
 			slog.WarnContext(ctx, "account monitor recommendation probe aggregates unavailable", "error", err)
 			recommendationAggregates = nil
+		}
+		historicalAggregates = recommendationAggregates
+	} else {
+		historicalSince := observedAt.Add(-30 * 24 * time.Hour)
+		historicalAggregates, err = s.repo.ListAggregates(ctx, ids, historicalSince, observedAt)
+		if err != nil {
+			slog.WarnContext(ctx, "account monitor historical score aggregates unavailable", "error", err)
+			historicalAggregates = nil
 		}
 	}
 	latest, err := s.repo.ListLatest(ctx, ids)
@@ -507,9 +516,9 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		rows = append(rows, row)
 	}
 
-	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, latest, settings, observedAt, globalWeights)
+	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
-	groups = s.projectGroupWindowQuality(groups, accounts, rows, windowAggregates, probeAggregates, latest, settings, since, observedAt)
+	groups = s.projectGroupWindowQuality(groups, accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
@@ -590,6 +599,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 	rows []AccountMonitorAccount,
 	windows map[int64]AccountMonitorWindowAggregate,
 	probes map[int64]AccountMonitorAggregate,
+	historicalProbes map[int64]AccountMonitorAggregate,
 	latest map[int64]AccountMonitorLatest,
 	settings AccountMonitorSettings,
 	now time.Time,
@@ -623,6 +633,11 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.GroupEligibility = accountMonitorEligibilityNotApplicable
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
 		scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
+		if !scoreEligible {
+			if historical := accountMonitorHistoricalEvidence(historicalProbes[row.AccountID]); historical.SampleCount > 0 {
+				scoreEvidence, scoreStatus, scoreEligible = accountMonitorWindowScoreProjection(account, row.ScoreStatus, historical)
+			}
+		}
 		row.ScoreStatus = scoreStatus
 		row.Eligible = scoreEligible
 		if row.Eligible {
@@ -668,6 +683,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 	rows []AccountMonitorAccount,
 	windows map[int64]AccountMonitorWindowAggregate,
 	probes map[int64]AccountMonitorAggregate,
+	historicalProbes map[int64]AccountMonitorAggregate,
 	latest map[int64]AccountMonitorLatest,
 	settings AccountMonitorSettings,
 	windowStart, now time.Time,
@@ -711,6 +727,11 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.EffectiveMultiplier = cost.EffectiveMultiplier
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
 			scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
+			if !scoreEligible {
+				if historical := accountMonitorHistoricalEvidence(historicalProbes[account.ID]); historical.SampleCount > 0 {
+					scoreEvidence, scoreStatus, scoreEligible = accountMonitorWindowScoreProjection(account, row.ScoreStatus, historical)
+				}
+			}
 			row.ScoreStatus = scoreStatus
 			row.Eligible = scoreEligible && row.GroupEligibility == accountMonitorEligibilityEligible
 			if row.Eligible {
@@ -1609,6 +1630,22 @@ func accountMonitorWindowEvidence(
 		evidence.Source = "stale"
 	}
 	return evidence
+}
+
+func accountMonitorHistoricalEvidence(aggregate AccountMonitorAggregate) AccountMonitorQualityEvidence {
+	if aggregate.SampleCount <= 0 || aggregate.SuccessSampleCount <= 0 {
+		return AccountMonitorQualityEvidence{Source: "historical_final"}
+	}
+	observedAt := time.Time{}
+	if aggregate.LastCheckedAt != nil {
+		observedAt = aggregate.LastCheckedAt.UTC()
+	}
+	return AccountMonitorQualityEvidence{
+		Source: "historical_final", SampleCount: aggregate.SampleCount,
+		SuccessSampleCount: aggregate.SuccessSampleCount, TTFTSampleCount: aggregate.TTFTSampleCount,
+		LatencySampleCount: aggregate.LatencySampleCount, SuccessRate: aggregate.SuccessRate,
+		TTFTP50MS: aggregate.TTFTP50MS, LatencyP95MS: aggregate.LatencyP95MS, ObservedAt: observedAt,
+	}
 }
 
 func accountMonitorWindowScoreProjection(

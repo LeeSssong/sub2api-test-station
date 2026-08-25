@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前设计任务（2026-08-25，T67）
+
+- **T67 完全恢复 Sub 原生用户扣费**：状态 `DESIGNING`。用户已明确要求完全恢复官方 Sub 原生扣费。目标是将推理成功后的余额扣减恢复到 `users.balance` 原生事务路径，保留 T55 钱包/流水为管理员充值与历史审计投影，并修复手动充值/退款后的 `billing:balance:<user_id>` 缓存失效。生产只读证据已确认：账号 `940310446@qq.com` 充值 ¥100 后数据库余额为 `99.96431384`，但充值后仍连续收到余额不足；余额接近零时还出现上游已执行但钱包扣费失败、`actual_cost=0` 的透支窗口。候选 worktree `.worktrees/t67-native-billing`、分支 `codex/t67-native-billing`，基线 `main@e07b9cced6576f2206e5b3467112d3358bc96417`；正式规格为 `docs/superpowers/specs/2026-08-25-t67-native-billing-design.md`。尚未修改运行时代码、推送、合并、部署或生产写入；T66-R1 发布车道释放前不进入合并/部署。
+
 ## 当前进行中任务（2026-08-25，T65/T66）
 
 - **T66-R1 Luna 不支持文案修复**：状态 `DONE`。基于已上线 T66 的跟进修复，仅将 Luna 本地无账号的 HTTP 503、`local_capacity_exhausted` 响应文案改为“本站暂不支持gpt-5.6-luna，请切换模型重试”，保持客户端原有 5xx 重试协议；不改状态码、错误码、非 Luna 分支、全局错误透传、自动降级、账号切号、账务或配置。生产源 `main@2e91ed721`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T143727Z-production-3940992.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2e91ed721-t66-r1-production.json`。

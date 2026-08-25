@@ -3,7 +3,7 @@
 ## 当前进行中任务（2026-08-25，T65/T66）
 
 - **T65 账号监控历史最终结果回退**：状态 `DONE`。合并提交 `main@4cf11cd05`，生产源 `main@878623872`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T133438Z-production-3800920.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-878623872-t65-production.json`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间。不新增事实源。
-- **T66 Responses 安全切号、账号故障隔离与 Luna 不可用指引**：状态 `INTEGRATING`。合并提交 `main@15b5118d8`；候选已刷新到 T65 生产后的最新 `main`，合并后直接相关 handler/service 测试和 `go build ./cmd/server`、gofmt、diff-check 通过，待推送、发布预检、蓝绿部署与线上验收。用户于 2026-08-25 明确授权扩展：不主动降级；当 Luna 请求因本站无可用账号而失败时，返回稳定的模型不可用错误码及“改用 Sol/Terra，或切换到支持 Luna 的分组”指引。该提示仅限 Luna 的本地无账号路径，不复用全局上游错误透传规则，不改其他模型、上游 5xx、账号切号或账务语义；原范围继续包含余额不足账号立即隔离、502/503 短时冷却与请求级排除，以及安全 Responses 切号门禁。
+- **T66 Responses 安全切号、账号故障隔离与 Luna 不可用指引**：状态 `DONE`。生产源 `main@2c077f009`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T135859Z-production-3855857.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2c077f009-t66-production.json`。交付包括余额不足立即隔离、502/503 短时冷却并请求级排除、纯 `response.failed` 安全切号门禁，以及 Luna 无账号时稳定 `model_not_found` 替代指引；无迁移、无配置变更、无生产数据写入。
 
 ## 当前进行中任务（2026-08-25，T64 用户导航与账号监控混合证据）
 

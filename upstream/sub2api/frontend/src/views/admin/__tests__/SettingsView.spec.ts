@@ -246,6 +246,33 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.openaiExperimentalScheduler.fairnessRange": "范围：0–10",
     "admin.settings.openaiExperimentalScheduler.fairnessShortHint": "控制公平保护对排序的影响。",
     "admin.settings.openaiExperimentalScheduler.priorityShortHint": "账号基础优先级影响。",
+    "admin.settings.openaiExperimentalScheduler.serviceGuard": "服务不中断是固定护栏；健康、容量、冷却和并发检查始终生效。",
+    "admin.settings.openaiExperimentalScheduler.prioritySummary": "当前优先级：",
+    "admin.settings.openaiExperimentalScheduler.resetRecommended": "恢复推荐设置",
+    "admin.settings.openaiExperimentalScheduler.metricProfit": "利润",
+    "admin.settings.openaiExperimentalScheduler.metricTTFT": "首字速度",
+    "admin.settings.openaiExperimentalScheduler.metricLatency": "完整耗时",
+    "admin.settings.openaiExperimentalScheduler.balanceTitle": "账号均衡",
+    "admin.settings.openaiExperimentalScheduler.balanceLow": "仅分散高负载",
+    "admin.settings.openaiExperimentalScheduler.balanceStandard": "标准覆盖",
+    "admin.settings.openaiExperimentalScheduler.balanceHigh": "优先补齐覆盖",
+    "admin.settings.openaiExperimentalScheduler.peakTitle": "高峰期保护",
+    "admin.settings.openaiExperimentalScheduler.peakStrict": "严格保护",
+    "admin.settings.openaiExperimentalScheduler.peakStandard": "标准保护",
+    "admin.settings.openaiExperimentalScheduler.peakOpen": "保留覆盖",
+    "admin.settings.openaiExperimentalScheduler.sessionTitle": "会话连续性",
+    "admin.settings.openaiExperimentalScheduler.sessionKeep": "尽量保持",
+    "admin.settings.openaiExperimentalScheduler.sessionStandard": "标准",
+    "admin.settings.openaiExperimentalScheduler.sessionSwitch": "更快切换",
+    "admin.settings.openaiExperimentalScheduler.previewNormalTitle": "常态请求",
+    "admin.settings.openaiExperimentalScheduler.previewNormalBody": "按当前优先级选择健康且有容量的账号。",
+    "admin.settings.openaiExperimentalScheduler.previewPeakTitle": "高峰期",
+    "admin.settings.openaiExperimentalScheduler.previewPeakStrict": "优先避开紧张账号，暂停纯覆盖探索。",
+    "admin.settings.openaiExperimentalScheduler.previewPeakOpen": "在安全边界内保留必要的账号覆盖。",
+    "admin.settings.openaiExperimentalScheduler.previewSessionTitle": "会话切换",
+    "admin.settings.openaiExperimentalScheduler.previewSessionKeep": "尽量沿用原账号，减少上下文迁移。",
+    "admin.settings.openaiExperimentalScheduler.previewSessionSwitch": "遇到负载或健康问题时更快切换。",
+    "admin.settings.openaiExperimentalScheduler.previewSessionStandard": "按健康、容量和连续性综合判断。",
     "admin.settings.openaiExperimentalScheduler.loadShortHint": "当前负载惩罚强度。",
     "admin.settings.openaiExperimentalScheduler.queueShortHint": "排队等待惩罚强度。",
     "admin.settings.openaiExperimentalScheduler.errorRateShortHint": "历史错误惩罚强度。",
@@ -1480,27 +1507,25 @@ describe("admin SettingsView payment visible method controls", () => {
       .get('[data-testid="openai-advanced-scheduler-toggle"]')
       .setValue(true);
 
-    const card = wrapper.get('[data-testid="openai-scheduler-fairness"]');
-    expect(card.find('[data-testid="scheduler-group-select"]').exists()).toBe(true);
-    expect(card.find('[data-testid="scheduler-policy-mode-custom"]').exists()).toBe(true);
-    expect(card.find('[data-testid="scheduler-policy-mode-preset"]').exists()).toBe(true);
-    expect(card.find('[data-testid="scheduler-policy-gate"]').exists()).toBe(true);
+   const card = wrapper.get('[data-testid="openai-scheduler-fairness"]');
+   expect(card.find('[data-testid="scheduler-group-select"]').exists()).toBe(true);
+    expect(card.find('[data-testid="scheduler-business-policy"]').exists()).toBe(false);
+   expect(card.find('[data-testid="scheduler-policy-gate"]').exists()).toBe(true);
 
-    await card.get('[data-testid="scheduler-group-select"]').setValue("12");
-    await card.get('[data-testid="scheduler-policy-mode-preset"]').trigger("click");
-    await card.get('[data-testid="scheduler-policy-preset"]').setValue("builtin:pro");
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
+   await card.get('[data-testid="scheduler-group-select"]').setValue("12");
+    expect(card.find('[data-testid="scheduler-business-policy"]').exists()).toBe(true);
+    await card.get('[data-testid="scheduler-priority-ttft-2"]').trigger("click");
+    await card.get('[data-testid="scheduler-operation-balance-high"]').trigger("click");
+   await wrapper.find("form").trigger("submit.prevent");
+   await flushPromises();
 
-    expect(updateSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        openai_advanced_scheduler_group_policies: {
-          12: expect.objectContaining({
-            mode: "preset",
-            preset_id: "builtin:pro",
-            top_k: 10,
-            fairness: expect.objectContaining({ exploration_ratio: 40 }),
-          }),
+   expect(updateSettings).toHaveBeenCalledWith(
+     expect.objectContaining({
+       openai_advanced_scheduler_group_policies: {
+         12: expect.objectContaining({
+            priority: { profit: 1, ttft: 2, latency: 1 },
+            operations: { balance: "high", peak_protection: "strict", session_continuity: "standard" },
+         }),
         },
       }),
     );
@@ -1515,36 +1540,17 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
     await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
 
-    const scheduler = wrapper.get('[data-testid="scheduler-group-policy-panel"]');
-    await wrapper.get('[data-testid="scheduler-policy-mode-preset"]').trigger("click");
-    const text = scheduler.text();
-    expect(text).toContain("体验优先");
-    expect(text).toContain("体验均衡");
-    expect(text).toContain("利润优先");
-    expect(text).toContain("候选数");
-    expect(text).toContain("响应连续");
-    expect(text).toContain("每次参与评分的候选账号数");
-    expect(text).toContain("范围：1–32");
-    expect(text).not.toContain("previous_response");
-    expect(text).not.toContain("session_sticky");
-
-    const topK = scheduler.get('[data-testid="scheduler-policy-top-k"]');
-    expect(topK.attributes("min")).toBe("1");
-    expect(topK.attributes("max")).toBe("32");
-    const weightInputs = scheduler.findAll('[data-testid="scheduler-policy-weight"]');
-    expect(weightInputs.length).toBe(10);
-    for (const input of weightInputs) {
-      expect(input.attributes("min")).toBe("0");
-      expect(input.attributes("max")).toBe("10");
-    }
-
-    expect(scheduler.get('[data-testid="scheduler-policy-exploration"]').attributes("disabled")).toBeDefined();
-    expect(scheduler.get('[data-testid="scheduler-policy-exploration"]').attributes("min")).toBe("0");
-    expect(scheduler.get('[data-testid="scheduler-policy-exploration"]').attributes("max")).toBe("100");
-    expect(scheduler.get('[data-testid="scheduler-policy-starvation"]').attributes("min")).toBe("0");
-    expect(scheduler.get('[data-testid="scheduler-policy-starvation"]').attributes("max")).toBe("86400");
-    expect(scheduler.get('[data-testid="scheduler-policy-fairness"]').attributes("min")).toBe("0");
-    expect(scheduler.get('[data-testid="scheduler-policy-fairness"]').attributes("max")).toBe("10");
+   const scheduler = wrapper.get('[data-testid="scheduler-group-policy-panel"]');
+   const text = scheduler.text();
+    expect(text).toContain("利润");
+    expect(text).toContain("首字速度");
+    expect(text).toContain("完整耗时");
+    expect(text).toContain("严格保护");
+    expect(text).toContain("服务不中断");
+   expect(text).not.toContain("previous_response");
+   expect(text).not.toContain("session_sticky");
+    expect(scheduler.findAll('[data-testid^="scheduler-priority-"]').length).toBe(9);
+    expect(scheduler.findAll('[data-testid^="scheduler-operation-"]').length).toBe(9);
   });
 
   it("loads native OpenAI scheduler groups separately and leaves selection empty", async () => {
@@ -1588,15 +1594,13 @@ describe("admin SettingsView payment visible method controls", () => {
 
     const groupSelect = wrapper.get('[data-testid="scheduler-group-select"]');
     await groupSelect.setValue("12");
-    await wrapper.get('[data-testid="scheduler-policy-mode-custom"]').trigger("click");
-    await wrapper.get('[data-testid="scheduler-policy-top-k"]').setValue("11");
+    await wrapper.get('[data-testid="scheduler-priority-ttft-2"]').trigger("click");
 
     await groupSelect.setValue("13");
-    await wrapper.get('[data-testid="scheduler-policy-mode-custom"]').trigger("click");
-    await wrapper.get('[data-testid="scheduler-policy-top-k"]').setValue("13");
+    await wrapper.get('[data-testid="scheduler-priority-ttft-3"]').trigger("click");
 
     await groupSelect.setValue("12");
-    expect((wrapper.get('[data-testid="scheduler-policy-top-k"]').element as HTMLInputElement).value).toBe("11");
+    expect(wrapper.get('[data-testid="scheduler-priority-ttft-2"]').attributes("aria-pressed")).toBe("true");
   });
 
   it("normalizes legacy scheduler policies to custom and preset modes", async () => {
@@ -1646,7 +1650,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
     await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
 
-    await wrapper.get('[data-testid="scheduler-policy-top-k"]').setValue("31");
+    await wrapper.get('[data-testid="scheduler-priority-profit-2"]').trigger("click");
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 

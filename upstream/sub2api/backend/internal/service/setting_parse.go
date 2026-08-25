@@ -1653,6 +1653,24 @@ func normalizeOpenAISchedulerGroupPoliciesWithPresets(policies map[int64]OpenAIS
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy references unknown group")
 			}
 		}
+		if policy.Priority != (OpenAISchedulerBusinessPriority{}) {
+			business, err := parseOpenAISchedulerBusinessPolicy(policy)
+			if err != nil {
+				return nil, err
+			}
+			values, err := compileOpenAISchedulerBusinessPolicy(business, global)
+			if err != nil {
+				return nil, err
+			}
+			policy.Mode = OpenAISchedulerGroupPolicyModeCustom
+			policy.Preset = ""
+			policy.PresetID = ""
+			policy.Values = values
+			policy.CompiledSnapshot = values
+			policy.Operations = business.Operations
+			result[id] = policy
+			continue
+		}
 		if policy.Mode == OpenAISchedulerGroupPolicyModeWeightedOverride {
 			policy.Mode = OpenAISchedulerGroupPolicyModeCustom
 		}
@@ -2123,4 +2141,135 @@ func normalizeTablePreferences(defaultPageSize int, options []int) (int, []int) 
 	}
 
 	return defaultPageSize, normalizedOptions
+}
+func normalizeOpenAISchedulerBusinessPriority(value OpenAISchedulerBusinessPriority) (OpenAISchedulerBusinessPriority, error) {
+	if value.Profit < 1 || value.Profit > 3 || value.TTFT < 1 || value.TTFT > 3 || value.Latency < 1 || value.Latency > 3 {
+		return OpenAISchedulerBusinessPriority{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_BUSINESS_PRIORITY", "business priorities must be integers between 1 and 3")
+	}
+	return value, nil
+}
+
+func normalizeOpenAISchedulerOperations(value OpenAISchedulerOperations) (OpenAISchedulerOperations, error) {
+	if strings.TrimSpace(value.Balance) == "" {
+		value.Balance = "standard"
+	}
+	if strings.TrimSpace(value.PeakProtection) == "" {
+		value.PeakProtection = "strict"
+	}
+	if strings.TrimSpace(value.SessionContinuity) == "" {
+		value.SessionContinuity = "standard"
+	}
+	if value.Balance != "low" && value.Balance != "standard" && value.Balance != "high" {
+		return OpenAISchedulerOperations{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_OPERATIONS", "balance mode is invalid")
+	}
+	if value.PeakProtection != "strict" && value.PeakProtection != "standard" && value.PeakProtection != "open" {
+		return OpenAISchedulerOperations{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_OPERATIONS", "peak protection mode is invalid")
+	}
+	if value.SessionContinuity != "keep" && value.SessionContinuity != "standard" && value.SessionContinuity != "switch" {
+		return OpenAISchedulerOperations{}, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_OPERATIONS", "session continuity mode is invalid")
+	}
+	return value, nil
+}
+
+func recommendedOpenAISchedulerBusinessPolicy(groupName string) OpenAISchedulerBusinessGroupPolicy {
+	priority := OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 1, Latency: 1}
+	switch strings.TrimSpace(groupName) {
+	case "GPT-特惠":
+		priority = OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 2, Latency: 3}
+	case "GPT-Pro", "【专属】GPT-PRO":
+		priority = OpenAISchedulerBusinessPriority{Profit: 3, TTFT: 1, Latency: 2}
+	}
+	return OpenAISchedulerBusinessGroupPolicy{Priority: priority, Operations: OpenAISchedulerOperations{Balance: "standard", PeakProtection: "strict", SessionContinuity: "standard"}}
+}
+
+func schedulerBusinessTierFactor(priority int) float64 {
+	switch priority {
+	case 1:
+		return 3
+	case 2:
+		return 1.5
+	default:
+		return 0.5
+	}
+}
+
+func compileOpenAISchedulerBusinessPolicy(policy OpenAISchedulerBusinessGroupPolicy, base OpenAISchedulerPolicyValues) (OpenAISchedulerPolicyValues, error) {
+	priority, err := normalizeOpenAISchedulerBusinessPriority(policy.Priority)
+	if err != nil {
+		return OpenAISchedulerPolicyValues{}, err
+	}
+	operations, err := normalizeOpenAISchedulerOperations(policy.Operations)
+	if err != nil {
+		return OpenAISchedulerPolicyValues{}, err
+	}
+	if base.TopK <= 0 {
+		base = openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
+	}
+	if base.CandidatePoolMode == "" {
+		base.CandidatePoolMode = OpenAISchedulerCandidatePoolModeHybrid
+	}
+	base.UpstreamCost = schedulerBusinessTierFactor(priority.Profit)
+	base.TTFT = schedulerBusinessTierFactor(priority.TTFT)
+	latencyFactor := schedulerBusinessTierFactor(priority.Latency)
+	base.Load = latencyFactor
+	base.Queue = latencyFactor
+	switch operations.Balance {
+	case "low":
+		base.CandidatePoolMode = OpenAISchedulerCandidatePoolModeTopK
+		base.ExplorationRatio = 0
+	case "high":
+		base.CandidatePoolMode = OpenAISchedulerCandidatePoolModeAllEligible
+		if base.ExplorationRatio < 40 {
+			base.ExplorationRatio = 40
+		}
+	}
+	switch operations.PeakProtection {
+	case "strict":
+		base.ExplorationRatio = 0
+	case "open":
+		base.CandidatePoolMode = OpenAISchedulerCandidatePoolModeAllEligible
+		if base.ExplorationRatio < 40 {
+			base.ExplorationRatio = 40
+		}
+	}
+	switch operations.SessionContinuity {
+	case "keep":
+		if base.PreviousResponse < 5 {
+			base.PreviousResponse = 5
+		}
+		if base.SessionSticky < 4 {
+			base.SessionSticky = 4
+		}
+	case "switch":
+		if base.PreviousResponse > 1 {
+			base.PreviousResponse = 1
+		}
+		if base.SessionSticky > 1 {
+			base.SessionSticky = 1
+		}
+	}
+	return base, nil
+}
+
+func parseOpenAISchedulerBusinessPolicy(legacy OpenAISchedulerGroupPolicy) (OpenAISchedulerBusinessGroupPolicy, error) {
+	if legacy.Priority != (OpenAISchedulerBusinessPriority{}) {
+		priority, err := normalizeOpenAISchedulerBusinessPriority(legacy.Priority)
+		if err != nil {
+			return OpenAISchedulerBusinessGroupPolicy{}, err
+		}
+		operations, err := normalizeOpenAISchedulerOperations(legacy.Operations)
+		if err != nil {
+			return OpenAISchedulerBusinessGroupPolicy{}, err
+		}
+		return OpenAISchedulerBusinessGroupPolicy{Priority: priority, Operations: operations, CompiledSnapshot: legacy.CompiledSnapshot}, nil
+	}
+	recommendation := recommendedOpenAISchedulerBusinessPolicy("")
+	switch legacy.Preset {
+	case OpenAISchedulerPresetSpecialOffer:
+		recommendation = recommendedOpenAISchedulerBusinessPolicy("GPT-特惠")
+	case OpenAISchedulerPresetPro:
+		recommendation = recommendedOpenAISchedulerBusinessPolicy("GPT-Pro")
+	}
+	recommendation.CompiledSnapshot = legacy.Values
+	return recommendation, nil
 }

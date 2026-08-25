@@ -36,10 +36,26 @@ export interface OpenAISchedulerFairnessOverride {
   starvation_threshold_seconds?: number;
   fairness_weight?: number;
 }
+export interface OpenAISchedulerBusinessPriority {
+  profit: number;
+  ttft: number;
+  latency: number;
+}
+export type OpenAISchedulerBalance = "low" | "standard" | "high";
+export type OpenAISchedulerPeakProtection = "strict" | "standard" | "open";
+export type OpenAISchedulerSessionContinuity = "keep" | "standard" | "switch";
+export interface OpenAISchedulerOperations {
+  balance: OpenAISchedulerBalance;
+  peak_protection: OpenAISchedulerPeakProtection;
+  session_continuity: OpenAISchedulerSessionContinuity;
+}
 export interface OpenAISchedulerGroupPolicy {
   mode?: OpenAISchedulerGroupPolicyMode | LegacyOpenAISchedulerGroupPolicyMode;
   preset?: OpenAISchedulerPreset;
   preset_id?: OpenAISchedulerPresetID;
+  priority?: OpenAISchedulerBusinessPriority;
+  operations?: OpenAISchedulerOperations;
+  compiled_snapshot?: OpenAISchedulerPolicyValues;
   top_k?: number;
   weight_overrides?: Record<string, number>;
   fairness?: OpenAISchedulerFairnessOverride;

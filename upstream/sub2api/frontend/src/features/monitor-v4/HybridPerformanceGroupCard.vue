@@ -4,9 +4,12 @@
       <div>
         <h2 class="hybrid-card__title">{{ group.name }}</h2>
         <p class="hybrid-card__meta">{{ group.platform }}</p>
+        <span class="hybrid-card__status" data-test="monitoring-status">
+          <span class="status-dot" aria-hidden="true" />{{ t('channelMonitorV2.hybrid.monitoring') }}
+        </span>
       </div>
-      <span class="hybrid-card__status" data-test="monitoring-status">
-        <span class="status-dot" aria-hidden="true" />{{ t('channelMonitorV2.hybrid.monitoring') }}
+      <span class="hybrid-card__multiplier" data-test="multiplier">
+        {{ t('channelMonitorV2.hybrid.multiplier', { value: group.rate_multiplier }) }}
       </span>
     </header>
 
@@ -32,7 +35,7 @@
 
     <footer class="hybrid-card__footer">
       <span data-test="sample-count">{{ t('channelMonitorV2.hybrid.sampleCount', { count: group.sample_count }) }}</span>
-      <span data-test="multiplier">{{ t('channelMonitorV2.hybrid.multiplier', { value: group.rate_multiplier }) }}</span>
+      <span data-test="latest-probe">{{ latestProbe }}</span>
     </footer>
   </article>
 </template>
@@ -47,20 +50,31 @@ const { t } = useI18n()
 const tone = computed(() => props.group.availability >= 85 ? 'green' : props.group.availability >= 50 ? 'amber' : 'red')
 const formatAvailability = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(1)
 const formatMs = (value: number) => `${Math.round(value)} ms`
+const formatProbeTime = (value: string | null | undefined) => {
+  if (!value) return '--'
+  return new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+}
+const latestProbe = computed(() => t('channelMonitorV2.hybrid.latestProbe', { time: formatProbeTime(props.group.source_updated_at) }))
 </script>
 
 <style scoped>
-.hybrid-card { --ring: #16a34a; display:flex; min-width:0; flex-direction:column; border:1px solid #dbe4ee; border-radius:12px; background:#fff; padding:20px; color:#172033; box-shadow:0 8px 24px rgba(15,23,42,.06); }
+.hybrid-card { --ring: #16a34a; display:flex; min-width:0; min-height:31rem; flex-direction:column; border:1px solid #dbe4ee; border-radius:12px; background:#fff; padding:22px; color:#172033; }
 .hybrid-card--amber { --ring:#d89b18; } .hybrid-card--red { --ring:#dc3f4d; }
-.hybrid-card__header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-.hybrid-card__title { margin:0; font-size:1rem; font-weight:700; } .hybrid-card__meta { margin:3px 0 0; color:#718096; font-size:.72rem; }
-.hybrid-card__status { display:inline-flex; align-items:center; gap:6px; color:#64748b; font-size:.7rem; white-space:nowrap; } .status-dot { width:6px; height:6px; border-radius:50%; background:var(--ring); }
-.hybrid-card__ring-wrap { display:grid; place-items:center; padding:18px 0 20px; }
-.hybrid-ring { position:relative; display:grid; width:min(50vw, 220px); aspect-ratio:1; place-items:center; border:10px solid color-mix(in srgb, var(--ring) 18%, transparent); border-top-color:var(--ring); border-right-color:color-mix(in srgb, var(--ring) 70%, transparent); border-radius:50%; box-shadow:0 0 0 1px color-mix(in srgb, var(--ring) 8%, transparent), 0 0 24px color-mix(in srgb, var(--ring) 16%, transparent); animation:hybrid-breathe 3.2s ease-in-out infinite; }
-.hybrid-ring__center { display:flex; flex-direction:column; align-items:center; justify-content:center; } .hybrid-ring__center strong { color:var(--ring); font-size:clamp(2.2rem, 5vw, 3.25rem); line-height:1; } .hybrid-ring__center span { margin-top:8px; color:#7b8798; font-size:.75rem; }
-.hybrid-card__metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border-top:1px solid #edf1f5; border-bottom:1px solid #edf1f5; padding:14px 0; } .hybrid-metric { min-width:0; text-align:center; } .hybrid-metric + .hybrid-metric { border-left:1px solid #edf1f5; } .hybrid-metric span { display:block; color:#7b8798; font-size:.7rem; } .hybrid-metric strong { display:block; margin-top:5px; color:#233047; font-size:1.05rem; }
-.hybrid-card__footer { display:flex; justify-content:space-between; gap:10px; padding-top:14px; color:#7b8798; font-size:.7rem; } .hybrid-card__footer span:last-child { color:#526075; font-weight:600; }
-@keyframes hybrid-breathe { 0%,100% { opacity:.88; box-shadow:0 0 0 1px color-mix(in srgb, var(--ring) 8%, transparent), 0 0 20px color-mix(in srgb, var(--ring) 12%, transparent); } 50% { opacity:1; box-shadow:0 0 0 1px color-mix(in srgb, var(--ring) 16%, transparent), 0 0 34px color-mix(in srgb, var(--ring) 28%, transparent); } }
+.hybrid-card__header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.hybrid-card__title { margin:0; font-size:1.05rem; font-weight:750; letter-spacing:0; } .hybrid-card__meta { margin:4px 0 0; color:#718096; font-size:.75rem; }
+.hybrid-card__status { display:inline-flex; align-items:center; gap:7px; margin-top:10px; color:#64748b; font-size:.72rem; white-space:nowrap; } .status-dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--ring); box-shadow:0 0 0 3px color-mix(in srgb, var(--ring) 14%, transparent); }
+.hybrid-card__multiplier { flex:none; color:var(--ring); font-size:.76rem; font-weight:700; white-space:nowrap; }
+.hybrid-card__ring-wrap { display:grid; flex:1; min-height:17rem; place-items:center; padding:20px 0 22px; }
+.hybrid-ring { position:relative; display:grid; width:min(70%, 300px); aspect-ratio:1; place-items:center; border:12px solid var(--ring); border-radius:50%; box-shadow:0 0 0 1px color-mix(in srgb, var(--ring) 18%, transparent), 0 0 22px color-mix(in srgb, var(--ring) 18%, transparent); animation:hybrid-breathe 3.2s ease-in-out infinite; }
+.hybrid-ring__center { display:flex; flex-direction:column; align-items:center; justify-content:center; } .hybrid-ring__center strong { color:var(--ring); font-size:clamp(2.65rem, 5vw, 3.7rem); line-height:1; } .hybrid-ring__center span { margin-top:10px; color:#7b8798; font-size:.78rem; }
+.hybrid-card__metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); border-top:1px solid #edf1f5; border-bottom:1px solid #edf1f5; padding:16px 0; } .hybrid-metric { min-width:0; text-align:center; } .hybrid-metric + .hybrid-metric { border-left:1px solid #edf1f5; } .hybrid-metric span { display:block; color:#7b8798; font-size:.72rem; } .hybrid-metric strong { display:block; margin-top:6px; color:#233047; font-size:1.12rem; }
+.hybrid-card__footer { display:flex; flex-direction:column; align-items:center; gap:5px; padding-top:15px; color:#7b8798; font-size:.72rem; text-align:center; } .hybrid-card__footer span:first-child { color:#526075; font-weight:600; }
+@keyframes hybrid-breathe { 0%,100% { opacity:.88; box-shadow:0 0 0 1px color-mix(in srgb, var(--ring) 14%, transparent), 0 0 20px color-mix(in srgb, var(--ring) 14%, transparent); } 50% { opacity:1; box-shadow:0 0 0 1px color-mix(in srgb, var(--ring) 26%, transparent), 0 0 34px color-mix(in srgb, var(--ring) 28%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .hybrid-ring { animation:none; } }
-@media (max-width:640px) { .hybrid-card { padding:16px; } .hybrid-ring { width:min(56vw, 190px); } }
+@media (max-width:640px) { .hybrid-card { min-height:29rem; padding:18px; } .hybrid-card__ring-wrap { min-height:15rem; } .hybrid-ring { width:min(72vw, 250px); } }
+:global(.dark) .hybrid-card { border-color:#243148; background:#0b1220; color:#e5edf8; }
+:global(.dark) .hybrid-card__meta, :global(.dark) .hybrid-card__status, :global(.dark) .hybrid-ring__center span, :global(.dark) .hybrid-metric span, :global(.dark) .hybrid-card__footer { color:#93a4ba; }
+:global(.dark) .hybrid-card__metrics { border-color:#1d2a3d; }
+:global(.dark) .hybrid-metric + .hybrid-metric { border-color:#1d2a3d; }
+:global(.dark) .hybrid-metric strong { color:#edf4ff; }
 </style>

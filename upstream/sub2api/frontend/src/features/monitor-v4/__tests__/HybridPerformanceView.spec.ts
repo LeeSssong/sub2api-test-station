@@ -33,7 +33,12 @@ vi.mock('vue-i18n', async () => {
 describe('HybridPerformanceView', () => {
   it('renders Chinese title and empty copy instead of translation keys', async () => {
     const wrapper = mount(HybridPerformanceView, {
-      global: { stubs: { AppLayout: { template: '<main><slot /></main>' } } },
+      global: {
+        stubs: {
+          AppLayout: { template: '<main><slot /></main>' },
+          CodexRadarRecommendations: { template: '<section data-test="codexradar-panel" />' },
+        },
+      },
     })
     await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalled())
     await wrapper.vm.$nextTick()
@@ -42,6 +47,8 @@ describe('HybridPerformanceView', () => {
     expect(wrapper.text()).toContain('暂无可见分组')
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.title')
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.empty')
+    expect(wrapper.find('[data-test="codexradar-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="hybrid-group-status"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

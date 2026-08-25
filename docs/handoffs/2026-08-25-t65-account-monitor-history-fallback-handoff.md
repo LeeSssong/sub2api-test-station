@@ -19,10 +19,9 @@
 候选实现覆盖账号监控 service/repository 投影、handler/API 合同、监控页面及直接测试。已通过直接相关门禁：
 
 ```bash
-go test ./internal/service -run 'TestAccountMonitor' -count=1
-go test ./internal/repository -run 'TestAccountMonitor' -count=1
+go test ./internal/service -run 'TestAccountModelDetection|TestAccountMonitor' -count=1
 go build ./cmd/server
-pnpm vitest run <账号监控相关定向测试>
+pnpm vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts
 pnpm typecheck
 pnpm build
 git diff --check

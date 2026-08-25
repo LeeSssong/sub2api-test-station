@@ -1622,6 +1622,27 @@ describe("admin SettingsView payment visible method controls", () => {
     expect((wrapper.get('[data-testid="scheduler-policy-preset"]').element as HTMLSelectElement).value).toBe("builtin:pro");
   });
 
+  it("uses the group recommendation when a legacy custom policy has zero business priorities", async () => {
+    getGroups.mockResolvedValueOnce([
+      { id: 12, name: "GPT-Pro", description: "", platform: "openai", subscription_type: "standard", status: "active" },
+    ]);
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_advanced_scheduler_group_policies: {
+        12: { mode: "custom", priority: { profit: 0, ttft: 0, latency: 0 }, top_k: 7, weight_overrides: { priority: 1 } },
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.get('[data-testid="openai-advanced-scheduler-toggle"]').setValue(true);
+    await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
+
+    expect(wrapper.get('[data-testid="scheduler-priority-profit-3"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.get('[data-testid="scheduler-priority-ttft-1"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.get('[data-testid="scheduler-priority-latency-2"]').attributes("aria-pressed")).toBe("true");
+  });
+
   it("serializes preset values from the server snapshot instead of draft edits", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },

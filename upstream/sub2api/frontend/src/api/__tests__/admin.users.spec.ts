@@ -13,6 +13,7 @@ vi.mock('@/api/client', () => ({
 import {
   batchUpdateLimits,
   bindUserAuthIdentity,
+  createIdempotencyKey,
   type AdminBindAuthIdentityRequest,
   type AdminBoundAuthIdentity,
   type BatchUpdateUserLimitsRequest,
@@ -146,5 +147,43 @@ describe('admin users api auth identity binding', () => {
     expect(result).toEqual({ affected: 2 })
     expect(batchRequestContractExact).toBe(true)
     expect(batchResponseContractExact).toBe(true)
+  })
+})
+
+describe('admin users quota ledger api', () => {
+  it('generates a UUID idempotency key without downlevel optional-call scope errors', () => {
+    const originalCrypto = globalThis.crypto
+    const randomUUID = vi.fn(() => 'quota-recharge-uuid')
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: { randomUUID },
+    })
+
+    try {
+      expect(createIdempotencyKey()).toBe('quota-recharge-uuid')
+      expect(randomUUID).toHaveBeenCalledOnce()
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        value: originalCrypto,
+      })
+    }
+  })
+
+  it('falls back to a locally generated key when UUID is unavailable', () => {
+    const originalCrypto = globalThis.crypto
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: {},
+    })
+
+    try {
+      expect(createIdempotencyKey()).toMatch(/^\d+-[a-z0-9]+$/)
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        value: originalCrypto,
+      })
+    }
   })
 })

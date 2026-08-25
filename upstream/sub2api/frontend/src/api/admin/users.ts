@@ -221,10 +221,18 @@ export async function getUserQuotaSummary(id: number): Promise<QuotaSummary> {
   return data
 }
 
+export function createIdempotencyKey(): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+    return cryptoApi.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 export async function createQuotaLedgerEntry(
   id: number,
   request: { record_type: 'recharge' | 'refund'; amount_cny: number; gift_quota_usd?: number; note?: string },
-  idempotencyKey = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  idempotencyKey = createIdempotencyKey()
 ): Promise<{ ledger_entry_id: number; idempotent: boolean; summary: QuotaSummary }> {
   const { data } = await apiClient.post<{ ledger_entry_id: number; idempotent: boolean; summary: QuotaSummary }>(
     `/admin/users/${id}/quota-ledger`,

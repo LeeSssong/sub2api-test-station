@@ -6,7 +6,7 @@
 
 ## 当前设计任务（2026-08-25，T67）
 
-- **T67 完全恢复 Sub 原生用户扣费**：状态 `DESIGNING`。用户已明确要求完全恢复官方 Sub 原生扣费。目标是将推理成功后的余额扣减恢复到 `users.balance` 原生事务路径，保留 T55 钱包/流水为管理员充值与历史审计投影，并修复手动充值/退款后的 `billing:balance:<user_id>` 缓存失效。生产只读证据已确认：账号 `940310446@qq.com` 充值 ¥100 后数据库余额为 `99.96431384`，但充值后仍连续收到余额不足；余额接近零时还出现上游已执行但钱包扣费失败、`actual_cost=0` 的透支窗口。候选 worktree `.worktrees/t67-native-billing`、分支 `codex/t67-native-billing`，基线 `main@e07b9cced6576f2206e5b3467112d3358bc96417`；正式规格为 `docs/superpowers/specs/2026-08-25-t67-native-billing-design.md`。尚未修改运行时代码、推送、合并、部署或生产写入；T66-R1 发布车道释放前不进入合并/部署。
+- **T67 完全恢复 Sub 原生用户扣费**：状态 `REFRESH_REQUIRED`。用户已明确要求完全恢复官方 Sub 原生扣费。目标是将推理成功后的余额扣减恢复到 `users.balance` 原生事务路径，保留 T55 钱包/流水为管理员充值与历史审计投影，并修复手动充值/退款后的 `billing:balance:<user_id>` 缓存失效。生产只读证据已确认：账号 `940310446@qq.com` 充值 ¥100 后数据库余额为 `99.96431384`，但充值后仍连续收到余额不足；余额接近零时还出现上游已执行但钱包扣费失败、`actual_cost=0` 的透支窗口。候选 worktree `.worktrees/t67-native-billing`、分支 `codex/t67-native-billing`，原始基线 `main@e07b9cced6576f2206e5b3467112d3358bc96417`；根当前 `main@8e7b79a4b932e63523ebd45c1ae1c73f45f0bb9b`，需先刷新候选并重跑直接相关验证。正式规格为 `docs/superpowers/specs/2026-08-25-t67-native-billing-design.md`。尚未合并、推送、部署或生产写入；T66-R1 发布车道已释放。
 
 ## 当前进行中任务（2026-08-25，T65/T66）
 

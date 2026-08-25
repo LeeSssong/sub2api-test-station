@@ -2,11 +2,11 @@
   <AppLayout>
     <section class="mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5" data-test="hybrid-performance-view">
       <header class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
-        <div><h1 class="text-2xl font-bold text-slate-950 dark:text-white">{{ t('monitorV2.hybrid.title') }}</h1><p class="mt-1 text-xs text-slate-500">{{ t('monitorV2.hybrid.updated', { time: updatedAt }) }}</p></div>
+        <div><h1 class="text-2xl font-bold text-slate-950 dark:text-white">{{ t('channelMonitorV2.hybrid.title') }}</h1><p class="mt-1 text-xs text-slate-500">{{ t('channelMonitorV2.hybrid.updated', { time: updatedAt }) }}</p></div>
         <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-slate-700 dark:bg-slate-900"><button v-for="option in windowOptions" :key="option.value" type="button" class="rounded-md px-3 py-1.5 text-xs font-semibold" :class="currentWindow === option.value ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-700 dark:text-white' : 'text-slate-500'" :disabled="loading" @click="selectWindow(option.value)">{{ option.label }}</button></div>
       </header>
       <div v-if="snapshot.groups.length" class="mt-5 grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2" :aria-busy="loading"><HybridPerformanceGroupCard v-for="group in snapshot.groups" :key="group.id" :group="group" /></div>
-      <div v-else class="mt-5 rounded-xl border border-dashed border-slate-300 px-6 py-14 text-center text-sm text-slate-500">{{ t('monitorV2.hybrid.empty') }}</div>
+      <div v-else class="mt-5 rounded-xl border border-dashed border-slate-300 px-6 py-14 text-center text-sm text-slate-500">{{ t('channelMonitorV2.hybrid.empty') }}</div>
     </section>
   </AppLayout>
 </template>

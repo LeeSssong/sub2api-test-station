@@ -11,16 +11,21 @@ const {
   duplicateMonitor,
   showSuccess,
   showError,
+  isV1Mode,
+  isHybridMode,
 } = vi.hoisted(() => ({
   listMonitors: vi.fn(),
   duplicateMonitor: vi.fn(),
   showSuccess: vi.fn(),
   showError: vi.fn(),
+  isV1Mode: vi.fn(),
+  isHybridMode: vi.fn(),
 }))
 
 
 vi.mock('@/utils/featureFlags', () => ({
-  isChannelMonitorV1Mode: () => true,
+  isChannelMonitorV1Mode: isV1Mode,
+  isChannelMonitorHybridMode: isHybridMode,
   isChannelMonitorV2Mode: () => false,
   getChannelMonitorMode: () => 'v1' as const,
 }))
@@ -128,6 +133,8 @@ describe('ChannelMonitorView duplicate action', () => {
   beforeEach(() => {
     localStorage.clear()
     for (const fn of [listMonitors, duplicateMonitor, showSuccess, showError]) fn.mockReset()
+    isV1Mode.mockReturnValue(true)
+    isHybridMode.mockReturnValue(false)
     listMonitors.mockResolvedValue({
       items: [monitor],
       total: 1,
@@ -136,6 +143,18 @@ describe('ChannelMonitorView duplicate action', () => {
       pages: 1,
     })
     duplicateMonitor.mockResolvedValue(makeMonitor({ id: 43, name: 'primary (Copy)', enabled: false }))
+  })
+
+  it('keeps the active probe configuration visible in hybrid mode', async () => {
+    isV1Mode.mockReturnValue(false)
+    isHybridMode.mockReturnValue(true)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="v2-settings"]').exists()).toBe(false)
+    expect(wrapper.findComponent(MonitorActionsCell).exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('duplicates the selected monitor, reports success, and refreshes the list', async () => {

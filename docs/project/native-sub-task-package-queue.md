@@ -4,9 +4,9 @@
 
 - **T69 账号监控证据与评分回退**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t69-account-monitor-evidence-fallback@861113395` 已完成直接相关 service/repository/admin 测试、`go build ./cmd/server` 与 `git diff --check`；尚未推送、部署或线上验收。此前并发产生的本地合并提交 `474ddb2af` 已由根总控可逆回退，保留恢复分支 `codex/t69-unapproved-merge-preserved`，未进入 T67 生产源。真实调用样本来源区分 `real_request`/`monitor_probe`/`hybrid`，没有新鲜主动探测时不参与当前排名；历史最终评分可供暂停/不可调度账号展示但不改变调度资格；`evidence_insufficient` 与历史最终状态分开表达。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
 
-## 当前发布任务（2026-08-25，T68）
+## 当前返修任务（2026-08-25，T68）
 
-- **T68 分组调度运营优先级与策略护栏**：状态 `DEPLOYING`。刷新候选已无冲突合并到根 `main@dd7f9e0f4eab2e181289d36958ee96249948892a`、tree `988221a36c6b2a999e0493377c8a8fef8d03ef86`，并在合并源通过直接相关 Go service/admin 测试、`go build ./cmd/server`、SettingsView Vitest（44/44）、`pnpm typecheck`、`pnpm build` 和 `git diff --check`。用户已确认采用固定服务不中断保护、分组可配置经营优先级 `1/2/3`、三个三段运营微调卡及保存前平峰/高峰/会话切换策略预览。默认推荐配置为：GPT-特惠 `利润=1、首字速度=2、完整耗时=3`；GPT-Plus 三项均为 `1`；GPT-Pro 与【专属】GPT-PRO 为 `首字速度=1、完整耗时=2、利润=3`。范围只覆盖原生 settings/调度策略契约、SettingsView 交互、容量分散与按分组覆盖机会的最小扩展、直接相关测试；不新增调度器、事实源、迁移、账务或 GitHub Actions。候选 worktree `.worktrees/t68-scheduler-policy-priority`，分支 `codex/t68-scheduler-policy-priority`，基线 `main@c70f11193`；等待无停机发布预检、推送与线上验收。
+- **T68 分组调度运营优先级与策略护栏**：状态 `REFRESH_REQUIRED`。首轮根源 `main@eb03c5bbc4b7adbdc0b85c1a4274f79ea3825fbd` 已推送并通过预加载蓝绿链发布，控制器返回 `succeeded`、`downtime_required=false`、活动槽 `blue`，公网三项健康端点均为 200。绑定证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-26-main-eb03c5bbc-t68-scheduler-policy.json`。线上设置页的护栏、1/2/3 控件、三段微调和场景预览均已出现，但旧 GPT-Pro 自定义策略的零值 priority 会被前端误认为业务优先级并显示 `0/0/0`；这不改变原生调度参数，但违反运营语义合同。保留发布和候选证据，刷新原候选后先写失败测试修复兼容显示、重验，再重新走无停机发布。用户已确认采用固定服务不中断保护、分组可配置经营优先级 `1/2/3`、三个三段运营微调卡及保存前平峰/高峰/会话切换策略预览。默认推荐配置为：GPT-特惠 `利润=1、首字速度=2、完整耗时=3`；GPT-Plus 三项均为 `1`；GPT-Pro 与【专属】GPT-PRO 为 `首字速度=1、完整耗时=2、利润=3`。范围只覆盖原生 settings/调度策略契约、SettingsView 交互、容量分散与按分组覆盖机会的最小扩展、直接相关测试；不新增调度器、事实源、迁移、账务或 GitHub Actions。候选 worktree `.worktrees/t68-scheduler-policy-priority`，分支 `codex/t68-scheduler-policy-priority`，基线 `main@c70f11193`。
 
 ## 当前设计任务（2026-08-25，T67）
 

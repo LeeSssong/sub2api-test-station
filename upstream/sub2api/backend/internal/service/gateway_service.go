@@ -684,12 +684,14 @@ type UpstreamFailoverError struct {
 	// SafeToFailoverAfterWrite is retained for non-semantic bytes (for example
 	// a keepalive comment). It is deliberately independent from OutputStarted.
 	// The resilience policy defaults this to false for semantic output.
-	ResponseID       string
-	UsageKnown       bool
-	LogicalRequestID string
-	AttemptID        string
-	AttemptMetadata  OpenAIRequestAttemptMetadata
-	Recovery         *OpenAIStreamRecoveryPayload
+	ResponseID         string
+	UsageKnown         bool
+	ResponseFailedOnly bool
+	UnsafeToReplay     bool
+	LogicalRequestID   string
+	AttemptID          string
+	AttemptMetadata    OpenAIRequestAttemptMetadata
+	Recovery           *OpenAIStreamRecoveryPayload
 }
 
 func (e *UpstreamFailoverError) Error() string {

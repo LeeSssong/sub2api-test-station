@@ -1214,7 +1214,11 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	}
 	outputStarted := openAIStreamClientOutputStarted(c, false)
 	responseID := extractOpenAIResponseIDFromJSONBytes(payload)
-	usageKnown := len(payload) > 0 && (gjson.GetBytes(payload, "usage.input_tokens").Int() > 0 || gjson.GetBytes(payload, "usage.output_tokens").Int() > 0 || gjson.GetBytes(payload, "response.usage.input_tokens").Int() > 0 || gjson.GetBytes(payload, "response.usage.output_tokens").Int() > 0)
+	usageKnown := len(payload) > 0 && (gjson.GetBytes(payload, "usage").Exists() || gjson.GetBytes(payload, "response.usage").Exists())
+	unsafeToReplay := gjson.GetBytes(payload, "unsafe_to_replay").Bool() ||
+		gjson.GetBytes(payload, "response.unsafe_to_replay").Bool() ||
+		gjson.GetBytes(payload, "error.unsafe_to_replay").Bool() ||
+		gjson.GetBytes(payload, "response.error.unsafe_to_replay").Bool()
 	// 流内 failed 事件承载于 HTTP 200，响应头是正常配额快照而非限流信号，
 	// 不写账号级限流/封禁状态；重试与切号由 failover 引擎按
 	// StatusCode/RetryableOnSameAccount 决定。
@@ -1248,7 +1252,12 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		SafeToFailoverAfterWrite: false,
 		ResponseID:               responseID,
 		UsageKnown:               usageKnown,
-		Recovery:                 recovery,
+		UnsafeToReplay:           unsafeToReplay,
+		ResponseFailedOnly: strings.EqualFold(strings.TrimSpace(firstNonEmptyString(
+			gjson.GetBytes(payload, "type").String(),
+			gjson.GetBytes(payload, "response.type").String(),
+		)), "response.failed"),
+		Recovery: recovery,
 		NextAccountAction: func() NextAccountAction {
 			if outputStarted || classification.Hard {
 				return NextAccountStop

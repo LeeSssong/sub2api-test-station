@@ -141,6 +141,25 @@ func TestOpenAIForwardSucceededForScheduling(t *testing.T) {
 	}))
 }
 
+func TestOpenAIResponsesFailoverAllowed_RequiresPureResponseFailed(t *testing.T) {
+	tests := []struct {
+		name  string
+		state openAIResponsesFailoverState
+		want  bool
+	}{
+		{name: "pure response.failed is replayable", state: openAIResponsesFailoverState{ResponseFailedOnly: true}, want: true},
+		{name: "usage blocks replay", state: openAIResponsesFailoverState{ResponseFailedOnly: true, UsageProduced: true}, want: false},
+		{name: "semantic output blocks replay", state: openAIResponsesFailoverState{ResponseFailedOnly: true, OutputStarted: true}, want: false},
+		{name: "unsafe replay marker blocks replay", state: openAIResponsesFailoverState{ResponseFailedOnly: true, UnsafeToReplay: true}, want: false},
+		{name: "non response.failed terminal blocks replay", state: openAIResponsesFailoverState{}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, openAIResponsesFailoverAllowed(tt.state))
+		})
+	}
+}
+
 func TestOpenAIRequestAttemptMetadata_ContextRoundTrip(t *testing.T) {
 	metadata := service.OpenAIRequestAttemptMetadata{
 		LogicalRequestID:      "client-request-17",

@@ -23,6 +23,23 @@ func TestOpenAIModelTransient_FirstFailureDoesNotCreateLongBlock(t *testing.T) {
 	assert.False(t, state.isBlocked(35, "gpt-5.5", now))
 }
 
+func TestRecordOpenAIAccountModelFailure_502ImmediatelyStartsShortCooldown(t *testing.T) {
+	for _, status := range []int{502, 503} {
+		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
+			svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+			now := time.Date(2026, 8, 25, 10, 0, 0, 0, time.UTC)
+
+			decision := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{
+				AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: status, ErrorType: "transient_upstream", ImmediateCooldown: true, Now: now,
+			})
+
+			require.Equal(t, openAIModelTransientShortCooldown, decision.Cooldown)
+			require.True(t, decision.BlockUntil.After(now))
+			require.True(t, decision.ExcludeFromRequest)
+		})
+	}
+}
+
 func TestOpenAIModelTransient_SecondFailureCreatesShortModelBlock(t *testing.T) {
 	state := newOpenAIAccountModelTransientState(128)
 	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)

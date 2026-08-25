@@ -110,6 +110,37 @@ func TestRecordOpenAISchedulerSelectionAndOutcomeUseAttemptContext(t *testing.T)
 	require.False(t, outcome.RetryBudgetExhausted)
 }
 
+func TestRecordOpenAIResponsesFailoverDecisionPreservesSafetyFields(t *testing.T) {
+	now := time.Now().UTC()
+	groupID := int64(813)
+	ctx := WithOpenAIRequestAttemptMetadata(context.Background(), OpenAIRequestAttemptMetadata{
+		LogicalRequestID: "responses-safety-1", AttemptID: "responses-safety-1:1", AttemptNumber: 1,
+		AccountID: 94, CanonicalModel: "gpt-5.5",
+	})
+
+	RecordOpenAIResilienceOutcomeWithContext(ctx, OpenAIResilienceEvent{
+		Platform: PlatformOpenAI, GroupID: &groupID, Name: OpenAIEventResponsesFailoverDecision,
+		StatusCode: 503, ResponseFailedOnly: true, UsageProduced: false, OutputStarted: false,
+		UnsafeToReplay: false, SwitchAllowed: true, SwitchReason: "response_failed_only_without_usage_or_output",
+		Outcome: "allowed",
+	})
+
+	events := openAIResilienceEventsForWindow(now.Add(-time.Second), now.Add(time.Second), PlatformOpenAI, &groupID)
+	var got *OpenAIResilienceEvent
+	for i := range events {
+		if events[i].CorrelationID == "responses-safety-1" {
+			got = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, got)
+	require.Equal(t, OpenAIEventResponsesFailoverDecision, got.Name)
+	require.True(t, got.ResponseFailedOnly)
+	require.True(t, got.SwitchAllowed)
+	require.False(t, got.UnsafeToReplay)
+	require.Equal(t, "response_failed_only_without_usage_or_output", got.SwitchReason)
+}
+
 func TestRecordOpenAIAccountModelFailureRecordsDimensionedOutcome(t *testing.T) {
 	at := time.Date(2032, 1, 1, 0, 0, 0, 0, time.UTC)
 	groupID := int64(703)

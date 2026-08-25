@@ -31,6 +31,7 @@ type OpenAIRequestAttemptMetadata struct {
 	CachePreservationMode string
 	OutputStarted         bool
 	UsageProduced         bool
+	UnsafeToReplay        bool
 }
 
 // WithOpenAIRequestAttemptMetadata attaches immutable attempt identity to an

@@ -91,7 +91,7 @@ func (s *AccountModelDetectionService) ProjectionForAccount(ctx context.Context,
 	if err != nil {
 		return AccountModelDetectionProjection{}, err
 	}
-	recent, err := s.Recent(ctx, account.ID, 1)
+	recent, err := s.Recent(ctx, account.ID, 20)
 	if err != nil {
 		return AccountModelDetectionProjection{}, err
 	}
@@ -106,14 +106,27 @@ func (s *AccountModelDetectionService) ProjectionForAccount(ctx context.Context,
 		status = AccountModelDetectionStatusUnsupported
 	}
 	var summary *AccountModelDetectionSummary
+	var currentSummary *AccountModelDetectionSummary
 	if len(recent) > 0 {
-		run := recent[0]
-		status = run.Status
-		if run.Status == "" {
+		current := recent[0]
+		currentSummary = accountModelDetectionSummary(current, "current")
+		effective := current
+		effectiveSource := "current"
+		if !accountModelDetectionHasFinalEvidence(current) {
+			for _, candidate := range recent[1:] {
+				if accountModelDetectionHasFinalEvidence(candidate) {
+					effective = candidate
+					effectiveSource = "historical_final"
+					break
+				}
+			}
+		}
+		run := effective
+		status = current.Status
+		if current.Status == "" {
 			status = AccountModelDetectionStatusFailed
 		}
-		queued, started, finished := run.QueuedAt, run.StartedAt, run.FinishedAt
-		summary = &AccountModelDetectionSummary{Status: run.Status, ModelID: run.ModelID, ClaimedModel: run.ClaimedModel, JuiceStatus: run.JuiceStatus, JuiceSummary: run.JuiceSummary, FingerprintCandidate: run.FingerprintCandidate, FingerprintSimilarity: run.FingerprintSimilarity, DetectorVersion: run.DetectorVersion, ErrorCode: run.ErrorCode, ErrorMessage: run.ErrorMessage, QueuedAt: &queued, StartedAt: started, FinishedAt: finished, RunID: run.ID}
+		summary = accountModelDetectionSummary(run, effectiveSource)
 	}
 	if account.Type != AccountTypeAPIKey {
 		status = AccountModelDetectionStatusUnsupported
@@ -129,7 +142,25 @@ func (s *AccountModelDetectionService) ProjectionForAccount(ctx context.Context,
 			status = AccountModelDetectionStatusServiceUnavailable
 		}
 	}
-	return AccountModelDetectionProjection{Status: status, DetectorState: models.DetectorState, Settings: settings, ModelOptions: models.DetectionModels, Recent: summary}, nil
+	return AccountModelDetectionProjection{Status: status, DetectorState: models.DetectorState, Settings: settings, ModelOptions: models.DetectionModels, Recent: summary, Current: currentSummary}, nil
+}
+
+func accountModelDetectionHasFinalEvidence(run AccountModelDetectionRun) bool {
+	if run.FinishedAt == nil {
+		return false
+	}
+	return run.Status == AccountModelDetectionStatusNormal || run.Status == AccountModelDetectionStatusAbnormal
+}
+
+func accountModelDetectionSummary(run AccountModelDetectionRun, source string) *AccountModelDetectionSummary {
+	queued := run.QueuedAt
+	return &AccountModelDetectionSummary{
+		Status: run.Status, ModelID: run.ModelID, ClaimedModel: run.ClaimedModel,
+		JuiceStatus: run.JuiceStatus, JuiceSummary: run.JuiceSummary,
+		FingerprintCandidate: run.FingerprintCandidate, FingerprintSimilarity: run.FingerprintSimilarity,
+		DetectorVersion: run.DetectorVersion, ErrorCode: run.ErrorCode, ErrorMessage: run.ErrorMessage,
+		QueuedAt: &queued, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, RunID: run.ID, Source: source,
+	}
 }
 
 func (s *AccountModelDetectionService) modelsForAccount(ctx context.Context, account *Account) (AccountModelDetectionModelsResponse, error) {

@@ -25,6 +25,7 @@
 
       <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-950/50" data-test="model-detection-details">
         <div class="flex items-center justify-between gap-2"><span class="text-gray-500 dark:text-slate-400">{{ t('admin.accounts.modelDetection.recentStatus') }}</span><strong :class="statusClass">{{ statusLabel }}</strong></div>
+        <p v-if="recent?.source === 'historical_final'" class="mt-2 text-xs text-amber-700 dark:text-amber-300" data-test="model-detection-history-fallback">{{ t('admin.accounts.modelDetection.historicalFallback') }} · {{ recentTime }}</p>
         <p v-if="recent?.claimed_model" class="mt-2 text-xs text-gray-600 dark:text-slate-300">{{ t('admin.accounts.modelDetection.declaredModel') }}：{{ recent.claimed_model }}</p>
         <div v-if="evidence" class="mt-2 space-y-1 rounded-md border border-amber-200/70 bg-amber-50/50 p-2 dark:border-amber-900/50 dark:bg-amber-950/20" data-test="model-detection-evidence">
           <p v-if="evidence.verdict" class="text-xs font-semibold text-amber-800 dark:text-amber-200" data-test="model-detection-verdict">{{ t(`admin.accounts.modelDetection.verdict.${evidence.verdict}`) }}</p>

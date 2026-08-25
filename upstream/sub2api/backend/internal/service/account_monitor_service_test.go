@@ -512,6 +512,35 @@ func TestAccountMonitorListWindowRetainsSchedulableUnavailableAndStaleNativeScor
 	}
 }
 
+func TestAccountMonitorListWindowFallsBackToLatestHistoricalScoreWhenCurrentWindowHasNoScore(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 0.5
+	account := Account{ID: 601, Name: "history-score", Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, RateMultiplier: &rate}
+	historicalAt := now.Add(-2 * time.Hour)
+	repo := &accountMonitorRepoStub{
+		settings:      AccountMonitorSettings{IntervalSeconds: AccountMonitorDefaultIntervalSeconds},
+		globalWeights: AccountMonitorScoreWeights{Cost: 15, Success: 45, TTFT: 20, Latency: 20},
+		groups:        []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		aggregateResults: []map[int64]AccountMonitorAggregate{
+			{},
+			{601: {SampleCount: 12, SuccessSampleCount: 12, SuccessRate: 1, LastCheckedAt: &historicalAt}},
+		},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := accountMonitorRowsByID(page.Accounts)[601]
+	if row.QualityScore == nil || !row.Eligible || row.EvidenceSource != "historical_final" {
+		t.Fatalf("row = %#v, want historical score fallback", row)
+	}
+	if row.SampleCount != 0 {
+		t.Fatalf("current sample count = %d, want current window unchanged", row.SampleCount)
+	}
+}
+
 func (s *accountMonitorMultiplierStub) Resolve(account *Account, _ time.Time) AccountMonitorMultiplier {
 	if account != nil {
 		if result, ok := s.results[account.ID]; ok {

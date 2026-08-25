@@ -19,6 +19,9 @@ vi.mock('vue-i18n', async () => {
         'admin.accounts.modelDetection.section': '模型检测',
         'admin.accounts.modelDetection.observedAbnormal': '检测器观察到异常',
         'admin.accounts.modelDetection.viewRecent': '点击查看最近检测结果',
+        'admin.accounts.modelDetection.historicalFallback': '当前证据不足，沿用最近一次最终检测结果',
+        'admin.accounts.monitor.historyFallback': '评分沿用最近一次有效结果',
+        'admin.accounts.monitor.historyFallbackAt': '历史最终结果时间',
         'admin.accounts.modelDetection.title': '账号模型检测',
         'admin.accounts.modelDetection.close': '关闭',
         'admin.accounts.modelDetection.connectionProbeModel': '连接测试模型',
@@ -438,6 +441,12 @@ describe('AccountMonitorCard', () => {
     expect(wrapper.get('[data-test="score-metric"]').attributes('title')).not.toContain('探测成功率')
   })
 
+  it('shows the historical source when the score is carried from the last valid result', () => {
+    const wrapper = mountCard({ account: { ...account, evidence_source: 'historical_final', checked_at: '2026-08-25T08:00:00Z', quality_score: 88 } })
+    expect(wrapper.get('[data-test="score-metric"]').text()).toContain('评分沿用最近一次有效结果')
+    expect(wrapper.get('[data-test="score-metric"]').text()).toContain('历史最终结果时间')
+  })
+
   it('shows the score breakdown in an application tooltip on click', async () => {
     const wrapper = mountCard()
     await wrapper.get('[data-test="score-tooltip-trigger"]').trigger('click')
@@ -776,6 +785,25 @@ describe('AccountMonitorCard', () => {
     expect(dialog.get('[data-test="model-detection-finished-at"]').text()).toContain('2026')
     expect(dialog.get('[data-test="model-detection-error"]').text()).toContain('fingerprint_mismatch')
     expect(dialog.get('[data-test="model-detection-error"]').text()).toContain('证据不一致')
+  })
+
+  it('labels model detection details when the visible evidence is historical', async () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        model_detection: {
+          status: 'insufficient',
+          settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+          model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+          recent: { status: 'normal', source: 'historical_final', detector_version: 'detector-1', finished_at: '2026-08-25T08:00:00Z' },
+          current: { status: 'insufficient', source: 'current', finished_at: '2026-08-25T09:00:00Z' },
+        },
+      },
+    })
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).toContain('当前证据不足')
+    await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
+    expect(wrapper.get('[data-test="model-detection-history-fallback"]').text()).toContain('当前证据不足')
+    expect(wrapper.get('[data-test="model-detection-history-fallback"]').text()).toContain('2026')
   })
 
   it('shows mapping evidence without confusing the catalog with the upstream response model', async () => {

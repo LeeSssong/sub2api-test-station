@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T65 账号监控历史最终结果回退（2026-08-25）：** 状态：`READY_FOR_ROOT_REVIEW`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间；复用原生检测运行记录、监控结果与评分算法，不新增第二事实源。候选工作区：`.worktrees/t65-account-monitor-history-fallback`，分支 `codex/t65-account-monitor-history-fallback`，候选提交 `0f6222f0e`，基线 `main@7fb71683b`。尚未合并、推送、部署或线上验收。
+**T65 账号监控历史最终结果回退（2026-08-25）：** 状态：`READY_FOR_ROOT_REVIEW`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间；复用原生检测运行记录、监控结果与评分算法，不新增第二事实源。候选工作区：`.worktrees/t65-account-monitor-history-fallback`，分支 `codex/t65-account-monitor-history-fallback`，候选提交 `c86ac9664`（功能提交 `0f6222f0e`），基线 `main@7fb71683b`。交接文档：`docs/handoffs/2026-08-25-t65-account-monitor-history-fallback-handoff.md`。尚未合并、推送、部署或线上验收。
 
 **T66 Responses 安全切号与账号故障隔离（2026-08-25）：** 状态：`READY_FOR_ROOT_REVIEW`。范围仅包括余额不足账号立即隔离、502/503 账号短时冷却与请求级排除，以及 Responses 仅在 `response.failed` 且无 usage/扣费/语义输出时同请求切号；已产生 usage、扣费或 `unsafe_to_replay` 时禁止切号。候选工作区：`.worktrees/t66-response-failover-safety`，分支 `codex/t66-response-failover-safety`，候选提交 `db3285e22`，基线 `main@7fb71683b`。交接文档：`docs/handoffs/2026-08-25-t66-response-failover-safety-handoff.md`。尚未合并、推送、部署或线上验收。
 

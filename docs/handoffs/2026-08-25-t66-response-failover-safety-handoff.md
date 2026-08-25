@@ -2,7 +2,7 @@
 
 - 状态：`READY_FOR_ROOT_REVIEW`（已补充用户于 2026-08-25 明确授权的 Luna 本地不可用指引）
 - 原始基线：`main@7fb71683b`
-- 候选提交：`36949c8d0`
+- 候选提交：`cfcb38175`（功能提交 `e96de822b`，安全切号提交 `36949c8d0`）
 - 候选 worktree：`.worktrees/t66-response-failover-safety`
 - 候选分支：`codex/t66-response-failover-safety`
 - 未合并、未推送、未部署，等待根总控发送 `AUTHORIZE_MERGE_TO_MAIN`
@@ -33,6 +33,8 @@
 - `upstream/sub2api/backend/internal/service/openai_gateway_upstream_errors.go`
 - `upstream/sub2api/backend/internal/service/openai_resilience_observability.go`
 - `upstream/sub2api/backend/internal/service/openai_resilience_observability_test.go`
+- `upstream/sub2api/backend/internal/handler/no_account_error.go`
+- `upstream/sub2api/backend/internal/handler/no_account_error_test.go`
 - `docs/superpowers/specs/2026-08-25-t66-response-failover-safety-design.md`
 - `docs/superpowers/plans/2026-08-25-t66-response-failover-safety.md`
 
@@ -62,4 +64,4 @@ Luna 扩展新增 RED→GREEN 证据：`TestClassifyNoAccountError_LunaUnavailab
 - 无数据库迁移、无配置变更、无生产数据写入。
 - 根总控需先盘点 T65/T66 候选及最新 `main`，按队列串行合并；合并后的 `main` 再执行直接相关门禁、发布预检、推送、蓝绿部署和线上 Responses SSE/JSON 专项验证。
 - 真实生产请求的 SSE/JSON response.failed、usage、扣费和 `unsafe_to_replay` 组合尚未在线验证，属于根发布后的专项验收风险。
-- 若合并后验证或发布失败，保留本候选 worktree、分支和证据，在原任务包继续修复；回滚时恢复到合并前 `main` 或候选提交 `36949c8d0` 对应的上一稳定实现。
+- 若合并后验证或发布失败，保留本候选 worktree、分支和证据，在原任务包继续修复；回滚时恢复到合并前 `main` 或候选提交 `cfcb38175` 对应的上一稳定实现。

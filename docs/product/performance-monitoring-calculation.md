@@ -11,3 +11,5 @@
 ## 既有页面
 
 现有自建 Monitor V2 页面仍保持原有数据合同、布局和展示口径，`channel_monitor_mode=v1` 的路由行为不变。
+
+第四套文档与既有 `/custom/performance-monitor` 口径说明分开保留；旧页面的完整说明见 `performance-monitoring-calculation-legacy.md`。

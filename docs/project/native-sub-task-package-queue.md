@@ -3,7 +3,7 @@
 ## 当前进行中任务（2026-08-25，T65/T66）
 
 - **T65 账号监控历史最终结果回退**：状态 `DONE`。合并提交 `main@4cf11cd05`，生产源 `main@878623872`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T133438Z-production-3800920.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-878623872-t65-production.json`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间。不新增事实源。
-- **T66 Responses 安全切号、账号故障隔离与 Luna 不可用指引**：状态 `READY_FOR_ROOT_REVIEW`。用户于 2026-08-25 明确授权扩展：不主动降级；当 Luna 请求因本站无可用账号而失败时，返回稳定的模型不可用错误码及“改用 Sol/Terra，或切换到支持 Luna 的分组”指引。该提示仅限 Luna 的本地无账号路径，不复用全局上游错误透传规则，不改其他模型、上游 5xx、账号切号或账务语义。候选 `.worktrees/t66-response-failover-safety` / `codex/t66-response-failover-safety@e96de822b`；原范围保持余额不足账号立即隔离、502/503 账号短时冷却与请求级排除，以及 Responses 仅在 `response.failed` 且无 usage/扣费/语义输出时同请求切号；已产生 usage、扣费或 `unsafe_to_replay` 时禁止切号。Luna 无支持账号、空账号池、Responses JSON 契约以及非 Luna 原有 404/503 分支的直接测试和 server build 均通过；完整 handler/service 包仍有既有流式文案、scheduler/sticky 与 WebSocket 长测基线失败，未在本包扩大修复。尚未合并、推送、部署或线上验收。
+- **T66 Responses 安全切号、账号故障隔离与 Luna 不可用指引**：状态 `INTEGRATING`。合并提交 `main@15b5118d8`；候选已刷新到 T65 生产后的最新 `main`，合并后直接相关 handler/service 测试和 `go build ./cmd/server`、gofmt、diff-check 通过，待推送、发布预检、蓝绿部署与线上验收。用户于 2026-08-25 明确授权扩展：不主动降级；当 Luna 请求因本站无可用账号而失败时，返回稳定的模型不可用错误码及“改用 Sol/Terra，或切换到支持 Luna 的分组”指引。该提示仅限 Luna 的本地无账号路径，不复用全局上游错误透传规则，不改其他模型、上游 5xx、账号切号或账务语义；原范围继续包含余额不足账号立即隔离、502/503 短时冷却与请求级排除，以及安全 Responses 切号门禁。
 
 ## 当前进行中任务（2026-08-25，T64 用户导航与账号监控混合证据）
 

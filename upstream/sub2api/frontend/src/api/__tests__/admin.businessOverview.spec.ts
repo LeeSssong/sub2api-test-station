@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { normalizeBusinessOverview } from '../admin/businessOverview'
 
 describe('business overview normalization', () => {
-  it('preserves unknown financial values as null', () => {
+  it('defaults missing financial values to zero', () => {
     const report = normalizeBusinessOverview({ summary: { revenue_cny: null, gross_profit_cny: null, gross_margin: null }, cash_and_balance: { cash_recharge_cny: null } })
-    expect(report.summary.revenue_cny).toBeNull()
-    expect(report.summary.gross_profit_cny).toBeNull()
-    expect(report.cash_and_balance.cash_recharge_cny).toBeNull()
+    expect(report.summary.revenue_cny).toBe(0)
+    expect(report.summary.gross_profit_cny).toBe(0)
+    expect(report.cash_and_balance.cash_recharge_cny).toBe(0)
     expect(report.quota_unit_label).toContain('不是美元')
   })
 

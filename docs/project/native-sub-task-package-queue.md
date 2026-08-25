@@ -1,8 +1,8 @@
 # 原生 Sub 小步发布任务包队列
 
-## 当前生产收口任务（2026-08-25，T69）
+## 当前待根审任务（2026-08-25，T69）
 
-- **T69 账号监控证据与评分回退**：状态 `DONE`。候选已刷新到 `main@6cd484850`，合并为 `main@474ddb2afc6025e832183c958143bd9515bed8e3`，直接相关 service/repository/admin 测试、`go build ./cmd/server` 与 `git diff --check` 通过。既有预加载蓝绿链返回 `downtime_required=false`、`result=succeeded`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。真实调用样本来源区分 `real_request`/`monitor_probe`/`hybrid`，没有新鲜主动探测时不参与当前排名；历史最终评分可供暂停/不可调度账号展示但不改变调度资格；`evidence_insufficient` 与历史最终状态分开表达。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
+- **T69 账号监控证据与评分回退**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t69-account-monitor-evidence-fallback@861113395` 已完成直接相关 service/repository/admin 测试、`go build ./cmd/server` 与 `git diff --check`；尚未推送、部署或线上验收。此前并发产生的本地合并提交 `474ddb2af` 已由根总控可逆回退，保留恢复分支 `codex/t69-unapproved-merge-preserved`，未进入 T67 生产源。真实调用样本来源区分 `real_request`/`monitor_probe`/`hybrid`，没有新鲜主动探测时不参与当前排名；历史最终评分可供暂停/不可调度账号展示但不改变调度资格；`evidence_insufficient` 与历史最终状态分开表达。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
 
 ## 当前设计任务（2026-08-25，T68）
 
@@ -10,7 +10,7 @@
 
 ## 当前设计任务（2026-08-25，T67）
 
-- **T67 完全恢复 Sub 原生用户扣费**：状态 `DONE`。实现已合并进 `main@474ddb2afc6025e832183c958143bd9515bed8e3` 并随 T69 一次发布生效；推理扣费恢复为原生 `users.balance` 事务路径，充值/退款成功后失效余额缓存。直接相关 repository/admin/service 测试与 server build 通过；repository integration 的 `rootless Docker not found` 环境阻断证据保留。发布链返回 `downtime_required=false`、`result=succeeded`，公网三项健康端点均 200。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t67-native-billing-handoff.md`。
+- **T67 完全恢复 Sub 原生用户扣费**：状态 `DONE`。根 `main@d4566a5906eeb15f7d93f5085819f2b3bc015b81` 已推送并通过预加载蓝绿链发布；宿主记录 `/var/lib/sub2api/release-records/20260825T160205Z-production-4126867.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`。推理扣费恢复为原生 `users.balance` 事务路径，充值/退款成功后失效余额缓存。直接相关 repository/admin/service 测试与 server build 通过；repository integration 的 `rootless Docker not found` 环境阻断证据保留。线上三项健康端点、管理员额度摘要及只读余额/缓存一致性核对通过。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t67-native-billing-handoff.md`。
 
 ## 当前进行中任务（2026-08-25，T65/T66）
 

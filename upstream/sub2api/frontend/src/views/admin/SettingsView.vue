@@ -10050,6 +10050,12 @@ function recommendedSchedulerBusinessPriority(groupName?: string): OpenAISchedul
   if (name === "GPT-Pro" || name === "【专属】GPT-PRO") return { profit: 3, ttft: 1, latency: 2 };
   return { profit: 1, ttft: 1, latency: 1 };
 }
+
+function hasValidSchedulerBusinessPriority(priority: OpenAISchedulerBusinessPriority): boolean {
+  return [priority.profit, priority.ttft, priority.latency].every(
+    (value) => Number.isInteger(value) && value >= 1 && value <= 3,
+  );
+}
 function resetSchedulerBusinessPolicy(): void {
   const group = schedulerPolicyGroups.value.find((item) => String(item.id) === schedulerSelectedGroupId.value);
   schedulerPolicyDraft.priority = recommendedSchedulerBusinessPriority(group?.name);
@@ -10216,8 +10222,8 @@ function storeSchedulerPolicyDraft(): void {
 
 function loadSchedulerPolicyDraft(groupId: string): void {
   const next = schedulerPolicyDrafts[groupId] || normalizeSchedulerPolicy(form.openai_advanced_scheduler_group_policies?.[groupId]);
-  if (!schedulerPolicyDrafts[groupId] && !form.openai_advanced_scheduler_group_policies?.[groupId]) {
-    const group = schedulerPolicyGroups.value.find((item) => String(item.id) === groupId);
+  const group = schedulerPolicyGroups.value.find((item) => String(item.id) === groupId);
+  if (!hasValidSchedulerBusinessPriority(next.priority)) {
     next.priority = recommendedSchedulerBusinessPriority(group?.name);
   }
   schedulerPolicyDrafts[groupId] = cloneSchedulerPolicyDraft(next);

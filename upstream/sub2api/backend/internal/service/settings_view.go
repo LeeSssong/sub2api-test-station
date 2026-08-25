@@ -43,6 +43,29 @@ const (
 	OpenAISchedulerPresetPro          OpenAISchedulerPreset = "pro"
 )
 
+// OpenAISchedulerBusinessPriority is the operator-facing priority contract.
+// A lower number means a higher business priority; equal values remain equal
+// tiers and are compiled to equal native factors.
+type OpenAISchedulerBusinessPriority struct {
+	Profit  int `json:"profit"`
+	TTFT    int `json:"ttft"`
+	Latency int `json:"latency"`
+}
+
+// OpenAISchedulerOperations contains the three discrete operator controls.
+// The service owns their translation to native fairness/sticky inputs.
+type OpenAISchedulerOperations struct {
+	Balance           string `json:"balance"`
+	PeakProtection    string `json:"peak_protection"`
+	SessionContinuity string `json:"session_continuity"`
+}
+
+type OpenAISchedulerBusinessGroupPolicy struct {
+	Priority         OpenAISchedulerBusinessPriority `json:"priority"`
+	Operations       OpenAISchedulerOperations       `json:"operations"`
+	CompiledSnapshot OpenAISchedulerPolicyValues     `json:"compiled_snapshot"`
+}
+
 type OpenAISchedulerPolicyValues struct {
 	TopK                       int     `json:"top_k"`
 	Priority                   float64 `json:"priority"`
@@ -162,14 +185,17 @@ type OpenAISchedulerCustomPreset struct {
 }
 
 type OpenAISchedulerGroupPolicy struct {
-	Mode            OpenAISchedulerGroupPolicyMode   `json:"mode,omitempty"`
-	Preset          OpenAISchedulerPreset            `json:"preset,omitempty"`
-	PresetID        string                           `json:"preset_id,omitempty"`
-	TopK            *int                             `json:"top_k,omitempty"`
-	WeightOverrides map[string]float64               `json:"weight_overrides,omitempty"`
-	Fairness        *OpenAISchedulerFairnessOverride `json:"fairness,omitempty"`
-	Values          OpenAISchedulerPolicyValues      `json:"-"`
-	LegacyFairness  OpenAISchedulerFairnessOverride  `json:"-"`
+	Mode             OpenAISchedulerGroupPolicyMode   `json:"mode,omitempty"`
+	Preset           OpenAISchedulerPreset            `json:"preset,omitempty"`
+	PresetID         string                           `json:"preset_id,omitempty"`
+	Priority         OpenAISchedulerBusinessPriority  `json:"priority,omitempty"`
+	Operations       OpenAISchedulerOperations        `json:"operations,omitempty"`
+	CompiledSnapshot OpenAISchedulerPolicyValues      `json:"compiled_snapshot,omitempty"`
+	TopK             *int                             `json:"top_k,omitempty"`
+	WeightOverrides  map[string]float64               `json:"weight_overrides,omitempty"`
+	Fairness         *OpenAISchedulerFairnessOverride `json:"fairness,omitempty"`
+	Values           OpenAISchedulerPolicyValues      `json:"-"`
+	LegacyFairness   OpenAISchedulerFairnessOverride  `json:"-"`
 }
 
 func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {
@@ -177,15 +203,31 @@ func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {
 	m := map[string]any{}
 	b, _ := json.Marshal(alias(p))
 	_ = json.Unmarshal(b, &m)
-	for k, v := range map[string]any{"candidate_pool_mode": p.LegacyFairness.CandidatePoolMode, "exploration_ratio": p.LegacyFairness.ExplorationRatio, "starvation_threshold_seconds": p.LegacyFairness.StarvationThresholdSeconds, "fairness_weight": p.LegacyFairness.FairnessWeight} {
-		if v != nil {
-			m[k] = v
-		}
+	if p.LegacyFairness.CandidatePoolMode != nil {
+		m["candidate_pool_mode"] = *p.LegacyFairness.CandidatePoolMode
+	}
+	if p.LegacyFairness.ExplorationRatio != nil {
+		m["exploration_ratio"] = *p.LegacyFairness.ExplorationRatio
+	}
+	if p.LegacyFairness.StarvationThresholdSeconds != nil {
+		m["starvation_threshold_seconds"] = *p.LegacyFairness.StarvationThresholdSeconds
+	}
+	if p.LegacyFairness.FairnessWeight != nil {
+		m["fairness_weight"] = *p.LegacyFairness.FairnessWeight
 	}
 	if p.Values.TopK > 0 {
 		m["top_k"] = p.Values.TopK
 		m["weight_overrides"] = map[string]float64{"priority": p.Values.Priority, "load": p.Values.Load, "queue": p.Values.Queue, "error_rate": p.Values.ErrorRate, "ttft": p.Values.TTFT, "reset": p.Values.Reset, "quota_headroom": p.Values.QuotaHeadroom, "upstream_cost": p.Values.UpstreamCost, "previous_response": p.Values.PreviousResponse, "session_sticky": p.Values.SessionSticky}
 		m["fairness"] = map[string]any{"candidate_pool_mode": p.Values.CandidatePoolMode, "exploration_ratio": p.Values.ExplorationRatio, "starvation_threshold_seconds": p.Values.StarvationThresholdSeconds, "fairness_weight": p.Values.FairnessWeight}
+	}
+	if p.Priority != (OpenAISchedulerBusinessPriority{}) {
+		m["priority"] = p.Priority
+	}
+	if p.Operations != (OpenAISchedulerOperations{}) {
+		m["operations"] = p.Operations
+	}
+	if p.CompiledSnapshot.TopK > 0 {
+		m["compiled_snapshot"] = p.CompiledSnapshot
 	}
 	return json.Marshal(m)
 }

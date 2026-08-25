@@ -258,6 +258,65 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["openai_advanced_scheduler_subscription_priority_enabled"])
 }
 
+func TestSettingHandlerSchedulerBusinessPolicyCompilesOnServerAndRejectsInvalidPriority(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{values: map[string]string{service.SettingKeyPromoCodeEnabled: "true"}}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"openai_advanced_scheduler_group_policies": map[string]any{
+			"1": map[string]any{
+				"mode":              "custom",
+				"priority":          map[string]any{"profit": 1, "ttft": 2, "latency": 3},
+				"operations":        map[string]any{"balance": "high", "peak_protection": "strict", "session_continuity": "keep"},
+				"compiled_snapshot": map[string]any{"top_k": 32, "weight_overrides": map[string]any{"upstream_cost": 99}},
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.UpdateSettings(c)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var stored map[string]map[string]any
+	require.NoError(t, json.Unmarshal([]byte(repo.values[service.SettingKeyOpenAIAdvancedSchedulerGroupOverrides]), &stored))
+	policy := stored["1"]
+	require.Equal(t, float64(1), policy["priority"].(map[string]any)["profit"])
+	require.NotEqual(t, float64(99), policy["compiled_snapshot"].(map[string]any)["weight_overrides"].(map[string]any)["upstream_cost"])
+
+	rec = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
+	h.GetSettings(c)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var getResp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &getResp))
+	getData, ok := getResp.Data.(map[string]any)
+	require.True(t, ok)
+	getPolicies, ok := getData["openai_advanced_scheduler_group_policies"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(2), getPolicies["1"].(map[string]any)["priority"].(map[string]any)["ttft"])
+	require.NotNil(t, getPolicies["1"].(map[string]any)["compiled_snapshot"])
+
+	invalid := map[string]any{"openai_advanced_scheduler_group_policies": map[string]any{"1": map[string]any{
+		"priority":   map[string]any{"profit": 0, "ttft": 2, "latency": 3},
+		"operations": map[string]any{"balance": "standard", "peak_protection": "strict", "session_continuity": "standard"},
+	}}}
+	raw, err = json.Marshal(invalid)
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.UpdateSettings(c)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestSettingHandlerSchedulerPresetsRoundTripAndRejectsReferencedPresetDeletion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	customID := "custom:550e8400-e29b-41d4-a716-446655440000"

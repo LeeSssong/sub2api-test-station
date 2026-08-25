@@ -275,6 +275,17 @@ func TestNormalizeOpenAISchedulerBusinessPriorityPreservesEqualPriorityTiers(t *
 	}
 }
 
+func TestNormalizeOpenAISchedulerRuntimeGroupPoliciesCompilesBusinessPolicy(t *testing.T) {
+	raw := `{"7":{"mode":"custom","priority":{"profit":1,"ttft":2,"latency":3},"operations":{"balance":"high","peak_protection":"strict","session_continuity":"keep"},"compiled_snapshot":{"top_k":32,"weight_overrides":{"upstream_cost":99}}}}`
+	got := normalizeOpenAISchedulerRuntimeGroupPolicies(7, nil, defaultOpenAISchedulerFairnessSettings(), raw)
+	require.Contains(t, got, int64(7))
+	policy := got[7]
+	require.Equal(t, OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 2, Latency: 3}, policy.Priority)
+	require.NotEqual(t, 99.0, policy.Values.UpstreamCost)
+	require.Equal(t, 0, policy.Values.ExplorationRatio)
+	require.Equal(t, OpenAISchedulerCandidatePoolModeAllEligible, policy.Values.CandidatePoolMode)
+}
+
 func TestNormalizeOpenAISchedulerOperationsValidatesEnumsAndDefaultsMissingValues(t *testing.T) {
 	got, err := normalizeOpenAISchedulerOperations(OpenAISchedulerOperations{})
 	require.NoError(t, err)
@@ -301,10 +312,10 @@ func TestNormalizeOpenAISchedulerOperationsValidatesEnumsAndDefaultsMissingValue
 
 func TestParseOpenAISchedulerBusinessPolicyReadsLegacyPayloadWithoutChangingCompiledSnapshot(t *testing.T) {
 	legacy := OpenAISchedulerGroupPolicy{
-		Mode: OpenAISchedulerGroupPolicyModeWeightedOverride,
-		TopK: intPtrForTest(7),
+		Mode:            OpenAISchedulerGroupPolicyModeWeightedOverride,
+		TopK:            intPtrForTest(7),
 		WeightOverrides: map[string]float64{"priority": 2, "ttft": 0.5, "upstream_cost": 2.5},
-		Fairness: &OpenAISchedulerFairnessOverride{CandidatePoolMode: stringPtr(OpenAISchedulerCandidatePoolModeHybrid), ExplorationRatio: fairnessIntPtr(25), FairnessWeight: floatPtr(3)},
+		Fairness:        &OpenAISchedulerFairnessOverride{CandidatePoolMode: schedulerStringPtr(OpenAISchedulerCandidatePoolModeHybrid), ExplorationRatio: fairnessIntPtr(25), FairnessWeight: floatPtr(3)},
 	}
 	legacyValues := openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
 	legacy.Values = applyOpenAISchedulerGroupPolicySnapshot(legacyValues, legacy)
@@ -313,10 +324,13 @@ func TestParseOpenAISchedulerBusinessPolicyReadsLegacyPayloadWithoutChangingComp
 	require.NoError(t, err)
 	require.Equal(t, legacy.Values, got.CompiledSnapshot)
 	require.Equal(t, OpenAISchedulerOperations{Balance: "standard", PeakProtection: "strict", SessionContinuity: "standard"}, got.Operations)
-	require.Equal(t, OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 2, Latency: 3}, got.Priority)
+	require.Equal(t, OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 1, Latency: 1}, got.Priority)
 }
 
+func schedulerStringPtr(value string) *string { return &value }
+
 func TestNormalizeOpenAISchedulerFairnessSettingsDefaultsMissingValues(t *testing.T) {
+
 	got, err := normalizeOpenAISchedulerFairnessSettings(OpenAISchedulerFairnessSettings{})
 	require.NoError(t, err)
 	require.Equal(t, OpenAISchedulerCandidatePoolModeHybrid, got.CandidatePoolMode)

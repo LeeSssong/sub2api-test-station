@@ -199,10 +199,12 @@
           :model-detection-models="modelDetectionModelsByID[account.account_id] ?? null"
           :saving-model-detection="savingModelDetectionIDs.includes(account.account_id)"
           :detecting-model-detection="detectingModelDetectionIDs.includes(account.account_id)"
+          :use-history-panel="true"
           @refresh="handleRunOne"
           @edit-connection-probe-model="loadModelDetectionModels"
           @save-model-detection-models="saveModelDetectionModels"
           @detect-model-detection="enqueueModelDetection"
+          @open-model-detection-history="openModelDetectionHistory"
           @update-priority="updatePriority"
           @edit-cost="openCostDialog"
           @account-info="openAccountInfo"
@@ -289,6 +291,7 @@
       <AccountStatsModal :show="showStatsDialog" :account="statsAccount" @close="closeStatsDialog" />
       <ScheduledTestsPanel :show="showScheduleDialog" :account-id="scheduleAccount?.id ?? null" :model-options="scheduleModelOptions" @close="closeScheduleDialog" />
       <ReAuthAccountModal :show="showReAuthDialog" :account="reAuthAccount" @close="closeReAuthDialog" @reauthorized="handleNativeAccountUpdated" />
+      <AccountModelDetectionHistoryPanel :show="showDetectionHistoryPanel" :account="selectedDetectionHistoryAccount" @close="closeModelDetectionHistory" />
     </div>
   </AppLayout>
 </template>
@@ -312,6 +315,7 @@ import AccountMonitorCostDialog from '@/components/admin/account-monitor/Account
 import AccountMonitorAccountInfoDialog from '@/components/admin/account-monitor/AccountMonitorAccountInfoDialog.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
 import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
+import AccountModelDetectionHistoryPanel from '@/components/admin/account-monitor/AccountModelDetectionHistoryPanel.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { EditAccountModal } from '@/components/account'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
@@ -396,6 +400,8 @@ const scheduleAccount = ref<Account | null>(null)
 const scheduleModelOptions = ref<{ value: string; label: string }[]>([])
 const showReAuthDialog = ref(false)
 const reAuthAccount = ref<Account | null>(null)
+const showDetectionHistoryPanel = ref(false)
+const selectedDetectionHistoryAccount = ref<AccountMonitorAccount | null>(null)
 const nativeAccountRequests = new Map<number, Promise<Account>>()
 const nativeAccountError = ref<string | null>(null)
 const nativeAccountLoading = ref(false)
@@ -713,6 +719,16 @@ async function enqueueModelDetection(accountID: number) {
   } finally {
     detectingModelDetectionIDs.value = detectingModelDetectionIDs.value.filter((id) => id !== accountID)
   }
+}
+
+function openModelDetectionHistory(accountID: number) {
+  selectedDetectionHistoryAccount.value = allAccounts.value.find((account) => account.account_id === accountID) ?? null
+  showDetectionHistoryPanel.value = selectedDetectionHistoryAccount.value != null
+}
+
+function closeModelDetectionHistory() {
+  showDetectionHistoryPanel.value = false
+  selectedDetectionHistoryAccount.value = null
 }
 
 async function updatePriority(accountID: number, priority: number, completion: SaveCompletion) {

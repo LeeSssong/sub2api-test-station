@@ -36,3 +36,31 @@ func TestAccountModelDetectionMigration(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountModelDetectionEvidenceMigrationAddsBoundedHistoryFields(t *testing.T) {
+	sqlBytes, err := FS.ReadFile("228_account_model_detection_evidence.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := strings.ToLower(string(sqlBytes))
+	for _, fragment := range []string{
+		"alter table account_model_detection_runs",
+		"add column if not exists profile",
+		"add column if not exists mode",
+		"add column if not exists trigger_reason",
+		"add column if not exists planned_requests",
+		"add column if not exists valid_samples",
+		"add column if not exists evidence_state",
+		"add column if not exists fingerprint_status",
+		"account_model_detection_runs_account_created_id_idx",
+	} {
+		if !strings.Contains(sql, fragment) {
+			t.Fatalf("evidence migration missing %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{"api_key", "base_url", "authorization", "prompt", "output"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("evidence migration must not contain %q", forbidden)
+		}
+	}
+}

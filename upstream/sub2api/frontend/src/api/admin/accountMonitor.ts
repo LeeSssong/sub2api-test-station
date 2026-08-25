@@ -240,6 +240,13 @@ export interface AccountModelDetectionSummary {
   finished_at?: string
   run_id?: string
   source?: 'current' | 'historical_final' | string
+  profile?: 'low' | 'medium' | 'high' | 'unknown' | string
+  mode?: 'monitor' | 'manual' | 'escalation' | 'historical' | string
+  trigger_reason?: string
+  planned_requests?: number
+  valid_samples?: number
+  evidence_state?: 'complete' | 'insufficient' | 'unavailable' | 'historical' | string
+  fingerprint_status?: string
 }
 
 export interface AccountModelDetectionProjection {
@@ -268,6 +275,15 @@ export interface AccountModelDetectionRunResponse {
 
 export interface AccountModelDetectionHistoryResponse {
   items: AccountModelDetectionSummary[]
+  next_cursor?: string
+}
+
+export interface AccountModelDetectionHistoryParams {
+  limit?: number
+  cursor?: string
+  status?: string
+  profile?: string
+  mode?: string
 }
 
 export interface AccountMonitorGroup {
@@ -395,8 +411,8 @@ export async function enqueueModelDetection(accountID: number): Promise<AccountM
   return data
 }
 
-export async function modelDetectionHistory(accountID: number): Promise<AccountModelDetectionHistoryResponse> {
-  const { data } = await apiClient.get<AccountModelDetectionHistoryResponse>(`/admin/account-monitors/${accountID}/detection`)
+export async function modelDetectionHistory(accountID: number, params: AccountModelDetectionHistoryParams = {}): Promise<AccountModelDetectionHistoryResponse> {
+  const { data } = await apiClient.get<AccountModelDetectionHistoryResponse>(`/admin/account-monitors/${accountID}/detection`, { params })
   return data
 }
 

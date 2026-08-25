@@ -192,7 +192,7 @@
       </section>
 
       <section class="border-t border-gray-100 py-3 dark:border-slate-800" data-test="model-detection-section">
-        <button type="button" class="flex min-h-10 w-full items-center gap-2 text-left text-xs" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionDialog">
+        <button type="button" class="flex min-h-10 w-full items-center gap-2 text-left text-xs" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry">
           <span class="font-semibold text-gray-700 dark:text-slate-200">{{ t('admin.accounts.modelDetection.section') }}</span>
           <span class="rounded-full px-2 py-0.5" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span>
           <span class="min-w-0 flex-1 truncate text-gray-500 dark:text-slate-400">{{ modelDetectionStatusHint }}</span>
@@ -259,7 +259,8 @@ const props = withDefaults(defineProps<{
   modelDetectionModels?: AccountModelDetectionModelsResponse | null
   savingModelDetection?: boolean
   detectingModelDetection?: boolean
-}>(), { concurrency: null, running: false, rankedAccountCount: 0, rankingScope: 'group', statisticsCutoff: null, selectedRange: '24h' })
+  useHistoryPanel?: boolean
+}>(), { concurrency: null, running: false, rankedAccountCount: 0, rankingScope: 'group', statisticsCutoff: null, selectedRange: '24h', useHistoryPanel: false })
 const { t } = useI18n()
 
 const emit = defineEmits<{
@@ -273,6 +274,7 @@ const emit = defineEmits<{
   (event: 'editConnectionProbeModel', account: AccountMonitorAccount): void
   (event: 'saveModelDetectionModels', accountID: number, payload: { connectionModel: string; detectionModel: string }): void
   (event: 'detectModelDetection', accountID: number): void
+  (event: 'openModelDetectionHistory', accountID: number): void
 }>()
 
 const displayedPriority = ref(props.account.priority)
@@ -286,6 +288,13 @@ const modelDetectionDialogOpen = ref(false)
 function openModelDetectionDialog() {
   modelDetectionDialogOpen.value = true
   emit('editConnectionProbeModel', props.account)
+}
+function openModelDetectionEntry() {
+  if (props.useHistoryPanel) {
+    emit('openModelDetectionHistory', props.account.account_id)
+    return
+  }
+  openModelDetectionDialog()
 }
 
 const platformLabel = computed(() => props.account.platform || '--')

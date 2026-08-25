@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -27,7 +29,7 @@ type AccountModelDetectionRepository interface {
 	ListQueued(context.Context, int) ([]string, error)
 	Claim(context.Context, string) (*AccountModelDetectionRun, error)
 	Complete(context.Context, string, AccountModelDetectionResponse, string, string) error
-	ListRecent(context.Context, int64, int) ([]AccountModelDetectionRun, error)
+	ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error)
 }
 
 type AccountModelDetectionSidecar interface {
@@ -55,6 +57,8 @@ type AccountModelDetectionService struct {
 	catalogAt      time.Time
 	catalog        []string
 	catalogState   AccountModelDetectorState
+	escalationMu   sync.Mutex
+	escalationAt   map[int64]time.Time
 }
 
 func NewAccountModelDetectionService(repo AccountModelDetectionRepository, accounts AccountModelDetectionAccountReader, sidecar AccountModelDetectionSidecar) *AccountModelDetectionService {
@@ -62,7 +66,21 @@ func NewAccountModelDetectionService(repo AccountModelDetectionRepository, accou
 	if err != nil {
 		location = time.FixedZone("Asia/Shanghai", 8*60*60)
 	}
-	return &AccountModelDetectionService{repo: repo, accounts: accounts, sidecar: sidecar, location: location, now: time.Now, executionSlots: make(chan struct{}, 4)}
+	return &AccountModelDetectionService{repo: repo, accounts: accounts, sidecar: sidecar, location: location, now: time.Now, executionSlots: make(chan struct{}, 4), escalationAt: make(map[int64]time.Time)}
+}
+
+func newAccountModelDetectionRun(accountID int64, modelID, profile, mode, reason string) AccountModelDetectionRun {
+	planned := map[string]int{
+		AccountModelDetectionProfileLow:    19,
+		AccountModelDetectionProfileMedium: 49,
+		AccountModelDetectionProfileHigh:   158,
+	}[profile]
+	return AccountModelDetectionRun{
+		ID: uuid.NewString(), AccountID: accountID, ModelID: modelID, ClaimedModel: modelID,
+		Profile: profile, Mode: mode, TriggerReason: reason, PlannedRequests: planned,
+		EvidenceState: AccountModelDetectionEvidenceUnavailable,
+		Status:        AccountModelDetectionStatusQueued, QueuedAt: time.Now().UTC(), CreatedAt: time.Now().UTC(),
+	}
 }
 
 func (s *AccountModelDetectionService) Models(ctx context.Context, accountID int64) (AccountModelDetectionModelsResponse, error) {
@@ -160,6 +178,8 @@ func accountModelDetectionSummary(run AccountModelDetectionRun, source string) *
 		FingerprintCandidate: run.FingerprintCandidate, FingerprintSimilarity: run.FingerprintSimilarity,
 		DetectorVersion: run.DetectorVersion, ErrorCode: run.ErrorCode, ErrorMessage: run.ErrorMessage,
 		QueuedAt: &queued, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, RunID: run.ID, Source: source,
+		Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason, PlannedRequests: run.PlannedRequests,
+		ValidSamples: run.ValidSamples, EvidenceState: run.EvidenceState, FingerprintStatus: run.FingerprintStatus,
 	}
 }
 
@@ -338,12 +358,87 @@ func (s *AccountModelDetectionService) EnqueueImmediate(ctx context.Context, acc
 		return AccountModelDetectionRun{}, false, ErrAccountModelDetectionUnsupported
 	}
 	claimed := models.ModelDetectionModel
-	run := AccountModelDetectionRun{ID: uuid.NewString(), AccountID: accountID, TriggerKind: "manual", ModelID: claimed, ClaimedModel: claimed, Status: AccountModelDetectionStatusQueued, QueuedAt: s.now().UTC(), CreatedAt: s.now().UTC()}
+	run := newAccountModelDetectionRun(accountID, claimed, AccountModelDetectionProfileLow, AccountModelDetectionModeManual, AccountModelDetectionTriggerManual)
+	run.TriggerKind = "manual"
+	run.QueuedAt = s.now().UTC()
+	run.CreatedAt = run.QueuedAt
 	queued, reused, err := s.repo.Enqueue(ctx, run)
 	if err != nil {
 		return AccountModelDetectionRun{}, false, err
 	}
 	_ = actorID
+	return queued, reused, nil
+}
+
+func shouldEscalateDetection(recent []AccountModelDetectionRun) (bool, string) {
+	final := make([]AccountModelDetectionRun, 0, len(recent))
+	for _, run := range recent {
+		if run.FinishedAt != nil {
+			final = append(final, run)
+		}
+	}
+	if len(final) == 0 {
+		return true, AccountModelDetectionTriggerFirstRun
+	}
+	if final[0].JuiceStatus == "mismatch" || final[0].FingerprintStatus == "mismatch" || final[0].FingerprintStatus == "strong_conflict" {
+		return true, AccountModelDetectionTriggerModelConflict
+	}
+	if len(final) >= 2 && final[0].Status == AccountModelDetectionStatusAbnormal && final[1].Status == AccountModelDetectionStatusAbnormal {
+		return true, AccountModelDetectionTriggerConsecutiveAbnormal
+	}
+	if len(final) >= 2 && final[0].Status == AccountModelDetectionStatusInsufficient && final[1].Status == AccountModelDetectionStatusInsufficient {
+		return true, AccountModelDetectionTriggerInsufficient
+	}
+	if len(final) == 1 && final[0].Status != AccountModelDetectionStatusInsufficient {
+		return true, AccountModelDetectionTriggerFirstRun
+	}
+	return false, ""
+}
+
+func (s *AccountModelDetectionService) EnqueueEscalationHigh(ctx context.Context, accountID int64, reason string) (AccountModelDetectionRun, bool, error) {
+	if s == nil || s.repo == nil || s.accounts == nil {
+		return AccountModelDetectionRun{}, false, errors.New("account model detection is unavailable")
+	}
+	account, err := s.accounts.GetByID(ctx, accountID)
+	if err != nil || account == nil {
+		if err == nil {
+			err = errors.New("account not found")
+		}
+		return AccountModelDetectionRun{}, false, err
+	}
+	if account.Type != AccountTypeAPIKey {
+		return AccountModelDetectionRun{}, false, ErrAccountModelDetectionUnsupported
+	}
+	models, err := s.modelsForAccount(ctx, account)
+	if err != nil {
+		return AccountModelDetectionRun{}, false, err
+	}
+	if models.DetectorState != AccountModelDetectorStateReady {
+		return AccountModelDetectionRun{}, false, ErrAccountModelDetectionUnavailable
+	}
+	if models.ModelDetectionModel == "" {
+		return AccountModelDetectionRun{}, false, ErrAccountModelDetectionUnsupported
+	}
+	if reason == "" {
+		reason = AccountModelDetectionTriggerFirstRun
+	}
+	s.escalationMu.Lock()
+	last := s.escalationAt[accountID]
+	now := s.now().UTC()
+	if !last.IsZero() && now.Sub(last) < 30*time.Minute {
+		s.escalationMu.Unlock()
+		return AccountModelDetectionRun{}, true, nil
+	}
+	s.escalationAt[accountID] = now
+	s.escalationMu.Unlock()
+	run := newAccountModelDetectionRun(accountID, models.ModelDetectionModel, AccountModelDetectionProfileHigh, AccountModelDetectionModeEscalation, reason)
+	run.TriggerKind = "scheduled"
+	run.QueuedAt = now
+	run.CreatedAt = now
+	queued, reused, err := s.repo.Enqueue(ctx, run)
+	if err != nil {
+		return AccountModelDetectionRun{}, false, err
+	}
 	return queued, reused, nil
 }
 
@@ -371,7 +466,11 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 			continue
 		}
 		slotCopy := slot
-		run := AccountModelDetectionRun{ID: uuid.NewString(), AccountID: account.ID, SlotKey: &slotCopy, TriggerKind: "scheduled", ModelID: models.ModelDetectionModel, ClaimedModel: models.ModelDetectionModel, Status: AccountModelDetectionStatusQueued, QueuedAt: now.UTC(), CreatedAt: now.UTC()}
+		run := newAccountModelDetectionRun(account.ID, models.ModelDetectionModel, AccountModelDetectionProfileMedium, AccountModelDetectionModeMonitor, AccountModelDetectionTriggerScheduled)
+		run.SlotKey = &slotCopy
+		run.TriggerKind = "scheduled"
+		run.QueuedAt = now.UTC()
+		run.CreatedAt = run.QueuedAt
 		_, reused, err := s.repo.Enqueue(ctx, run)
 		if err != nil {
 			return completed, err
@@ -399,10 +498,66 @@ func (s *AccountModelDetectionService) RunQueued(ctx context.Context) (int, erro
 }
 
 func (s *AccountModelDetectionService) Recent(ctx context.Context, accountID int64, limit int) ([]AccountModelDetectionRun, error) {
+	page, err := s.RecentPage(ctx, accountID, limit, "", "", "", "")
+	return page.Items, err
+}
+
+func (s *AccountModelDetectionService) RecentPage(ctx context.Context, accountID int64, limit int, cursor, status, profile, mode string) (AccountModelDetectionHistoryPage, error) {
 	if s == nil || s.repo == nil {
-		return nil, errors.New("account model detection is unavailable")
+		return AccountModelDetectionHistoryPage{}, errors.New("account model detection is unavailable")
 	}
-	return s.repo.ListRecent(ctx, accountID, limit)
+	page, err := s.repo.ListRecent(ctx, accountID, limit, cursor, status, profile, mode)
+	if err != nil {
+		return AccountModelDetectionHistoryPage{}, err
+	}
+	// Keep repository implementations and lightweight test doubles compatible:
+	// if a repository returns an unbounded slice, apply the same stable page here.
+	if page.NextCursor == "" && (len(page.Items) > limit || strings.TrimSpace(cursor) != "") {
+		page.Items, page.NextCursor = paginateDetectionRuns(page.Items, limit, cursor, status, profile, mode)
+	}
+	return page, nil
+}
+
+type detectionHistoryCursor struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+}
+
+func paginateDetectionRuns(items []AccountModelDetectionRun, limit int, cursor, status, profile, mode string) ([]AccountModelDetectionRun, string) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	filtered := make([]AccountModelDetectionRun, 0, len(items))
+	var after detectionHistoryCursor
+	if decoded, err := base64.RawURLEncoding.DecodeString(cursor); err == nil {
+		_ = json.Unmarshal(decoded, &after)
+	}
+	for _, item := range items {
+		if status != "" && item.Status != status || profile != "" && item.Profile != profile || mode != "" && item.Mode != mode {
+			continue
+		}
+		if !after.CreatedAt.IsZero() && !item.CreatedAt.Before(after.CreatedAt) {
+			if item.CreatedAt.Equal(after.CreatedAt) && item.ID < after.ID {
+				// same timestamp rows after the cursor remain eligible
+			} else {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	sort.SliceStable(filtered, func(i, j int) bool {
+		if filtered[i].CreatedAt.Equal(filtered[j].CreatedAt) {
+			return filtered[i].ID > filtered[j].ID
+		}
+		return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
+	})
+	if len(filtered) <= limit {
+		return filtered, ""
+	}
+	page := filtered[:limit]
+	last := page[len(page)-1]
+	cursorValue, _ := json.Marshal(detectionHistoryCursor{CreatedAt: last.CreatedAt.UTC(), ID: last.ID})
+	return page, base64.RawURLEncoding.EncodeToString(cursorValue)
 }
 
 func (s *AccountModelDetectionService) execute(ctx context.Context, runID string) {
@@ -444,13 +599,33 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 		return
 	}
 	baseURL := account.GetBaseURL()
-	response, err := s.sidecar.Detect(ctx, AccountModelDetectionRequest{RunID: run.ID, DeclaredModel: run.ClaimedModel, RequestModel: run.ModelID, APIKey: apiKey, BaseURL: baseURL})
+	response, err := s.sidecar.Detect(ctx, AccountModelDetectionRequest{RunID: run.ID, DeclaredModel: run.ClaimedModel, RequestModel: run.ModelID, APIKey: apiKey, BaseURL: baseURL, Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason})
 	if err != nil {
 		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "detector_unavailable", "检测器不可用")
 		return
 	}
+	if response.Profile == "" {
+		response.Profile = run.Profile
+	}
+	if response.PlannedRequests == 0 {
+		response.PlannedRequests = run.PlannedRequests
+	}
+	if response.EvidenceState == "" {
+		if response.Status == AccountModelDetectionStatusNormal || response.Status == AccountModelDetectionStatusAbnormal {
+			response.EvidenceState = AccountModelDetectionEvidenceComplete
+		} else {
+			response.EvidenceState = AccountModelDetectionEvidenceInsufficient
+		}
+	}
 	if err := s.repo.Complete(ctx, run.ID, response, "", ""); err != nil {
 		return
+	}
+	if run.Profile == AccountModelDetectionProfileMedium {
+		if recent, recentErr := s.Recent(ctx, run.AccountID, 3); recentErr == nil {
+			if escalate, reason := shouldEscalateDetection(recent); escalate {
+				_, _, _ = s.EnqueueEscalationHigh(ctx, run.AccountID, reason)
+			}
+		}
 	}
 }
 

@@ -397,10 +397,11 @@ func (s *detectionRepoStub) ListQueued(context.Context, int) ([]string, error) {
 func (s *detectionRepoStub) Complete(context.Context, string, AccountModelDetectionResponse, string, string) error {
 	return nil
 }
-func (s *detectionRepoStub) ListRecent(context.Context, int64, int) ([]AccountModelDetectionRun, error) {
+func (s *detectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([]AccountModelDetectionRun(nil), s.recent...), nil
+	items := append([]AccountModelDetectionRun(nil), s.recent...)
+	return AccountModelDetectionHistoryPage{Items: items}, nil
 }
 
 type detectionSidecarStub struct {
@@ -473,8 +474,8 @@ func (s *executionDetectionRepoStub) Complete(_ context.Context, runID string, r
 	s.completions[runID] = executionDetectionCompletion{response: response, errorCode: errorCode, errorMessage: errorMessage}
 	return nil
 }
-func (s *executionDetectionRepoStub) ListRecent(context.Context, int64, int) ([]AccountModelDetectionRun, error) {
-	return nil, nil
+func (s *executionDetectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
+	return AccountModelDetectionHistoryPage{}, nil
 }
 func (s *executionDetectionRepoStub) completion(runID string) executionDetectionCompletion {
 	s.mu.Lock()
@@ -569,8 +570,8 @@ func (s *workerQueueDetectionRepoStub) Complete(_ context.Context, runID string,
 	s.runs[runID] = run
 	return nil
 }
-func (s *workerQueueDetectionRepoStub) ListRecent(context.Context, int64, int) ([]AccountModelDetectionRun, error) {
-	return nil, nil
+func (s *workerQueueDetectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
+	return AccountModelDetectionHistoryPage{}, nil
 }
 func (s *countingDetectionSidecar) Detect(context.Context, AccountModelDetectionRequest) (AccountModelDetectionResponse, error) {
 	s.mu.Lock()

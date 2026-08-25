@@ -130,7 +130,8 @@ type accountModelDetectionRunResponse struct {
 }
 
 type accountModelDetectionHistoryResponse struct {
-	Items []service.AccountModelDetectionSummary `json:"items"`
+	Items      []service.AccountModelDetectionSummary `json:"items"`
+	NextCursor string                                 `json:"next_cursor,omitempty"`
 }
 
 func (h *AccountMonitorHandler) AccountModelDetectionModels(c *gin.Context) {
@@ -204,17 +205,26 @@ func (h *AccountMonitorHandler) AccountModelDetectionHistory(c *gin.Context) {
 		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MODEL_DETECTION_UNAVAILABLE", "account model detection is unavailable"))
 		return
 	}
-	items, err := h.detectionService.Recent(c.Request.Context(), accountID, 25)
+	limit := 25
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 || parsed > 100 {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_MODEL_DETECTION_LIMIT", "limit must be between 1 and 100"))
+			return
+		}
+		limit = parsed
+	}
+	page, err := h.detectionService.RecentPage(c.Request.Context(), accountID, limit, c.Query("cursor"), c.Query("status"), c.Query("profile"), c.Query("mode"))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	result := make([]service.AccountModelDetectionSummary, 0, len(items))
-	for _, item := range items {
+	result := make([]service.AccountModelDetectionSummary, 0, len(page.Items))
+	for _, item := range page.Items {
 		queued := item.QueuedAt
-		result = append(result, service.AccountModelDetectionSummary{Status: item.Status, ModelID: item.ModelID, ClaimedModel: item.ClaimedModel, JuiceStatus: item.JuiceStatus, JuiceSummary: item.JuiceSummary, FingerprintCandidate: item.FingerprintCandidate, FingerprintSimilarity: item.FingerprintSimilarity, DetectorVersion: item.DetectorVersion, ErrorCode: item.ErrorCode, ErrorMessage: item.ErrorMessage, QueuedAt: &queued, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, RunID: item.ID})
+		result = append(result, service.AccountModelDetectionSummary{Status: item.Status, ModelID: item.ModelID, ClaimedModel: item.ClaimedModel, JuiceStatus: item.JuiceStatus, JuiceSummary: item.JuiceSummary, FingerprintCandidate: item.FingerprintCandidate, FingerprintSimilarity: item.FingerprintSimilarity, DetectorVersion: item.DetectorVersion, ErrorCode: item.ErrorCode, ErrorMessage: item.ErrorMessage, QueuedAt: &queued, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, RunID: item.ID, Profile: item.Profile, Mode: item.Mode, TriggerReason: item.TriggerReason, PlannedRequests: item.PlannedRequests, ValidSamples: item.ValidSamples, EvidenceState: item.EvidenceState, FingerprintStatus: item.FingerprintStatus})
 	}
-	response.Success(c, accountModelDetectionHistoryResponse{Items: result})
+	response.Success(c, accountModelDetectionHistoryResponse{Items: result, NextCursor: page.NextCursor})
 }
 
 func (h *AccountMonitorHandler) List(c *gin.Context) {

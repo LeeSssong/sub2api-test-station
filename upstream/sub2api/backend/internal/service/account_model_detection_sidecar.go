@@ -80,6 +80,18 @@ func (s *HTTPAccountModelDetectionSidecar) Detect(ctx context.Context, request A
 	payload.ErrorCode = boundedString(payload.ErrorCode, 64)
 	payload.JuiceSummary = boundedSummary(payload.JuiceSummary)
 	payload.FingerprintSimilarity = boundedSummary(payload.FingerprintSimilarity)
+	payload.Profile = boundedString(payload.Profile, 16)
+	payload.EvidenceState = boundedString(payload.EvidenceState, 32)
+	payload.FingerprintStatus = boundedString(payload.FingerprintStatus, 32)
+	if payload.PlannedRequests < 0 || payload.PlannedRequests > 158 || payload.ValidSamples < 0 || payload.ValidSamples > payload.PlannedRequests {
+		return AccountModelDetectionResponse{}, ErrAccountModelDetectorUnavailable
+	}
+	if payload.Profile != "" && payload.Profile != AccountModelDetectionProfileLow && payload.Profile != AccountModelDetectionProfileMedium && payload.Profile != AccountModelDetectionProfileHigh {
+		return AccountModelDetectionResponse{}, errors.New("detector_invalid_response")
+	}
+	if payload.EvidenceState != "" && payload.EvidenceState != AccountModelDetectionEvidenceComplete && payload.EvidenceState != AccountModelDetectionEvidenceInsufficient && payload.EvidenceState != AccountModelDetectionEvidenceUnavailable {
+		return AccountModelDetectionResponse{}, errors.New("detector_invalid_response")
+	}
 	return payload, nil
 }
 

@@ -15,6 +15,32 @@ const (
 	AccountModelDetectionStatusServiceUnavailable  = "service_unavailable"
 )
 
+const (
+	AccountModelDetectionProfileLow     = "low"
+	AccountModelDetectionProfileMedium  = "medium"
+	AccountModelDetectionProfileHigh    = "high"
+	AccountModelDetectionProfileUnknown = "unknown"
+
+	AccountModelDetectionModeMonitor    = "monitor"
+	AccountModelDetectionModeManual     = "manual"
+	AccountModelDetectionModeEscalation = "escalation"
+	AccountModelDetectionModeHistorical = "historical"
+
+	AccountModelDetectionTriggerScheduled           = "scheduled"
+	AccountModelDetectionTriggerManual              = "manual"
+	AccountModelDetectionTriggerFirstRun            = "first_run"
+	AccountModelDetectionTriggerConsecutiveAbnormal = "consecutive_abnormal"
+	AccountModelDetectionTriggerInsufficient        = "insufficient"
+	AccountModelDetectionTriggerModelConflict       = "model_conflict"
+)
+
+const (
+	AccountModelDetectionEvidenceComplete     = "complete"
+	AccountModelDetectionEvidenceInsufficient = "insufficient"
+	AccountModelDetectionEvidenceUnavailable  = "unavailable"
+	AccountModelDetectionEvidenceHistorical   = "historical"
+)
+
 type AccountModelDetectorState string
 
 const (
@@ -54,6 +80,13 @@ type AccountModelDetectionSummary struct {
 	FinishedAt            *time.Time     `json:"finished_at,omitempty"`
 	RunID                 string         `json:"run_id,omitempty"`
 	Source                string         `json:"source,omitempty"`
+	Profile               string         `json:"profile,omitempty"`
+	Mode                  string         `json:"mode,omitempty"`
+	TriggerReason         string         `json:"trigger_reason,omitempty"`
+	PlannedRequests       int            `json:"planned_requests,omitempty"`
+	ValidSamples          int            `json:"valid_samples,omitempty"`
+	EvidenceState         string         `json:"evidence_state,omitempty"`
+	FingerprintStatus     string         `json:"fingerprint_status,omitempty"`
 }
 
 type AccountModelDetectionProjection struct {
@@ -84,6 +117,13 @@ type AccountModelDetectionRun struct {
 	StartedAt             *time.Time
 	FinishedAt            *time.Time
 	CreatedAt             time.Time
+	Profile               string
+	Mode                  string
+	TriggerReason         string
+	PlannedRequests       int
+	ValidSamples          int
+	EvidenceState         string
+	FingerprintStatus     string
 }
 
 type AccountModelDetectionSidecarCatalog struct {
@@ -98,6 +138,9 @@ type AccountModelDetectionRequest struct {
 	RequestModel  string `json:"request_model"`
 	APIKey        string `json:"api_key"`
 	BaseURL       string `json:"base_url"`
+	Profile       string `json:"profile"`
+	Mode          string `json:"mode"`
+	TriggerReason string `json:"trigger_reason"`
 }
 
 type AccountModelDetectionResponse struct {
@@ -108,4 +151,14 @@ type AccountModelDetectionResponse struct {
 	FingerprintSimilarity map[string]any `json:"fingerprint_similarity,omitempty"`
 	DetectorVersion       string         `json:"detector_version,omitempty"`
 	ErrorCode             string         `json:"error_code,omitempty"`
+	Profile               string         `json:"profile,omitempty"`
+	PlannedRequests       int            `json:"planned_requests,omitempty"`
+	ValidSamples          int            `json:"valid_samples,omitempty"`
+	EvidenceState         string         `json:"evidence_state,omitempty"`
+	FingerprintStatus     string         `json:"fingerprint_status,omitempty"`
+}
+
+type AccountModelDetectionHistoryPage struct {
+	Items      []AccountModelDetectionRun
+	NextCursor string
 }

@@ -1,0 +1,67 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+
+import AccountModelDetectionHistoryPanel from './AccountModelDetectionHistoryPanel.vue'
+
+const { history } = vi.hoisted(() => ({ history: vi.fn() }))
+
+vi.mock('@/api/admin/accountMonitor', async () => {
+  const actual = await vi.importActual<typeof import('@/api/admin/accountMonitor')>('@/api/admin/accountMonitor')
+  return { ...actual, modelDetectionHistory: history }
+})
+
+vi.mock('vue-i18n', async () => {
+  const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  return { ...actual, useI18n: () => ({ t: (key: string) => ({
+    'admin.accounts.modelDetection.historyTitle': '检测记录',
+    'admin.accounts.modelDetection.close': '关闭',
+    'admin.accounts.modelDetection.historyEmpty': '暂无检测记录',
+    'admin.accounts.modelDetection.loadMore': '加载更多',
+    'admin.accounts.modelDetection.loading': '加载中',
+    'admin.accounts.modelDetection.profile': '档位',
+    'admin.accounts.modelDetection.mode': '模式',
+    'admin.accounts.modelDetection.reason': '触发原因',
+    'admin.accounts.modelDetection.samples': '有效样本',
+    'admin.accounts.modelDetection.juice': 'Juice',
+    'admin.accounts.modelDetection.fingerprint': '行为指纹',
+    'admin.accounts.modelDetection.details': '查看详情',
+    'admin.accounts.modelDetection.historical': '历史记录',
+    'admin.accounts.modelDetection.status.normal': '通过',
+    'admin.accounts.modelDetection.status.abnormal': '异常',
+    'admin.accounts.modelDetection.status.insufficient': '证据不足',
+  }[key] ?? key) }) }
+})
+
+const account = { account_id: 7, name: 'ops@example.com' } as never
+
+afterEach(() => vi.clearAllMocks())
+
+describe('AccountModelDetectionHistoryPanel', () => {
+  it('loads a structured history list and never renders sensitive summary fields', async () => {
+    history.mockResolvedValueOnce({ items: [{
+      run_id: 'run-1', status: 'abnormal', profile: 'high', mode: 'escalation', trigger_reason: 'model_conflict',
+      planned_requests: 158, valid_samples: 157, evidence_state: 'complete', fingerprint_status: 'strong_match',
+      claimed_model: 'gpt-5.6-sol', detector_version: '4.1.1', finished_at: '2026-08-26T02:00:00Z',
+      juice_status: 'mismatch', juice_summary: { score: 0.2, api_key: 'sk-secret', prompt: 'hidden' },
+      fingerprint_candidate: 'gpt-5.6-luna', fingerprint_similarity: { 'gpt-5.6-luna': 0.98 },
+    }], next_cursor: 'next-1' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    expect(history).toHaveBeenCalledWith(7, expect.objectContaining({ limit: 25 }))
+    expect(wrapper.get('[data-test="detection-history-panel"]').text()).toContain('档位 high')
+    expect(wrapper.get('[data-test="detection-history-panel"]').text()).toContain('异常')
+    expect(wrapper.get('[data-test="detection-history-panel"]').text()).not.toContain('sk-secret')
+    expect(wrapper.get('[data-test="detection-history-panel"]').text()).not.toContain('hidden')
+    expect(wrapper.find('[data-test="detection-history-table"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="detection-history-timeline"]').exists()).toBe(true)
+  })
+
+  it('loads the next cursor and applies status filters', async () => {
+    history.mockResolvedValue({ items: [], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    await wrapper.get('[data-test="detection-history-status-filter"]').setValue('abnormal')
+    await flushPromises()
+    expect(history).toHaveBeenLastCalledWith(7, expect.objectContaining({ status: 'abnormal' }))
+  })
+})

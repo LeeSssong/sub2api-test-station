@@ -24,8 +24,8 @@ describe('resolveDocumentTitle', () => {
   })
 
   it('uses the translated performance monitor title', () => {
-    expect(resolveDocumentTitle('Performance Monitor', 'Sub2API', 'nav.performanceMonitor'))
-      .toBe('Performance Monitor - Sub2API')
+    expect(resolveDocumentTitle('Group Performance Monitor', 'Sub2API', 'nav.performanceMonitor'))
+      .toBe('Group Performance Monitor - Sub2API')
   })
 })
 

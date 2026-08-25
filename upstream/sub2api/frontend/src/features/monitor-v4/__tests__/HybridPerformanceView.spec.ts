@@ -17,7 +17,7 @@ vi.mock('vue-i18n', async () => {
     useI18n: () => ({
     t: (key: string, args?: Record<string, unknown>) => {
       const messages: Record<string, string> = {
-        'channelMonitorV2.hybrid.title': '渠道性能监控',
+        'channelMonitorV2.hybrid.title': '分组性能监控',
         'channelMonitorV2.hybrid.updated': `更新于 ${args?.time ?? ''}`,
         'channelMonitorV2.hybrid.empty': '暂无可见分组',
         'monitorV2.window.24h': '24h',
@@ -41,9 +41,10 @@ describe('HybridPerformanceView', () => {
       },
     })
     await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalled())
+    expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal))
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('渠道性能监控')
+    expect(wrapper.text()).toContain('分组性能监控')
     expect(wrapper.text()).toContain('暂无可见分组')
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.title')
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.empty')

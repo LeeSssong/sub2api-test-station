@@ -2,7 +2,7 @@
 export default {
   channelMonitorV2: {
     hybrid: {
-      title: 'Channel performance monitor', updated: 'Updated {time}', availability: 'Availability', monitoring: 'Monitoring',
+      title: 'Group performance monitor', updated: 'Updated {time}', availability: 'Availability', monitoring: 'Monitoring',
       ttftP95: 'First token P95', latencyP95: 'Total duration P95', sampleCount: 'Based on {count} real requests', multiplier: 'Multiplier: {value}x', latestProbe: 'Latest probe {time}', empty: 'No visible groups',
     },
     title: 'Channel Monitor',

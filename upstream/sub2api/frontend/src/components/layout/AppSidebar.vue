@@ -720,7 +720,6 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
-    { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
@@ -785,7 +784,6 @@ const adminNavItems = computed((): NavItem[] => {
       hideInSimpleMode: true,
       expandOnly: true,
       children: [
-        { path: '/admin/operations/account-profitability', label: t('nav.accountProfitability'), icon: ChartIcon },
         { path: '/admin/operations/business-overview', label: t('nav.businessOverview'), icon: ChartIcon },
       ],
     },

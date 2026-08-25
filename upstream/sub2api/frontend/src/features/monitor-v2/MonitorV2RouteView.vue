@@ -68,7 +68,7 @@ onMounted(async () => {
   const controller = new AbortController()
   abortController = controller
   try {
-    const initial = await getMonitorV2Snapshot('7d', controller.signal)
+    const initial = await getMonitorV2Snapshot('24h', controller.signal)
     if (controller.signal.aborted || abortController !== controller) return
     snapshot.value = initial
   } catch (error: unknown) {

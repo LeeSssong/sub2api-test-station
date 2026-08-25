@@ -1,6 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import HybridPerformanceGroupCard from '../HybridPerformanceGroupCard.vue'
+
+const componentSource = readFileSync('src/features/monitor-v4/HybridPerformanceGroupCard.vue', 'utf8')
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: Record<string, unknown>) => key === 'channelMonitorV2.hybrid.multiplier' ? `倍率：${args?.value}x` : key === 'channelMonitorV2.hybrid.sampleCount' ? `基于 ${args?.count} 次真实请求` : key === 'channelMonitorV2.hybrid.latestProbe' ? '最近探测 08-25 08:00' : key }) }))
 
@@ -22,6 +25,13 @@ describe('HybridPerformanceGroupCard', () => {
     expect(wrapper.get('[data-test="availability"]').text()).toBe('85%')
     expect(wrapper.find('[data-test="ring"]').classes()).not.toContain('rotate')
     expect(wrapper.find('[data-test="availability"]').classes()).not.toContain('animate-spin')
+  })
+
+  it('uses a layered dark surface and stronger breathing glow', () => {
+    expect(componentSource).toContain('--ring-surface: #122136')
+    expect(componentSource).toContain('color: #dce8f5')
+    expect(componentSource).toContain('animation: hybrid-breathe 2.8s ease-in-out infinite')
+    expect(componentSource).toContain('0 0 48px')
   })
 
   it.each([

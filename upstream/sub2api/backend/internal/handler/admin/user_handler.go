@@ -538,6 +538,11 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if h.billingCache != nil {
+		if cacheErr := h.billingCache.InvalidateUserBalance(c.Request.Context(), userID); cacheErr != nil {
+			slog.Error("invalidate user balance cache failed after quota ledger mutation", "user_id", userID, "error", cacheErr)
+		}
+	}
 	response.Success(c, gin.H{"ledger_entry_id": result.LedgerEntryID, "idempotent": result.Idempotent, "summary": quotaSummaryDTO(result.Summary)})
 }
 

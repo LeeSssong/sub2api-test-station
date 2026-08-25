@@ -18,6 +18,16 @@ type quotaWalletHandlerFake struct {
 	called  string
 }
 
+type quotaWalletBalanceCacheFake struct {
+	service.BillingCache
+	invalidatedUserIDs []int64
+}
+
+func (f *quotaWalletBalanceCacheFake) InvalidateUserBalance(_ context.Context, userID int64) error {
+	f.invalidatedUserIDs = append(f.invalidatedUserIDs, userID)
+	return nil
+}
+
 func (f *quotaWalletHandlerFake) GetSummary(context.Context, int64) (service.QuotaSummary, error) {
 	return f.summary, nil
 }
@@ -85,4 +95,36 @@ func TestQuotaWalletHandlerCreateRechargeDelegatesToCoordinator(t *testing.T) {
 	require.Equal(t, 200, resp.Code)
 	require.Equal(t, service.QuotaRecordRecharge, fake.called)
 	require.Contains(t, resp.Body.String(), `"ledger_entry_id":9`)
+}
+
+func TestQuotaWalletHandlerInvalidatesBalanceCacheAfterLedgerMutation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tc := range []struct {
+		name       string
+		recordType string
+		wantCall   string
+	}{
+		{name: "recharge", recordType: service.QuotaRecordRecharge, wantCall: service.QuotaRecordRecharge},
+		{name: "refund", recordType: service.QuotaRecordRefund, wantCall: service.QuotaRecordRefund},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &quotaWalletHandlerFake{}
+			cache := &quotaWalletBalanceCacheFake{}
+			h := NewUserHandler(nil, nil, nil, cache, nil, nil, nil)
+			h.SetQuotaWalletService(fake)
+			r := gin.New()
+			r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
+
+			req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"`+tc.recordType+`","amount_cny":5}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Idempotency-Key", "admin-test-"+tc.recordType)
+			resp := httptest.NewRecorder()
+			r.ServeHTTP(resp, req)
+
+			require.Equal(t, 200, resp.Code)
+			require.Equal(t, tc.wantCall, fake.called)
+			require.Equal(t, []int64{7}, cache.invalidatedUserIDs)
+		})
+	}
 }

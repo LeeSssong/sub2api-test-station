@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/shopspring/decimal"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -13,12 +12,11 @@ import (
 )
 
 type usageBillingRepository struct {
-	db     *sql.DB
-	wallet service.QuotaWalletService
+	db *sql.DB
 }
 
-func NewUsageBillingRepository(client *dbent.Client, sqlDB *sql.DB) service.UsageBillingRepository {
-	return &usageBillingRepository{db: sqlDB, wallet: service.NewQuotaWalletService(NewQuotaWalletRepository(client, sqlDB))}
+func NewUsageBillingRepository(_ *dbent.Client, sqlDB *sql.DB) service.UsageBillingRepository {
+	return &usageBillingRepository{db: sqlDB}
 }
 
 func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBillingCommand) (_ *service.UsageBillingApplyResult, err error) {
@@ -56,14 +54,6 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	}
 
 	result := &service.UsageBillingApplyResult{Applied: true}
-	if cmd.BalanceCost > 0 && r.wallet != nil {
-		mutation, e := r.wallet.ConsumeUsage(ctx, service.UsageConsumptionInput{UserID: cmd.UserID, AmountUSD: decimal.NewFromFloat(cmd.BalanceCost), IdempotencyKey: "usage-billing:" + cmd.RequestID, ReferenceType: "usage_consumption", ReferenceID: cmd.RequestID})
-		if e != nil {
-			return nil, e
-		}
-		newBalance := mutation.Summary.TotalQuotaBalanceUSD.InexactFloat64()
-		result.NewBalance = &newBalance
-	}
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
 		return nil, err
 	}
@@ -191,7 +181,14 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		}
 	}
 
-	// Balance is applied by QuotaWalletService above; retain the legacy result projection.
+	if cmd.BalanceCost > 0 {
+		newBalance, sufficient, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+		if err != nil {
+			return err
+		}
+		result.NewBalance = &newBalance
+		result.BalanceOverdrafted = !sufficient
+	}
 
 	if cmd.APIKeyQuotaCost > 0 {
 		exhausted, err := incrementUsageBillingAPIKeyQuota(ctx, tx, cmd.APIKeyID, cmd.APIKeyQuotaCost)

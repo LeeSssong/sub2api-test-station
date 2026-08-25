@@ -17,6 +17,7 @@ Global Constraints:
 - 已产生 usage、扣费、语义输出或 unsafe_to_replay=true 时禁止切号。
 - 不修改粘性权重、Top-K、公平性、并发和模型映射。
 - 所有实现先 RED 测试，再 GREEN 实现。
+- Luna 指引仅在本站无可用账号路径触发；不得复用全局上游错误透传规则或自动降级。
 
 ### Task 1: 集中 Responses 重放安全判定
 
@@ -68,3 +69,15 @@ Steps:
 - [x] go test ./internal/handler ./internal/service（直接相关聚焦测试通过；全包存在既有基线失败，见交接说明）。
 - [x] go build ./cmd/server、git diff --check。
 - [x] 运行 Responses SSE/JSON、billing 和 failover 回归测试。
+
+### Task 5: Luna 本地不可用错误投影
+
+Files:
+- Modify: upstream/sub2api/backend/internal/handler/no_account_error.go
+- Test: upstream/sub2api/backend/internal/handler/no_account_error_test.go
+
+Steps:
+- [x] 写失败测试：Luna 在本站无可用账号时返回 `404/model_not_found`，且文案只建议 Sol/Terra 或支持 Luna 的分组；普通模型和既有本地容量耗尽契约不变。
+- [x] 运行聚焦测试确认现有实现仍返回通用模型/容量信息。
+- [x] 在 `classifyNoAccountError` 加入精确 Luna 投影；不修改 `ErrorPassthroughRule`、自动降级或上游失败路径。
+- [x] 重跑聚焦测试、相关 handler 包测试、`go build ./cmd/server`、`gofmt` 与 `git diff --check`。

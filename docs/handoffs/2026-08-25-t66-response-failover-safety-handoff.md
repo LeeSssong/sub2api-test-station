@@ -1,6 +1,6 @@
 # T66 Responses 安全切号与账号故障隔离交接
 
-- 状态：`READY_FOR_ROOT_REVIEW`
+- 状态：`READY_FOR_ROOT_REVIEW`（已补充用户于 2026-08-25 明确授权的 Luna 本地不可用指引）
 - 原始基线：`main@7fb71683b`
 - 候选提交：`36949c8d0`
 - 候选 worktree：`.worktrees/t66-response-failover-safety`
@@ -16,6 +16,8 @@
 - Responses 与 Anthropic Messages 的 502/503 失败账号立即进入原生 10 秒短冷却，并加入当前请求的 `failedAccountIDs`，跳过同账号重试；冷却后仍可按原生半开逻辑恢复。
 - Responses 只有在终止事件为 `response.failed`、没有 usage/扣费、没有语义输出且没有 `unsafe_to_replay` 时，才允许同请求切换到其他账号。
 - 已产生 usage、扣费、语义输出、请求副作用或 `unsafe_to_replay` 时，标记为不可安全重放并禁止切号/重复重放。
+- 当 `gpt-5.6-luna` 进入本站无可用账号路径时，返回 HTTP 404、`model_not_found`，并提示改用 `gpt-5.6-sol` / `gpt-5.6-terra`，或切换到支持 Luna 的分组；不自动降级、不暴露内部账号或分组名称。
+- Luna 提示复用本地 `classifyNoAccountError`，不复用或修改全局 `ErrorPassthroughRule`，因此不会改变其他模型或上游 5xx 的故障转移语义。
 
 新增的 `UpstreamFailoverError`、请求尝试元数据和 resilience 事件字段包含 `ResponseFailedOnly`、`UnsafeToReplay`、`SwitchAllowed`、`SwitchReason` 等安全判定信息；日志只记录脱敏判定字段，不记录 Authorization、请求体或完整密钥。
 
@@ -52,6 +54,8 @@ git diff --check
 ```
 
 新增/聚焦测试覆盖纯 `response.failed` 门禁、usage/输出/unsafe replay 禁止切号、502/503 立即短冷却、请求级账号排除、余额不足原生隔离和可观测性安全字段。整包 `go test ./internal/handler ./internal/service` 仍有既有基线失败（中文错误文案、scheduler/sticky 随机选择、WebSocket 长测，以及根 `main` 已存在的 Responses pool SSE rate-limit 文案断言）；完整输出保留在 `/tmp/t66-openai-focused.txt` 及任务执行日志中，聚焦 OpenAI response.failed/transient 测试通过。
+
+Luna 扩展新增 RED→GREEN 证据：`TestClassifyNoAccountError_LunaUnavailable_ReturnsAlternativeGuidance` 初始失败于旧通用 “Model ... is not supported” 文案；实现后 Luna 无支持账号、空账号池、Responses JSON 契约和非 Luna 既有 404/503 分支均通过。`go build ./cmd/server`、`gofmt` 与 `git diff --check` 通过。完整 handler/service 包中的既有流式文案基线失败未修改。
 
 ## 发布与回滚边界
 

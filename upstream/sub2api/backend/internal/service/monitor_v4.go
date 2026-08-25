@@ -86,14 +86,15 @@ func (s *MonitorV4Service) Snapshot(ctx context.Context, userID int64, window Mo
 	if err != nil {
 		return nil, fmt.Errorf("load channel monitor config for monitor v4: %w", err)
 	}
-	if config == nil || !config.Enabled {
-		return s.snapshotWithGroups(ctx, window, now, start, nil, nil)
+	configuredGroupIDs := []int64(nil)
+	if config != nil {
+		configuredGroupIDs = config.GroupIDs
 	}
 	availableGroups, err := s.available.GetAvailableGroups(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("load available groups for monitor v4: %w", err)
 	}
-	visibleGroups, groupIDs := monitorV2VisibleGroups(allGroups, availableGroups, config.GroupIDs, len(config.GroupIDs) == 0)
+	visibleGroups, groupIDs := monitorV2VisibleGroups(allGroups, availableGroups, configuredGroupIDs, len(configuredGroupIDs) == 0)
 	if len(visibleGroups) > monitorV4MaxGroups {
 		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV4MaxGroups)
 	}

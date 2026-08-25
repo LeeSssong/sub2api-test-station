@@ -6,7 +6,7 @@
         <p class="hybrid-card__meta">{{ group.platform }}</p>
       </div>
       <span class="hybrid-card__status" data-test="monitoring-status">
-        <span class="status-dot" aria-hidden="true" />{{ t('monitorV2.hybrid.monitoring') }}
+        <span class="status-dot" aria-hidden="true" />{{ t('channelMonitorV2.hybrid.monitoring') }}
       </span>
     </header>
 
@@ -14,25 +14,25 @@
       <div class="hybrid-ring" :class="`hybrid-ring--${tone}`" data-test="ring" role="img" :aria-label="`${group.availability}%`">
         <div class="hybrid-ring__center">
           <strong data-test="availability">{{ formatAvailability(group.availability) }}%</strong>
-          <span>{{ t('monitorV2.hybrid.availability') }}</span>
+          <span>{{ t('channelMonitorV2.hybrid.availability') }}</span>
         </div>
       </div>
     </div>
 
     <div class="hybrid-card__metrics">
       <div class="hybrid-metric">
-        <span>{{ t('monitorV2.hybrid.ttftP95') }}</span>
+        <span>{{ t('channelMonitorV2.hybrid.ttftP95') }}</span>
         <strong data-test="ttft-p95">{{ formatMs(group.ttft_p95_ms) }}</strong>
       </div>
       <div class="hybrid-metric">
-        <span>{{ t('monitorV2.hybrid.latencyP95') }}</span>
+        <span>{{ t('channelMonitorV2.hybrid.latencyP95') }}</span>
         <strong data-test="latency-p95">{{ formatMs(group.latency_p95_ms) }}</strong>
       </div>
     </div>
 
     <footer class="hybrid-card__footer">
-      <span data-test="sample-count">{{ t('monitorV2.hybrid.sampleCount', { count: group.sample_count }) }}</span>
-      <span data-test="multiplier">{{ t('monitorV2.hybrid.multiplier', { value: group.rate_multiplier }) }}</span>
+      <span data-test="sample-count">{{ t('channelMonitorV2.hybrid.sampleCount', { count: group.sample_count }) }}</span>
+      <span data-test="multiplier">{{ t('channelMonitorV2.hybrid.multiplier', { value: group.rate_multiplier }) }}</span>
     </footer>
   </article>
 </template>

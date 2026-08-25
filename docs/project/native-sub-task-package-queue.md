@@ -2,7 +2,7 @@
 
 ## 当前返修任务（2026-08-25，T61 第四套性能监测原型结构还原）
 
-- **T61 第四套性能监测原型结构还原**：状态 `IMPLEMENTING`。仅替换第四套页面顶部“分组状态”区域，恢复 Monitor V2 页面骨架并保留下方 CodexRadar 站长推荐与社区矩阵；第四套圆环、P95、统一真实请求样本数和呼吸动效继续保留。候选从 `main@57b33e8b3` 创建，前端无 API、数据库、迁移、配置或生产数据变更，预期 `downtime_required=false`。
+- **T61 第四套性能监测原型结构还原**：状态 `DONE`。仅替换第四套页面顶部“分组状态”区域，恢复 Monitor V2 页面骨架并保留下方 CodexRadar 站长推荐与社区矩阵；第四套圆环、P95、统一真实请求样本数和呼吸动效继续保留。已合入并推送 `main@86dc285f101f9da009d4236f1439394f306802dc`，测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-86dc285f-t61-monitor-prototype.json`，宿主记录 `/var/lib/sub2api/release-records/20260825T041905Z-production-2595944.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`；公网三项健康端点 200，登录态桌面/窄屏结构与呼吸动效验收通过。无 API、数据库、迁移、配置或生产数据变更。
 
 ## 当前经营任务（2026-08-24，T57 DOCX 经营分析总览）
 

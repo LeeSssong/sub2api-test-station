@@ -2,7 +2,7 @@
 
 ## 当前进行中任务（2026-08-25，T65/T66）
 
-- **T65 账号监控历史最终结果回退**：状态 `READY_FOR_ROOT_REVIEW`。候选 `.worktrees/t65-account-monitor-history-fallback` / `codex/t65-account-monitor-history-fallback@c86ac9664`（功能提交 `0f6222f0e`）；范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间。不新增事实源。尚未合并、推送、部署或线上验收。
+- **T65 账号监控历史最终结果回退**：状态 `READY_FOR_ROOT_REVIEW`。候选 `.worktrees/t65-account-monitor-history-fallback` / `codex/t65-account-monitor-history-fallback@2161f59a3`（功能提交 `0f6222f0e`）；范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间。不新增事实源。尚未合并、推送、部署或线上验收。
 - **T66 Responses 安全切号与账号故障隔离**：状态 `READY_FOR_ROOT_REVIEW`。候选 `.worktrees/t66-response-failover-safety` / `codex/t66-response-failover-safety@db3285e22`；范围仅包括余额不足账号立即隔离、502/503 账号短时冷却与请求级排除，以及 Responses 仅在 `response.failed` 且无 usage/扣费/语义输出时同请求切号；已产生 usage、扣费或 `unsafe_to_replay` 时禁止切号。尚未合并、推送、部署或线上验收。
 
 ## 当前进行中任务（2026-08-25，T64 用户导航与账号监控混合证据）

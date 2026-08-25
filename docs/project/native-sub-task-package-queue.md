@@ -2,7 +2,7 @@
 
 ## 当前返修任务（2026-08-25，T62 第四套性能监测深色主题与呼吸动效优化）
 
-- **T62 第四套性能监测深色主题与呼吸动效优化**：状态 `INTEGRATING`。仅优化第四套页面顶部“分组状态”卡片深色表面、文字层级和圆环呼吸辉光；保留原型结构、静止百分比、绿/黄/红语义、P95、统一真实请求数、站长推荐与社区矩阵。候选 `codex/t62-monitor-dark-breathe@467637240` 已刷新至最新 `main`；交接记录 `docs/superpowers/reports/2026-08-25-t62-monitor-dark-breathe-candidate.md`；刷新后 55/55 直接测试、typecheck、production build 和 diff-check 通过。无 API、数据库、迁移、配置或生产数据变更，预期 `downtime_required=false`；正在合入根 `main`。
+- **T62 第四套性能监测深色主题与呼吸动效优化**：状态 `DONE`。仅优化第四套页面顶部“分组状态”卡片深色表面、文字层级和圆环呼吸辉光；保留原型结构、静止百分比、绿/黄/红语义、P95、统一真实请求数、站长推荐与社区矩阵。修复提交 `3f917df12` 已合入并推送 `main@c0f9a65ffe5f975f4e0639d7f605c119194ca951`；测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-t62-monitor-dark-breathe-fix.json`，Monitor V2/V4 直接测试 56/56、typecheck、production build 和 diff-check 均通过。宿主记录 `/var/lib/sub2api/release-records/20260825T052721Z-production-2751024.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200，登录态页面确认深色卡片、内层圆环、2.8s 呼吸动效、静止百分比，以及站长推荐和社区众测区均保留。无 API、数据库、迁移、配置或生产数据变更。
 
 ## 当前返修任务（2026-08-25，T61 第四套性能监测原型结构还原）
 

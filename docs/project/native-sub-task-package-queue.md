@@ -1,12 +1,16 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前生产收口任务（2026-08-25，T69）
+
+- **T69 账号监控证据与评分回退**：状态 `DONE`。候选已刷新到 `main@6cd484850`，合并为 `main@474ddb2afc6025e832183c958143bd9515bed8e3`，直接相关 service/repository/admin 测试、`go build ./cmd/server` 与 `git diff --check` 通过。既有预加载蓝绿链返回 `downtime_required=false`、`result=succeeded`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。真实调用样本来源区分 `real_request`/`monitor_probe`/`hybrid`，没有新鲜主动探测时不参与当前排名；历史最终评分可供暂停/不可调度账号展示但不改变调度资格；`evidence_insufficient` 与历史最终状态分开表达。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
+
 ## 当前设计任务（2026-08-25，T68）
 
 - **T68 分组调度运营优先级与策略护栏**：状态 `DESIGNING`。用户已确认采用固定服务不中断保护、分组可配置经营优先级 `1/2/3`、三个三段运营微调卡及保存前平峰/高峰/会话切换策略预览。默认推荐配置为：GPT-特惠 `利润=1、首字速度=2、完整耗时=3`；GPT-Plus 三项均为 `1`；GPT-Pro 与【专属】GPT-PRO 为 `首字速度=1、完整耗时=2、利润=3`。范围只覆盖原生 settings/调度策略契约、SettingsView 交互、容量分散与按分组覆盖机会的最小扩展、直接相关测试；不新增调度器、事实源、迁移、账务或 GitHub Actions。候选 worktree `.worktrees/t68-scheduler-policy-priority`，分支 `codex/t68-scheduler-policy-priority`，基线 `main@c70f11193`；正式规格待完成并审阅，尚未实现、合并、推送、部署或线上验收。
 
 ## 当前设计任务（2026-08-25，T67）
 
-- **T67 完全恢复 Sub 原生用户扣费**：状态 `REFRESH_REQUIRED`。用户已明确要求完全恢复官方 Sub 原生扣费。目标是将推理成功后的余额扣减恢复到 `users.balance` 原生事务路径，保留 T55 钱包/流水为管理员充值与历史审计投影，并修复手动充值/退款后的 `billing:balance:<user_id>` 缓存失效。生产只读证据已确认：账号 `940310446@qq.com` 充值 ¥100 后数据库余额为 `99.96431384`，但充值后仍连续收到余额不足；余额接近零时还出现上游已执行但钱包扣费失败、`actual_cost=0` 的透支窗口。候选 worktree `.worktrees/t67-native-billing`、分支 `codex/t67-native-billing`，原始基线 `main@e07b9cced6576f2206e5b3467112d3358bc96417`；根当前 `main@8e7b79a4b932e63523ebd45c1ae1c73f45f0bb9b`，需先刷新候选并重跑直接相关验证。正式规格为 `docs/superpowers/specs/2026-08-25-t67-native-billing-design.md`。尚未合并、推送、部署或生产写入；T66-R1 发布车道已释放。
+- **T67 完全恢复 Sub 原生用户扣费**：状态 `DONE`。实现已合并进 `main@474ddb2afc6025e832183c958143bd9515bed8e3` 并随 T69 一次发布生效；推理扣费恢复为原生 `users.balance` 事务路径，充值/退款成功后失效余额缓存。直接相关 repository/admin/service 测试与 server build 通过；repository integration 的 `rootless Docker not found` 环境阻断证据保留。发布链返回 `downtime_required=false`、`result=succeeded`，公网三项健康端点均 200。无数据库迁移、无配置变化、无生产业务数据写入。交接：`docs/handoffs/2026-08-25-t67-native-billing-handoff.md`。
 
 ## 当前进行中任务（2026-08-25，T65/T66）
 

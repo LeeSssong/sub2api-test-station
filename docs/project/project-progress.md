@@ -2,7 +2,7 @@
 
 **T71 调度设置独立页面与交互修复（2026-08-26）：** 状态：进行中（DESIGNING）。范围为修复已上线 T68 的调度运营配置交互并将其从“系统设置 -> 网关服务”抽离为管理员专用“调度设置”页面：数字优先级与三段控件必须有明确选中态；账号均衡变更必须即时反映到场景预览；新路由和侧栏入口继续复用 Sub2API 原生管理员守卫、`/admin/settings` 读写接口与现有调度策略字段。不得新增调度器、配置事实源、数据库迁移或生产数据写入。视觉契约为已确认的单一紧凑调度工作卡、蓝灰操作台、固定服务护栏、浅深色自适应和窄屏单列布局。当前根工作区仅登记规格/计划；待用户审阅正式规格后，才从当时最新且干净的 `main` 创建独立候选 worktree 并开始测试先行实现。T69 已在当前 `main` 历史中可达，但其队列发布记录仍需由根总控单独核对，不与本任务合并发布。
 
-**T70 账号检测分层监测与记录面板（2026-08-26）：** 状态：进行中（DESIGNING）。已完成对 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1）的源码核对与现有 Sub 原生账号监控、模型检测 sidecar、历史接口和管理员页面盘点。用户已确认采用“中档日常监测、低档手动复核、高档异常升级”的策略，以及响应式检测记录面板（桌面右侧抽屉表格 + 详情、窄屏全屏时间线）。规格书待用户审阅；未修改运行时代码、数据库、配置或生产数据。
+**T70 账号检测分层监测与记录面板（2026-08-26）：** 状态：进行中（READY_FOR_ROOT_REVIEW）。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已完成实现与交接，基线 `main@7e33e50d2`；新增 228 schema 迁移、档位/证据字段、medium 日常/low 手动/high 升级策略、历史游标筛选接口和响应式检测记录面板。直接相关 Go 检测/仓储/handler/迁移测试通过，前端检测历史面板、账号卡片和监控页 103 项测试通过，`go build ./cmd/server`、`pnpm typecheck`、`pnpm build`、gofmt 与 diff-check 通过。无新增配置、无生产业务数据写入，预期 `downtime_required=false`；尚未合并、推送、部署或线上验收。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。
 
 **T69 账号监控证据与评分回退（2026-08-25）：** 状态：`READY_FOR_ROOT_REVIEW`。候选 `codex/t69-account-monitor-evidence-fallback@861113395` 已通过直接相关 service/repository/admin 测试、`go build ./cmd/server`、`git diff --check`，尚未推送、部署或线上验收。并发产生的本地合并提交 `474ddb2af` 已由根总控可逆回退并保留恢复分支 `codex/t69-unapproved-merge-preserved`，未进入 T67 生产源。交接：`docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
 

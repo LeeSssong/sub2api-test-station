@@ -6,7 +6,7 @@
 
 ## 当前设计任务（2026-08-26，T70）
 
-- **T70 账号检测分层监测与记录面板**：状态 `DESIGNING`。基于 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1）与现有 Sub 原生账号监控/模型检测 sidecar，目标是将中档作为日常监测、低档作为手动快速复核、高档作为异常升级，并把“点击查看最近 xxx”改为完整检测记录面板。用户已确认响应式混合形态：桌面右侧抽屉使用表格列表并展开双证据详情，窄屏切换为全屏时间线。规格书待用户审阅；未进入实施、合并、部署或线上验收车道。许可边界：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；执行器继续通过私网 sidecar 合同接入，未配置合法制品时保持“检测器未接入”语义。
+- **T70 账号检测分层监测与记录面板**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已基于 `main@7e33e50d2` 完成功能实现、直接相关测试和交接。基于 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1），接入 medium 日常、low 手动、high 异常升级，新增结构化证据字段、228 迁移、历史 `limit/cursor/status/profile/mode` 查询和桌面抽屉/窄屏时间线面板；旧记录保持 historical/unknown，敏感字段不落库或渲染。Go 直接相关测试、server build、前端 103 项检测相关测试、typecheck、production build、gofmt 与 diff-check 通过。无新增配置或生产业务数据写入，预期 `downtime_required=false`；尚未合并、推送、部署和线上验收。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。许可边界保持不变：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；未配置合法制品时保持“检测器未接入”语义。
 
 ## 当前待根审任务（2026-08-25，T69）
 

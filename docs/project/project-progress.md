@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T66-R1 Luna 不支持文案修复（2026-08-25）：** 状态：`INTEGRATING`。用户澄清必须保持客户端重试不变；基于已上线 T66 的后续候选，仅将 Luna 本地无账号响应文案改为“本站暂不支持gpt-5.6-luna，请切换模型重试”，保留 HTTP 503 与 `local_capacity_exhausted`。候选已刷新到 `main@4637363b3` 并合并为 `main@7da4f68b5`；定向 unit/handler/service 测试、`go build ./cmd/server`、gofmt、diff-check 已通过。无迁移、无配置、无生产数据写入；待推送、蓝绿发布和线上验收。
+**T66-R1 Luna 不支持文案修复（2026-08-25）：** 状态：`DONE`。基于已上线 T66 的跟进修复，仅将 Luna 本地无账号响应文案改为“本站暂不支持gpt-5.6-luna，请切换模型重试”，保留 HTTP 503 与 `local_capacity_exhausted` 及客户端重试协议。生产源 `main@2e91ed721`；蓝绿发布记录 `/var/lib/sub2api/release-records/20260825T143727Z-production-3940992.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2e91ed721-t66-r1-production.json`。定向 unit/handler/service 测试、构建与 diff-check 通过；无迁移、无配置、无生产数据写入。
 
 **T65 账号监控历史最终结果回退（2026-08-25）：** 状态：`DONE`。已将候选刷新到最新根 `main`，合并为 `main@4cf11cd05`，随后从发布源 `main@878623872` 推送并完成宿主蓝绿发布；生产记录 `/var/lib/sub2api/release-records/20260825T133438Z-production-3800920.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200，发布源/树/迁移哈希与本地证据一致。直接相关 Go/Vitest/typecheck/build 门禁通过；生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-878623872-t65-production.json`。交接文档：`docs/handoffs/2026-08-25-t65-account-monitor-history-fallback-handoff.md`。无迁移、无配置变更、无生产数据写入。
 

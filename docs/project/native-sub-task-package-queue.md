@@ -2,7 +2,7 @@
 
 ## 当前进行中任务（2026-08-25，T65/T66）
 
-- **T66-R1 Luna 不支持文案修复**：状态 `INTEGRATING`。基于已上线 T66 的跟进修复，仅将 Luna 本地无账号的 HTTP 503、`local_capacity_exhausted` 响应文案改为“本站暂不支持gpt-5.6-luna，请切换模型重试”，保持客户端原有 5xx 重试协议；不改状态码、错误码、非 Luna 分支、全局错误透传、自动降级、账号切号、账务或配置。合并提交 `main@7da4f68b5`；定向 unit/handler/service 测试、构建与 diff-check 已通过，待推送、蓝绿发布和线上验收。
+- **T66-R1 Luna 不支持文案修复**：状态 `DONE`。基于已上线 T66 的跟进修复，仅将 Luna 本地无账号的 HTTP 503、`local_capacity_exhausted` 响应文案改为“本站暂不支持gpt-5.6-luna，请切换模型重试”，保持客户端原有 5xx 重试协议；不改状态码、错误码、非 Luna 分支、全局错误透传、自动降级、账号切号、账务或配置。生产源 `main@2e91ed721`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T143727Z-production-3940992.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2e91ed721-t66-r1-production.json`。
 - **T65 账号监控历史最终结果回退**：状态 `DONE`。合并提交 `main@4cf11cd05`，生产源 `main@878623872`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T133438Z-production-3800920.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-878623872-t65-production.json`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间。不新增事实源。
 - **T66 Responses 安全切号、账号故障隔离与 Luna 不可用指引**：状态 `DONE`。生产源 `main@2c077f009`；蓝绿发布 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`，公网健康端点均 200。生产记录 `/var/lib/sub2api/release-records/20260825T135859Z-production-3855857.json`，证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2c077f009-t66-production.json`。交付包括余额不足立即隔离、502/503 短时冷却并请求级排除、纯 `response.failed` 安全切号门禁，以及 Luna 无账号时稳定 `model_not_found` 替代指引；无迁移、无配置变更、无生产数据写入。
 

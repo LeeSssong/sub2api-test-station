@@ -19,6 +19,7 @@ const (
 	OpenAIEventRetryBillingReconciled           = "openai.retry_billing_reconciled"
 	OpenAIEventSchedulerSelection               = "openai.scheduler_selection"
 	OpenAIEventSchedulerRequestOutcome          = "openai.scheduler_request_outcome"
+	OpenAIEventResponsesFailoverDecision        = "openai.responses_failover_decision"
 )
 
 // OpenAIResilienceAlertCounters are process-local inputs for existing Ops
@@ -47,6 +48,10 @@ type OpenAIResilienceEvent struct {
 	StatusCode            int
 	OutputStarted         bool
 	UsageProduced         bool
+	ResponseFailedOnly    bool
+	UnsafeToReplay        bool
+	SwitchAllowed         bool
+	SwitchReason          string
 	FailureStreak         int
 	CacheMode             string
 	CooldownSeconds       int
@@ -115,6 +120,7 @@ func RecordOpenAIResilienceOutcome(event OpenAIResilienceEvent) {
 	event.AttemptID = strings.TrimSpace(event.AttemptID)
 	event.CacheMode = strings.TrimSpace(event.CacheMode)
 	event.Outcome = strings.TrimSpace(event.Outcome)
+	event.SwitchReason = strings.TrimSpace(event.SwitchReason)
 	event.SelectionLayer = strings.TrimSpace(event.SelectionLayer)
 	event.StickyEscapeReason = strings.TrimSpace(event.StickyEscapeReason)
 	event.FinalOutcome = strings.TrimSpace(event.FinalOutcome)

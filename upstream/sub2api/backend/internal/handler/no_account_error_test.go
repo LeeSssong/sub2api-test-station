@@ -116,6 +116,51 @@ func TestClassifyNoAccountError_ModelNotSupported_Returns404(t *testing.T) {
 	require.Equal(t, int64(42), *fd.calls[0].GroupID)
 }
 
+func TestClassifyNoAccountError_LunaUnavailable_ReturnsAlternativeGuidance(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(42)}
+
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.6-luna", "gpt-5.6-luna", service.PlatformOpenAI)
+
+	require.Equal(t, http.StatusNotFound, cls.Status)
+	require.Equal(t, "model_not_found", cls.ErrType)
+	require.True(t, cls.ModelNotFound)
+	require.Contains(t, cls.Message, "gpt-5.6-sol")
+	require.Contains(t, cls.Message, "gpt-5.6-terra")
+	require.Contains(t, cls.Message, "支持 Luna 的分组")
+}
+
+func TestClassifyNoAccountError_LunaEmptyPool_ReturnsAlternativeGuidance(t *testing.T) {
+	c := newTestGinContextWithRequest()
+	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: false, HasModelSupport: false}}
+	apiKey := &service.APIKey{GroupID: ptrInt64(42)}
+
+	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.6-luna", "gpt-5.6-luna", service.PlatformOpenAI)
+
+	require.Equal(t, http.StatusNotFound, cls.Status)
+	require.Equal(t, "model_not_found", cls.ErrType)
+	require.True(t, cls.ModelNotFound)
+	require.Equal(t, lunaUnavailableMessage, cls.Message)
+}
+
+func TestLunaUnavailableProtocolContract_ResponsesReturnsStableCodeAndGuidance(t *testing.T) {
+	cls := classifyNoAccountError(
+		context.Background(),
+		&fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}},
+		&service.APIKey{GroupID: ptrInt64(7)},
+		"gpt-5.6-luna",
+		"gpt-5.6-luna",
+		service.PlatformOpenAI,
+	)
+
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	(&GatewayHandler{}).responsesErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.JSONEq(t, `{"error":{"code":"model_not_found","message":"gpt-5.6-luna 当前在本站不可用。请改用 gpt-5.6-sol 或 gpt-5.6-terra；如确需 Luna，请切换到支持 Luna 的分组后重试。"}}`, w.Body.String())
+}
+
 func TestClassifyOpenAICompatibleNoAccountError_GrokUsesGrokPlatform(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}

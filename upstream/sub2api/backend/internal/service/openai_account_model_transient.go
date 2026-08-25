@@ -54,21 +54,22 @@ type openAIAccountModelTransientDecision struct {
 
 // OpenAIAccountModelFailureEvent describes a failed account/model attempt.
 type OpenAIAccountModelFailureEvent struct {
-	EventID        string
-	AccountID      int64
-	CanonicalModel string
-	Domains        []OpenAIFailureDomain
-	StatusCode     int
-	ErrorType      string
-	TTFT           time.Duration
-	OutputStarted  bool
-	SafeToReplay   bool
-	HasSideEffect  bool
-	UsageKnown     bool
-	Platform       string
-	GroupID        *int64
-	CacheMode      string
-	Now            time.Time
+	EventID           string
+	AccountID         int64
+	CanonicalModel    string
+	Domains           []OpenAIFailureDomain
+	StatusCode        int
+	ErrorType         string
+	TTFT              time.Duration
+	OutputStarted     bool
+	SafeToReplay      bool
+	HasSideEffect     bool
+	UsageKnown        bool
+	ImmediateCooldown bool
+	Platform          string
+	GroupID           *int64
+	CacheMode         string
+	Now               time.Time
 }
 
 // OpenAIAccountModelSuccessEvent describes a successful account/model attempt
@@ -339,6 +340,19 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 		return decision
 	}
 	raw := state.recordFailure(event.AccountID, event.CanonicalModel, now)
+	if event.ImmediateCooldown && raw.Cooldown < openAIModelTransientShortCooldown {
+		raw.Cooldown = openAIModelTransientShortCooldown
+		raw.BlockUntil = now.Add(openAIModelTransientShortCooldown)
+		if key, ok := openAIAccountModelTransientKey(event.AccountID, event.CanonicalModel); ok {
+			state.mu.Lock()
+			entry := state.entries[key]
+			entry.blockUntil = raw.BlockUntil
+			entry.lastFailure = now
+			entry.lastTouched = now
+			state.entries[key] = entry
+			state.mu.Unlock()
+		}
+	}
 	state.setFailureDetails(event.AccountID, event.CanonicalModel, event.StatusCode, event.ErrorType, event.OutputStarted)
 	decision.FailureStreak, decision.Cooldown, decision.BlockUntil = raw.FailureStreak, raw.Cooldown, raw.BlockUntil
 	if shared, ok := s.recordOpenAISharedHealthFailure(ctx, event, now, raw); ok {

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -40,6 +43,34 @@ func TestOpenAIStreamEventIsTerminalWithTypeMatchesExistingSemantics(t *testing.
 			require.Equal(t, openAIStreamEventIsTerminal(tt.data), got)
 		})
 	}
+}
+
+func TestNewOpenAIStreamFailoverErrorMarksResponseFailedAndUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	svc := &OpenAIGatewayService{}
+	errorPayload := []byte(`{"type":"response.failed","response":{"usage":{"input_tokens":4,"output_tokens":0}}}`)
+
+	failover := svc.newOpenAIStreamFailoverError(c, &Account{ID: 41, Platform: PlatformOpenAI}, false, "upstream-1", errorPayload, "upstream failed")
+
+	require.True(t, failover.ResponseFailedOnly)
+	require.True(t, failover.UsageKnown)
+}
+
+func TestNewOpenAIStreamFailoverErrorPreservesUnsafeReplayMarker(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	svc := &OpenAIGatewayService{}
+	errorPayload := []byte(`{"type":"response.failed","response":{"unsafe_to_replay":true}}`)
+
+	failover := svc.newOpenAIStreamFailoverError(c, &Account{ID: 42, Platform: PlatformOpenAI}, false, "upstream-2", errorPayload, "upstream failed")
+
+	require.True(t, failover.ResponseFailedOnly)
+	require.True(t, failover.UnsafeToReplay)
 }
 
 var (

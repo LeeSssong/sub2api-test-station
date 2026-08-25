@@ -175,6 +175,17 @@ type OpenAIRetryDecision struct {
 	CachePreservationMode        string
 }
 
+type openAIResponsesFailoverState struct {
+	ResponseFailedOnly bool
+	UsageProduced      bool
+	OutputStarted      bool
+	UnsafeToReplay     bool
+}
+
+func openAIResponsesFailoverAllowed(state openAIResponsesFailoverState) bool {
+	return state.ResponseFailedOnly && !state.UsageProduced && !state.OutputStarted && !state.UnsafeToReplay
+}
+
 func openAISameAccountRetryDelay(attemptID string) time.Duration {
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(attemptID))
@@ -883,7 +894,27 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			failure := classifyOpenAIAttemptFailure(err, classifiedFailoverErr, outputStarted, requestHasSideEffects)
 			attemptMetadata.OutputStarted = failure.OutputStarted
-			attemptMetadata.UsageProduced = result != nil && result.UsageKnown
+			attemptMetadata.UsageProduced = (result != nil && result.UsageKnown) || (classifiedFailoverErr != nil && classifiedFailoverErr.UsageKnown)
+			responseFailedOnly := classifiedFailoverErr != nil && classifiedFailoverErr.ResponseFailedOnly
+			unsafeToReplay := failure.HasSideEffect || failure.OutputStarted || attemptMetadata.UsageProduced || (classifiedFailoverErr != nil && classifiedFailoverErr.UnsafeToReplay)
+			attemptMetadata.UnsafeToReplay = unsafeToReplay
+			if attemptMetadata.UsageProduced || (classifiedFailoverErr != nil && classifiedFailoverErr.UnsafeToReplay) {
+				failure.SafeToReplay = false
+				failure.HasSideEffect = true
+			}
+			if responseFailedOnly && !openAIResponsesFailoverAllowed(openAIResponsesFailoverState{
+				ResponseFailedOnly: true,
+				UsageProduced:      attemptMetadata.UsageProduced,
+				OutputStarted:      failure.OutputStarted,
+				UnsafeToReplay:     unsafeToReplay,
+			}) {
+				failure.SafeToReplay = false
+				failure.HasSideEffect = true
+				unsafeToReplay = true
+			}
+			if classifiedFailoverErr != nil {
+				classifiedFailoverErr.UnsafeToReplay = unsafeToReplay
+			}
 			if result != nil {
 				result.AttemptMetadata = attemptMetadata
 			}
@@ -898,9 +929,42 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				EventID: attemptMetadata.AttemptID, Domains: service.DeriveOpenAIFailureDomains(account, channelMapping.ChannelID),
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
-				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
+				ImmediateCooldown: failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable,
+				Platform:          requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
+			if (failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable) || (responseFailedOnly && openAIResponsesFailoverAllowed(openAIResponsesFailoverState{
+				ResponseFailedOnly: true,
+				UsageProduced:      attemptMetadata.UsageProduced,
+				OutputStarted:      failure.OutputStarted,
+				UnsafeToReplay:     unsafeToReplay,
+			})) {
+				// A pure Responses response.failed has no billable or semantic
+				// side effect. Skip the generic same-account retry so the current
+				// logical request can move directly to another account.
+				runtimeDecision.CurrentRequestRetry = false
+			}
 			retryDecision := h.decideOpenAIRetry(failure, runtimeDecision, sameAccountRetryCount[account.ID], attemptMetadata.AttemptID)
+			switchAllowed := retryDecision.Failover
+			switchReason := "retry_policy"
+			if responseFailedOnly {
+				switchAllowed = openAIResponsesFailoverAllowed(openAIResponsesFailoverState{
+					ResponseFailedOnly: true,
+					UsageProduced:      attemptMetadata.UsageProduced,
+					OutputStarted:      failure.OutputStarted,
+					UnsafeToReplay:     unsafeToReplay,
+				})
+				if switchAllowed {
+					switchReason = "response_failed_only_without_usage_or_output"
+				} else {
+					switchReason = "unsafe_to_replay"
+				}
+				service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
+					Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventResponsesFailoverDecision,
+					StatusCode: failure.StatusCode, OutputStarted: failure.OutputStarted, UsageProduced: attemptMetadata.UsageProduced,
+					ResponseFailedOnly: true, UnsafeToReplay: unsafeToReplay, SwitchAllowed: switchAllowed,
+					SwitchReason: switchReason, Outcome: map[bool]string{true: "allowed", false: "blocked"}[switchAllowed],
+				})
+			}
 			if failure.OutputStarted {
 				service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
 					Platform: requestPlatform, GroupID: apiKey.GroupID, Name: service.OpenAIEventStreamUpstreamFailure,
@@ -917,6 +981,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.String("cache_preservation_mode", retryDecision.CachePreservationMode),
 				zap.Bool("output_started", failure.OutputStarted),
 				zap.Bool("usage_produced", attemptMetadata.UsageProduced),
+				zap.Bool("response_failed_only", responseFailedOnly),
+				zap.Bool("unsafe_to_replay", unsafeToReplay),
+				zap.Bool("switch_allowed", switchAllowed),
+				zap.String("switch_reason", switchReason),
 			)
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
@@ -1657,8 +1725,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				EventID: attemptMetadata.AttemptID, Domains: service.DeriveOpenAIFailureDomains(account, channelMappingMsg.ChannelID),
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
-				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
+				ImmediateCooldown: failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable,
+				Platform:          requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
+			if failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable {
+				runtimeDecision.CurrentRequestRetry = false
+			}
 			retryDecision := h.decideOpenAIRetry(failure, runtimeDecision, sameAccountRetryCount[account.ID], attemptMetadata.AttemptID)
 			if failure.OutputStarted {
 				service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{

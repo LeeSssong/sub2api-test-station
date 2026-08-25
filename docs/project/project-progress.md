@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T59 第四套混合性能监测（2026-08-25）：** 状态：`INTEGRATING`。候选 `codex/t59-hybrid-monitor-v4@35926b400` 已快进合入根 `main`，包含四模式设置、主动探测与严格真实请求五分钟统一聚合、P95 性能指标、`/monitor-v4` API、呼吸圆环卡片和直接相关测试；当前等待合并后发布门禁与生产线上验证。
+**T59 第四套混合性能监测（2026-08-25）：** 状态：`DONE`。最终根 `main@4792a11d5` 已推送；生产预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，生产镜像来源为 `main@4792a11d5`，迁移哈希保持 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`。公网 `/healthz`、`/readyz`、`/health` 均返回真实 JSON `200`；登录态 `/monitor` 已确认四模式设置中的“混合性能监控”选项、P95 指标卡片、可用性圆环与统一样本文案资源已上线。发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-4792a11d5-t59-hybrid-monitor-v4.json`；本次未擅自切换生产默认模式，线上当前设置仍为 V1。候选 worktree 与分支已在发布验收后清理，T58 受保护工作区保留。
 
 **T58 主站经营分析与原生额度能力推广（2026-08-25）：** 状态：`DONE`。最新 `main@2df7882820bb6407ab33e3ef239d746d383fa406` 已推送并通过既有预加载蓝绿链无停机发布；宿主记录 `/var/lib/sub2api/release-records/20260824T175402Z-production-1252623.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`。发布前修复了已批准的 Caddy 路由状态漂移：按 release-state 将现有 Caddy 容器内上游从 blue 受控 reload 到 green，容器 ID 未变；正式发布后 Caddy、PostgreSQL、Redis 身份均保持不变。0600 测试证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-2df788282-t58-business-quota-v2.json`，经营总览、原生额度钱包/充值退款/消费算法直接测试、迁移兼容测试、后端构建、前端专项测试、typecheck、production build 和 diff-check 均通过。线上 `/healthz`、`/readyz`、`/health` 均返回真实 JSON `200`；管理员经营总览 `today`、用户额度摘要/额度流水 API 均 `200` 且有真实数据；生产前端资源包含 `BusinessOverviewView`。经营分析继续复用 `usage_logs` 与 T55 原生钱包/账本，未引入第二账务源；根工作区既有未提交文档改动原样保留。
 

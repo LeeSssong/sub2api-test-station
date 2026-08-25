@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前返修任务（2026-08-25，T62 第四套性能监测深色主题与呼吸动效优化）
+
+- **T62 第四套性能监测深色主题与呼吸动效优化**：状态 `DESIGNING`。仅优化第四套页面顶部“分组状态”卡片深色表面、文字层级和圆环呼吸辉光；保留原型结构、静止百分比、绿/黄/红语义、P95、统一真实请求数、站长推荐与社区矩阵。无 API、数据库、迁移、配置或生产数据变更，预期 `downtime_required=false`；候选 worktree 待创建，生产部署需后续明确授权。
+
 ## 当前返修任务（2026-08-25，T61 第四套性能监测原型结构还原）
 
 - **T61 第四套性能监测原型结构还原**：状态 `DONE`。仅替换第四套页面顶部“分组状态”区域，恢复 Monitor V2 页面骨架并保留下方 CodexRadar 站长推荐与社区矩阵；第四套圆环、P95、统一真实请求样本数和呼吸动效继续保留。已合入并推送 `main@86dc285f101f9da009d4236f1439394f306802dc`，测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-86dc285f-t61-monitor-prototype.json`，宿主记录 `/var/lib/sub2api/release-records/20260825T041905Z-production-2595944.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`；公网三项健康端点 200，登录态桌面/窄屏结构与呼吸动效验收通过。无 API、数据库、迁移、配置或生产数据变更。

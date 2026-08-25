@@ -1,11 +1,11 @@
 # T67 Native Billing Restoration Handoff
 
-**Task:** T67 完全恢复 Sub 原生用户扣费  
-**Status:** READY_FOR_ROOT_REVIEW  
-**Date:** 2026-08-25  
-**Baseline:** main@e07b9cced6576f2206e5b3467112d3358bc96417  
-**Candidate:** codex/t67-native-billing  
-**Implementation commit:** 81b7b78e4bcf32eb9e4fa461b53117b6d9f3ca2e  
+**Task:** T67 完全恢复 Sub 原生用户扣费
+**Status:** READY_FOR_ROOT_REVIEW (refreshed onto main@8e7b79a4b932e63523ebd45c1ae1c73f45f0bb9b)
+**Date:** 2026-08-25
+**Baseline:** main@8e7b79a4b932e63523ebd45c1ae1c73f45f0bb9b
+**Candidate:** codex/t67-native-billing
+**Implementation commit:** 81b7b78e4bcf32eb9e4fa461b53117b6d9f3ca2e; refresh merge: a66f79ce3
 **Worktree:** /Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t67-native-billing
 
 ## Delivered
@@ -27,6 +27,15 @@
 - docs/handoffs/2026-08-25-t67-native-billing-handoff.md
 
 ## Verification
+
+After refresh onto `main@8e7b79a4b932e63523ebd45c1ae1c73f45f0bb9b`, the direct gates were rerun:
+
+- `go test -tags unit ./internal/repository -run 'Test(DeductUsageBillingBalance|ApplyUsageBillingEffects)' -count=1` — passed.
+- `go test ./internal/handler/admin -run TestQuotaWalletHandler -count=1` — passed.
+- `go test ./internal/service -run TestQuotaWallet -count=1` — passed.
+- `go build ./cmd/server` — passed.
+- `gofmt` and `git diff --check` — passed.
+- Repository integration test — blocked before test execution by the environment error `panic: rootless Docker not found`.
 
 Passed after the implementation commit:
 
@@ -66,4 +75,3 @@ Rollback is the existing blue-green rollback to the prior verified production so
 ## Residual Risk
 
 Historical actual_cost=0 rows remain unchanged by design. The unverified integration test should be rerun in an environment with the repository PostgreSQL and testcontainers prerequisites before root merge.
-

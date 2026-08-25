@@ -1,10 +1,10 @@
 # T67 完全恢复 Sub 原生用户扣费设计规格
 
-**状态：** 已批准（2026-08-25）  
-**日期：** 2026-08-25  
-**基线：** main@e07b9cced6576f2206e5b3467112d3358bc96417  
-**候选 worktree：** .worktrees/t67-native-billing  
-**候选分支：** codex/t67-native-billing  
+**状态：** 已批准（2026-08-25）
+**日期：** 2026-08-25
+**基线：** main@e07b9cced6576f2206e5b3467112d3358bc96417
+**候选 worktree：** .worktrees/t67-native-billing
+**候选分支：** codex/t67-native-billing
 
 ## 1. 问题证据与当前行为
 

@@ -123,12 +123,10 @@ func TestClassifyNoAccountError_LunaUnavailable_ReturnsAlternativeGuidance(t *te
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.6-luna", "gpt-5.6-luna", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusNotFound, cls.Status)
-	require.Equal(t, "model_not_found", cls.ErrType)
-	require.True(t, cls.ModelNotFound)
-	require.Contains(t, cls.Message, "gpt-5.6-sol")
-	require.Contains(t, cls.Message, "gpt-5.6-terra")
-	require.Contains(t, cls.Message, "支持 Luna 的分组")
+	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
+	require.Equal(t, "local_capacity_exhausted", cls.ErrType)
+	require.False(t, cls.ModelNotFound)
+	require.Equal(t, "本站暂不支持gpt-5.6-luna，请切换模型重试", cls.Message)
 }
 
 func TestClassifyNoAccountError_LunaEmptyPool_ReturnsAlternativeGuidance(t *testing.T) {
@@ -138,9 +136,9 @@ func TestClassifyNoAccountError_LunaEmptyPool_ReturnsAlternativeGuidance(t *test
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.6-luna", "gpt-5.6-luna", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusNotFound, cls.Status)
-	require.Equal(t, "model_not_found", cls.ErrType)
-	require.True(t, cls.ModelNotFound)
+	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
+	require.Equal(t, "local_capacity_exhausted", cls.ErrType)
+	require.False(t, cls.ModelNotFound)
 	require.Equal(t, lunaUnavailableMessage, cls.Message)
 }
 
@@ -157,8 +155,8 @@ func TestLunaUnavailableProtocolContract_ResponsesReturnsStableCodeAndGuidance(t
 	c, w := newGinContextForEndpoint(t, EndpointResponses)
 	(&GatewayHandler{}).responsesErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
 
-	require.Equal(t, http.StatusNotFound, w.Code)
-	require.JSONEq(t, `{"error":{"code":"model_not_found","message":"gpt-5.6-luna 当前在本站不可用。请改用 gpt-5.6-sol 或 gpt-5.6-terra；如确需 Luna，请切换到支持 Luna 的分组后重试。"}}`, w.Body.String())
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.JSONEq(t, `{"error":{"code":"local_capacity_exhausted","message":"本站暂不支持gpt-5.6-luna，请切换模型重试"}}`, w.Body.String())
 }
 
 func TestClassifyOpenAICompatibleNoAccountError_GrokUsesGrokPlatform(t *testing.T) {

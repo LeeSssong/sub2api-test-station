@@ -58,7 +58,7 @@
 ### Luna 本地不可用指引
 
 - 复用原生 `classifyNoAccountError` 路径，因为它同时持有用户原始模型名、分组约束和本站“无可用账号”的事实；不接入全局 `ErrorPassthroughRule`。
-- 仅精确匹配 `gpt-5.6-luna`。在该模型无法获得本站账号时，返回 HTTP 404、`model_not_found`，文案明确建议改用 `gpt-5.6-sol` 或 `gpt-5.6-terra`；如确需 Luna，则使用配置为支持 Luna 的分组后再试。
+- 仅精确匹配 `gpt-5.6-luna`。在该模型无法获得本站账号时，保留 HTTP 503、`local_capacity_exhausted` 重试协议，仅将文案固定为“本站暂不支持gpt-5.6-luna，请切换模型重试”。
 - 不暴露分组名称、账号数量、账号状态或上游信息；不改动其他模型的 404/503 语义，不覆盖已经开始上游响应后的错误。
 
 ## 不在范围
@@ -74,5 +74,5 @@
 - 502/503 账号进入短时冷却，并被当前请求排除；冷却后可半开恢复。
 - 只有纯 `response.failed`、无 usage/扣费/输出、可安全重放时才切号。
 - 已 usage、扣费、语义输出或 `unsafe_to_replay` 时不切号。
-- Luna 无可用账号时，Responses/OpenAI-compatible JSON 返回稳定 `model_not_found` 与替代模型/分组指引；非 Luna 维持原有协议。
+- Luna 无可用账号时，Responses/OpenAI-compatible JSON 仍返回 HTTP 503 与稳定 `local_capacity_exhausted`，仅替换提示文案；非 Luna 维持原有协议。
 - 现有 failover、账务、Responses SSE/JSON 测试与新增定向测试通过。

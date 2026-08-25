@@ -15,7 +15,7 @@ const (
 	localCapacityExhaustedErrorCode = "local_capacity_exhausted"
 	localCapacityExhaustedMessage   = "当前服务资源暂时不可用，请稍后重试"
 	lunaModelName                   = "gpt-5.6-luna"
-	lunaUnavailableMessage          = "gpt-5.6-luna 当前在本站不可用。请改用 gpt-5.6-sol 或 gpt-5.6-terra；如确需 Luna，请切换到支持 Luna 的分组后重试。"
+	lunaUnavailableMessage          = "本站暂不支持gpt-5.6-luna，请切换模型重试"
 )
 
 // noAccountErrorClassification describes the HTTP response to emit when
@@ -89,10 +89,10 @@ func classifyNoAccountError(
 	result := diag.DiagnoseModelAvailabilityForPlatform(ctx, apiKey.GroupID, routingModel, platform)
 	if strings.EqualFold(displayModel, lunaModelName) && !result.HasModelSupport {
 		return noAccountErrorClassification{
-			Status:        http.StatusNotFound,
-			ErrType:       "model_not_found",
+			Status:        http.StatusServiceUnavailable,
+			ErrType:       localCapacityExhaustedErrorCode,
 			Message:       lunaUnavailableMessage,
-			ModelNotFound: true,
+			ModelNotFound: false,
 		}
 	}
 	if result.HasAccountsInPool && !result.HasModelSupport {

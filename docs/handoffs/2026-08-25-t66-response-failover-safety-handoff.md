@@ -16,7 +16,7 @@
 - Responses 与 Anthropic Messages 的 502/503 失败账号立即进入原生 10 秒短冷却，并加入当前请求的 `failedAccountIDs`，跳过同账号重试；冷却后仍可按原生半开逻辑恢复。
 - Responses 只有在终止事件为 `response.failed`、没有 usage/扣费、没有语义输出且没有 `unsafe_to_replay` 时，才允许同请求切换到其他账号。
 - 已产生 usage、扣费、语义输出、请求副作用或 `unsafe_to_replay` 时，标记为不可安全重放并禁止切号/重复重放。
-- 当 `gpt-5.6-luna` 进入本站无可用账号路径时，返回 HTTP 404、`model_not_found`，并提示改用 `gpt-5.6-sol` / `gpt-5.6-terra`，或切换到支持 Luna 的分组；不自动降级、不暴露内部账号或分组名称。
+- 当 `gpt-5.6-luna` 进入本站无可用账号路径时，保留 HTTP 503、`local_capacity_exhausted` 和客户端原有重试语义，仅将文案改为“本站暂不支持gpt-5.6-luna，请切换模型重试”；不自动降级、不暴露内部账号或分组名称。
 - Luna 提示复用本地 `classifyNoAccountError`，不复用或修改全局 `ErrorPassthroughRule`，因此不会改变其他模型或上游 5xx 的故障转移语义。
 
 新增的 `UpstreamFailoverError`、请求尝试元数据和 resilience 事件字段包含 `ResponseFailedOnly`、`UnsafeToReplay`、`SwitchAllowed`、`SwitchReason` 等安全判定信息；日志只记录脱敏判定字段，不记录 Authorization、请求体或完整密钥。

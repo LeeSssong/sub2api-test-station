@@ -23,7 +23,6 @@
       <div v-if="loading && !report" class="text-sm text-gray-500" data-test="business-loading">加载中</div>
 
       <template v-if="report">
-        <p v-if="isPending" class="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800" data-test="business-pending">当前账本或历史额度拆分尚未完整，收入和毛利显示“口径待确认”；上游成本仍按原生用量记录统计。</p>
 
         <section data-test="business-results">
           <div class="mb-3 flex items-center justify-between"><h2 class="text-lg font-semibold">经营结果</h2><span class="text-xs text-gray-500">{{ report.currency }} · 用户实际扣费</span></div>
@@ -54,7 +53,7 @@
 
         <section data-test="business-groups">
           <div class="mb-3 flex items-center justify-between"><h2 class="text-lg font-semibold">分组毛利分析</h2><span class="text-xs text-gray-500">仅站内分组，不展示上游明细</span></div>
-          <div class="overflow-x-auto rounded border border-gray-200 dark:border-gray-700"><table class="min-w-[960px] w-full text-left text-sm"><thead class="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800"><tr><th class="p-3">分组</th><th class="p-3">模型数</th><th class="p-3">调用次数</th><th class="p-3">站内收入</th><th class="p-3">上游成本</th><th class="p-3">实际毛利</th><th class="p-3">实际毛利率</th><th class="p-3">预设倍率</th></tr></thead><tbody><tr v-for="group in report.groups" :key="`${group.group_id ?? 'unassigned'}-${group.group_name}`" class="border-t border-gray-100 dark:border-gray-800" :data-test="`business-group-${group.group_id ?? 'unassigned'}`"><td class="p-3 font-medium">{{ group.group_name }}</td><td class="p-3">{{ group.model_count }}</td><td class="p-3">{{ group.request_count }}</td><td class="p-3">{{ formatMoneyOrPending(group.revenue_cny) }}</td><td class="p-3">{{ formatMoneyOrPending(group.upstream_cost_cny) }}</td><td class="p-3" :class="group.gross_profit_cny != null && group.gross_profit_cny < 0 ? 'text-red-600' : 'text-green-600'">{{ formatMoneyOrPending(group.gross_profit_cny) }}</td><td class="p-3">{{ formatPercent(group.gross_margin) }}</td><td class="p-3">{{ group.preset_status === 'unavailable' ? '待配置' : formatPercent(group.preset_margin) }}</td></tr><tr v-if="!report.groups.length"><td colspan="8" class="p-4 text-center text-sm text-gray-500">暂无分组数据</td></tr></tbody></table></div>
+          <div class="overflow-x-auto rounded border border-gray-200 dark:border-gray-700"><table class="min-w-[960px] w-full text-left text-sm"><thead class="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800"><tr><th class="p-3">分组</th><th class="p-3">模型数</th><th class="p-3">调用次数</th><th class="p-3">站内收入</th><th class="p-3">上游成本</th><th class="p-3">实际毛利</th><th class="p-3">实际毛利率</th><th class="p-3">预设倍率</th></tr></thead><tbody><tr v-for="group in report.groups" :key="`${group.group_id ?? 'unassigned'}-${group.group_name}`" class="border-t border-gray-100 dark:border-gray-800" :data-test="`business-group-${group.group_id ?? 'unassigned'}`"><td class="p-3 font-medium">{{ group.group_name }}</td><td class="p-3">{{ group.model_count }}</td><td class="p-3">{{ group.request_count }}</td><td class="p-3">¥{{ formatMoney(group.revenue_cny ?? 0) }}</td><td class="p-3">¥{{ formatMoney(group.upstream_cost_cny ?? 0) }}</td><td class="p-3" :class="(group.gross_profit_cny ?? 0) < 0 ? 'text-red-600' : 'text-green-600'">¥{{ formatMoney(group.gross_profit_cny ?? 0) }}</td><td class="p-3">{{ formatPercent(group.gross_margin ?? 0) }}</td><td class="p-3">{{ group.preset_margin == null ? '—' : formatPercent(group.preset_margin) }}</td></tr><tr v-if="!report.groups.length"><td colspan="8" class="p-4 text-center text-sm text-gray-500">暂无分组数据</td></tr></tbody></table></div>
         </section>
       </template>
     </main>
@@ -86,10 +85,8 @@ const endDate = ref('')
 const report = ref<BusinessOverviewReport | null>(null)
 const loading = ref(false)
 const error = ref('')
-const isPending = computed(() => report.value?.revenue_status !== 'confirmed')
 const formatMoney = (value: number) => value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const formatMoneyOrPending = (value: number | null) => value == null ? '口径待确认' : `¥${formatMoney(value)}`
-const formatPercent = (value: number | null) => value == null ? '—' : `${(value * 100).toFixed(2)}%`
+const formatPercent = (value: number) => `${(value * 100).toFixed(2)}%`
 const trendChartData = computed(() => ({
   labels: report.value?.trend.map((row) => row.date) ?? [],
   datasets: [
@@ -126,19 +123,19 @@ const trendChartOptions = computed(() => ({
 const resultCards = computed(() => {
   const summary = report.value?.summary
   return [
-    { key: 'revenue', label: '站内收入', value: formatMoneyOrPending(summary?.revenue_cny ?? null), tone: 'text-gray-900 dark:text-white' },
-    { key: 'cost', label: '上游成本', value: formatMoneyOrPending(summary?.upstream_cost_cny ?? null), tone: 'text-gray-900 dark:text-white' },
-    { key: 'profit', label: '毛利', value: formatMoneyOrPending(summary?.gross_profit_cny ?? null), tone: (summary?.gross_profit_cny ?? 0) < 0 ? 'text-red-600' : 'text-green-600' },
-    { key: 'margin', label: '毛利率', value: formatPercent(summary?.gross_margin ?? null), tone: (summary?.gross_margin ?? 0) < 0 ? 'text-red-600' : 'text-green-600' },
+    { key: 'revenue', label: '站内收入', value: `¥${formatMoney(summary?.revenue_cny ?? 0)}`, tone: 'text-gray-900 dark:text-white' },
+    { key: 'cost', label: '上游成本', value: `¥${formatMoney(summary?.upstream_cost_cny ?? 0)}`, tone: 'text-gray-900 dark:text-white' },
+    { key: 'profit', label: '毛利', value: `¥${formatMoney(summary?.gross_profit_cny ?? 0)}`, tone: (summary?.gross_profit_cny ?? 0) < 0 ? 'text-red-600' : 'text-green-600' },
+    { key: 'margin', label: '毛利率', value: formatPercent(summary?.gross_margin ?? 0), tone: (summary?.gross_margin ?? 0) < 0 ? 'text-red-600' : 'text-green-600' },
   ]
 })
 const balanceCards = computed(() => {
   const balance = report.value?.cash_and_balance
   return [
-    { key: 'recharge', label: `${report.value?.start_date ?? ''} - ${report.value?.end_date ?? ''} 现金充值`, value: formatMoneyOrPending(balance?.cash_recharge_cny ?? null) },
-    { key: 'opening', label: `${report.value?.start_date ?? ''} 未消耗余额`, value: formatMoneyOrPending(balance?.opening_paid_balance_cny ?? null) },
-    { key: 'consumption', label: `${report.value?.start_date ?? ''} - ${report.value?.end_date ?? ''} 实际消耗`, value: formatMoneyOrPending(balance?.paid_consumption_cny ?? null) },
-    { key: 'closing', label: `${report.value?.end_date ?? ''} 未消耗余额`, value: formatMoneyOrPending(balance?.closing_paid_balance_cny ?? null) },
+    { key: 'recharge', label: `${report.value?.start_date ?? ''} - ${report.value?.end_date ?? ''} 现金充值`, value: `¥${formatMoney(balance?.cash_recharge_cny ?? 0)}` },
+    { key: 'opening', label: `${report.value?.start_date ?? ''} 未消耗余额`, value: `¥${formatMoney(balance?.opening_paid_balance_cny ?? 0)}` },
+    { key: 'consumption', label: `${report.value?.start_date ?? ''} - ${report.value?.end_date ?? ''} 实际消耗`, value: `¥${formatMoney(balance?.paid_consumption_cny ?? 0)}` },
+    { key: 'closing', label: `${report.value?.end_date ?? ''} 未消耗余额`, value: `¥${formatMoney(balance?.closing_paid_balance_cny ?? 0)}` },
   ]
 })
 async function loadReport() {

@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前设计任务（2026-08-25，T68）
+
+- **T68 分组调度运营优先级与策略护栏**：状态 `DESIGNING`。用户已确认采用固定服务不中断保护、分组可配置经营优先级 `1/2/3`、三个三段运营微调卡及保存前平峰/高峰/会话切换策略预览。默认推荐配置为：GPT-特惠 `利润=1、首字速度=2、完整耗时=3`；GPT-Plus 三项均为 `1`；GPT-Pro 与【专属】GPT-PRO 为 `首字速度=1、完整耗时=2、利润=3`。范围只覆盖原生 settings/调度策略契约、SettingsView 交互、容量分散与按分组覆盖机会的最小扩展、直接相关测试；不新增调度器、事实源、迁移、账务或 GitHub Actions。候选 worktree `.worktrees/t68-scheduler-policy-priority`，分支 `codex/t68-scheduler-policy-priority`，基线 `main@c70f11193`；正式规格待完成并审阅，尚未实现、合并、推送、部署或线上验收。
+
 ## 当前设计任务（2026-08-25，T67）
 
 - **T67 完全恢复 Sub 原生用户扣费**：状态 `DESIGNING`。用户已明确要求完全恢复官方 Sub 原生扣费。目标是将推理成功后的余额扣减恢复到 `users.balance` 原生事务路径，保留 T55 钱包/流水为管理员充值与历史审计投影，并修复手动充值/退款后的 `billing:balance:<user_id>` 缓存失效。生产只读证据已确认：账号 `940310446@qq.com` 充值 ¥100 后数据库余额为 `99.96431384`，但充值后仍连续收到余额不足；余额接近零时还出现上游已执行但钱包扣费失败、`actual_cost=0` 的透支窗口。候选 worktree `.worktrees/t67-native-billing`、分支 `codex/t67-native-billing`，基线 `main@e07b9cced6576f2206e5b3467112d3358bc96417`；正式规格为 `docs/superpowers/specs/2026-08-25-t67-native-billing-design.md`。尚未修改运行时代码、推送、合并、部署或生产写入；T66-R1 发布车道释放前不进入合并/部署。

@@ -186,5 +186,3 @@ Record candidate baseline, implementation commits, changed files, commands and o
 
     git add docs/handoffs/2026-08-25-t67-native-billing-handoff.md
     git commit -m "docs: hand off T67 native billing candidate"
-
-

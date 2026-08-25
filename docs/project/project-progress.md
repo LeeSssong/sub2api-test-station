@@ -1,8 +1,8 @@
 # 项目全局进度总账
 
-**T65 账号监控历史最终结果回退（2026-08-25）：** 状态：`进行中（DESIGNING）`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间；复用原生检测运行记录、监控结果与评分算法，不新增第二事实源。候选工作区待创建。
+**T65 账号监控历史最终结果回退（2026-08-25）：** 状态：`READY_FOR_ROOT_REVIEW`。范围：模型检测证据不足/失败时沿用最近一次已完成且证据充分的最终检测结果；当前窗口评分不可用时沿用最近一次有效评分；页面明确展示当前状态、回退来源和时间；复用原生检测运行记录、监控结果与评分算法，不新增第二事实源。候选工作区：`.worktrees/t65-account-monitor-history-fallback`，分支 `codex/t65-account-monitor-history-fallback`，候选提交 `2161f59a3`（功能提交 `0f6222f0e`），基线 `main@7fb71683b`。交接文档：`docs/handoffs/2026-08-25-t65-account-monitor-history-fallback-handoff.md`。尚未合并、推送、部署或线上验收。
 
-**T66 Responses 安全切号与账号故障隔离（2026-08-25）：** 状态：`进行中（DESIGNING）`。范围仅包括余额不足账号立即隔离、502/503 账号短时冷却与请求级排除，以及 Responses 仅在 `response.failed` 且无 usage/扣费/语义输出时同请求切号；已产生 usage、扣费或 `unsafe_to_replay` 时禁止切号。候选工作区待创建。
+**T66 Responses 安全切号与账号故障隔离（2026-08-25）：** 状态：`READY_FOR_ROOT_REVIEW`。范围仅包括余额不足账号立即隔离、502/503 账号短时冷却与请求级排除，以及 Responses 仅在 `response.failed` 且无 usage/扣费/语义输出时同请求切号；已产生 usage、扣费或 `unsafe_to_replay` 时禁止切号。候选工作区：`.worktrees/t66-response-failover-safety`，分支 `codex/t66-response-failover-safety`，候选提交 `db3285e22`，基线 `main@7fb71683b`。交接文档：`docs/handoffs/2026-08-25-t66-response-failover-safety-handoff.md`。尚未合并、推送、部署或线上验收。
 
 **T64 用户导航与账号监控混合证据（2026-08-25）：** 状态：`DONE`。范围：隐藏用户“我的订阅”菜单、统一“分组性能监控”文案、将分组性能监控默认时间窗改为 24 小时、移除管理员“经营分析-账号盈利”菜单挂载，并将账号监控质量数据从仅主动探测改为真实调用与主动探测混合聚合；保留相关路由、页面、API 和代码。分组性能监控 P95 已改为秒单位并四舍五入保留两位小数。候选原始基线 `main@fbe32c725`，已无冲突刷新至发布前根 `main@6c632e036`，刷新后候选 `codex/t64-nav-monitor-hybrid@48041f572`；根合并提交 `main@1140e3563` 已推送。账号监控 service/repository 测试、server build、前端 9 文件 39 项定向测试、typecheck、production build 和 diff-check 均通过；0600 测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-1140e3563-t64.json`。生产发布记录 `/var/lib/sub2api/release-records/20260825T100637Z-production-3355302.json` 返回 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均返回 HTTP 200。登录态线上验收确认用户导航无“我的订阅”、经营分析展开后无“账号盈利”、导航显示“分组性能监控”，页面默认选中“24 小时”且展示秒单位指标。无迁移、无配置或生产数据写入。
 

@@ -134,19 +134,14 @@ func (s *businessOverviewService) GetReport(ctx context.Context, q BusinessOverv
 }
 
 type businessOverviewUsageRow struct {
-	ID        int64
-	CreatedAt time.Time
-	GroupID   sql.NullInt64
-	GroupName string
-	Model     string
-	Cost      sql.NullFloat64
-}
-
-type businessOverviewLedgerRow struct {
-	ReferenceID string
-	CreatedAt   time.Time
-	PaidDelta   sql.NullFloat64
-	GiftDelta   sql.NullFloat64
+	ID                int64
+	CreatedAt         time.Time
+	GroupID           sql.NullInt64
+	GroupName         string
+	Model             string
+	ActualCost        sql.NullFloat64
+	Cost              sql.NullFloat64
+	UsageCompleteness sql.NullString
 }
 
 type businessOverviewLedgerEvent struct {
@@ -176,10 +171,14 @@ func (s *businessOverviewService) getReport(ctx context.Context, q BusinessOverv
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ul.id, ul.created_at, ul.group_id, COALESCE(g.name, ''), COALESCE(ul.model, ''),
-			COALESCE(ul.account_cost, COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))
+			COALESCE(ul.actual_cost, 0),
+			COALESCE(COALESCE(ul.account_cost,
+				COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0),
+			COALESCE(ul.usage_completeness, 'complete')
 		FROM usage_logs ul
 		LEFT JOIN groups g ON g.id = ul.group_id
 		WHERE ul.created_at >= $1 AND ul.created_at < $2
+		  AND COALESCE(ul.usage_completeness, 'complete') <> 'unknown'
 		  AND ($3::bigint IS NULL OR ul.group_id = $3)
 		ORDER BY ul.created_at, ul.id`, q.Start, q.End, q.GroupID)
 	if err != nil {
@@ -189,7 +188,7 @@ func (s *businessOverviewService) getReport(ctx context.Context, q BusinessOverv
 	usage := make([]businessOverviewUsageRow, 0)
 	for rows.Next() {
 		var row businessOverviewUsageRow
-		if err := rows.Scan(&row.ID, &row.CreatedAt, &row.GroupID, &row.GroupName, &row.Model, &row.Cost); err != nil {
+		if err := rows.Scan(&row.ID, &row.CreatedAt, &row.GroupID, &row.GroupName, &row.Model, &row.ActualCost, &row.Cost, &row.UsageCompleteness); err != nil {
 			return nil, fmt.Errorf("scan business overview usage: %w", err)
 		}
 		usage = append(usage, row)
@@ -198,41 +197,31 @@ func (s *businessOverviewService) getReport(ctx context.Context, q BusinessOverv
 		return nil, fmt.Errorf("iterate business overview usage: %w", err)
 	}
 
-	ledger, ledgerErr := s.readLedger(ctx, q)
-	ledgerAvailable := ledgerErr == nil
-	if ledgerErr != nil && !isBusinessOverviewMissingLedger(ledgerErr) {
-		return nil, ledgerErr
-	}
 	events, eventsErr := s.readLedgerEvents(ctx, q)
 	if eventsErr != nil && !isBusinessOverviewMissingLedger(eventsErr) {
 		return nil, eventsErr
 	}
 	if eventsErr != nil {
-		ledgerAvailable = false
+		events = []businessOverviewLedgerEvent{}
 	}
 	wallet, walletErr := s.readWalletSnapshot(ctx)
 	if walletErr != nil && !isBusinessOverviewMissingLedger(walletErr) {
 		return nil, walletErr
 	}
 	if walletErr != nil {
-		ledgerAvailable = false
-	}
-	byReference := make(map[string]businessOverviewLedgerRow, len(ledger))
-	for _, item := range ledger {
-		byReference[item.ReferenceID] = item
+		wallet = businessOverviewWalletSnapshot{}
 	}
 
-	var cost float64
-	pendingCost := 0
+	var revenue, cost float64
 	groups := make(map[string]*BusinessOverviewGroup)
-	var paidQ, giftQ float64
-	pendingSplit := 0
 	for _, row := range usage {
-		if !row.Cost.Valid || math.IsNaN(row.Cost.Float64) || math.IsInf(row.Cost.Float64, 0) {
-			pendingCost++
-		} else {
-			cost += row.Cost.Float64
+		if row.UsageCompleteness.Valid && strings.EqualFold(strings.TrimSpace(row.UsageCompleteness.String), "unknown") {
+			continue
 		}
+		actualCost := nullFloatOrZero(row.ActualCost)
+		upstreamCost := nullFloatOrZero(row.Cost)
+		revenue += actualCost
+		cost += upstreamCost
 		key := "unassigned"
 		if row.GroupID.Valid {
 			key = fmt.Sprintf("group:%d", row.GroupID.Int64)
@@ -244,77 +233,32 @@ func (s *businessOverviewService) getReport(ctx context.Context, q BusinessOverv
 				value := row.GroupID.Int64
 				id = &value
 			}
-			group = &BusinessOverviewGroup{GroupID: id, GroupName: row.GroupName, Unassigned: !row.GroupID.Valid, PresetStatus: BusinessOverviewRevenueUnavailable, RevenueStatus: BusinessOverviewRevenuePending}
+			group = &BusinessOverviewGroup{GroupID: id, GroupName: row.GroupName, Unassigned: !row.GroupID.Valid, PresetStatus: BusinessOverviewRevenueUnavailable, RevenueStatus: BusinessOverviewRevenueConfirmed}
 			if group.Unassigned {
 				group.GroupName = "未归组"
 			}
 			groups[key] = group
 		}
 		group.RequestCount++
-		group.UpstreamCostCNY = addPointerFloat(group.UpstreamCostCNY, row.Cost)
+		group.UpstreamCostCNY = addPointerFloat(group.UpstreamCostCNY, sql.NullFloat64{Float64: upstreamCost, Valid: true})
+		group.RevenueCNY = addPointerFloat(group.RevenueCNY, sql.NullFloat64{Float64: actualCost, Valid: true})
 		if row.Model != "" {
 			group.ModelCount++
 		}
-		if !ledgerAvailable {
-			continue
-		}
-		item, ok := byReference[fmt.Sprintf("%d", row.ID)]
-		if !ok {
-			pendingSplit++
-			continue
-		}
-		paid := -item.PaidDelta.Float64
-		gift := -item.GiftDelta.Float64
-		if !item.PaidDelta.Valid || !item.GiftDelta.Valid || paid < 0 || gift < 0 {
-			pendingSplit++
-			continue
-		}
-		paidQ += paid
-		giftQ += gift
-		groupRevenue := paid
-		group.RevenueCNY = addPointerFloat(group.RevenueCNY, sql.NullFloat64{Float64: groupRevenue, Valid: true})
-		group.RevenueStatus = BusinessOverviewRevenueConfirmed
 	}
 
-	status := BusinessOverviewRevenueConfirmed
-	if !ledgerAvailable {
-		status = BusinessOverviewRevenuePending
-	} else if pendingSplit > 0 {
-		status = BusinessOverviewRevenuePendingSplit
+	summary := BusinessOverviewSummary{
+		RevenueStatus:       BusinessOverviewRevenueConfirmed,
+		RevenueCNY:          floatPointer(revenue),
+		UpstreamCostCNY:     floatPointer(cost),
+		PaidConsumptionQ:    floatPointer(0),
+		GiftConsumptionQ:    floatPointer(0),
+		GiftUpstreamCostCNY: floatPointer(0),
+		PendingSplitCount:   0,
+		PendingCostCount:    0,
 	}
-	revenue := paidQ
-	if status != BusinessOverviewRevenueConfirmed {
-		revenuePtr := (*float64)(nil)
-		summary := BusinessOverviewSummary{RevenueStatus: status, RevenueCNY: revenuePtr, UpstreamCostCNY: floatPointer(cost), PaidConsumptionQ: floatPointer(paidQ), GiftConsumptionQ: floatPointer(giftQ), PendingSplitCount: pendingSplit, PendingCostCount: pendingCost}
-		if pendingCost > 0 {
-			summary.UpstreamCostCNY = nil
-		}
-		return s.buildReport(loc, q, summary, groups, ledgerAvailable, events, wallet)
-	}
-	summary := BusinessOverviewSummary{RevenueStatus: status, RevenueCNY: floatPointer(revenue), UpstreamCostCNY: floatPointer(cost), PaidConsumptionQ: floatPointer(paidQ), GiftConsumptionQ: floatPointer(giftQ), PendingSplitCount: pendingSplit, PendingCostCount: pendingCost}
-	if pendingCost > 0 {
-		summary.UpstreamCostCNY = nil
-	} else {
-		finalizeBusinessOverviewSummary(&summary)
-	}
-	return s.buildReport(loc, q, summary, groups, ledgerAvailable, events, wallet)
-}
-
-func (s *businessOverviewService) readLedger(ctx context.Context, q BusinessOverviewQuery) ([]businessOverviewLedgerRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(reference_id, ''), created_at, paid_quota_delta_usd, gift_quota_delta_usd FROM user_quota_ledger_entries WHERE record_type='usage_consumption' AND created_at >= $1 AND created_at < $2`, q.Start, q.End)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make([]businessOverviewLedgerRow, 0)
-	for rows.Next() {
-		var item businessOverviewLedgerRow
-		if err := rows.Scan(&item.ReferenceID, &item.CreatedAt, &item.PaidDelta, &item.GiftDelta); err != nil {
-			return nil, err
-		}
-		result = append(result, item)
-	}
-	return result, rows.Err()
+	finalizeBusinessOverviewSummary(&summary)
+	return s.buildReport(loc, q, summary, groups, usage, events, wallet)
 }
 
 func (s *businessOverviewService) readLedgerEvents(ctx context.Context, q BusinessOverviewQuery) ([]businessOverviewLedgerEvent, error) {
@@ -340,81 +284,74 @@ func (s *businessOverviewService) readWalletSnapshot(ctx context.Context) (busin
 	return snapshot, err
 }
 
-func (s *businessOverviewService) buildReport(loc *time.Location, q BusinessOverviewQuery, summary BusinessOverviewSummary, groups map[string]*BusinessOverviewGroup, ledgerAvailable bool, events []businessOverviewLedgerEvent, wallet businessOverviewWalletSnapshot) (*BusinessOverviewReport, error) {
+func (s *businessOverviewService) buildReport(loc *time.Location, q BusinessOverviewQuery, summary BusinessOverviewSummary, groups map[string]*BusinessOverviewGroup, usage []businessOverviewUsageRow, events []businessOverviewLedgerEvent, wallet businessOverviewWalletSnapshot) (*BusinessOverviewReport, error) {
 	endDate := q.End.Add(-time.Nanosecond).In(loc).Format("2006-01-02")
 	report := &BusinessOverviewReport{GeneratedAt: s.now().UTC(), Timezone: loc.String(), StartDate: q.Start.In(loc).Format("2006-01-02"), EndDate: endDate, Currency: "CNY", QuotaUnit: "Q", QuotaUnitLabel: "内部记账额度，不是美元", RevenueStatus: summary.RevenueStatus, Summary: summary, Trend: []BusinessOverviewTrend{}, Groups: make([]BusinessOverviewGroup, 0, len(groups))}
-	if ledgerAvailable {
-		var recharge, consumed, paidIssued, giftIssued float64
-		for _, event := range events {
-			if event.RecordType == businessOverviewRecordRecharge && event.CashDelta.Valid {
-				recharge += event.CashDelta.Float64
-			}
-			if event.RecordType == businessOverviewRecordUsage && event.PaidDelta.Valid {
-				consumed += -event.PaidDelta.Float64
-			}
-			if event.RecordType == businessOverviewRecordRecharge && event.PaidDelta.Valid {
-				paidIssued += event.PaidDelta.Float64
-			}
-			if event.RecordType == businessOverviewRecordRecharge && event.GiftDelta.Valid {
-				giftIssued += event.GiftDelta.Float64
-			}
+	var recharge, paidIssued, giftIssued float64
+	for _, event := range events {
+		if event.RecordType == businessOverviewRecordRecharge {
+			recharge += nullFloatOrZero(event.CashDelta)
+			paidIssued += nullFloatOrZero(event.PaidDelta)
+			giftIssued += nullFloatOrZero(event.GiftDelta)
 		}
-		report.CashAndBalance.CashRechargeCNY = &recharge
-		report.CashAndBalance.PaidQuotaIssuedCNY = &paidIssued
-		report.CashAndBalance.PaidConsumptionCNY = &consumed
-		closingPaid := wallet.PaidQ
-		openingPaid := closingPaid - paidIssued + consumed
-		report.CashAndBalance.ClosingPaidBalanceCNY = &closingPaid
-		report.CashAndBalance.OpeningPaidBalanceCNY = &openingPaid
-		closingGift := wallet.GiftQ
-		openingGift := closingGift - giftIssued
-		report.CashAndBalance.ClosingGiftBalanceQ = &closingGift
-		report.CashAndBalance.OpeningGiftBalanceQ = &openingGift
-		net := recharge - consumed
-		report.CashAndBalance.NetSettlementCNY = &net
-		report.CashAndBalance.Reconciliation = BusinessOverviewReconciliation{Status: BusinessOverviewBalancePending, DifferenceCNY: 0, Adjustments: []string{"历史余额边界待钱包快照"}}
-	} else {
-		report.CashAndBalance.Reconciliation = BusinessOverviewReconciliation{Status: BusinessOverviewBalancePending, DifferenceCNY: 0, Adjustments: []string{"T55 额度账本不可用"}}
 	}
+	consumed := businessOverviewValueOrZero(summary.RevenueCNY)
+	report.CashAndBalance.CashRechargeCNY = floatPointer(recharge)
+	report.CashAndBalance.PaidQuotaIssuedCNY = floatPointer(paidIssued)
+	report.CashAndBalance.PaidConsumptionCNY = floatPointer(consumed)
+	closingPaid := finiteOrZero(wallet.PaidQ)
+	openingPaid := closingPaid - paidIssued + consumed
+	report.CashAndBalance.ClosingPaidBalanceCNY = floatPointer(closingPaid)
+	report.CashAndBalance.OpeningPaidBalanceCNY = floatPointer(openingPaid)
+	closingGift := finiteOrZero(wallet.GiftQ)
+	openingGift := closingGift - giftIssued
+	report.CashAndBalance.ClosingGiftBalanceQ = floatPointer(closingGift)
+	report.CashAndBalance.OpeningGiftBalanceQ = floatPointer(openingGift)
+	net := recharge - consumed
+	report.CashAndBalance.NetSettlementCNY = floatPointer(net)
+	adjustments := []string{}
+	if len(events) == 0 {
+		adjustments = append(adjustments, "本期无变动")
+	}
+	report.CashAndBalance.Reconciliation = reconcileBusinessOverview(openingPaid, paidIssued, 0, consumed, closingPaid)
+	report.CashAndBalance.Reconciliation.Adjustments = adjustments
 	for _, group := range groups {
-		if group.RevenueCNY != nil && group.UpstreamCostCNY != nil {
-			profit := *group.RevenueCNY - *group.UpstreamCostCNY
-			group.GrossProfitCNY = &profit
-			if *group.RevenueCNY != 0 {
-				margin := profit / *group.RevenueCNY
-				group.GrossMargin = &margin
-			}
-		}
-		if !ledgerAvailable {
-			group.RevenueStatus = BusinessOverviewRevenuePending
-		}
+		finalizeBusinessOverviewGroup(group)
 		report.Groups = append(report.Groups, *group)
 	}
-	if ledgerAvailable {
-		trendByDate := make(map[string]*BusinessOverviewTrend)
-		for _, event := range events {
-			date := event.CreatedAt.In(loc).Format("2006-01-02")
-			item := trendByDate[date]
-			if item == nil {
-				item = &BusinessOverviewTrend{Date: date}
-				trendByDate[date] = item
-			}
-			if event.RecordType == businessOverviewRecordRecharge && event.CashDelta.Valid {
-				item.CashRechargeCNY += event.CashDelta.Float64
-			}
-			if event.RecordType == businessOverviewRecordUsage && event.PaidDelta.Valid {
-				item.PaidConsumptionCNY += -event.PaidDelta.Float64
-			}
-			item.NetSettlementCNY = item.CashRechargeCNY - item.PaidConsumptionCNY
+	trendByDate := make(map[string]*BusinessOverviewTrend)
+	for _, row := range usage {
+		if row.UsageCompleteness.Valid && strings.EqualFold(strings.TrimSpace(row.UsageCompleteness.String), "unknown") {
+			continue
 		}
-		for day := q.Start.In(loc); day.Before(q.End); day = day.AddDate(0, 0, 1) {
-			date := day.Format("2006-01-02")
-			if item := trendByDate[date]; item != nil {
-				report.Trend = append(report.Trend, *item)
-			} else {
-				report.Trend = append(report.Trend, BusinessOverviewTrend{Date: date})
-			}
+		date := row.CreatedAt.In(loc).Format("2006-01-02")
+		item := trendByDate[date]
+		if item == nil {
+			item = &BusinessOverviewTrend{Date: date}
+			trendByDate[date] = item
 		}
+		item.PaidConsumptionCNY += nullFloatOrZero(row.ActualCost)
+	}
+	for _, event := range events {
+		if event.RecordType != businessOverviewRecordRecharge {
+			continue
+		}
+		date := event.CreatedAt.In(loc).Format("2006-01-02")
+		item := trendByDate[date]
+		if item == nil {
+			item = &BusinessOverviewTrend{Date: date}
+			trendByDate[date] = item
+		}
+		item.CashRechargeCNY += nullFloatOrZero(event.CashDelta)
+	}
+	for day := q.Start.In(loc); day.Before(q.End); day = day.AddDate(0, 0, 1) {
+		date := day.Format("2006-01-02")
+		item := trendByDate[date]
+		if item == nil {
+			item = &BusinessOverviewTrend{Date: date}
+		}
+		item.NetSettlementCNY = item.CashRechargeCNY - item.PaidConsumptionCNY
+		report.Trend = append(report.Trend, *item)
 	}
 	return report, nil
 }
@@ -432,6 +369,45 @@ func addPointerFloat(current *float64, value sql.NullFloat64) *float64 {
 }
 
 func floatPointer(value float64) *float64 { return &value }
+
+func nullFloatOrZero(value sql.NullFloat64) float64 {
+	if !value.Valid {
+		return 0
+	}
+	return finiteOrZero(value.Float64)
+}
+
+func finiteOrZero(value float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0
+	}
+	return value
+}
+
+func businessOverviewValueOrZero(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return finiteOrZero(*value)
+}
+
+func finalizeBusinessOverviewGroup(group *BusinessOverviewGroup) {
+	if group == nil {
+		return
+	}
+	revenue := businessOverviewValueOrZero(group.RevenueCNY)
+	cost := businessOverviewValueOrZero(group.UpstreamCostCNY)
+	group.RevenueCNY = floatPointer(revenue)
+	group.UpstreamCostCNY = floatPointer(cost)
+	profit := revenue - cost
+	group.GrossProfitCNY = floatPointer(profit)
+	margin := 0.0
+	if revenue != 0 {
+		margin = profit / revenue
+	}
+	group.GrossMargin = floatPointer(margin)
+	group.RevenueStatus = BusinessOverviewRevenueConfirmed
+}
 
 func isBusinessOverviewMissingLedger(err error) bool {
 	message := strings.ToLower(err.Error())
@@ -461,15 +437,19 @@ func BusinessOverviewDateRange(startDate, endDate string, loc *time.Location) (t
 }
 
 func finalizeBusinessOverviewSummary(summary *BusinessOverviewSummary) {
-	if summary == nil || summary.RevenueCNY == nil || summary.UpstreamCostCNY == nil {
+	if summary == nil {
 		return
 	}
-	profit := *summary.RevenueCNY - *summary.UpstreamCostCNY
-	if *summary.RevenueCNY == 0 {
-		return
-	}
+	revenue := businessOverviewValueOrZero(summary.RevenueCNY)
+	cost := businessOverviewValueOrZero(summary.UpstreamCostCNY)
+	summary.RevenueCNY = floatPointer(revenue)
+	summary.UpstreamCostCNY = floatPointer(cost)
+	profit := revenue - cost
 	summary.GrossProfitCNY = &profit
-	margin := profit / *summary.RevenueCNY
+	margin := 0.0
+	if revenue != 0 {
+		margin = profit / revenue
+	}
 	summary.GrossMargin = &margin
 }
 

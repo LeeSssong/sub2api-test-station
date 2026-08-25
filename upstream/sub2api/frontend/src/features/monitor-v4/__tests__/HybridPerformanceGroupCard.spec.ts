@@ -34,6 +34,11 @@ describe('HybridPerformanceGroupCard', () => {
     expect(componentSource).toContain('0 0 48px')
   })
 
+  it('targets dark overrides from the document theme ancestor', () => {
+    expect(componentSource).toContain('html.dark .hybrid-card')
+    expect(componentSource).toContain('html.dark .hybrid-metric strong')
+  })
+
   it.each([
     [85, 'green'],
     [50, 'amber'],

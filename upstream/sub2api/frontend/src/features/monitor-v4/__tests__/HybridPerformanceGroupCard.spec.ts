@@ -20,6 +20,15 @@ describe('HybridPerformanceGroupCard', () => {
     expect(wrapper.find('[data-test="ring"]').classes()).not.toContain('orbit')
   })
 
+  it('formats latency metrics in seconds with two decimal places', () => {
+    const wrapper = mount(HybridPerformanceGroupCard, {
+      props: { group: { ...group, ttft_p95_ms: 11202, latency_p95_ms: 14129 } },
+    })
+
+    expect(wrapper.get('[data-test="ttft-p95"]').text()).toBe('11.20 s')
+    expect(wrapper.get('[data-test="latency-p95"]').text()).toBe('14.13 s')
+  })
+
   it('keeps the center percentage static while the ring only breathes', () => {
     const wrapper = mount(HybridPerformanceGroupCard, { props: { group }, global: { mocks: { $t: (key: string, args?: Record<string, unknown>) => key === 'channelMonitorV2.hybrid.multiplier' ? `倍率：${args?.value}x` : key === 'channelMonitorV2.hybrid.sampleCount' ? `基于 ${args?.count} 次真实请求` : key === 'channelMonitorV2.hybrid.latestProbe' ? '最近探测 08-25 08:00' : key } } })
     expect(wrapper.get('[data-test="availability"]').text()).toBe('85%')

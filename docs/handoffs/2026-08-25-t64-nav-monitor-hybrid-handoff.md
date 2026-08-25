@@ -14,6 +14,7 @@
 - 账号监控 `sample_count`、成功率、TTFT 和延迟质量字段使用真实 `usage_logs` 请求与主动探测样本的混合证据；真实请求指标优先，缺失时回退主动探测指标。
 - `probe_*` 兼容字段、最新状态、可用性和新鲜度继续由主动探测门控，避免只有真实请求而没有近期探测时误报账号可用。
 - 混合证据标记为 `hybrid`；无主动探测时保持 `stale` 语义。
+- 分组性能监控卡片中的首字 P95、总耗时 P95 将后端毫秒值转换为秒，按四舍五入保留两位小数并显示 `s` 单位。
 
 ## 已运行验证
 
@@ -21,6 +22,7 @@
 - 后端：`go test ./internal/repository -run 'TestAccountMonitor'`
 - 后端：`go build ./cmd/server`
 - 前端定向 Vitest：7 个文件、29 个测试通过
+- 追加分组性能监控卡片测试：3 个文件、11 个测试通过；覆盖毫秒到秒及两位小数展示
 - 前端：`pnpm typecheck`
 - 前端：`pnpm build`
 - `git diff --check`

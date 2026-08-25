@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前返修任务（2026-08-25，T61 第四套性能监测原型结构还原）
+
+- **T61 第四套性能监测原型结构还原**：状态 `IMPLEMENTING`。仅替换第四套页面顶部“分组状态”区域，恢复 Monitor V2 页面骨架并保留下方 CodexRadar 站长推荐与社区矩阵；第四套圆环、P95、统一真实请求样本数和呼吸动效继续保留。候选从 `main@57b33e8b3` 创建，前端无 API、数据库、迁移、配置或生产数据变更，预期 `downtime_required=false`。
+
 ## 当前经营任务（2026-08-24，T57 DOCX 经营分析总览）
 
 - **T57 DOCX 经营分析总览**：状态 `DONE`。生产源 `main@f217db218` 已推送并通过既有本地/宿主预加载蓝绿链无停机发布，活动槽 `green`，迁移哈希保持 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`；0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-24-main-f217db218-t57-business-overview-production.json`。公网 `/healthz`、`/readyz`、`/health` 均 200；管理员经营总览 `today`/`7d` 均返回 200，真实数据正确投影 `revenue_status=pending_split`、5 个分组和 7 天趋势，前端 `BusinessOverviewView` 资源已上线。范围来自《星桥AI-Link-经营分析开发需求.docx》，继续复用 `usage_logs` 与 T55 只读契约，不新增第二账务事实源。恢复 bundle：`/Users/gongtengxinwen/Documents/sub2api-archives/t57-docx-business-analysis-adbc4837.bundle`。

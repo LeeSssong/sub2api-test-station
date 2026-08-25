@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**T61 第四套性能监测原型结构还原（2026-08-25）：** 状态：`进行中`。范围仅调整 `/custom/performance-monitor` 顶部“分组状态”区域：恢复与既有 Monitor V2 一致的页面骨架和 CodexRadar 站长推荐/社区矩阵，同时保留第四套混合性能卡片、P95、统一真实请求样本数和呼吸动效；不改后端数据口径、配置、迁移或下方推荐内容。基线 `main@57b33e8b3`；候选工作区待创建。预期 `downtime_required=false`，完成门槛为直接相关前端测试、typecheck、production build、推送、无停机发布和线上视觉验收。
+
 **T60 第四套混合性能监测配置与中文渲染修复（2026-08-25）：** 状态：`DONE`。候选 `codex/t60-hybrid-monitor-fix@35f2b71fb` 已合入并推送根 `main@0cf546ceb`；管理员 hybrid 模式恢复主动探测配置入口，第四模式页面/卡片统一使用 `channelMonitorV2.hybrid.*` 中文命名空间，后端不再以 V2 `enabled=false` 阻断 hybrid 分组快照。后端 MonitorV4/ChannelMonitor 定向测试、`go build ./cmd/server`、前端 17 个直接测试、`vue-tsc`、生产构建和 `git diff --check` 均通过。生产预加载蓝绿记录 `/var/lib/sub2api/release-records/20260825T021146Z-production-2315927.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200；无迁移、无生产数据写入。生产证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-0cf546ce-t60-hybrid-monitor-fix.json`。
 
 **T59 第四套混合性能监测（2026-08-25）：** 状态：`DONE`。最终根 `main@4792a11d5` 已推送；生产预加载蓝绿链返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，生产镜像来源为 `main@4792a11d5`，迁移哈希保持 `2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9`。公网 `/healthz`、`/readyz`、`/health` 均返回真实 JSON `200`；登录态 `/monitor` 已确认四模式设置中的“混合性能监控”选项、P95 指标卡片、可用性圆环与统一样本文案资源已上线。发布证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-4792a11d5-t59-hybrid-monitor-v4.json`；本次未擅自切换生产默认模式，线上当前设置仍为 V1。候选 worktree 与分支已在发布验收后清理，T58 受保护工作区保留。

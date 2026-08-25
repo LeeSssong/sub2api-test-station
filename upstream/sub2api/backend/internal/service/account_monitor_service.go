@@ -1602,12 +1602,14 @@ func accountMonitorWindowEvidence(
 	if window.LastObservedAt != nil && (observedAt.IsZero() || window.LastObservedAt.After(observedAt)) {
 		observedAt = window.LastObservedAt.UTC()
 	}
-	if probeSamples == 0 || sampleCount == 0 {
+	if sampleCount == 0 {
 		return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: observedAt}
 	}
 	source := "monitor_probe"
 	if realSamples > 0 && probeSamples > 0 {
 		source = "hybrid"
+	} else if realSamples > 0 {
+		source = "real_request"
 	}
 	evidence := AccountMonitorQualityEvidence{
 		Source: source, SampleCount: sampleCount, SuccessSampleCount: successSampleCount,
@@ -1627,7 +1629,13 @@ func accountMonitorWindowEvidence(
 		evidence.LatencyP95MS = window.LatencyP95MS
 	}
 	if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
-		evidence.Source = "stale"
+		if probeSamples == 0 && realSamples > 0 {
+			// Keep real-request evidence visible even when the probe freshness gate
+			// keeps availability/ranking pending.
+			evidence.Source = "real_request"
+		} else {
+			evidence.Source = "stale"
+		}
 	}
 	return evidence
 }
@@ -1656,6 +1664,11 @@ func accountMonitorWindowScoreProjection(
 	if evidence.SampleCount <= 0 || evidence.SuccessSampleCount <= 0 {
 		return evidence, accountMonitorScoreIneligible, false
 	}
+	if evidence.Source == "real_request" {
+		// Real requests contribute quality samples, but active-probe freshness
+		// remains the availability/ranking gate for the current window.
+		return evidence, accountMonitorScoreIneligible, false
+	}
 	if currentScoreStatus == accountMonitorScoreEligible || currentScoreStatus == accountMonitorScoreCapped {
 		if evidence.Source == "stale" {
 			// Preserve the existing retained-score contract for a stale probe
@@ -1664,7 +1677,7 @@ func accountMonitorWindowScoreProjection(
 		}
 		return evidence, currentScoreStatus, true
 	}
-	if !account.IsSchedulable() {
+	if !account.IsSchedulable() && evidence.Source != "historical_final" {
 		return evidence, accountMonitorScoreIneligible, false
 	}
 	if evidence.Source == "stale" {

@@ -541,6 +541,29 @@ func TestAccountMonitorListWindowFallsBackToLatestHistoricalScoreWhenCurrentWind
 	}
 }
 
+func TestAccountMonitorWindowEvidenceUsesRealRequestsWithoutProbeSamples(t *testing.T) {
+	now := time.Now().UTC()
+	window := AccountMonitorWindowAggregate{
+		RequestCount: 3, SuccessCount: 2, ErrorCount: 1,
+		TTFTSampleCount: 3, LatencySampleCount: 3,
+		LastObservedAt: &now,
+	}
+	evidence := accountMonitorWindowEvidence(window, AccountMonitorAggregate{}, AccountMonitorLatest{}, AccountMonitorSettings{IntervalSeconds: 300}, now)
+	if evidence.Source != "real_request" || evidence.SampleCount != 3 || evidence.SuccessSampleCount != 2 {
+		t.Fatalf("evidence = %#v, want real_request with request samples", evidence)
+	}
+}
+
+func TestAccountMonitorHistoricalScoreFallbackWorksForPausedAccount(t *testing.T) {
+	rate := 0.5
+	account := Account{ID: 602, Status: StatusActive, Schedulable: false, RateMultiplier: &rate}
+	evidence := AccountMonitorQualityEvidence{Source: "historical_final", SampleCount: 12, SuccessSampleCount: 12, SuccessRate: 1}
+	_, status, eligible := accountMonitorWindowScoreProjection(account, accountMonitorScoreIneligible, evidence)
+	if status != accountMonitorScoreEligible || !eligible {
+		t.Fatalf("status=%q eligible=%v, want historical score retained for paused account", status, eligible)
+	}
+}
+
 func (s *accountMonitorMultiplierStub) Resolve(account *Account, _ time.Time) AccountMonitorMultiplier {
 	if account != nil {
 		if result, ok := s.results[account.ID]; ok {
@@ -2187,8 +2210,8 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	realOnly := accountMonitorWindowEvidence(
 		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, AccountMonitorAggregate{}, AccountMonitorLatest{}, settings, now,
 	)
-	if realOnly.Source != "stale" || realOnly.SampleCount != 0 || realOnly.SuccessSampleCount != 0 {
-		t.Fatalf("real request evidence without a fresh probe should remain gated: %#v", realOnly)
+	if realOnly.Source != "real_request" || realOnly.SampleCount != 3 || realOnly.SuccessSampleCount != 2 {
+		t.Fatalf("real request evidence without a fresh probe should remain visible: %#v", realOnly)
 	}
 }
 
@@ -2271,8 +2294,8 @@ func TestAccountMonitorWindowEvidenceWithoutProbesIsStale(t *testing.T) {
 		AccountMonitorSettings{IntervalSeconds: 300},
 		now,
 	)
-	if evidence.Source != "stale" || evidence.SuccessSampleCount != 0 {
-		t.Fatalf("missing probe aggregate evidence = %#v, want stale", evidence)
+	if evidence.Source != "real_request" || evidence.SampleCount != 3 || evidence.SuccessSampleCount != 0 {
+		t.Fatalf("real request evidence without probes = %#v, want visible request samples", evidence)
 	}
 	if evidence.ObservedAt.IsZero() || !evidence.ObservedAt.Equal(latestCheckedAt) {
 		t.Fatalf("probe fallback observed_at = %s, want latest probe time %s", evidence.ObservedAt, latestCheckedAt)

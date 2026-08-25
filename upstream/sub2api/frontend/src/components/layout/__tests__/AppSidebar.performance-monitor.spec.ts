@@ -9,5 +9,7 @@ describe('performance monitor navigation contract', () => {
     expect(source).toContain('PerformanceMonitorIcon')
     expect(source).toContain("item.id === 'performance-monitor' ? PerformanceMonitorIcon : null")
     expect(source).not.toContain("path: '/monitor', label: t('nav.channelStatus')")
+    expect(source).not.toContain("path: '/subscriptions', label: t('nav.mySubscriptions')")
+    expect(source).not.toContain("path: '/admin/operations/account-profitability', label: t('nav.accountProfitability')")
   })
 })

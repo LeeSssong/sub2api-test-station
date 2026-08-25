@@ -115,7 +115,7 @@ describe('MonitorV2RouteView', () => {
     const wrapper = mountRoute()
     await flushPromises()
 
-    expect(getMonitorV2Snapshot).toHaveBeenCalledWith('7d', expect.any(AbortSignal))
+    expect(getMonitorV2Snapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal))
     expect(wrapper.text()).toContain('暂无可见分组')
     expect(wrapper.find('[data-test="native-channel-status"]').exists()).toBe(false)
   })

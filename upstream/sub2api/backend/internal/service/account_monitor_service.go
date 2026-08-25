@@ -394,8 +394,9 @@ func ParseAccountMonitorRange(raw string) (AccountMonitorRange, time.Duration, e
 	}
 }
 
-// ListWindow keeps request counts as operational context, while all service
-// quality, availability, scoring, and ranking come exclusively from probes.
+// ListWindow combines real request evidence with active probe observations for
+// quality, scoring, and ranking. Availability and freshness remain gated by
+// active probes so a request-only account cannot be reported as operational.
 func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string) (AccountMonitorPage, error) {
 	rangeValue, duration, err := ParseAccountMonitorRange(rawRange)
 	if err != nil {
@@ -617,6 +618,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.CheckedAt = accountMonitorWindowCheckedAt(latest[row.AccountID], evidence)
 		row.ManagementState = accountMonitorManagementState(account, now)
 		projectAccountMonitorProbe(row, probe, latest[row.AccountID], row.Timeline, settings, now, row.ManagementState)
+		projectAccountMonitorWindowState(row, evidence)
 		row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 		row.GroupEligibility = accountMonitorEligibilityNotApplicable
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -700,6 +702,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CheckedAt = accountMonitorWindowCheckedAt(latest[account.ID], evidence)
 			row.ManagementState = accountMonitorManagementState(account, now)
 			projectAccountMonitorProbe(&row.AccountMonitorAccount, probe, latest[account.ID], row.Timeline, settings, now, row.ManagementState)
+			projectAccountMonitorWindowState(&row.AccountMonitorAccount, evidence)
 			row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 			row.GroupEligibility = accountMonitorEligibilityEligible
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -1066,9 +1069,9 @@ func accountMonitorManagementState(account Account, now time.Time) string {
 	return accountMonitorManagementEnabled
 }
 
-// projectAccountMonitorProbe is the single probe-only projection boundary.
-// Business request metrics may be displayed beside this projection, but they
-// must never change availability, score eligibility, or probe aliases.
+// projectAccountMonitorProbe projects the active-probe-specific fields kept for
+// backwards-compatible clients. Window quality is applied separately so real
+// requests can participate without changing the probe aliases.
 func projectAccountMonitorProbe(
 	row *AccountMonitorAccount,
 	aggregate AccountMonitorAggregate,
@@ -1130,6 +1133,25 @@ func projectAccountMonitorProbe(
 		capped := accountMonitorAbnormalScoreCap
 		row.QualityScore = &capped
 	}
+}
+
+func projectAccountMonitorWindowState(
+	row *AccountMonitorAccount,
+	evidence AccountMonitorQualityEvidence,
+) {
+	if row == nil {
+		return
+	}
+	row.SampleCount = evidence.SampleCount
+	row.SuccessSampleCount = evidence.SuccessSampleCount
+	row.SuccessRate = evidence.SuccessRate
+	row.TTFTSampleCount = evidence.TTFTSampleCount
+	row.LatencySampleCount = evidence.LatencySampleCount
+	row.TTFTP50MS = evidence.TTFTP50MS
+	row.LatencyP95MS = evidence.LatencyP95MS
+	// Availability and service state remain probe-driven; this helper only
+	// replaces the quality fields with the hybrid window evidence. The probe
+	// aliases and current-state gate are preserved for compatibility.
 }
 
 func accountMonitorAvailabilityStatus(managementState string, stale bool, sampleCount, consecutiveFailed int, latest AccountMonitorLatest) string {
@@ -1525,26 +1547,68 @@ func accountMonitorWindowScoreBreakdown(
 }
 
 func accountMonitorWindowEvidence(
-	_ AccountMonitorWindowAggregate,
+	window AccountMonitorWindowAggregate,
 	probe AccountMonitorAggregate,
 	latest AccountMonitorLatest,
 	settings AccountMonitorSettings,
 	now time.Time,
 ) AccountMonitorQualityEvidence {
-	if probe.SampleCount > 0 {
-		observedAt := accountMonitorProbeObservedAt(probe, latest)
-		evidence := AccountMonitorQualityEvidence{
-			Source: "monitor_probe", SampleCount: probe.SampleCount, SuccessSampleCount: probe.SuccessSampleCount,
-			TTFTSampleCount: probe.TTFTSampleCount, LatencySampleCount: probe.LatencySampleCount,
-			SuccessRate: probe.SuccessRate, TTFTP50MS: probe.TTFTP50MS, LatencyP95MS: probe.LatencyP95MS,
-			ObservedAt: observedAt,
-		}
-		if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
-			evidence.Source = "stale"
-		}
-		return evidence
+	realSamples := window.RequestCount
+	if realSamples < 0 {
+		realSamples = 0
 	}
-	return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: accountMonitorProbeObservedAt(probe, latest)}
+	realSuccesses := window.SuccessCount
+	if realSuccesses < 0 {
+		realSuccesses = 0
+	}
+	if realSuccesses > realSamples {
+		realSuccesses = realSamples
+	}
+	probeSamples := probe.SampleCount
+	if probeSamples < 0 {
+		probeSamples = 0
+	}
+	probeSuccesses := probe.SuccessSampleCount
+	if probeSuccesses < 0 {
+		probeSuccesses = 0
+	}
+	if probeSuccesses > probeSamples {
+		probeSuccesses = probeSamples
+	}
+	sampleCount := int(realSamples) + probeSamples
+	successSampleCount := int(realSuccesses) + probeSuccesses
+	observedAt := accountMonitorProbeObservedAt(probe, latest)
+	if window.LastObservedAt != nil && (observedAt.IsZero() || window.LastObservedAt.After(observedAt)) {
+		observedAt = window.LastObservedAt.UTC()
+	}
+	if probeSamples == 0 || sampleCount == 0 {
+		return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: observedAt}
+	}
+	source := "monitor_probe"
+	if realSamples > 0 && probeSamples > 0 {
+		source = "hybrid"
+	}
+	evidence := AccountMonitorQualityEvidence{
+		Source: source, SampleCount: sampleCount, SuccessSampleCount: successSampleCount,
+		TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
+		SuccessRate: float64(successSampleCount) / float64(sampleCount), ObservedAt: observedAt,
+	}
+	if evidence.TTFTSampleCount == 0 {
+		evidence.TTFTSampleCount = probe.TTFTSampleCount
+		evidence.TTFTP50MS = probe.TTFTP50MS
+	} else {
+		evidence.TTFTP50MS = window.TTFTP50MS
+	}
+	if evidence.LatencySampleCount == 0 {
+		evidence.LatencySampleCount = probe.LatencySampleCount
+		evidence.LatencyP95MS = probe.LatencyP95MS
+	} else {
+		evidence.LatencyP95MS = window.LatencyP95MS
+	}
+	if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
+		evidence.Source = "stale"
+	}
+	return evidence
 }
 
 func accountMonitorWindowScoreProjection(
@@ -1556,13 +1620,19 @@ func accountMonitorWindowScoreProjection(
 		return evidence, accountMonitorScoreIneligible, false
 	}
 	if currentScoreStatus == accountMonitorScoreEligible || currentScoreStatus == accountMonitorScoreCapped {
-		evidence.Source = "monitor_probe"
+		if evidence.Source == "stale" {
+			// Preserve the existing retained-score contract for a stale probe
+			// window while keeping fresh hybrid evidence explicitly labeled.
+			evidence.Source = "monitor_probe"
+		}
 		return evidence, currentScoreStatus, true
 	}
 	if !account.IsSchedulable() {
 		return evidence, accountMonitorScoreIneligible, false
 	}
-	evidence.Source = "monitor_probe"
+	if evidence.Source == "stale" {
+		evidence.Source = "monitor_probe"
+	}
 	return evidence, accountMonitorScoreEligible, true
 }
 

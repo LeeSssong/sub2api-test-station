@@ -25,11 +25,11 @@
     <div class="hybrid-card__metrics">
       <div class="hybrid-metric">
         <span>{{ t('channelMonitorV2.hybrid.ttftP95') }}</span>
-        <strong data-test="ttft-p95">{{ formatMs(group.ttft_p95_ms) }}</strong>
+        <strong data-test="ttft-p95">{{ formatSeconds(group.ttft_p95_ms) }}</strong>
       </div>
       <div class="hybrid-metric">
         <span>{{ t('channelMonitorV2.hybrid.latencyP95') }}</span>
-        <strong data-test="latency-p95">{{ formatMs(group.latency_p95_ms) }}</strong>
+        <strong data-test="latency-p95">{{ formatSeconds(group.latency_p95_ms) }}</strong>
       </div>
     </div>
 
@@ -49,7 +49,7 @@ const props = defineProps<{ group: MonitorV4Group }>()
 const { t } = useI18n()
 const tone = computed(() => props.group.availability >= 85 ? 'green' : props.group.availability >= 50 ? 'amber' : 'red')
 const formatAvailability = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(1)
-const formatMs = (value: number) => `${Math.round(value)} ms`
+const formatSeconds = (value: number) => `${(value / 1000).toFixed(2)} s`
 const formatProbeTime = (value: string | null | undefined) => {
   if (!value) return '--'
   return new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))

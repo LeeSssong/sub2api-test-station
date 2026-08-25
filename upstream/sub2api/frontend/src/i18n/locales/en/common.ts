@@ -211,7 +211,7 @@ export default {
     channelMonitor: 'Channel Monitor',
     accountMonitor: 'Account Monitor',
     channelStatus: 'Channel Status',
-    performanceMonitor: 'Performance Monitor',
+    performanceMonitor: 'Group Performance Monitor',
     riskControl: 'Risk Control',
     securityAudit: 'Security Audit',
     contentModeration: 'Content Moderation',

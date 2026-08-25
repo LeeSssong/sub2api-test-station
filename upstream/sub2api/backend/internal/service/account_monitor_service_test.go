@@ -1819,8 +1819,8 @@ func TestAccountMonitorListWindowUsesFixedSevenDayProbeEvidenceForRecommendation
 		t.Fatalf("aggregate calls = %#v, want requested 24h plus fixed 7d recommendation window", repo.aggregateCalls)
 	}
 	row := page.Accounts[0]
-	if row.ProbeSuccessRate != day24.SuccessRate || row.SampleCount != day24.SampleCount {
-		t.Fatalf("existing 24h metrics changed: success=%.2f samples=%d", row.ProbeSuccessRate, row.SampleCount)
+	if row.ProbeSuccessRate != day24.SuccessRate || row.SampleCount != day24.SampleCount+4 || row.EvidenceSource != "hybrid" {
+		t.Fatalf("existing 24h metrics changed: probe_success=%.2f samples=%d source=%s", row.ProbeSuccessRate, row.SampleCount, row.EvidenceSource)
 	}
 	if row.GroupRecommendation == nil || row.GroupRecommendation.Target != AccountMonitorGroupRecommendationTargetPro {
 		t.Fatalf("recommendation = %#v, want Pro from 7d probe evidence", row.GroupRecommendation)
@@ -2120,24 +2120,46 @@ func TestAccountMonitorWindowRankingUsesScoreThenAccountIDAndPlacesUnrankedLast(
 	}
 }
 
-func TestAccountMonitorWindowEvidenceAlwaysUsesProbes(t *testing.T) {
+func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T) {
 	now := time.Date(2026, 8, 2, 0, 0, 0, 0, time.UTC)
-	probe := AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 4, SuccessRate: 0.75, LastCheckedAt: &now}
+	probeTTFT := 900.0
+	probeLatency := 5000.0
+	realTTFT := 120.0
+	realLatency := 800.0
+	probe := AccountMonitorAggregate{
+		SampleCount: 4, SuccessSampleCount: 4, SuccessRate: 0.75,
+		TTFTSampleCount: 4, LatencySampleCount: 4, TTFTP50MS: &probeTTFT, LatencyP95MS: &probeLatency,
+		LastCheckedAt: &now,
+	}
 	latest := AccountMonitorLatest{Status: "success", CheckedAt: now}
 	settings := AccountMonitorSettings{IntervalSeconds: 300}
 
-	withTwoRequests := accountMonitorWindowEvidence(
-		AccountMonitorWindowAggregate{RequestCount: 2, SuccessRate: 1, LastObservedAt: &now}, probe, latest, settings, now,
+	combined := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{
+			RequestCount: 2, SuccessCount: 2, SuccessRate: 1,
+			TTFTSampleCount: 2, LatencySampleCount: 2, TTFTP50MS: &realTTFT, LatencyP95MS: &realLatency,
+			LastObservedAt: &now,
+		}, probe, latest, settings, now,
 	)
-	if withTwoRequests.Source != "monitor_probe" || withTwoRequests.SampleCount != 4 || withTwoRequests.SuccessRate != 0.75 {
-		t.Fatalf("two real requests should use probe evidence: %#v", withTwoRequests)
+	if combined.Source != "hybrid" || combined.SampleCount != 6 || combined.SuccessSampleCount != 6 || combined.SuccessRate != 1 {
+		t.Fatalf("real requests and probes should be combined: %#v", combined)
+	}
+	if combined.TTFTSampleCount != 2 || combined.TTFTP50MS == nil || *combined.TTFTP50MS != realTTFT || combined.LatencySampleCount != 2 || combined.LatencyP95MS == nil || *combined.LatencyP95MS != realLatency {
+		t.Fatalf("real request latency metrics should take precedence when present: %#v", combined)
 	}
 
-	withThreeRequests := accountMonitorWindowEvidence(
-		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, probe, latest, settings, now,
+	probeFallback := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 2, SuccessCount: 2, LastObservedAt: &now}, probe, latest, settings, now,
 	)
-	if withThreeRequests.Source != "monitor_probe" || withThreeRequests.SampleCount != 4 || withThreeRequests.SuccessSampleCount != 4 || withThreeRequests.SuccessRate != 0.75 {
-		t.Fatalf("three real requests must remain irrelevant to probe evidence: %#v", withThreeRequests)
+	if probeFallback.TTFTSampleCount != probe.TTFTSampleCount || probeFallback.TTFTP50MS == nil || *probeFallback.TTFTP50MS != probeTTFT || probeFallback.LatencySampleCount != probe.LatencySampleCount || probeFallback.LatencyP95MS == nil || *probeFallback.LatencyP95MS != probeLatency {
+		t.Fatalf("probe latency metrics should fill missing real request metrics: %#v", probeFallback)
+	}
+
+	realOnly := accountMonitorWindowEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, AccountMonitorAggregate{}, AccountMonitorLatest{}, settings, now,
+	)
+	if realOnly.Source != "stale" || realOnly.SampleCount != 0 || realOnly.SuccessSampleCount != 0 {
+		t.Fatalf("real request evidence without a fresh probe should remain gated: %#v", realOnly)
 	}
 }
 
@@ -2205,8 +2227,8 @@ func TestAccountMonitorWindowStateIgnoresRealRequestsAndUsesProbeTime(t *testing
 			t.Fatalf("group request-only account %d = %#v, want pending and unranked", accountID, row)
 		}
 	}
-	if row := groupByID[121]; row.Evidence.Source != "monitor_probe" || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
-		t.Fatalf("group probe fallback account = %#v, want monitor_probe and available", row)
+	if row := groupByID[121]; row.Evidence.Source != "hybrid" || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("group probe fallback account = %#v, want hybrid and available", row)
 	}
 }
 
@@ -2860,11 +2882,11 @@ func TestAccountMonitorWindowScoreBreakdownSumsToRoundedQualityScore(t *testing.
 		t.Fatal(err)
 	}
 	row := page.Accounts[0]
-	if row.EvidenceSource != "monitor_probe" {
-		t.Fatalf("evidence source = %q, want monitor_probe", row.EvidenceSource)
+	if row.EvidenceSource != "hybrid" {
+		t.Fatalf("evidence source = %q, want hybrid", row.EvidenceSource)
 	}
-	if row.RequestCount != 96 || row.SuccessRate != 8.0/9.0 {
-		t.Fatalf("request disclosure/quality = request_count %d success_rate %v, want 96 and probe rate", row.RequestCount, row.SuccessRate)
+	if row.RequestCount != 96 || row.SuccessRate != 104.0/105.0 {
+		t.Fatalf("request disclosure/quality = request_count %d success_rate %v, want 96 and hybrid rate", row.RequestCount, row.SuccessRate)
 	}
 	if row.QualityScore == nil {
 		t.Fatal("quality score is nil")

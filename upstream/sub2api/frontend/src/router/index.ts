@@ -403,7 +403,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
-      title: 'Performance Monitor',
+      title: 'Group Performance Monitor',
       titleKey: 'nav.performanceMonitor',
     }
   },

@@ -100,6 +100,14 @@ file 226_account_procurement_cost_versions.sql — expand-only versioned procure
 ```
 ```
 
+Current T70 transition:
+
+```text
+from 2b656ebf94fac6e81a1630d40561eccf105b5925ac939c0c6e87181bd20ea4c9
+to   59628d84dd909c8a91949eab2015dc216a8fe76027a2bcc8c996b504eb055e80
+file 228_account_model_detection_evidence.sql — add-only structured detector evidence fields and indexes; no historical backfill, credential/prompt/output persistence, usage/accounting rewrite, or destructive data operation.
+```
+
 Invoke the same controller with the explicit maintenance flag:
 
 ```bash

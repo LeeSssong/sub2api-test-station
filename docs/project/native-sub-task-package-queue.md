@@ -6,7 +6,7 @@
 
 ## 当前设计任务（2026-08-26，T70）
 
-- **T70 账号检测分层监测与记录面板**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已基于 `main@7e33e50d2` 完成功能实现、直接相关测试和交接。基于 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1），接入 medium 日常、low 手动、high 异常升级，新增结构化证据字段、228 迁移、历史 `limit/cursor/status/profile/mode` 查询和桌面抽屉/窄屏时间线面板；旧记录保持 historical/unknown，敏感字段不落库或渲染。Go 直接相关测试、server build、前端 103 项检测相关测试、typecheck、production build、gofmt 与 diff-check 通过。无新增配置或生产业务数据写入，预期 `downtime_required=false`；尚未合并、推送、部署和线上验收。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。许可边界保持不变：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；未配置合法制品时保持“检测器未接入”语义。
+- **T70 账号检测分层监测与记录面板**：状态 `INTEGRATING`，当前等待停机授权。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已基于 `main@7e33e50d2` 完成功能实现、直接相关测试和交接，并已合并推送为 `main@1fc442b41`。基于 `chen-006/gpt56_api_detector` 最新 `main@0e323cf4923e1f757223927083bda267f5da4052`（v4.1.1），接入 medium 日常、low 手动、high 异常升级，新增结构化证据字段、228 迁移、历史 `limit/cursor/status/profile/mode` 查询和桌面抽屉/窄屏时间线面板；旧记录保持 historical/unknown，敏感字段不落库或渲染。Go 直接相关测试、server build、前端 103 项检测相关测试、typecheck、production build、gofmt 与 diff-check 通过。发布预检已返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒；发布链在停服前停止，尚未部署或线上验收。继续发布需要用户明确停机授权。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。许可边界保持不变：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；未配置合法制品时保持“检测器未接入”语义。
 
 ## 当前待根审任务（2026-08-25，T69）
 

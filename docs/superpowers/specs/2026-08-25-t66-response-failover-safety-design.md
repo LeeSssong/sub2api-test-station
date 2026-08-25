@@ -66,4 +66,3 @@
 - 只有纯 `response.failed`、无 usage/扣费/输出、可安全重放时才切号。
 - 已 usage、扣费、语义输出或 `unsafe_to_replay` 时不切号。
 - 现有 failover、账务、Responses SSE/JSON 测试与新增定向测试通过。
-

@@ -1,6 +1,6 @@
 <template>
   <article class="w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" data-test="monitor-card" :data-account-id="account.account_id">
-    <div class="grid min-w-0 gap-x-4 gap-y-3 px-[18px] py-4 max-[430px]:px-[14px] max-[430px]:py-[14px] xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]" data-test="monitor-card-header">
+    <div class="grid min-w-0 gap-x-4 gap-y-3 px-[18px] py-4 max-[430px]:px-[14px] max-[430px]:py-[14px] 2xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]" data-test="monitor-card-header">
       <section class="min-w-0" data-test="identity-column" aria-label="账号身份与状态">
         <div class="flex min-w-0 items-start gap-2">
           <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
@@ -107,16 +107,16 @@
         <div class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
       </section>
 
-      <section class="flex min-w-0 flex-wrap items-start justify-end gap-1 xl:flex-col xl:items-stretch" data-test="account-actions" aria-label="账号操作">
+      <section class="flex min-w-0 flex-wrap items-start justify-end gap-1 2xl:flex-col 2xl:items-stretch" data-test="account-actions" aria-label="账号操作">
         <span class="sr-only">账号操作</span>
-        <button class="icon-button h-8 w-8 xl:w-full" data-test="account-info" type="button" title="查看账号信息" aria-label="查看账号信息" @click="emit('accountInfo', account)"><Icon name="eye" size="xs" /><span class="sr-only xl:not-sr-only xl:ml-1 xl:text-[11px]">账号信息</span></button>
-        <button class="icon-button h-8 w-8 xl:w-full" data-test="account-edit" type="button" title="编辑账号" aria-label="编辑账号" @click="emit('accountEdit', account)"><Icon name="edit" size="xs" /><span class="sr-only xl:not-sr-only xl:ml-1 xl:text-[11px]">编辑</span></button>
-        <button class="icon-button h-8 w-8 xl:w-full" data-test="account-delete" type="button" title="删除账号" aria-label="删除账号" @click="emit('accountDelete', account)"><Icon name="trash" size="xs" /><span class="sr-only xl:not-sr-only xl:ml-1 xl:text-[11px]">删除</span></button>
-        <button class="icon-button h-8 w-8 xl:w-full" data-test="account-more" type="button" title="更多账号操作" aria-label="更多账号操作" @click="emit('accountMore', account, $event)"><Icon name="more" size="xs" /><span class="sr-only xl:not-sr-only xl:ml-1 xl:text-[11px]">更多</span></button>
-        <button class="icon-button h-8 w-8 xl:w-full" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /><span class="sr-only xl:not-sr-only xl:ml-1 xl:text-[11px]">刷新</span></button>
+        <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-info" type="button" title="查看账号信息" aria-label="查看账号信息" @click="emit('accountInfo', account)"><Icon name="eye" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">账号信息</span></button>
+        <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-edit" type="button" title="编辑账号" aria-label="编辑账号" @click="emit('accountEdit', account)"><Icon name="edit" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">编辑</span></button>
+        <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-delete" type="button" title="删除账号" aria-label="删除账号" @click="emit('accountDelete', account)"><Icon name="trash" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">删除</span></button>
+        <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-more" type="button" title="更多账号操作" aria-label="更多账号操作" @click="emit('accountMore', account, $event)"><Icon name="more" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">更多</span></button>
+        <button class="icon-button h-8 w-8 2xl:w-full" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">刷新</span></button>
       </section>
 
-      <div class="min-w-0 xl:col-span-6">
+      <div class="min-w-0 2xl:col-span-6">
         <div class="flex min-w-0 items-start gap-3 border-t border-gray-100 pt-3 dark:border-slate-800">
           <p class="min-w-0 flex-1 break-words text-[11px] leading-4 text-gray-500 dark:text-slate-400" data-test="ranking-reason">{{ rankingReason }}</p>
           <button class="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-slate-800" data-test="ranking-explanation-toggle" type="button" :aria-controls="rankingExplanationID" :aria-expanded="rankingExplanationExpanded" @click="rankingExplanationExpanded = !rankingExplanationExpanded"><Icon name="eye" size="xs" /><span>{{ rankingExplanationExpanded ? '收起依据' : '查看排名依据' }}</span><Icon name="chevronDown" size="xs" :class="{ 'rotate-180': rankingExplanationExpanded }" /></button>
@@ -129,16 +129,16 @@
         </div>
       </div>
 
-      <section class="min-w-0 border-t border-gray-100 pt-3 xl:col-span-6 dark:border-slate-800" data-test="model-detection-section">
+      <section class="min-w-0 border-t border-gray-100 pt-3 2xl:col-span-6 dark:border-slate-800" data-test="model-detection-section">
         <button type="button" class="flex min-h-8 w-full min-w-0 items-center gap-2 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="font-semibold text-gray-700 dark:text-slate-200">{{ t('admin.accounts.modelDetection.section') }}</span><span class="rounded-full px-2 py-0.5" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span><span class="min-w-0 flex-1 truncate text-gray-500 dark:text-slate-400">{{ modelDetectionStatusHint }}</span><Icon name="chevronDown" size="xs" /></button>
       </section>
 
-      <section class="min-w-0 border-t border-gray-100 xl:col-span-6 dark:border-slate-800" data-test="calls-disclosure">
+      <section class="min-w-0 border-t border-gray-100 2xl:col-span-6 dark:border-slate-800" data-test="calls-disclosure">
         <button class="flex min-h-10 w-full min-w-0 items-center gap-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500" data-test="calls-toggle" type="button" :aria-controls="callsPanelID" :aria-expanded="callsExpanded" @click="callsExpanded = !callsExpanded"><span class="font-semibold text-gray-800 dark:text-slate-100">{{ callsTitle }}</span><span class="min-w-0 truncate text-[11px] text-gray-500 dark:text-slate-400">{{ callsSummary }}</span><Icon name="chevronDown" size="xs" class="ml-auto" :class="{ 'rotate-180': callsExpanded }" /></button>
         <div v-if="callsExpanded" :id="callsPanelID" class="grid grid-cols-2 gap-3 border-t border-gray-100 pb-1 pt-3 text-xs dark:border-slate-800"><div><div class="text-[10px] text-gray-500 dark:text-slate-400">成功请求</div><div class="mt-1 font-mono font-semibold text-gray-900 dark:text-white">{{ successfulRequestCount }}</div></div><div><div class="text-[10px] text-gray-500 dark:text-slate-400">失败请求</div><div class="mt-1 font-mono font-semibold text-gray-900 dark:text-white">{{ account.error_count }}</div></div></div>
       </section>
 
-      <footer class="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-[11px] text-gray-500 max-[430px]:flex-col max-[430px]:items-start max-[430px]:gap-[3px] max-[430px]:py-[9px] xl:col-span-6 dark:border-slate-800 dark:text-slate-400" data-test="card-footer"><span class="break-words">检查于 {{ checkedAtLabel }} · 统计截止 {{ statisticsCutoffLabel }}</span></footer>
+      <footer class="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-[11px] text-gray-500 max-[430px]:flex-col max-[430px]:items-start max-[430px]:gap-[3px] max-[430px]:py-[9px] 2xl:col-span-6 dark:border-slate-800 dark:text-slate-400" data-test="card-footer"><span class="break-words">检查于 {{ checkedAtLabel }} · 统计截止 {{ statisticsCutoffLabel }}</span></footer>
     </div>
     <AccountModelDetectionDialog :show="modelDetectionDialogOpen" :account="account" :models="modelDetectionModels" :saving="savingModelDetection" :detecting="detectingModelDetection" @close="modelDetectionDialogOpen = false" @save="emit('saveModelDetectionModels', account.account_id, $event)" @detect="emit('detectModelDetection', account.account_id)" />
   </article>

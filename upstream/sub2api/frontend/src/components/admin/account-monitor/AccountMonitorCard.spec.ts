@@ -232,16 +232,16 @@ afterEach(() => {
 		expect(explanation.text()).toContain('2026')
 	})
 
-	it('keeps the row safely stacked before the wide desktop breakpoint', () => {
+	it('keeps the row safely stacked until the desktop content can fit the wide grid', () => {
 		const wrapper = mountCard()
 		const row = wrapper.get('[data-test="monitor-card-header"]')
 
 		expect(row.classes()).toEqual(expect.arrayContaining(['grid', 'min-w-0', 'gap-x-4']))
-		expect(row.classes()).toContain('xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]')
-		expect(row.classes()).not.toContain('lg:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]')
+		expect(row.classes()).toContain('2xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]')
+		expect(row.classes()).not.toContain('xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]')
 		expect(wrapper.find('[data-test="ranking-explanation"]').exists()).toBe(false)
-		expect(wrapper.get('[data-test="account-actions"]').classes()).not.toContain('lg:flex-col')
-		expect(wrapper.get('[data-test="account-actions"]').classes()).toContain('xl:flex-col')
+		expect(wrapper.get('[data-test="account-actions"]').classes()).not.toContain('xl:flex-col')
+		expect(wrapper.get('[data-test="account-actions"]').classes()).toContain('2xl:flex-col')
 	})
 
 	it('uses legacy group_rank for selected-group quality display without changing scheduler rank', () => {

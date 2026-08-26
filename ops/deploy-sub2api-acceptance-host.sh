@@ -60,6 +60,14 @@ staging_root=$(canonical_path "$staging_root")
 [[ "$(mode_of "$staging_root")" == 700 ]] || fail 'staging root must be mode 0700'
 [[ "$deploy_root" =~ ^/opt/sub2api/acceptance-[A-Za-z0-9._-]+$ && "$deploy_root" != *..* ]] \
   || fail 'deploy root must be a canonical acceptance-only path'
+for protected_path in /opt /opt/sub2api "$deploy_root"; do
+  [[ ! -L "$protected_path" ]] || fail 'deploy root or parent component must not be a symlink'
+done
+[[ ! -L "$deploy_root" ]] || fail 'deploy root must not be a symlink'
+if [[ -e "$deploy_root" ]]; then
+  canonical_deploy_root=$(cd -P "$deploy_root" && pwd -P)
+  [[ "$canonical_deploy_root" == "$deploy_root" ]] || fail 'deploy root must resolve to its canonical acceptance-only path'
+fi
 
 require_staged_file() {
   local path=$1
@@ -119,7 +127,7 @@ esac
 
 grep -Fq 'name: sub2api-acceptance' "$compose_source" || fail 'staged compose is not an acceptance topology'
 grep -Fq 'sub2api-acceptance-network' "$compose_source" || fail 'staged compose network is invalid'
-if rg -n 'sub2api_default|sub2api-blue|sub2api-green|/admin/lab/|mock-upstream|lab-outbox' "$compose_source" "$caddy_source"; then
+if grep -En 'sub2api_default|sub2api-blue|sub2api-green|/admin/lab/|mock-upstream|lab-outbox' "$compose_source" "$caddy_source"; then
   fail 'staged topology contains a forbidden production or lab identity'
 fi
 
@@ -127,15 +135,6 @@ extraction_root=$(mktemp -d /var/tmp/sub2api-acceptance-extract.XXXXXX)
 previous_root=
 had_previous=false
 deployment_started=false
-cleanup() {
-  local status=$?
-  if [[ $status -ne 0 && "$deployment_started" == true ]]; then
-    rollback || true
-  fi
-  rm -rf "$extraction_root"
-  [[ -z "$previous_root" ]] || rm -rf "$previous_root"
-}
-trap cleanup EXIT
 
 install -d -m 700 -o root -g root "$extraction_root/runtime"
 install -m 600 -o root -g root "$compose_source" "$extraction_root/runtime/compose.acceptance.yaml"
@@ -164,11 +163,6 @@ if [[ -d "$deploy_root" ]]; then
     had_previous=true
   fi
 fi
-install -d -m 700 -o root -g root "$deploy_root"
-install -m 600 -o root -g root "$extraction_root/runtime/compose.acceptance.yaml" "$deploy_root/compose.acceptance.yaml"
-install -m 600 -o root -g root "$extraction_root/runtime/Caddyfile.acceptance" "$deploy_root/Caddyfile.acceptance"
-install -m 600 -o root -g root "$extraction_root/runtime/.env" "$deploy_root/.env"
-
 compose_cmd=(docker compose --project-name sub2api-acceptance --env-file "$deploy_root/.env" -f "$deploy_root/compose.acceptance.yaml")
 rollback() {
   if [[ "$had_previous" == true ]]; then
@@ -182,7 +176,22 @@ rollback() {
   fi
 }
 
+cleanup() {
+  local status=$?
+  if [[ $status -ne 0 && "$deployment_started" == true ]]; then
+    rollback || true
+  fi
+  rm -rf "$extraction_root"
+  [[ -z "$previous_root" ]] || rm -rf "$previous_root"
+}
+trap cleanup EXIT
+
 deployment_started=true
+install -d -m 700 -o root -g root "$deploy_root"
+install -m 600 -o root -g root "$extraction_root/runtime/compose.acceptance.yaml" "$deploy_root/compose.acceptance.yaml"
+install -m 600 -o root -g root "$extraction_root/runtime/Caddyfile.acceptance" "$deploy_root/Caddyfile.acceptance"
+install -m 600 -o root -g root "$extraction_root/runtime/.env" "$deploy_root/.env"
+
 docker compose --project-name sub2api-acceptance --env-file "$deploy_root/.env" \
   -f "$deploy_root/compose.acceptance.yaml" up -d --wait --no-build
 docker compose --project-name sub2api-acceptance --env-file "$deploy_root/.env" \

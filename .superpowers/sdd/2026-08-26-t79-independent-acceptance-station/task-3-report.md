@@ -62,3 +62,23 @@ host, DNS/firewall restriction, real payment/upstream/notification credentials,
 and 0600 SSH/environment files. A successful host deploy only makes the
 acceptance instance ready for administrator real-flow acceptance; it does not
 automatically promote any candidate to production.
+
+## Review round 1 fixes
+
+- Deployment roots now fail closed when `/opt`, `/opt/sub2api`, or the target
+  acceptance directory is a symlink; existing targets are canonicalized and
+  must resolve exactly to the requested acceptance-only path.
+- The previous runtime snapshot and rollback function are established before
+  the replacement trap is armed; `deployment_started` is set before the first
+  deploy-root write, so partial installs restore the prior Compose/Caddy/env
+  trio when available.
+- Topology scans use portable `grep -E`; the acceptance host no longer depends
+  on `rg` being installed.
+
+### Review round 1 verification
+
+- `bash tests/acceptance_station/compose_contract_test.sh` — PASS
+- `bash tests/acceptance_station/release_delivery_contract_test.sh` — PASS
+- `bash tests/acceptance_station/auth_mode_contract_test.sh` — PASS
+- `bash -n ops/release-sub2api-acceptance.sh ops/deploy-sub2api-acceptance-host.sh` — PASS
+- `git diff --check` — PASS

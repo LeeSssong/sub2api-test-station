@@ -115,7 +115,7 @@ grep -Fq 'health' "$executor" || fail 'executor missing health checks'
 grep -Fq 'mktemp' "$executor" || fail 'executor missing isolated extraction'
 grep -Fq 'docker load' "$executor" || fail 'executor missing image load'
 grep -Fq 'downtime_required' "$executor" || fail 'executor missing result contract'
-! rg -n 'release-sub2api-blue-green|deploy-sub2api-blue-green|release-admin-lab' "${targets[@]}" \
+! grep -En 'release-sub2api-blue-green|deploy-sub2api-blue-green|release-admin-lab' "${targets[@]}" \
   || fail 'acceptance release chain must not invoke a production or lab release script'
 
 echo 'acceptance release delivery contract: PASS'

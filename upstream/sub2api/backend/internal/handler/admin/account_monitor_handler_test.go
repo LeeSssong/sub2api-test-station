@@ -542,7 +542,7 @@ func TestAccountMonitorHandlerGroupResponseIncludesRankingContract(t *testing.T)
 	if scheduler.calls != 1 {
 		t.Fatalf("scheduler projection calls = %d, want 1", scheduler.calls)
 	}
-	if len(scheduler.requests) != 1 || scheduler.requests[0].GroupID != 42 || scheduler.requests[0].Platform != service.PlatformOpenAI || scheduler.requests[0].SnapshotAt.IsZero() {
+	if len(scheduler.requests) != 1 || scheduler.requests[0].GroupID != 42 || scheduler.requests[0].Platform != service.PlatformOpenAI || scheduler.requests[0].RequiredTransport != service.OpenAIUpstreamTransportAny || scheduler.requests[0].RequestedModel != "" || scheduler.requests[0].SnapshotAt.IsZero() {
 		t.Fatalf("scheduler projection request = %#v", scheduler.requests)
 	}
 }

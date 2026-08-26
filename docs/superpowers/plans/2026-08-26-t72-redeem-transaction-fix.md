@@ -22,10 +22,10 @@
 - Modify: `upstream/sub2api/backend/internal/repository/quota_wallet_repo.go`
 - Test: `upstream/sub2api/backend/internal/repository/quota_wallet_repo_test.go`
 
-- [ ] Add a sqlmock test that places an Ent transaction in context and expects user lock, wallet initialization/read, callback execution, and no nested `BEGIN`.
-- [ ] Run the single test against the baseline and record the expected nested-transaction failure.
-- [ ] Implement the smallest branch in `WithLockedWallet` that reuses `dbent.TxFromContext(ctx)` and leaves ownership/commit behavior unchanged for self-created transactions.
-- [ ] Run the single regression test and the existing quota repository tests.
+- [x] Add a sqlmock test that places an Ent transaction in context and expects user lock, wallet initialization/read, callback execution, and no nested `BEGIN`.
+- [x] Run the single test against the baseline and record the expected nested-transaction failure.
+- [x] Implement the smallest branch in `WithLockedWallet` that reuses `dbent.TxFromContext(ctx)` and leaves ownership/commit behavior unchanged for self-created transactions.
+- [x] Run the single regression test and the existing quota repository tests.
 
 ### Task 2: Direct redemption and rollback coverage - completed
 
@@ -33,17 +33,17 @@
 - Modify: `upstream/sub2api/backend/internal/service/redeem_service_redeem_test.go`
 - Test/inspect: `upstream/sub2api/backend/internal/repository/user_repo_redeem_adjustment_test.go`, `upstream/sub2api/backend/internal/service/payment_fulfillment_test.go`
 
-- [ ] Add focused service/repository contracts for positive redeem credit, negative floor semantics, and callback failure rollback where a real database harness is available; keep doubles at the external repository boundary.
-- [ ] Run the focused redeem, quota, payment fulfillment, affiliate, and usage billing tests; capture any environment-blocked integration test separately.
-- [ ] Audit all `LegacyAdjust`, `Recharge`, `Refund`, and `ConsumeUsage` call sites for ambient transaction propagation and document findings in the handoff.
+- [x] Add focused service/repository contracts for positive redeem credit, negative floor semantics, and callback failure rollback where a real database harness is available; keep doubles at the external repository boundary.
+- [x] Run the focused redeem, quota, payment fulfillment, affiliate, and usage billing tests; capture any environment-blocked integration test separately.
+- [x] Audit all `LegacyAdjust`, `Recharge`, `Refund`, and `ConsumeUsage` call sites for ambient transaction propagation and document findings in the handoff.
 
 ### Task 3: Candidate verification and handoff - completed
 
 **Files:**
 - Create: `docs/handoffs/2026-08-26-t72-redeem-transaction-fix-handoff.md`
 
-- [ ] Run `go test ./internal/service -run 'Redeem|QuotaWallet|PaymentFulfillment' -count=1`.
-- [ ] Run `go test ./internal/repository -run 'Redeem|QuotaWallet|PaymentFulfillment' -count=1` and note external prerequisite failures.
-- [ ] Run `go build ./cmd/server` and `git diff --check`.
-- [ ] Review diff for scope, record baseline/candidate SHA, changed files, migration/config status, downtime expectation, rollback, and residual risks.
-- [ ] Commit candidate and report `READY_FOR_ROOT_REVIEW`; do not merge, push, deploy, or mutate production from the candidate.
+- [x] Run `go test ./internal/service -run 'Redeem|QuotaWallet|PaymentFulfillment' -count=1`.
+- [x] Run `go test ./internal/repository -run 'Redeem|QuotaWallet|PaymentFulfillment' -count=1` and note external prerequisite failures.
+- [x] Run `go build ./cmd/server` and `git diff --check`.
+- [x] Review diff for scope, record baseline/candidate SHA, changed files, migration/config status, downtime expectation, rollback, and residual risks.
+- [x] Commit candidate and report `READY_FOR_ROOT_REVIEW`; do not merge, push, deploy, or mutate production from the candidate.

@@ -16,10 +16,10 @@
 
 由 operator 在验收宿主准备以下互不复用生产的值：
 
-- 独立域名、DNS 记录和 TLS 证书路径；域名不得使用主站域名，例如 api.xingqiaolab.top 或 shop.xingqiaolab.top。
+- 独立域名和 DNS 记录；域名不得使用主站域名，例如 api.xingqiaolab.top 或 shop.xingqiaolab.top。当前 Caddy 配置使用自动 HTTPS，网络策略必须允许证书签发与续期所需流量。
 - 独立 SSH 用户、私钥和 known_hosts；宿主已允许该用户使用 sudo -n bash -s。
 - 独立支付商户/回调配置、上游账号与 API key、通知通道；这些凭据只写入验收站 env 或后台，不提交 Git。
-- 宿主防火墙仅允许管理人员来源访问 80/443 和 SSH；PostgreSQL、Redis、detector、API 和 worker 不发布宿主端口。DNS/防火墙限制是网络边界，不能由 backend_mode_enabled 替代。
+- 宿主防火墙仅允许管理人员来源以及 Caddy 自动 HTTPS 所需的证书验证来源访问 80/443，SSH 只允许管理来源；PostgreSQL、Redis、detector、API 和 worker 不发布宿主端口。DNS/防火墙限制是网络边界，不能由 backend_mode_enabled 替代。
 - Docker Engine、Compose v2、curl、ssh、scp 和 sudo。宿主部署目录必须位于 /opt/sub2api/acceptance-*。
 
 复制模板到仓库外的受保护路径，替换所有示例值，并确认文件是普通文件且权限为 0600：

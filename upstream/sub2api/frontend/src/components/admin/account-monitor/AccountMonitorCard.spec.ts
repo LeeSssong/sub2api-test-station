@@ -135,6 +135,10 @@ const account = {
   score_breakdown: { cost: 12, success: 43.5, ttft: 18, latency: 17.5 },
   evidence_source: 'monitor_probe',
   homepage_url: 'https://upstream.example.com/v1',
+  quality_rank: 1,
+  quality_rank_total: 3,
+  scheduler_rank: 1,
+  scheduler_rank_total: 3,
   group_rank: 1,
   eligible: true,
 }
@@ -155,7 +159,7 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-describe('AccountMonitorCard', () => {
+	describe('AccountMonitorCard', () => {
 	it('mirrors the explainable ranking response contract', () => {
 		const reasonCode: AccountMonitorReasonCode = 'strategy'
 		const ranking: Pick<AccountMonitorAccount, 'quality_rank' | 'quality_rank_total' | 'scheduler_rank' | 'scheduler_rank_total' | 'quality_explanation' | 'scheduler_explanation'> = {
@@ -169,6 +173,63 @@ describe('AccountMonitorCard', () => {
 
 		expect(ranking.quality_rank).toBe(2)
 		expect(ranking.scheduler_explanation?.primary_reason_code).toBe('strategy')
+	})
+
+	it('renders both rankings and expands readable server-provided explanations', async () => {
+		const wrapper = mountCard({
+			account: {
+				...account,
+				quality_rank: 3,
+				quality_rank_total: 12,
+				scheduler_rank: 1,
+				scheduler_rank_total: 9,
+				quality_explanation: {
+					score: 91,
+					rank: 3,
+					rank_total: 12,
+					breakdown: {
+						cost: { score: 12, max: 25 },
+						success: { score: 43.5, max: 45 },
+						ttft: { score: 18, max: 20 },
+						latency: { score: 17.5, max: 20 },
+					},
+					window: '24h',
+					sample_count: 72,
+					source: 'monitor_probe',
+					observed_at: '2026-08-26T00:00:00Z',
+				},
+				scheduler_explanation: {
+					eligible: true,
+					policy_label: '利润优先',
+					effective_weights: { quality: 60, cost: 40 },
+					candidate_total: 9,
+					candidate_scope: '当前分组',
+					snapshot_at: '2026-08-26T00:01:00Z',
+					primary_reason_code: 'strategy',
+					primary_reason_label: '当前分组策略与质量排序目标不同',
+				},
+			},
+		})
+
+		expect(wrapper.get('[data-test="quality-rank"]').text()).toContain('第 3 / 12')
+		expect(wrapper.get('[data-test="scheduler-rank"]').text()).toContain('第 1 / 9')
+		expect(wrapper.get('[data-test="ranking-reason"]').text()).toContain('当前分组策略与质量排序目标不同')
+		const toggle = wrapper.get('[data-test="ranking-explanation-toggle"]')
+		expect(toggle.attributes('aria-expanded')).toBe('false')
+		const panelID = toggle.attributes('aria-controls')
+		expect(panelID).toBeTruthy()
+		expect(wrapper.find(`[data-test="ranking-explanation"]`).exists()).toBe(false)
+
+		await toggle.trigger('click')
+
+		expect(toggle.attributes('aria-expanded')).toBe('true')
+		const explanation = wrapper.get('[data-test="ranking-explanation"]')
+		expect(explanation.attributes('id')).toBe(panelID)
+		expect(explanation.text()).toContain('利润优先')
+		expect(explanation.text()).toContain('成本 12 / 25')
+		expect(explanation.text()).toContain('候选数 9')
+		expect(explanation.text()).toContain('符合调度条件')
+		expect(explanation.text()).toContain('2026')
 	})
 
 	const recommendation = {
@@ -436,14 +497,14 @@ describe('AccountMonitorCard', () => {
 
   it('keeps a retained score and rank visible while current status is unavailable or stale', () => {
     const unavailable = mountCard({
-      account: { ...account, availability_status: 'unavailable', service_state: 'unavailable', score_status: 'eligible', quality_score: 82, group_rank: 3, eligible: true },
+      account: { ...account, availability_status: 'unavailable', service_state: 'unavailable', score_status: 'eligible', quality_score: 82, quality_rank: 3, scheduler_rank: 3, group_rank: 3, eligible: true },
     })
     expect(unavailable.get('[data-test="status-badge"]').text()).toContain('不可用')
     expect(unavailable.get('[data-test="score-metric"]').text()).toContain('82')
     expect(unavailable.get('[data-test="rank-metric"]').text()).toContain('第 3')
 
     const stale = mountCard({
-      account: { ...account, availability_status: 'stale', service_state: 'pending', stale: true, score_status: 'eligible', quality_score: 79, group_rank: 4, eligible: true },
+      account: { ...account, availability_status: 'stale', service_state: 'pending', stale: true, score_status: 'eligible', quality_score: 79, quality_rank: 4, scheduler_rank: 4, group_rank: 4, eligible: true },
     })
     expect(stale.get('[data-test="status-badge"]').text()).toContain('待确认')
     expect(stale.get('[data-test="score-metric"]').text()).toContain('79')
@@ -511,9 +572,10 @@ describe('AccountMonitorCard', () => {
     })
 
     const card = wrapper.get('[data-test="monitor-card"]')
-    expect(card.classes()).toEqual(expect.arrayContaining(['border-l-4', 'border-emerald-500', 'rounded-lg']))
+    expect(card.classes()).toEqual(expect.arrayContaining(['rounded-lg', 'w-full']))
+    expect(card.classes()).not.toContain('border-l-4')
     expect(card.classes()).not.toContain('card')
-    expect(wrapper.get('[data-test="monitor-card-header"]').classes()).toEqual(expect.arrayContaining(['bg-emerald-50', 'px-[18px]', 'py-4']))
+    expect(wrapper.get('[data-test="monitor-card-header"]').classes()).toEqual(expect.arrayContaining(['px-[18px]', 'py-4']))
     expect(wrapper.get('[data-test="score-metric"]').classes()).toEqual(expect.arrayContaining(['min-h-[121px]', 'p-[14px]']))
     expect(wrapper.findAll('.service-metric')).toHaveLength(5)
     expect(wrapper.get('[data-test="success-rate-metric"]').classes()).toContain('bg-emerald-50')

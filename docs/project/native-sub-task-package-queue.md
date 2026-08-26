@@ -2,6 +2,7 @@
 
 ## 最新发布更新（2026-08-26）
 
+- **T74 原生扣费与充值额度账本一致性修复**：状态 `DEPLOYING`。用户明确要求部署；刷新候选 `codex/t74-billing-wallet-sync@1b5374b5d` 已合入根 `main@5a98acb2d`。合并后直接相关 Go 单测/服务端构建、前端组件测试/类型检查/生产构建均通过；无迁移、配置或生产数据写入。正从该根主线执行推送、发布预检和蓝绿发布；若预检返回 `downtime_required=true`，将在任何切换前暂停。
 - **T72 兑换码事务修复**：已合入、推送并部署生效，根 `main@37d7467ba1e0ef987d718e44fa1abc181602990e`，tree `4fedefae5f5ef02990a25d06441b22552499a36f`；预加载蓝绿记录 `/var/lib/sub2api/release-records/20260826T093251Z-production-2173135.json` 为 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网三项健康均 200。生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 只读仍为 `id=44/status=unused`，关联 `redeem_credit` 账本 0 条，未擅自为任意用户入账。
 - **T71**：因缺少管理员登录态将线上专项验收冻结为只读证据，候选 worktree/分支保留，未明确解冻前不继续写入、部署或清理；发布单车道转交 T72。
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,8 +16,10 @@ func TestOpenAIAccountSchedulerProjection_UsesGroupPolicyOrderWithoutChangingQua
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
 
 	lessPerformant := projectionTestAccount(1)
+	lessPerformant.Priority = 10
 	lessPerformant.Extra = projectionTestUpstreamBillingExtra(now, 0.1)
 	performant := projectionTestAccount(2)
+	performant.Priority = 1
 	performant.Extra = projectionTestUpstreamBillingExtra(now, 1.0)
 
 	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
@@ -28,7 +31,7 @@ func TestOpenAIAccountSchedulerProjection_UsesGroupPolicyOrderWithoutChangingQua
 		SnapshotAt:           now,
 		Accounts:             []*Account{lessPerformant, performant},
 		LoadMap: map[int64]*AccountLoadInfo{
-			1: {AccountID: 1, LoadRate: 0, WaitingCount: 0},
+			1: {AccountID: 1, LoadRate: 10, WaitingCount: 0},
 			2: {AccountID: 2, LoadRate: 0, WaitingCount: 0},
 		},
 	})
@@ -123,9 +126,167 @@ func TestOpenAIAccountSchedulerProjection_UsesOperatorStrategyLabels(t *testing.
 			require.Equal(t, tt.label, schedulerProjectionPolicyLabel(OpenAISchedulerGroupPolicy{Preset: tt.preset}, true))
 		})
 	}
-	require.True(t, schedulerProjectionUsesStrategy(OpenAISchedulerGroupPolicy{
-		Priority: OpenAISchedulerBusinessPriority{Profit: 3, TTFT: 1, Latency: 2},
-	}, true))
+}
+
+func TestOpenAIAccountSchedulerProjection_UsesSnapshotForReadOnlyRuntimeEligibility(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	service := scheduler.service
+	snapshot := time.Now().UTC().Add(-time.Hour)
+	blockedUntil := snapshot.Add(30 * time.Minute)
+	proxyID := int64(901)
+	account := projectionTestAccount(90)
+	account.ProxyID = &proxyID
+
+	service.openaiAccountRuntimeBlockUntil.Store(account.ID, blockedUntil)
+	service.openaiModelTransient = newOpenAIAccountModelTransientState(16)
+	service.openaiModelTransient.entries[openAIAccountModelKey{AccountID: account.ID, Model: "gpt-5.4-mini"}] = openAIAccountModelTransientEntry{
+		failureStreak: 2,
+		lastFailure:   snapshot,
+		blockUntil:    blockedUntil,
+		lastTouched:   snapshot,
+	}
+	service.openaiProxyStreamCircuit = newOpenAIProxyStreamCircuit(openAIProxyStreamCircuitSettings{
+		failureThreshold: 2,
+		failureWindow:    time.Hour,
+		quarantineTTL:    time.Hour,
+		maxEntries:       16,
+	})
+	service.openaiProxyStreamCircuit.entries[proxyID] = openAIProxyStreamCircuitEntry{
+		blockedUntil: blockedUntil,
+		lastTouched:  snapshot,
+	}
+
+	beforeTransient := service.openaiModelTransient.entries[openAIAccountModelKey{AccountID: account.ID, Model: "gpt-5.4-mini"}]
+	beforeProxy := service.openaiProxyStreamCircuit.entries[proxyID]
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID:        77,
+		Platform:       PlatformOpenAI,
+		RequestedModel: "gpt-5.4-mini",
+		SnapshotAt:     snapshot,
+		Accounts:       []*Account{account},
+		LoadMap:        map[int64]*AccountLoadInfo{account.ID: {AccountID: account.ID}},
+	})
+
+	require.NoError(t, err)
+	require.False(t, projection.Candidates[0].Eligible)
+	require.Equal(t, AccountMonitorReasonCooldown, projection.Candidates[0].PrimaryReasonCode)
+	_, runtimeBlockStillPresent := service.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.True(t, runtimeBlockStillPresent)
+	require.Equal(t, beforeTransient, service.openaiModelTransient.entries[openAIAccountModelKey{AccountID: account.ID, Model: "gpt-5.4-mini"}])
+	require.Equal(t, beforeProxy, service.openaiProxyStreamCircuit.entries[proxyID])
+}
+
+func TestOpenAIAccountSchedulerProjection_UsesSnapshotForQuotaEligibility(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	snapshot := time.Now().UTC().Add(-time.Hour)
+	account := projectionTestAccount(901)
+	account.Extra = map[string]any{
+		"codex_5h_used_percent":  95,
+		"codex_5h_reset_at":      snapshot.Add(30 * time.Minute).Format(time.RFC3339Nano),
+		"codex_usage_updated_at": snapshot.Format(time.RFC3339Nano),
+	}
+	ctx := withOpenAIQuotaAutoPauseSettings(context.Background(), OpsOpenAIAccountQuotaAutoPauseSettings{DefaultThreshold5h: 0.9})
+
+	projection, err := scheduler.Project(ctx, OpenAIAccountSchedulerProjectionRequest{
+		GroupID:        77,
+		Platform:       PlatformOpenAI,
+		RequestedModel: "gpt-5.4-mini",
+		SnapshotAt:     snapshot,
+		Accounts:       []*Account{account},
+		LoadMap:        map[int64]*AccountLoadInfo{account.ID: {AccountID: account.ID}},
+	})
+
+	require.NoError(t, err)
+	require.False(t, projection.Candidates[0].Eligible)
+	require.Equal(t, AccountMonitorReasonNotEligible, projection.Candidates[0].PrimaryReasonCode)
+}
+
+func TestOpenAIAccountSchedulerProjection_DoesNotObserveProfitControl(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	groupID := int64(907)
+	stats := openAIProfitControlObserverInstance.stats(groupID, PlatformOpenAI)
+	before := stats.vetoInvalidRate.Load()
+	threshold := 0.5
+	ctx := context.WithValue(context.Background(), openAIProfitControlGateCtxKey{}, &openAIProfitControlGate{
+		groupID:   groupID,
+		platform:  PlatformOpenAI,
+		threshold: threshold,
+	})
+	rate := 1.0
+	account := projectionTestAccount(91)
+	account.RateMultiplier = &rate
+
+	projection, err := scheduler.Project(ctx, OpenAIAccountSchedulerProjectionRequest{
+		GroupID:        groupID,
+		Platform:       PlatformOpenAI,
+		RequestedModel: "gpt-5.4-mini",
+		SnapshotAt:     time.Now().UTC(),
+		Accounts:       []*Account{account},
+		LoadMap:        map[int64]*AccountLoadInfo{account.ID: {AccountID: account.ID}},
+	})
+
+	require.NoError(t, err)
+	require.False(t, projection.Candidates[0].Eligible)
+	require.Equal(t, before, stats.vetoInvalidRate.Load())
+}
+
+func TestOpenAIAccountSchedulerProjection_ReturnsPolicyReadFailure(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+	repo := &projectionFailingSettingRepo{
+		openAIAdvancedSchedulerSettingRepoStub: &openAIAdvancedSchedulerSettingRepoStub{},
+		err:                                    errors.New("settings unavailable"),
+	}
+	cfg := &config.Config{}
+	service := &OpenAIGatewayService{
+		cfg:              cfg,
+		rateLimitService: &RateLimitService{settingService: NewSettingService(repo, cfg)},
+	}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	_, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID:        77,
+		Platform:       PlatformOpenAI,
+		RequestedModel: "gpt-5.4-mini",
+		SnapshotAt:     time.Now().UTC(),
+		Accounts:       []*Account{projectionTestAccount(92)},
+	})
+
+	require.ErrorIs(t, err, repo.err)
+	require.Nil(t, openAIAdvancedSchedulerSettingCache.Load())
+}
+
+func TestOpenAIAccountSchedulerProjection_DoesNotLabelMatchingQualityOrderAsStrategy(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, `{"profit":1,"ttft":3,"latency":3}`)
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	first := projectionTestAccount(93)
+	second := projectionTestAccount(94)
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID:        77,
+		Platform:       PlatformOpenAI,
+		RequestedModel: "gpt-5.4-mini",
+		SnapshotAt:     now,
+		Accounts:       []*Account{first, second},
+		LoadMap: map[int64]*AccountLoadInfo{
+			first.ID:  {AccountID: first.ID, LoadRate: 0},
+			second.ID: {AccountID: second.ID, LoadRate: 0},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{93, 94}, projectionAccountIDs(projection.Candidates))
+	require.NotEqual(t, AccountMonitorReasonStrategy, projection.Candidates[0].PrimaryReasonCode)
+}
+
+type projectionFailingSettingRepo struct {
+	*openAIAdvancedSchedulerSettingRepoStub
+	err error
+}
+
+func (r *projectionFailingSettingRepo) GetMultiple(context.Context, []string) (map[string]string, error) {
+	return nil, r.err
 }
 
 func newOpenAIAccountSchedulerProjectionTestScheduler(t *testing.T, priorityJSON string) (*defaultOpenAIAccountScheduler, *schedulerTestGatewayCache, *[]int64, *[]int64) {
@@ -163,13 +324,13 @@ func projectionTestAccount(id int64) *Account {
 func projectionTestUpstreamBillingExtra(now time.Time, rate float64) map[string]any {
 	return map[string]any{
 		UpstreamBillingProbeExtraKey: map[string]any{
-			"status":            UpstreamBillingProbeStatusOK,
-			"peak_rate_enabled": false,
-			"received_at":       now.Add(-10 * time.Minute).Format(time.RFC3339Nano),
-			"fresh_until":       now.Add(time.Hour).Format(time.RFC3339Nano),
-			"next_probe_at":     now.Add(20 * time.Minute).Format(time.RFC3339Nano),
+			"status":        UpstreamBillingProbeStatusOK,
+			"received_at":   now.Add(-10 * time.Minute).Format(time.RFC3339Nano),
+			"fresh_until":   now.Add(time.Hour).Format(time.RFC3339Nano),
+			"next_probe_at": now.Add(20 * time.Minute).Format(time.RFC3339Nano),
 			"data": map[string]any{
 				"billing_scope":             "token",
+				"peak_rate_enabled":         false,
 				"resolved_rate_multiplier":  rate,
 				"effective_rate_multiplier": rate,
 			},

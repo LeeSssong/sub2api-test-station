@@ -12,7 +12,7 @@
 
 ## 当前实现任务（2026-08-26，T73）
 
-- **T73 账号检测记录居中弹窗与双证据检索**：状态 `DEPLOYING`。用户已确认视觉稿并明确要求部署生效：以原生深色遮罩的居中弹窗替换右侧抽屉；记录表把 `Juice 结果`、`行为指纹` 与 `综合结论` 作为主列，档位/样本降为辅助信息；行展开后分别展示两条证据及有限元数据。筛选固定为 Juice 结果、指纹结果、综合结论，其中综合结论复用历史接口既有 `status`，新增 Juice/指纹状态的稳定服务端分页筛选，不能只过滤当前一页。复用现有 `account_model_detection_runs`、`/admin/account-monitors/:id/detection` 与结构化字段，不新建事实源、表、迁移或生产数据写入；历史记录继续明确为“历史记录”，不得伪造双证据。刷新候选 `codex/t73-account-monitor-modal@07bd0da51` 已合入根 `main@ee7dda11e`；合并后前端 60 项、typecheck/build、Go 专项/server build、gofmt/diff-check 通过，正在生成最终树证据并执行发布预检。交接：`docs/handoffs/2026-08-26-t73-account-monitor-records-modal-handoff.md`。
+- **T73 账号检测记录居中弹窗与双证据检索**：状态 `DONE`。最终根 `main@4200aa47ec6cbd781220258827654ac7b262c2f1`、tree `54ee777772d4c4eed915328a10db14ee40e25da9` 已推送并通过预加载蓝绿链发布；宿主记录 `/var/lib/sub2api/release-records/20260826T110955Z-production-2396063.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`、活动槽 `blue`。居中弹窗、Juice/指纹/综合结论三项筛选、双证据展开、历史记录语义以及缺失样本“未取得证据”展示均已在线生效；公网三项健康端点均 HTTP 200。测试/生产证据分别为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-26-main-4200aa47e-t73-final-display-fix.json` 与 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-26-main-4200aa47e-t73-production.json`。无迁移、配置或生产数据写入。交接：`docs/handoffs/2026-08-26-t73-account-monitor-records-modal-handoff.md`。
 
 ## 当前待根审任务（2026-08-26，T72）
 

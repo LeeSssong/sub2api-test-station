@@ -4,8 +4,9 @@
 
 `READY_FOR_ROOT_REVIEW`
 
-基线：`main@801f5a915`（T72 登记后）
+基线：`main@a4b726ba6`（T72 状态更新后刷新）
 候选：`codex/t72-redeem-transaction-fix`
+候选 HEAD：刷新合并根 `main` 后的当前 worktree HEAD（以根审读取为准）
 
 ## 根因
 

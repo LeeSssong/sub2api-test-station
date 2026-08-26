@@ -422,9 +422,10 @@ const modelDetectionStatusHint = computed(() => {
   if (modelDetectionStatus.value === 'service_unconfigured') return t('admin.accounts.modelDetection.detectorUnconfigured')
   if (modelDetectionStatus.value === 'service_unavailable') return t('admin.accounts.modelDetection.detectorUnavailable')
   if (props.account.model_detection?.recent?.source === 'historical_final') return t('admin.accounts.modelDetection.historicalFallback')
+  if (props.account.model_detection?.recent?.source === 'historical') return t('admin.accounts.modelDetection.historicalRecordHint')
   return modelDetectionStatus.value === 'abnormal' ? t('admin.accounts.modelDetection.observedAbnormal') : props.account.model_detection?.recent?.error_message ?? t('admin.accounts.modelDetection.viewRecent')
 })
-const modelDetectionStatusClass = computed(() => ({ 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': modelDetectionStatus.value === 'normal', 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': ['queued', 'running', 'abnormal', 'insufficient'].includes(modelDetectionStatus.value), 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': ['failed', 'service_unavailable'].includes(modelDetectionStatus.value), 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': ['untested', 'unsupported', 'service_unconfigured'].includes(modelDetectionStatus.value) }))
+const modelDetectionStatusClass = computed(() => ({ 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': modelDetectionStatus.value === 'normal' && !['historical', 'historical_final'].includes(props.account.model_detection?.recent?.source ?? ''), 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': ['queued', 'running', 'abnormal', 'insufficient'].includes(modelDetectionStatus.value), 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': ['failed', 'service_unavailable'].includes(modelDetectionStatus.value), 'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': ['untested', 'unsupported', 'service_unconfigured'].includes(modelDetectionStatus.value) || ['historical', 'historical_final'].includes(props.account.model_detection?.recent?.source ?? '') }))
 const multiplierAvailable = computed(() => {
   const multiplier = props.account.multiplier
   return multiplier.value != null

@@ -222,9 +222,16 @@ func (h *AccountMonitorHandler) AccountModelDetectionHistory(c *gin.Context) {
 	result := make([]service.AccountModelDetectionSummary, 0, len(page.Items))
 	for _, item := range page.Items {
 		queued := item.QueuedAt
-		result = append(result, service.AccountModelDetectionSummary{Status: item.Status, ModelID: item.ModelID, ClaimedModel: item.ClaimedModel, JuiceStatus: item.JuiceStatus, JuiceSummary: item.JuiceSummary, FingerprintCandidate: item.FingerprintCandidate, FingerprintSimilarity: item.FingerprintSimilarity, DetectorVersion: item.DetectorVersion, ErrorCode: item.ErrorCode, ErrorMessage: item.ErrorMessage, QueuedAt: &queued, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, RunID: item.ID, Profile: item.Profile, Mode: item.Mode, TriggerReason: item.TriggerReason, PlannedRequests: item.PlannedRequests, ValidSamples: item.ValidSamples, EvidenceState: item.EvidenceState, FingerprintStatus: item.FingerprintStatus})
+		result = append(result, service.AccountModelDetectionSummary{Status: item.Status, ModelID: item.ModelID, ClaimedModel: item.ClaimedModel, JuiceStatus: item.JuiceStatus, JuiceSummary: item.JuiceSummary, FingerprintCandidate: item.FingerprintCandidate, FingerprintSimilarity: item.FingerprintSimilarity, DetectorVersion: item.DetectorVersion, ErrorCode: item.ErrorCode, ErrorMessage: item.ErrorMessage, QueuedAt: &queued, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, RunID: item.ID, Source: detectionHistorySource(item), Profile: item.Profile, Mode: item.Mode, TriggerReason: item.TriggerReason, PlannedRequests: item.PlannedRequests, ValidSamples: item.ValidSamples, EvidenceState: item.EvidenceState, FingerprintStatus: item.FingerprintStatus})
 	}
 	response.Success(c, accountModelDetectionHistoryResponse{Items: result, NextCursor: page.NextCursor})
+}
+
+func detectionHistorySource(item service.AccountModelDetectionRun) string {
+	if item.Profile == "" || item.Profile == service.AccountModelDetectionProfileUnknown || item.Mode == "" || item.Mode == service.AccountModelDetectionModeHistorical || item.EvidenceState == "" || item.EvidenceState == service.AccountModelDetectionEvidenceHistorical {
+		return "historical"
+	}
+	return "current"
 }
 
 func (h *AccountMonitorHandler) List(c *gin.Context) {

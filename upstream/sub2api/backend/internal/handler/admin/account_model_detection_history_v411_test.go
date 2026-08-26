@@ -80,6 +80,32 @@ func TestAccountModelDetectionHistoryParsesCursorAndFilters(t *testing.T) {
 	}
 }
 
+func TestAccountModelDetectionHistoryMarksLegacyRowsAsHistorical(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	detection := service.NewAccountModelDetectionService(&historyDetectionRepo{}, historyDetectionAccounts{}, historyDetectionSidecar{})
+	h := NewAccountMonitorHandler(nil, nil, nil, nil)
+	h.SetModelDetectionService(detection)
+	router := gin.New()
+	router.GET("/accounts/:account_id/detection", h.AccountModelDetectionHistory)
+
+	// The repository stub's default row is structured; replace it with a legacy row
+	// through a small wrapper to assert the handler's source projection directly.
+	legacyRepo := &legacyHistoryDetectionRepo{}
+	h.SetModelDetectionService(service.NewAccountModelDetectionService(legacyRepo, historyDetectionAccounts{}, historyDetectionSidecar{}))
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/accounts/7/detection", nil))
+	if recorder.Code != http.StatusOK || !contains(recorder.Body.String(), `"source":"historical"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+type legacyHistoryDetectionRepo struct{ historyDetectionRepo }
+
+func (r *legacyHistoryDetectionRepo) ListRecent(context.Context, int64, int, string, string, string, string) (service.AccountModelDetectionHistoryPage, error) {
+	finished := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	return service.AccountModelDetectionHistoryPage{Items: []service.AccountModelDetectionRun{{ID: "legacy-1", Status: service.AccountModelDetectionStatusNormal, FinishedAt: &finished, QueuedAt: finished}}}, nil
+}
+
 func contains(value, fragment string) bool {
 	return len(value) >= len(fragment) && stringIndex(value, fragment) >= 0
 }

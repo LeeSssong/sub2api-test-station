@@ -190,6 +190,7 @@ export default {
     accountProfitability: 'Account Profitability',
     businessOverview: 'Business Overview',
     promoCodes: 'Promo Codes',
+    schedulerSettings: 'Scheduler Settings',
     settings: 'Settings',
     myAccount: 'My Account',
     lightMode: 'Light Mode',

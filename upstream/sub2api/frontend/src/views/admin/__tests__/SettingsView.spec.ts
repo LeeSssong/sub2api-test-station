@@ -1340,7 +1340,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(getProviders).toHaveBeenCalledTimes(2);
   });
 
-  it("renders advanced scheduler copy as local experimental gateway policy", async () => {
+  it.skip("renders advanced scheduler copy as local experimental gateway policy", async () => {
     const wrapper = mountView();
 
     await flushPromises();
@@ -1439,7 +1439,7 @@ describe("admin SettingsView payment visible method controls", () => {
     });
   });
 
-  it("places and explains rate controls for both scheduling modes", async () => {
+  it.skip("places and explains rate controls for both scheduling modes", async () => {
     const wrapper = mountView();
 
     await flushPromises();
@@ -1497,7 +1497,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(weightedModeText).toContain("计费倍率");
   });
 
-  it("renders the scheduler workflow in group, mode, then values order", async () => {
+  it.skip("renders the scheduler workflow in group, mode, then values order", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "特惠", description: "", platform: "openai", subscription_type: "subscription", status: "active" },
     ]);
@@ -1531,7 +1531,7 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("shows bounded Chinese scheduler labels and preset names", async () => {
+  it.skip("shows bounded Chinese scheduler labels and preset names", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "体验组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
     ]);
@@ -1553,7 +1553,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(scheduler.findAll('[data-testid^="scheduler-operation-"]').length).toBe(9);
   });
 
-  it("loads native OpenAI scheduler groups separately and leaves selection empty", async () => {
+  it.skip("loads native OpenAI scheduler groups separately and leaves selection empty", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "订阅组", description: "", platform: "openai", subscription_type: "subscription", status: "active" },
       { id: 13, name: "标准组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
@@ -1583,7 +1583,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(defaultGroupSelect.findAll("option").map((option) => option.attributes("value"))).not.toContain("13");
   });
 
-  it("keeps a separate draft for each scheduler group", async () => {
+  it.skip("keeps a separate draft for each scheduler group", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
       { id: 13, name: "二组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
@@ -1603,7 +1603,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.get('[data-testid="scheduler-priority-ttft-2"]').attributes("aria-pressed")).toBe("true");
   });
 
-  it("normalizes legacy scheduler policies to custom and preset modes", async () => {
+  it.skip("normalizes legacy scheduler policies to custom and preset modes", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
     ]);
@@ -1622,7 +1622,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect((wrapper.get('[data-testid="scheduler-policy-preset"]').element as HTMLSelectElement).value).toBe("builtin:pro");
   });
 
-  it("uses the group recommendation when a legacy custom policy has zero business priorities", async () => {
+  it.skip("uses the group recommendation when a legacy custom policy has zero business priorities", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "GPT-Pro", description: "", platform: "openai", subscription_type: "standard", status: "active" },
     ]);
@@ -1643,7 +1643,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.get('[data-testid="scheduler-priority-latency-2"]').attributes("aria-pressed")).toBe("true");
   });
 
-  it("serializes preset values from the server snapshot instead of draft edits", async () => {
+  it.skip("serializes preset values from the server snapshot instead of draft edits", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
     ]);
@@ -1688,7 +1688,7 @@ describe("admin SettingsView payment visible method controls", () => {
     }));
   });
 
-  it("keeps preset values disabled and saves a custom preset without switching mode", async () => {
+  it.skip("keeps preset values disabled and saves a custom preset without switching mode", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
     ]);
@@ -1705,7 +1705,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.find('[data-testid="scheduler-custom-presets"] input').attributes("value")).toBe("晚高峰稳态");
   });
 
-  it("blocks deleting a referenced custom preset", async () => {
+  it.skip("blocks deleting a referenced custom preset", async () => {
     getGroups.mockResolvedValueOnce([
       { id: 12, name: "一组", description: "", platform: "openai", subscription_type: "standard", status: "active" },
     ]);
@@ -1722,6 +1722,16 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.get('[data-testid="scheduler-group-select"]').setValue("12");
     const button = wrapper.get('[data-testid="scheduler-preset-delete-custom-stable"]');
     expect(button.attributes("disabled")).toBeDefined();
+  });
+
+  it("does not expose the legacy scheduler controls after the workbench moves to its own page", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    expect(wrapper.find('[data-testid="openai-advanced-scheduler-toggle"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="scheduler-group-policy-panel"]').exists()).toBe(false);
   });
 
   it("passes translated upload and remove labels to the payment help image uploader", async () => {

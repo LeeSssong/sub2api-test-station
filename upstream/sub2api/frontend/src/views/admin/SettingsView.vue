@@ -4960,6 +4960,7 @@
                 </div>
               </div>
 
+              <template v-if="false">
               <div
                 v-if="!form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
@@ -5295,6 +5296,7 @@
                   </div>
                 </div>
               </div>
+              </template>
             </div>
           </div>
 

@@ -84,4 +84,19 @@ describe('UserBalanceModal', () => {
     expect(wrapper.text()).toContain('$21.00')
     expect(wrapper.text()).not.toContain('$0.33')
   })
+
+  it('labels received recharge separately from spendable quota', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.users.currentSpendableBalance')
+    expect(wrapper.text()).toContain('admin.users.refundableCashBalance')
+    expect(wrapper.text()).toContain('admin.users.paidQuota')
+    expect(wrapper.text()).toContain('admin.users.giftQuota')
+  })
 })

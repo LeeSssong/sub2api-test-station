@@ -1221,7 +1221,7 @@ func ProvideAccountModelDetectionAccountReader(repo AccountRepository) AccountMo
 }
 
 func ProvideAccountModelDetectionSidecar() AccountModelDetectionSidecar {
-	return NewHTTPAccountModelDetectionSidecar(os.Getenv("SUB2API_MODEL_DETECTOR_URL"), os.Getenv("SUB2API_MODEL_DETECTOR_TOKEN"), &http.Client{Timeout: 45 * time.Second})
+	return NewHTTPAccountModelDetectionSidecar(os.Getenv("SUB2API_MODEL_DETECTOR_URL"), os.Getenv("SUB2API_MODEL_DETECTOR_TOKEN"), &http.Client{Timeout: 15 * time.Minute})
 }
 
 func ProvideAccountModelDetectionService(repo AccountModelDetectionRepository, accounts AccountModelDetectionAccountReader, sidecar AccountModelDetectionSidecar) *AccountModelDetectionService {

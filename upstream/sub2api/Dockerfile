@@ -14,6 +14,8 @@ ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
 ARG NPM_CONFIG_REGISTRY=
+ARG GPT56_V411_RELEASE_URL=https://github.com/chen-006/gpt56_api_detector/releases/download/v4.1.1/gpt56_api_detector_github_upload.zip
+ARG GPT56_V411_RELEASE_SHA256=70c0c2f092e66cd219f2384e08872e5bedb4559e427c2e320d0070186376f865
 
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
@@ -116,6 +118,9 @@ FROM ${POSTGRES_IMAGE} AS pg-client
 # -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
 
+ARG GPT56_V411_RELEASE_URL
+ARG GPT56_V411_RELEASE_SHA256
+
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
 LABEL description="Sub2API - AI API Gateway Platform"
@@ -124,6 +129,9 @@ LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 # Install runtime dependencies
 RUN apk add --no-cache \
     ca-certificates \
+    python3 \
+    nodejs \
+    curl \
     tzdata \
     su-exec \
     libpq \
@@ -151,6 +159,33 @@ WORKDIR /app
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/model-detector /app/model-detector
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
+
+# The authorized v4.1.1 release is pinned by URL and checksum. Its archive
+# uses Windows separators, so normalize them while rejecting path traversal.
+RUN set -eu; \
+    mkdir -p /app/vendor/gpt56-v411; \
+    curl -fsSL "$GPT56_V411_RELEASE_URL" -o /tmp/gpt56-v411.zip; \
+    echo "$GPT56_V411_RELEASE_SHA256  /tmp/gpt56-v411.zip" | sha256sum -c -; \
+    python3 - <<'PY'
+import pathlib
+import zipfile
+
+archive = pathlib.Path('/tmp/gpt56-v411.zip')
+root = pathlib.Path('/app/vendor/gpt56-v411').resolve()
+with zipfile.ZipFile(archive) as source:
+    for entry in source.infolist():
+        name = entry.filename.replace('\\', '/')
+        if not name or name.endswith('/'):
+            continue
+        destination = (root / name).resolve()
+        if root not in destination.parents:
+            raise SystemExit('invalid detector archive path')
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read(entry))
+PY
+
+COPY --chown=sub2api:sub2api deploy/model-detector-v411-adapter.py /app/model-detector
+RUN chmod 0555 /app/model-detector && chown -R sub2api:sub2api /app/vendor/gpt56-v411
 
 # Create data directory
 RUN mkdir -p /app/data && chown sub2api:sub2api /app/data

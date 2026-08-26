@@ -538,7 +538,7 @@ configure_detector_topology() {
   fi
   [[ "$detector_token" =~ ^[a-f0-9]{64}$ ]] || fail 'configured detector token must be 64 lowercase hex'
   detector_models=${MODEL_DETECTOR_MODELS:-gpt-5.6-terra,gpt-5.6-sol,gpt-5.4,gpt-5.6,gpt-5.6-codex,claude-3-7-sonnet}
-  detector_version=${MODEL_DETECTOR_VERSION:-native-1}
+  detector_version=${MODEL_DETECTOR_VERSION:-4.1.1}
   temporary="$base_compose.tmp.$attempt_id"
   jq --arg image "$requested_image" --arg token "$detector_token" \
     --arg models "$detector_models" --arg version "$detector_version" '

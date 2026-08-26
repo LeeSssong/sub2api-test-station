@@ -248,6 +248,7 @@ export interface AccountMonitorAccount {
   scheduler_rank_total?: number
   quality_explanation?: AccountMonitorQualityExplanation | null
   scheduler_explanation?: AccountMonitorSchedulerExplanation | null
+  scheduler_unavailable?: boolean
   eligible?: boolean
   evidence?: AccountMonitorQualityEvidence
   group_recommendation?: AccountMonitorGroupRecommendation | null

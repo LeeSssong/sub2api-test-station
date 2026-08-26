@@ -399,6 +399,7 @@ type AccountMonitorAccount struct {
 	SchedulerRankTotal         int                                 `json:"scheduler_rank_total,omitempty"`
 	QualityExplanation         *AccountMonitorQualityExplanation   `json:"quality_explanation,omitempty"`
 	SchedulerExplanation       *AccountMonitorSchedulerExplanation `json:"scheduler_explanation,omitempty"`
+	SchedulerUnavailable       bool                                `json:"scheduler_unavailable,omitempty"`
 	Eligible                   bool                                `json:"eligible"`
 	TodayStats                 *WindowStats                        `json:"today_stats,omitempty"`
 	UsageWindows               []AccountMonitorUsageWindow         `json:"usage_windows,omitempty"`

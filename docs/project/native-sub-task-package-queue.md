@@ -1,12 +1,25 @@
 # 原生 Sub 小步发布任务包队列
 
+## 最新发布更新（2026-08-26）
+
+- **T72 兑换码事务修复**：已合入、推送并部署生效，根 `main@37d7467ba1e0ef987d718e44fa1abc181602990e`，tree `4fedefae5f5ef02990a25d06441b22552499a36f`；预加载蓝绿记录 `/var/lib/sub2api/release-records/20260826T093251Z-production-2173135.json` 为 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网三项健康均 200。生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 只读仍为 `id=44/status=unused`，关联 `redeem_credit` 账本 0 条，未擅自为任意用户入账。
+- **T71**：因缺少管理员登录态将线上专项验收冻结为只读证据，候选 worktree/分支保留，未明确解冻前不继续写入、部署或清理；发布单车道转交 T72。
+
+## 当前设计任务（2026-08-26，T74）
+
+- **T74 原生扣费与充值额度账本一致性修复**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t74-billing-wallet-sync@7bd3b5928` 基于 `main@6d30ac9ef`。原生余额扣费、钱包消费投影和消费审计现同处 `usage_billing_dedup` 成功 claim 的一个 SQL 事务，保持 paid-first/gift-second、原生一次技术透支和幂等边界；命中既有漂移时先写可审计 `migration_projection` 校准至本请求前的运行时余额，再写真实 `usage_consumption`，不更改用户实际余额或批量回填。两个余额弹窗均打开即读 `/quota-summary`，不再使用旧 `AdminUser.balance`。生产只读报告：8 名用户钱包高估，合计 `74.73037899`；历史静态漂移仅保留后续逐项受控对账设计。定向 Go、server build、前端 3 项组件测试、typecheck、production build、diff-check 通过；integration test 因本机缺少 rootless Docker 未启动，全包 repository 的两项 T72 兑换码单测失败在原 main 同样复现。无迁移、配置或生产写入；T71 仍 VERIFYING、T72/T73 亦 READY，本任务仅排队，不得抢占合并/部署车道。交接：`docs/handoffs/2026-08-26-t74-billing-wallet-sync-handoff.md`。
+
+## 当前实现任务（2026-08-26，T73）
+
+- **T73 账号检测记录居中弹窗与双证据检索**：状态 `READY_FOR_ROOT_REVIEW`。用户已确认视觉稿：以原生深色遮罩的居中弹窗替换右侧抽屉；记录表把 `Juice 结果`、`行为指纹` 与 `综合结论` 作为主列，档位/样本降为辅助信息；行展开后分别展示两条证据及有限元数据。筛选固定为 Juice 结果、指纹结果、综合结论，其中综合结论复用历史接口既有 `status`，新增 Juice/指纹状态的稳定服务端分页筛选，不能只过滤当前一页。复用现有 `account_model_detection_runs`、`/admin/account-monitors/:id/detection` 与结构化字段，不新建事实源、表、迁移或生产数据写入；历史记录继续明确为“历史记录”，不得伪造双证据。候选 `codex/t73-account-monitor-modal@f1f1de611`，基线 `main@6d30ac9ef`；前端检测记录/账号卡片 60 项、typecheck、production build、Go handler/service 检测历史测试、server build、gofmt/diff-check 通过，实际组件在桌面与 390px 核验无错误和横向溢出。交接：`docs/handoffs/2026-08-26-t73-account-monitor-records-modal-handoff.md`。T71 仍在 VERIFYING、T72 已 READY_FOR_ROOT_REVIEW，T73 不得抢占合并/部署单车道。
+
 ## 当前待根审任务（2026-08-26，T72）
 
-- **T72 兑换码充值事务边界修复与余额写入审计**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t72-redeem-transaction-fix@18f8a3dc` 已刷新到当前根 `main@a4b726ba6`，完成 ambient transaction 复用，修复兑换正向充值回滚；新增负数兑换锁内原子扣减，保留封顶 0 且不消费赠送额度语义。刷新后直接相关 service/repository 回归、`go build ./cmd/server`、`git diff --check` 通过；RED/GREEN 证据与调用点审计见 `docs/handoffs/2026-08-26-t72-redeem-transaction-fix-handoff.md`。生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 仍为 `unused`；无迁移、配置或依赖变化，尚未合并、推送、部署或线上验收。T71 仍处于 VERIFYING，T72 不得抢占合并/部署单车道。
+- **T72 兑换码充值事务边界修复与余额写入审计**：状态 `DONE`。候选 `codex/t72-redeem-transaction-fix@18f8a3dc` 已合入、推送并从根 `main@37d7467ba1e0ef987d718e44fa1abc181602990e`、tree `4fedefae5f5ef02990a25d06441b22552499a36f` 通过预加载蓝绿链发布生效。发布记录 `/var/lib/sub2api/release-records/20260826T093251Z-production-2173135.json` 为 `succeeded/promoted`、`rolled_back=false`，预检 `downtime_required=false`，活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。生产兑换码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 只读核验仍为 `id=44/type=balance/value=20/status=unused`，关联 `redeem_credit` 账本条目为 0，证明未擅自为任意用户入账；用户可在自己的已登录账户中正常兑换。正向兑换复用 ambient transaction，负数兑换在锁内原子扣减并保留封顶 0/不消费赠送额度语义。直接相关 service/repository/handler 回归、server build、diff-check 通过；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-26-main-37d7467ba-t72-redeem-transaction-fix.json`。无迁移、配置或依赖变化。
 
 ## 当前设计任务（2026-08-26，T71）
 
-- **T71 调度设置独立页面与交互修复**：状态 `VERIFYING`。候选 `codex/t71-scheduler-settings-page@c45ef4af0b43fa28a3e868e07422586ce1e105ab` 已合入并推送 `main@3770a8015`；直接相关 Vitest、类型检查、生产构建和 diff-check 已通过。宿主发布记录 `/var/lib/sub2api/release-records/20260826T022654Z-production-1256992.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。生产 `/admin/scheduler-settings` 已通过 Playwright 匿名访问守卫并跳转到 `/login?redirect=/admin/scheduler-settings`。当前没有管理员登录态，数字选中态、三段控件联动、场景预览、保存反馈及浅深色/移动端登录态验收待补；候选 worktree/分支保留。继续复用 Sub2API 原生管理员权限、现有 settings API 及 `openai_advanced_scheduler_*` 字段；不改变调度算法、服务不中断护栏、数据库、配置事实源或生产数据。T71 不与 T69 合并发布。
+- **T71 调度设置独立页面与交互修复**：状态 `FROZEN`。候选 `codex/t71-scheduler-settings-page@c45ef4af0b43fa28a3e868e07422586ce1e105ab` 已合入并推送 `main@3770a8015`；直接相关 Vitest、类型检查、生产构建和 diff-check 已通过。宿主发布记录 `/var/lib/sub2api/release-records/20260826T022654Z-production-1256992.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，公网健康通过。生产 `/admin/scheduler-settings` 已确认匿名守卫；当前缺少管理员登录态，数字选中态、三段控件联动、场景预览、保存反馈及浅深色/移动端验收待补。候选 worktree/分支与全部已发布证据保留；未明确解冻前不继续写入、部署或清理。
 
 ## 已完成任务（2026-08-25，T70）
 

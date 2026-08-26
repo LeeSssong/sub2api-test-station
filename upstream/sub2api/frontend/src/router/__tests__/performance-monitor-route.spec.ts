@@ -17,4 +17,17 @@ describe('performance monitor route', () => {
     expect(route?.meta).toMatchObject({ requiresAuth: true, requiresAdmin: false, titleKey: 'nav.performanceMonitor' })
     expect(route?.components?.default ?? route?.component).toBeDefined()
   })
+
+  it('registers the scheduler workbench as an administrator-only route', async () => {
+    const { default: router } = await import('@/router')
+    const route = router.getRoutes().find((candidate) => candidate.name === 'AdminSchedulerSettings')
+
+    expect(route?.path).toBe('/admin/scheduler-settings')
+    expect(route?.meta).toMatchObject({
+      requiresAuth: true,
+      requiresAdmin: true,
+      titleKey: 'admin.schedulerSettings.title',
+    })
+    expect(route?.components?.default ?? route?.component).toBeDefined()
+  })
 })

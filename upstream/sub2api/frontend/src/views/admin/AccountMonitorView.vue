@@ -153,7 +153,7 @@
         </div>
       </section>
 
-      <div v-if="loading && !projection" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div v-if="loading && !projection" class="grid grid-cols-1 gap-4">
         <div v-for="item in 4" :key="item" class="card h-[310px] animate-pulse bg-gray-100 dark:bg-dark-800" />
       </div>
 
@@ -185,7 +185,7 @@
         <button type="button" class="btn btn-secondary shrink-0 px-3 py-1.5 text-xs" @click="nativeAccountError = null">关闭</button>
       </div>
 
-      <section v-if="projection && filteredAccounts.length" class="grid grid-cols-1 gap-4 lg:grid-cols-2" data-test="account-card-grid" aria-label="账号排名卡片">
+      <section v-if="projection && filteredAccounts.length" class="grid grid-cols-1 gap-4" data-test="account-card-grid" aria-label="账号排名卡片">
         <AccountMonitorCard
           v-for="account in filteredAccounts"
           :key="account.account_id"
@@ -425,11 +425,13 @@ function uniqueAccounts(source: AccountMonitorAccount[]): AccountMonitorAccount[
   })
 }
 
-function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccount): number {
-  const leftRanked = left.group_rank != null
-  const rightRanked = right.group_rank != null
+function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccount, useSchedulerRank: boolean): number {
+  const leftRank = useSchedulerRank ? left.scheduler_rank : (left.quality_rank ?? left.group_rank)
+  const rightRank = useSchedulerRank ? right.scheduler_rank : (right.quality_rank ?? right.group_rank)
+  const leftRanked = leftRank != null
+  const rightRanked = rightRank != null
   if (leftRanked && rightRanked) {
-    const rankDifference = Number(left.group_rank) - Number(right.group_rank)
+    const rankDifference = Number(leftRank) - Number(rightRank)
     if (rankDifference !== 0) return rankDifference
     return left.account_id - right.account_id
   }
@@ -450,7 +452,7 @@ const scopedAccounts = computed(() => {
   const source = group?.accounts ?? (group
     ? allAccounts.value.filter((account) => account.group_ids.includes(group.id))
     : allAccounts.value)
-  return uniqueAccounts(source).sort(compareAccounts)
+  return uniqueAccounts(source).sort((left, right) => compareAccounts(left, right, group != null))
 })
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -461,7 +463,7 @@ const filteredAccounts = computed(() => {
       .some((value) => value.toLowerCase().includes(query))
   })
 })
-const rankedAccountCount = computed(() => scopedAccounts.value.filter((account) => account.group_rank != null).length)
+const rankedAccountCount = computed(() => scopedAccounts.value.filter((account) => (activeGroup.value ? account.scheduler_rank : (account.quality_rank ?? account.group_rank)) != null).length)
 const visibleAccountIDs = computed(() => filteredAccounts.value.map((account) => account.account_id))
 const visibleAccountIDKey = computed(() => visibleAccountIDs.value.join(','))
 const groupSummaryFields = computed(() => {

@@ -234,7 +234,16 @@ const baseAccount = {
 }
 
 function account(accountID: number, name: string, rank: number | null) {
-  return { ...baseAccount, account_id: accountID, name, group_rank: rank }
+  return {
+    ...baseAccount,
+    account_id: accountID,
+    name,
+    group_rank: rank,
+    quality_rank: rank,
+    quality_rank_total: rank == null ? undefined : 3,
+    scheduler_rank: rank,
+    scheduler_rank_total: rank == null ? undefined : 3,
+  }
 }
 
 function unrankedAccount(range: '24h' | '7d' | '30d') {
@@ -530,16 +539,53 @@ describe('admin account monitor view V3', () => {
       'Unranked 24h #30',
     ])
     expect(cards.map((card) => card.get('[data-test="score-metric"]').text())).toEqual([
-      expect.stringContaining('账号服务评分'),
-      expect.stringContaining('账号服务评分'),
-      expect.stringContaining('账号服务评分'),
-      expect.stringContaining('账号服务评分'),
+      expect.stringContaining('质量评分'),
+      expect.stringContaining('质量评分'),
+      expect.stringContaining('质量评分'),
+      expect.stringContaining('质量评分'),
     ])
     expect(cards.map((card) => card.get('[data-test="rank-metric"]').text())).toEqual([
-      expect.stringContaining('全站排名第 1/ 3'),
-      expect.stringContaining('全站排名第 2/ 3'),
-      expect.stringContaining('全站排名第 3/ 3'),
-      expect.stringContaining('全站排名未排名'),
+      expect.stringContaining('全站质量排名第 1 / 3'),
+      expect.stringContaining('全站质量排名第 2 / 3'),
+      expect.stringContaining('全站质量排名第 3 / 3'),
+      expect.stringContaining('全站质量排名未排名'),
+    ])
+  })
+
+  it('uses quality order site-wide and scheduler order only inside the selected group', async () => {
+    const orderedAccounts = [
+      { ...account(10, 'Quality three scheduler two', 3), quality_rank: 3, scheduler_rank: 2, group_rank: 3 },
+      { ...account(11, 'Quality one scheduler three', 1), quality_rank: 1, scheduler_rank: 3, group_rank: 1 },
+      { ...account(20, 'Quality two scheduler one', 2), quality_rank: 2, scheduler_rank: 1, group_rank: 2 },
+      { ...unrankedAccount('24h'), quality_rank: null, scheduler_rank: null, group_rank: null },
+    ]
+    const snapshot = projection()
+    list.mockReset().mockResolvedValue({
+      ...snapshot,
+      accounts: orderedAccounts,
+      groups: [{ ...snapshot.groups[0], accounts: orderedAccounts }],
+    })
+
+    const wrapper = mountView({ useRealCard: true })
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="monitor-card"]').map((card) => card.get('[data-test="account-identity"]').text())).toEqual([
+      'Quality one scheduler three #11',
+      'Quality two scheduler one #20',
+      'Quality three scheduler two #10',
+      'Unranked 24h #30',
+    ])
+    expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-1']))
+    expect(wrapper.get('[data-test="account-card-grid"]').classes()).not.toContain('lg:grid-cols-2')
+
+    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-test="monitor-card"]').map((card) => card.get('[data-test="account-identity"]').text())).toEqual([
+      'Quality two scheduler one #20',
+      'Quality three scheduler two #10',
+      'Quality one scheduler three #11',
+      'Unranked 24h #30',
     ])
   })
 
@@ -613,7 +659,8 @@ describe('admin account monitor view V3', () => {
     expect(cards).toHaveLength(4)
     expect(cards.map((card) => Number(card.attributes('data-account-id')))).toEqual([10, 11, 20, 30])
     const gridClasses = wrapper.get('[data-test="account-card-grid"]').classes()
-    expect(gridClasses).toEqual(expect.arrayContaining(['grid', 'grid-cols-1', 'lg:grid-cols-2']))
+    expect(gridClasses).toEqual(expect.arrayContaining(['grid', 'grid-cols-1']))
+    expect(gridClasses).not.toContain('lg:grid-cols-2')
     expect(gridClasses.some((name) => name.includes('reverse') || name.startsWith('order-'))).toBe(false)
     expect(cards.every((card) => card.classes().every((name) => !name.startsWith('order-')))).toBe(true)
   })

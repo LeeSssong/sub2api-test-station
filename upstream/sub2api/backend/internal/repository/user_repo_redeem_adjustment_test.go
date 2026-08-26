@@ -21,7 +21,10 @@ func newRedeemAdjustmentRepoMock(t *testing.T) (*userRepository, sqlmock.Sqlmock
 	driver := entsql.OpenDB(dialect.Postgres, db)
 	client := dbent.NewClient(dbent.Driver(driver))
 	t.Cleanup(func() { _ = client.Close() })
-	return newUserRepositoryWithSQL(client, db), mock
+	// These tests exercise the legacy SQL fallback. Production constructors
+	// attach the wallet coordinator; keeping this helper explicit prevents the
+	// fallback contract from depending on wallet tables.
+	return &userRepository{client: client, sql: db}, mock
 }
 
 func TestApplyRedeemBalanceAdjustment_UsesAtomicFloor(t *testing.T) {

@@ -214,7 +214,7 @@ func (h *AccountMonitorHandler) AccountModelDetectionHistory(c *gin.Context) {
 		}
 		limit = parsed
 	}
-	page, err := h.detectionService.RecentPage(c.Request.Context(), accountID, limit, c.Query("cursor"), c.Query("status"), c.Query("profile"), c.Query("mode"))
+	page, err := h.detectionService.RecentPage(c.Request.Context(), accountID, limit, c.Query("cursor"), c.Query("status"), c.Query("profile"), c.Query("mode"), c.Query("juice_status"), c.Query("fingerprint_status"))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

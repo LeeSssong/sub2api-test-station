@@ -61,14 +61,14 @@ func TestDetectionHistoryPageCursorFiltersWithoutDuplicates(t *testing.T) {
 		{ID: "run-1", AccountID: 7, Status: AccountModelDetectionStatusNormal, Profile: AccountModelDetectionProfileLow, Mode: AccountModelDetectionModeManual, CreatedAt: now.Add(-2 * time.Minute)},
 	}}
 	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{}, &detectionSidecarStub{})
-	page, err := svc.RecentPage(context.Background(), 7, 2, "", "", "", "")
+	page, err := svc.RecentPage(context.Background(), 7, 2, "", "", "", "", "", "")
 	if err != nil || len(page.Items) != 2 || page.NextCursor == "" {
 		t.Fatalf("page=%#v err=%v, want two items and cursor", page, err)
 	}
 	if page.Items[0].ID != "run-3" || page.Items[1].ID != "run-2" {
 		t.Fatalf("items=%#v", page.Items)
 	}
-	next, err := svc.RecentPage(context.Background(), 7, 2, page.NextCursor, "", "", "")
+	next, err := svc.RecentPage(context.Background(), 7, 2, page.NextCursor, "", "", "", "", "")
 	if err != nil || len(next.Items) != 1 || next.Items[0].ID != "run-1" {
 		t.Fatalf("next=%#v err=%v, want only run-1", next, err)
 	}

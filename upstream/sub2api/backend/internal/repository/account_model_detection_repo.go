@@ -155,7 +155,7 @@ func (r *accountModelDetectionRepository) Complete(ctx context.Context, runID st
 	return err
 }
 
-func (r *accountModelDetectionRepository) ListRecent(ctx context.Context, accountID int64, limit int, cursor, status, profile, mode string) (service.AccountModelDetectionHistoryPage, error) {
+func (r *accountModelDetectionRepository) ListRecent(ctx context.Context, accountID int64, limit int, cursor, status, profile, mode, juiceStatus, fingerprintStatus string) (service.AccountModelDetectionHistoryPage, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
@@ -167,7 +167,7 @@ func (r *accountModelDetectionRepository) ListRecent(ctx context.Context, accoun
 		args = append(args, decoded.CreatedAt, decoded.ID)
 		arg += 2
 	}
-	for _, filter := range []struct{ value, column string }{{status, "status"}, {profile, "profile"}, {mode, "mode"}} {
+	for _, filter := range []struct{ value, column string }{{status, "status"}, {profile, "profile"}, {mode, "mode"}, {juiceStatus, "juice_status"}, {fingerprintStatus, "fingerprint_status"}} {
 		if strings.TrimSpace(filter.value) != "" {
 			where = append(where, fmt.Sprintf("%s = $%d", filter.column, arg))
 			args = append(args, strings.TrimSpace(filter.value))

@@ -552,7 +552,7 @@ configure_detector_topology() {
         "SUB2API_MODEL_DETECTOR_TOKEN": $token
       },
       "expose": ["8090"],
-      "healthcheck": {"test": ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8090/healthz"], "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "300s"},
+      "healthcheck": {"test": ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"], "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "300s"},
       "image": $image,
       "logging": {"driver": "json-file", "options": {"max-file": "5", "max-size": "20m"}},
       "networks": {"default": null},

@@ -14,6 +14,10 @@ grep -Fq 'model-detector:' "$COMPOSE" || fail "detector service is not declared"
 grep -Fq '/app/model-detector' "$COMPOSE" || fail "detector service command is not pinned"
 grep -Fq 'http://model-detector:8090' "$COMPOSE" || fail "detector private URL is not wired"
 grep -Fq 'MODEL_DETECTOR_VERSION: ${MODEL_DETECTOR_VERSION:-4.1.1}' "$COMPOSE" || fail "detector version must default to licensed v4.1.1"
+grep -Fq 'http://127.0.0.1:8090/healthz' "$COMPOSE" \
+  || fail "detector healthcheck must use the bound IPv4 loopback address"
+grep -Fq 'http://127.0.0.1:8090/healthz' "$ROOT/ops/deploy-sub2api-blue-green-host.sh" \
+  || fail "host-generated detector healthcheck must use the bound IPv4 loopback address"
 grep -Fq 'start_period: 300s' "$COMPOSE" || fail "licensed v4.1.1 detector needs a 300 second cold-start grace period"
 grep -Fq '"start_period": "300s"' "$ROOT/ops/deploy-sub2api-blue-green-host.sh" \
   || fail "host-generated detector Compose must preserve the v4.1.1 cold-start grace period"

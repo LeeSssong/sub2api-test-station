@@ -6,6 +6,8 @@
 
 ## 已完成任务（2026-08-25，T70）
 
+- **T70-R1 账号检测记录面板与结构化证据修复**：状态 `DONE`。最终视觉修正版已合入并推送为 `main@3af307f6d9df466fe7008f7416aa1d7e43703ac0`，并由发布总控以 `main@3b948e2a2` 完成总账收口；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-26-main-3af307f6d-t70-r1-visual.json`。窄幅深色右抽屉与稿件一致，桌面为时间/档位/触发原因/有效样本/结论五列，移动端为时间线，详情可展开；新失败/证据不足记录保留 medium/high 与 49/158 计划数，无有效样本时显示“未取得证据”；历史记录明确显示“历史记录”，不再伪装成 `unknown / 0/0 / --`。直接相关 Go/前端测试、typecheck、生产构建、Go build 与 diff-check 通过。最终蓝绿发布返回 `succeeded`、`downtime_required=false`、活动槽 `blue`，公网 `/healthz`、`/readyz`、`/health` 均 200；线上管理接口只读核验确认当前记录档位/计划数和历史语义均正确。无迁移、无配置变化、无生产业务数据写入。
+
 - **T70 账号检测分层监测与记录面板**：状态 `DONE`。候选 `codex/t70-account-monitor-detector-v411@3acc49ff4` 已合并并推送为 `main@a5fb192a1a1ea52e0f34858a0a0ae7d86f891df6`，tested tree `b49c6e8b65a2552e0779d498a205ac44e2808e52`；0600 证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-25-main-a5fb192a1-t70.json`，迁移哈希 `59628d84dd909c8a91949eab2015dc216a8fe76027a2bcc8c996b504eb055e80`。基于 `chen-006/gpt56_api_detector` v4.1.1 接入 medium 日常、low 手动、high 异常升级，新增结构化证据字段、228 迁移、历史 `limit/cursor/status/profile/mode` 查询和桌面抽屉/窄屏时间线面板；旧记录保持 historical/unknown，敏感字段不落库或渲染。Go/前端直接相关测试、server build、typecheck、production build、gofmt/diff-check，以及 T70 维护迁移白名单和发布控制器合同测试通过。授权停机发布已通过既有蓝绿维护路径生效，宿主记录 `/var/lib/sub2api/release-records/20260825T182804Z-production-260083.json` 为 `succeeded/promoted`、`rolled_back=false`、活动槽 `blue`；登录态线上确认桌面表格抽屉、移动时间线、详情展开和 390px 无横向溢出。许可边界保持不变：不得将上游 PolyForm Noncommercial 核心、可信基线或报告逻辑复制进商业生产镜像；未配置合法制品时保持“检测器未接入”语义。交接：`docs/handoffs/2026-08-26-t70-account-monitor-detector-v411-handoff.md`。
 
 ## 当前待根审任务（2026-08-25，T69）

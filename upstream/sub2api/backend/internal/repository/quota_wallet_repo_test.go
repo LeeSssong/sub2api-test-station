@@ -35,12 +35,41 @@ func TestQuotaWalletRepositoryIdempotencyFingerprintStable(t *testing.T) {
 func TestQuotaWalletRepositorySummaryProjectionRead(t *testing.T) {
 	r, mock, cleanup := newQuotaRepoMock(t)
 	defer cleanup()
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT user_id, cash_balance_cny, paid_quota_balance_usd, gift_quota_balance_usd, version, updated_at FROM user_wallets WHERE user_id=$1`)).
-		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"user_id", "cash_balance_cny", "paid_quota_balance_usd", "gift_quota_balance_usd", "version", "updated_at"}).AddRow(7, "10.00000000", "8.25000000", "1.75000000", 3, time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT u.id, u.balance, u.updated_at, w.cash_balance_cny, w.paid_quota_balance_usd, w.gift_quota_balance_usd, w.version, w.updated_at FROM users u LEFT JOIN user_wallets w ON w.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL`)).
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "user_updated_at", "cash_balance_cny", "paid_quota_balance_usd", "gift_quota_balance_usd", "version", "wallet_updated_at"}).AddRow(7, "13.22523576", time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC), "10.00000000", "20.57804890", "0", 3, time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)))
 	s, err := r.GetSummary(context.Background(), 7)
 	require.NoError(t, err)
 	require.True(t, decimal.RequireFromString("10").Equal(s.CashBalanceCNY))
-	require.True(t, decimal.RequireFromString("10").Equal(s.TotalQuotaBalanceUSD))
+	require.True(t, decimal.RequireFromString("13.22523576").Equal(s.TotalQuotaBalanceUSD))
+	require.True(t, decimal.RequireFromString("13.22523576").Equal(s.PaidQuotaBalanceUSD))
+	require.True(t, s.GiftQuotaBalanceUSD.IsZero())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestQuotaWalletRepositorySummaryReadDoesNotInitializeMissingWallet(t *testing.T) {
+	r, mock, cleanup := newQuotaRepoMock(t)
+	defer cleanup()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT u.id, u.balance, u.updated_at, w.cash_balance_cny, w.paid_quota_balance_usd, w.gift_quota_balance_usd, w.version, w.updated_at FROM users u LEFT JOIN user_wallets w ON w.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL`)).
+		WithArgs(int64(8)).WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "user_updated_at", "cash_balance_cny", "paid_quota_balance_usd", "gift_quota_balance_usd", "version", "wallet_updated_at"}).AddRow(8, "4.50", time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC), nil, nil, nil, nil, nil))
+	s, err := r.GetSummary(context.Background(), 8)
+	require.NoError(t, err)
+	require.True(t, decimal.RequireFromString("4.50").Equal(s.TotalQuotaBalanceUSD))
+	require.True(t, decimal.RequireFromString("4.50").Equal(s.PaidQuotaBalanceUSD))
+	require.True(t, s.GiftQuotaBalanceUSD.IsZero())
+	require.Zero(t, s.WalletVersion)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestQuotaWalletRepositorySummaryClampsGiftToRuntimeBalance(t *testing.T) {
+	r, mock, cleanup := newQuotaRepoMock(t)
+	defer cleanup()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT u.id, u.balance, u.updated_at, w.cash_balance_cny, w.paid_quota_balance_usd, w.gift_quota_balance_usd, w.version, w.updated_at FROM users u LEFT JOIN user_wallets w ON w.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL`)).
+		WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "user_updated_at", "cash_balance_cny", "paid_quota_balance_usd", "gift_quota_balance_usd", "version", "wallet_updated_at"}).AddRow(9, "4.50", time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC), "0", "0", "7.00", 2, time.Date(2026, 8, 23, 0, 0, 0, 0, time.UTC)))
+	s, err := r.GetSummary(context.Background(), 9)
+	require.NoError(t, err)
+	require.True(t, decimal.RequireFromString("4.50").Equal(s.TotalQuotaBalanceUSD))
+	require.True(t, decimal.RequireFromString("4.50").Equal(s.GiftQuotaBalanceUSD))
+	require.True(t, s.PaidQuotaBalanceUSD.IsZero())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

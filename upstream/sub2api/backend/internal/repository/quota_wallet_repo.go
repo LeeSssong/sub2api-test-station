@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shopspring/decimal"
 )
 
 type quotaWalletRepository struct {
@@ -23,19 +25,58 @@ func NewQuotaWalletRepository(client *dbent.Client, sqlDB *sql.DB) service.Quota
 }
 
 func (r *quotaWalletRepository) GetSummary(ctx context.Context, userID int64) (service.QuotaSummary, error) {
-	var w service.QuotaWallet
-	err := scanOne(ctx, r.clientFrom(ctx), `SELECT user_id, cash_balance_cny, paid_quota_balance_usd, gift_quota_balance_usd, version, updated_at FROM user_wallets WHERE user_id=$1`, []any{userID}, &w.UserID, &w.CashBalanceCNY, &w.PaidQuotaBalanceUSD, &w.GiftQuotaBalanceUSD, &w.Version, &w.UpdatedAt)
+	var userIDDB int64
+	var runtimeBalance decimal.Decimal
+	var userUpdatedAt time.Time
+	var cash, paid, gift, version, walletUpdated sql.NullString
+	err := scanOne(ctx, r.clientFrom(ctx), `SELECT u.id, u.balance, u.updated_at, w.cash_balance_cny, w.paid_quota_balance_usd, w.gift_quota_balance_usd, w.version, w.updated_at FROM users u LEFT JOIN user_wallets w ON w.user_id=u.id WHERE u.id=$1 AND u.deleted_at IS NULL`, []any{userID}, &userIDDB, &runtimeBalance, &userUpdatedAt, &cash, &paid, &gift, &version, &walletUpdated)
 	if errors.Is(err, sql.ErrNoRows) {
-		var out service.QuotaSummary
-		if e := r.WithLockedWallet(ctx, userID, func(_ context.Context, wallet *service.QuotaWallet) error { out = summary(*wallet); return nil }); e != nil {
-			return service.QuotaSummary{}, e
-		}
-		return out, nil
+		return service.QuotaSummary{}, service.ErrQuotaWalletNotFound
 	}
 	if err != nil {
 		return service.QuotaSummary{}, err
 	}
-	return summary(w), nil
+	cashBalance, err := nullableDecimal(cash)
+	if err != nil {
+		return service.QuotaSummary{}, err
+	}
+	giftBalance, err := nullableDecimal(gift)
+	if err != nil {
+		return service.QuotaSummary{}, err
+	}
+	if giftBalance.IsNegative() {
+		giftBalance = decimal.Zero
+	}
+	if runtimeBalance.IsNegative() {
+		giftBalance = decimal.Zero
+	} else if giftBalance.GreaterThan(runtimeBalance) {
+		giftBalance = runtimeBalance
+	}
+	updatedAt := userUpdatedAt
+	if walletUpdated.Valid {
+		if parsed, parseErr := time.Parse(time.RFC3339Nano, walletUpdated.String); parseErr == nil {
+			updatedAt = parsed
+		}
+	}
+	return service.QuotaSummary{UserID: userIDDB, CashBalanceCNY: cashBalance, PaidQuotaBalanceUSD: runtimeBalance.Sub(giftBalance), GiftQuotaBalanceUSD: giftBalance, TotalQuotaBalanceUSD: runtimeBalance, WalletVersion: nullableInt64(version), UpdatedAt: updatedAt}, nil
+}
+
+func nullableDecimal(value sql.NullString) (decimal.Decimal, error) {
+	if !value.Valid || value.String == "" {
+		return decimal.Zero, nil
+	}
+	return decimal.NewFromString(value.String)
+}
+
+func nullableInt64(value sql.NullString) int64 {
+	if !value.Valid || value.String == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(value.String, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func (r *quotaWalletRepository) WithLockedWallet(ctx context.Context, userID int64, fn func(context.Context, *service.QuotaWallet) error) error {

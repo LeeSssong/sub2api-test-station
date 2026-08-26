@@ -443,6 +443,7 @@ func TestAccountMonitorHandlerGroupResponseIncludesRankingContract(t *testing.T)
 	scheduler := &accountMonitorHandlerSchedulerProjectionStub{projection: &service.OpenAIAccountSchedulerProjection{
 		SnapshotAt: now, PolicyKey: "group_policy", PolicyLabel: "利润优先", CandidateCount: 2,
 		EffectiveWeights: map[string]float64{"upstream_cost": 3},
+		EffectiveFacts:   []service.AccountMonitorSchedulerFact{{Label: "上游成本权重", Value: "3"}},
 		Candidates: []service.OpenAIAccountSchedulerProjectionCandidate{
 			{AccountID: 8, Rank: &schedulerRank1, Eligible: true, PrimaryReasonCode: service.AccountMonitorReasonStrategy},
 			{AccountID: 7, Rank: &schedulerRank2, Eligible: true},
@@ -510,23 +511,29 @@ func TestAccountMonitorHandlerGroupResponseIncludesRankingContract(t *testing.T)
 		t.Fatalf("ranking contract for account 7 = quality %d/%d group %d scheduler %d/%d", qualityRank, qualityRankTotal, groupRank, schedulerRank, schedulerRankTotal)
 	}
 	var explanation struct {
-		Rank               *int               `json:"rank"`
-		RankTotal          int                `json:"rank_total"`
-		CandidateTotal     int                `json:"candidate_total"`
-		Eligible           bool               `json:"eligible"`
-		PolicyKey          string             `json:"policy_key"`
-		PolicyLabel        string             `json:"policy_label"`
-		EffectiveWeights   map[string]float64 `json:"effective_weights"`
-		CandidateScope     string             `json:"candidate_scope"`
-		SnapshotAt         time.Time          `json:"snapshot_at"`
-		PrimaryReasonCode  string             `json:"primary_reason_code"`
-		PrimaryReasonLabel string             `json:"primary_reason_label"`
+		Rank           *int   `json:"rank"`
+		RankTotal      int    `json:"rank_total"`
+		CandidateTotal int    `json:"candidate_total"`
+		Eligible       bool   `json:"eligible"`
+		PolicyKey      string `json:"policy_key"`
+		PolicyLabel    string `json:"policy_label"`
+		EffectiveFacts []struct {
+			Label string `json:"label"`
+			Value string `json:"value"`
+		} `json:"effective_facts"`
+		CandidateScope     string    `json:"candidate_scope"`
+		SnapshotAt         time.Time `json:"snapshot_at"`
+		PrimaryReasonCode  string    `json:"primary_reason_code"`
+		PrimaryReasonLabel string    `json:"primary_reason_label"`
 	}
 	if err := json.Unmarshal(byID[8]["scheduler_explanation"], &explanation); err != nil {
 		t.Fatal(err)
 	}
-	if explanation.Rank == nil || *explanation.Rank != 1 || explanation.RankTotal != 2 || explanation.CandidateTotal != 2 || !explanation.Eligible || explanation.PolicyKey != "group_policy" || explanation.PolicyLabel != "利润优先" || explanation.EffectiveWeights["upstream_cost"] != 3 || explanation.CandidateScope != "group" || !explanation.SnapshotAt.Equal(now) || explanation.PrimaryReasonCode != string(service.AccountMonitorReasonStrategy) || explanation.PrimaryReasonLabel == "" {
+	if explanation.Rank == nil || *explanation.Rank != 1 || explanation.RankTotal != 2 || explanation.CandidateTotal != 2 || !explanation.Eligible || explanation.PolicyKey != "group_policy" || explanation.PolicyLabel != "利润优先" || len(explanation.EffectiveFacts) != 1 || explanation.EffectiveFacts[0].Label != "上游成本权重" || explanation.EffectiveFacts[0].Value != "3" || explanation.CandidateScope != "group" || !explanation.SnapshotAt.Equal(now) || explanation.PrimaryReasonCode != string(service.AccountMonitorReasonStrategy) || explanation.PrimaryReasonLabel == "" {
 		t.Fatalf("scheduler explanation = %#v", explanation)
+	}
+	if _, exposed := byID[8]["effective_weights"]; exposed {
+		t.Fatal("scheduler explanation exposed raw effective weight keys")
 	}
 	var secondExplanation struct {
 		Rank      *int `json:"rank"`

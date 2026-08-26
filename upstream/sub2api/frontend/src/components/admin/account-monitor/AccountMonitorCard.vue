@@ -66,7 +66,7 @@
         </div>
       </section>
 
-      <section class="min-w-0 border-l border-gray-100 pl-4 dark:border-slate-800" data-test="scheduler-column" aria-label="调度优先级">
+      <section v-if="schedulerContext" class="min-w-0 border-l border-gray-100 pl-4 dark:border-slate-800" data-test="scheduler-column" aria-label="调度优先级">
         <div class="text-[11px] text-gray-500 dark:text-slate-400">调度优先级</div>
         <div class="mt-1 flex min-w-0 items-baseline gap-1.5"><strong class="truncate font-mono text-lg font-semibold text-gray-900 dark:text-white" data-test="scheduler-rank">{{ schedulerRankLabel }}<span v-if="schedulerRanked" class="text-xs font-normal text-gray-500 dark:text-slate-400"> / {{ schedulerRankTotalLabel }}</span></strong></div>
         <p class="mt-1 break-words text-[10px] text-gray-500 dark:text-slate-400" data-test="scheduler-policy">{{ schedulerPolicyLabel }}</p>
@@ -116,15 +116,15 @@
         <button class="icon-button h-8 w-8 2xl:w-full" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">刷新</span></button>
       </section>
 
-      <div class="min-w-0 2xl:col-span-6">
+      <div v-if="schedulerContext" class="min-w-0 2xl:col-span-6">
         <div class="flex min-w-0 items-start gap-3 border-t border-gray-100 pt-3 dark:border-slate-800">
-          <p class="min-w-0 flex-1 break-words text-[11px] leading-4 text-gray-500 dark:text-slate-400" data-test="ranking-reason">{{ rankingReason }}</p>
+          <p v-if="rankingReason" class="min-w-0 flex-1 break-words text-[11px] leading-4 text-gray-500 dark:text-slate-400" data-test="ranking-reason">{{ rankingReason }}</p>
           <button class="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-slate-800" data-test="ranking-explanation-toggle" type="button" :aria-controls="rankingExplanationID" :aria-expanded="rankingExplanationExpanded" @click="rankingExplanationExpanded = !rankingExplanationExpanded"><Icon name="eye" size="xs" /><span>{{ rankingExplanationExpanded ? '收起依据' : '查看排名依据' }}</span><Icon name="chevronDown" size="xs" :class="{ 'rotate-180': rankingExplanationExpanded }" /></button>
         </div>
         <div v-if="rankingExplanationExpanded" :id="rankingExplanationID" class="grid min-w-0 gap-3 border-t border-gray-100 pt-3 text-xs dark:border-slate-800 sm:grid-cols-2 lg:grid-cols-4" data-test="ranking-explanation">
           <div class="min-w-0"><div class="font-semibold text-gray-700 dark:text-slate-200">质量构成</div><div class="mt-1 grid gap-1 text-gray-500 dark:text-slate-400"><span v-for="item in qualityBreakdownItems" :key="item.key">{{ item.label }} {{ item.score }} / {{ item.max }}</span><span v-if="!qualityBreakdownItems.length">暂无评分构成</span><span v-if="qualityExplanationSummary">{{ qualityExplanationSummary }}</span></div></div>
           <div class="min-w-0"><div class="font-semibold text-gray-700 dark:text-slate-200">调度事实</div><div class="mt-1 grid gap-1 break-words text-gray-500 dark:text-slate-400"><span>策略 {{ schedulerPolicyLabel }}</span><span>{{ schedulerEligibilityLabel }}</span><span v-if="schedulerCandidateLabel">{{ schedulerCandidateLabel }}</span><span v-if="schedulerScopeLabel">范围 {{ schedulerScopeLabel }}</span></div></div>
-          <div class="min-w-0"><div class="font-semibold text-gray-700 dark:text-slate-200">快照与权重</div><div class="mt-1 grid gap-1 break-words text-gray-500 dark:text-slate-400"><span v-if="effectiveWeightsLabel">权重 {{ effectiveWeightsLabel }}</span><span v-if="schedulerSnapshotLabel">快照 {{ schedulerSnapshotLabel }}</span><span v-if="schedulerTieBreakLabel">并列处理 {{ schedulerTieBreakLabel }}</span><span v-if="!effectiveWeightsLabel && !schedulerSnapshotLabel && !schedulerTieBreakLabel">暂无额外调度事实</span></div></div>
+          <div class="min-w-0"><div class="font-semibold text-gray-700 dark:text-slate-200">快照与权重</div><div class="mt-1 grid gap-1 break-words text-gray-500 dark:text-slate-400"><span v-if="schedulerFactsLabel">权重 {{ schedulerFactsLabel }}</span><span v-if="schedulerModelQuotaParityLabel">{{ schedulerModelQuotaParityLabel }}</span><span v-if="schedulerSnapshotLabel">快照 {{ schedulerSnapshotLabel }}</span><span v-if="schedulerTieBreakLabel">并列处理 {{ schedulerTieBreakLabel }}</span><span v-if="!schedulerFactsLabel && !schedulerModelQuotaParityLabel && !schedulerSnapshotLabel && !schedulerTieBreakLabel">暂无额外调度事实</span></div></div>
           <div class="min-w-0"><div class="font-semibold text-gray-700 dark:text-slate-200">来源</div><div class="mt-1 grid gap-1 break-words text-gray-500 dark:text-slate-400"><span>评分来源 {{ qualitySourceLabel }}</span><span>评分样本 {{ qualitySampleLabel }}</span><span>评分时间 {{ qualityObservedAtLabel }}</span><span v-if="schedulerReasonLabel">原因 {{ schedulerReasonLabel }}</span></div></div>
         </div>
       </div>
@@ -297,18 +297,35 @@ const qualityRanked = computed(() => qualityRankValue.value != null)
 const qualityRankLabel = computed(() => qualityRanked.value ? `第 ${qualityRankValue.value}` : '未排名')
 const qualityRankTotalLabel = computed(() => props.account.quality_rank_total ?? props.rankedAccountCount)
 const qualityRankTitle = computed(() => props.rankingScope === 'global' ? '全站质量排名' : '组内质量排名')
-const schedulerExplanation = computed(() => props.account.scheduler_explanation as SchedulerDetails | null)
-const schedulerRanked = computed(() => props.account.scheduler_rank != null)
+const schedulerExplanation = computed(() => (props.account.scheduler_explanation ?? null) as SchedulerDetails | null)
+const schedulerPlatformSupported = computed(() => ['openai', 'grok'].includes(props.account.platform.toLowerCase()))
+const schedulerContext = computed(() => props.rankingScope === 'group' && schedulerPlatformSupported.value && (schedulerExplanation.value != null || props.account.scheduler_unavailable === true))
+const schedulerRanked = computed(() => schedulerContext.value && props.account.scheduler_rank != null)
 const schedulerRankLabel = computed(() => schedulerRanked.value ? `第 ${props.account.scheduler_rank}` : '暂不可用')
 const schedulerRankTotalLabel = computed(() => props.account.scheduler_rank_total ?? '--')
-const schedulerPolicyLabel = computed(() => schedulerExplanation.value?.policy_label || (props.account.scheduler_unavailable ? '调度投影暂不可用' : '暂无策略说明'))
-const schedulerEligibilityLabel = computed(() => schedulerExplanation.value ? (schedulerExplanation.value.eligible ? '符合调度条件' : '不符合调度条件') : '资格状态暂不可用')
-const schedulerCandidateLabel = computed(() => schedulerExplanation.value?.candidate_total == null ? '' : `候选数 ${formatNumber(schedulerExplanation.value.candidate_total)}`)
-const schedulerScopeLabel = computed(() => schedulerExplanation.value?.candidate_scope || '')
-const schedulerSnapshotLabel = computed(() => schedulerExplanation.value?.snapshot_at ? formatDateTime(schedulerExplanation.value.snapshot_at) : '')
-const schedulerTieBreakLabel = computed(() => schedulerExplanation.value?.tie_break_reason || schedulerExplanation.value?.tie_break || '')
-const schedulerReasonLabel = computed(() => schedulerExplanation.value?.primary_reason_label || schedulerExplanation.value?.reason || '')
-const rankingReason = computed(() => schedulerReasonLabel.value || (props.account.scheduler_unavailable ? '调度投影暂不可用' : '暂无服务端调度原因'))
+const schedulerPolicyLabel = computed(() => {
+  if (!schedulerContext.value) return ''
+  if (props.account.scheduler_unavailable === true) return '调度投影暂不可用'
+  return schedulerExplanation.value?.policy_label || ''
+})
+const schedulerEligibilityLabel = computed(() => {
+  if (!schedulerContext.value) return ''
+  if (props.account.scheduler_unavailable === true) return '调度投影暂不可用'
+  return schedulerExplanation.value ? (schedulerExplanation.value.eligible ? '符合调度条件' : '不符合调度条件') : ''
+})
+const schedulerCandidateLabel = computed(() => schedulerContext.value && schedulerExplanation.value?.candidate_total != null ? `候选数 ${formatNumber(schedulerExplanation.value.candidate_total)}` : '')
+const schedulerScopeLabel = computed(() => schedulerContext.value ? schedulerExplanation.value?.candidate_scope || '' : '')
+const schedulerSnapshotLabel = computed(() => schedulerContext.value && schedulerExplanation.value?.snapshot_at ? formatDateTime(schedulerExplanation.value.snapshot_at) : '')
+const schedulerTieBreakLabel = computed(() => schedulerContext.value ? schedulerExplanation.value?.tie_break_reason || schedulerExplanation.value?.tie_break || '' : '')
+const schedulerReasonLabel = computed(() => schedulerContext.value ? schedulerExplanation.value?.primary_reason_label || schedulerExplanation.value?.reason || '' : '')
+const schedulerFactsLabel = computed(() => schedulerContext.value
+  ? (schedulerExplanation.value?.effective_facts ?? []).map((fact) => `${fact.label} ${fact.value}`).join(' · ')
+  : '')
+const schedulerModelQuotaParityLabel = computed(() => {
+  if (!schedulerContext.value || schedulerExplanation.value?.model_quota_parity !== 'unknown') return ''
+  return '模型额度一致性未知（监控请求未指定模型）'
+})
+const rankingReason = computed(() => schedulerReasonLabel.value || (schedulerContext.value && props.account.scheduler_unavailable === true ? '调度投影暂不可用' : ''))
 const rankingExplanationExpanded = ref(false)
 const rankingExplanationID = computed(() => `account-ranking-explanation-${props.account.account_id}`)
 const qualityBreakdownItems = computed<BreakdownItem[]>(() => {
@@ -338,11 +355,6 @@ const qualityExplanationSummary = computed(() => {
 const qualitySourceLabel = computed(() => props.account.quality_explanation?.source || props.account.evidence_source || '--')
 const qualitySampleLabel = computed(() => formatNumber(props.account.quality_explanation?.sample_count ?? props.account.sample_count))
 const qualityObservedAtLabel = computed(() => formatDateTime(props.account.quality_explanation?.observed_at ?? props.account.checked_at ?? null))
-const effectiveWeightsLabel = computed(() => {
-  const weights = schedulerExplanation.value?.effective_weights
-  if (!weights) return ''
-  return Object.entries(weights).map(([key, value]) => `${formatWeightKey(key)} ${formatMetricNumber(value)}%`).join(' · ')
-})
 const concurrencyValue = computed(() => props.concurrency ? `${props.concurrency.current} / ${props.concurrency.limit}` : '-- / --')
 const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
@@ -464,9 +476,6 @@ function formatNumber(value: number): string {
 function formatMetricNumber(value: number): string {
   if (!Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }).format(value)
-}
-function formatWeightKey(key: string): string {
-  return ({ quality: '质量', cost: '成本', success: '成功', ttft: '首 Token', latency: '延迟' }[key] ?? key)
 }
 function isCompletedProbe(status: string): boolean {
   return ['success', 'operational', 'ok', 'unavailable', 'model_unavailable', 'degraded'].includes(status)

@@ -139,6 +139,7 @@ const account = {
   quality_rank_total: 3,
   scheduler_rank: 1,
   scheduler_rank_total: 3,
+  scheduler_explanation: { eligible: true, policy_label: '' },
   group_rank: 1,
   eligible: true,
 }
@@ -202,6 +203,11 @@ afterEach(() => {
 					eligible: true,
 					policy_label: '利润优先',
 					effective_weights: { quality: 60, cost: 40 },
+					effective_facts: [
+						{ label: '上游成本权重', value: '3' },
+						{ label: '会话粘性权重', value: '1' },
+					],
+					model_quota_parity: 'unknown',
 					candidate_total: 9,
 					candidate_scope: '当前分组',
 					snapshot_at: '2026-08-26T00:01:00Z',
@@ -228,8 +234,47 @@ afterEach(() => {
 		expect(explanation.text()).toContain('利润优先')
 		expect(explanation.text()).toContain('成本 12 / 25')
 		expect(explanation.text()).toContain('候选数 9')
+		expect(explanation.text()).toContain('上游成本权重 3')
+		expect(explanation.text()).toContain('会话粘性权重 1')
+		expect(explanation.text()).toContain('模型额度一致性未知（监控请求未指定模型）')
+		expect(explanation.text()).not.toContain('upstream_cost')
+		expect(explanation.text()).not.toContain('3%')
 		expect(explanation.text()).toContain('符合调度条件')
 		expect(explanation.text()).toContain('2026')
+	})
+
+	it('hides scheduler UI outside a concrete supported group scheduler context', () => {
+		const globalWrapper = mountCard({ rankingScope: 'global', account: { ...account, scheduler_unavailable: true } })
+		expect(globalWrapper.find('[data-test="scheduler-column"]').exists()).toBe(false)
+		expect(globalWrapper.find('[data-test="ranking-reason"]').exists()).toBe(false)
+		expect(globalWrapper.find('[data-test="ranking-explanation-toggle"]').exists()).toBe(false)
+
+		const unsupportedWrapper = mountCard({
+			rankingScope: 'group',
+			account: { ...account, platform: 'claude', scheduler_explanation: null, scheduler_unavailable: true },
+		})
+		expect(unsupportedWrapper.find('[data-test="scheduler-column"]').exists()).toBe(false)
+		expect(unsupportedWrapper.find('[data-test="ranking-reason"]').exists()).toBe(false)
+		expect(unsupportedWrapper.find('[data-test="ranking-explanation-toggle"]').exists()).toBe(false)
+	})
+
+	it('shows explicit scheduler unavailability only for a supported group row', () => {
+		const wrapper = mountCard({
+			rankingScope: 'group',
+			account: { ...account, scheduler_explanation: null, scheduler_rank: null, scheduler_unavailable: true },
+		})
+
+		expect(wrapper.get('[data-test="scheduler-column"]').text()).toContain('调度投影暂不可用')
+		expect(wrapper.get('[data-test="scheduler-rank"]').text()).toContain('暂不可用')
+	})
+
+	it('does not invent a ranking reason when the server provides no reason or unavailable state', () => {
+		const wrapper = mountCard({
+			rankingScope: 'group',
+			account: { ...account, scheduler_explanation: { eligible: true, policy_label: '利润优先' }, scheduler_unavailable: false },
+		})
+
+		expect(wrapper.find('[data-test="ranking-reason"]').exists()).toBe(false)
 	})
 
 	it('keeps the row safely stacked until the desktop content can fit the wide grid', () => {

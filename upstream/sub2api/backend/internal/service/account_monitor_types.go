@@ -70,6 +70,7 @@ type AccountMonitorGroup struct {
 	ActiveAccountCount      int64                        `json:"active_account_count"`
 	RateLimitedAccountCount int64                        `json:"rate_limited_account_count"`
 	CustomerVisible         bool                         `json:"customer_visible"`
+	RequirePrivacySet       bool                         `json:"require_privacy_set"`
 	NativeOrder             int                          `json:"native_order"`
 	ScoreWeights            AccountMonitorScoreWeights   `json:"score_weights"`
 	OperationalState        string                       `json:"operational_state"`
@@ -149,17 +150,26 @@ type AccountMonitorQualityExplanation struct {
 }
 
 type AccountMonitorSchedulerExplanation struct {
-	Rank               *int                     `json:"rank,omitempty"`
-	RankTotal          int                      `json:"rank_total,omitempty"`
-	CandidateTotal     int                      `json:"candidate_total,omitempty"`
-	Eligible           bool                     `json:"eligible"`
-	PolicyKey          string                   `json:"policy_key,omitempty"`
-	PolicyLabel        string                   `json:"policy_label"`
-	EffectiveWeights   map[string]float64       `json:"effective_weights,omitempty"`
-	CandidateScope     string                   `json:"candidate_scope,omitempty"`
-	SnapshotAt         *time.Time               `json:"snapshot_at,omitempty"`
-	PrimaryReasonCode  AccountMonitorReasonCode `json:"primary_reason_code,omitempty"`
-	PrimaryReasonLabel string                   `json:"primary_reason_label,omitempty"`
+	Rank           *int   `json:"rank,omitempty"`
+	RankTotal      int    `json:"rank_total,omitempty"`
+	CandidateTotal int    `json:"candidate_total,omitempty"`
+	Eligible       bool   `json:"eligible"`
+	PolicyKey      string `json:"policy_key,omitempty"`
+	PolicyLabel    string `json:"policy_label"`
+	// EffectiveWeights is retained for in-process compatibility. It is not
+	// serialized because its keys are scheduler implementation details.
+	EffectiveWeights   map[string]float64            `json:"-"`
+	EffectiveFacts     []AccountMonitorSchedulerFact `json:"effective_facts,omitempty"`
+	ModelQuotaParity   string                        `json:"model_quota_parity,omitempty"`
+	CandidateScope     string                        `json:"candidate_scope,omitempty"`
+	SnapshotAt         *time.Time                    `json:"snapshot_at,omitempty"`
+	PrimaryReasonCode  AccountMonitorReasonCode      `json:"primary_reason_code,omitempty"`
+	PrimaryReasonLabel string                        `json:"primary_reason_label,omitempty"`
+}
+
+type AccountMonitorSchedulerFact struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 type AccountMonitorGroupAccount struct {

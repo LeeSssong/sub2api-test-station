@@ -311,10 +311,11 @@ func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantinedAt(ctx context.Cont
 
 func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantinedAtReadOnly(ctx context.Context, account *Account, now time.Time) bool {
 	proxyID, ok := openAIProxyStreamCircuitProxyID(account)
-	if !ok || openAIProxyStreamQuarantineBypassed(ctx) || s == nil || s.openaiProxyStreamCircuit == nil {
+	if !ok || openAIProxyStreamQuarantineBypassed(ctx) || s == nil {
 		return false
 	}
-	return s.openaiProxyStreamCircuit.isBlockedReadOnly(proxyID, now)
+	circuit := s.getOpenAIProxyStreamCircuit()
+	return circuit != nil && circuit.isBlockedReadOnly(proxyID, now)
 }
 
 // logOpenAIProxyStreamQuarantineFailOpen emits a rate-limited warning when a

@@ -42,18 +42,22 @@ func (r *quotaWalletRepository) WithLockedWallet(ctx context.Context, userID int
 	if userID <= 0 {
 		return service.ErrQuotaWalletNotFound
 	}
-	tx, err := r.client.Tx(ctx)
-	owned := err == nil
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-	if err == nil {
+	// Redemption and other composite writes pass an Ent transaction through
+	// context. Reuse it instead of attempting a nested BEGIN; the caller owns
+	// commit/rollback for an ambient transaction.
+	tx := dbent.TxFromContext(ctx)
+	owned := tx == nil
+	if owned {
+		var txErr error
+		tx, txErr = r.client.Tx(ctx)
+		if txErr != nil {
+			return txErr
+		}
 		defer func() { _ = tx.Rollback() }()
 		ctx = dbent.NewTxContext(ctx, tx)
-	} else if existing := dbent.TxFromContext(ctx); existing != nil {
-		tx = existing
 	}
 	c := tx.Client()
+	var err error
 	// Lock the user first, so two initializers cannot copy different legacy balances.
 	var legacy float64
 	if err := scanOne(ctx, c, `SELECT balance FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, []any{userID}, &legacy); err != nil {

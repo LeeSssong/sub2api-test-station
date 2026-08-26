@@ -866,12 +866,16 @@ func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount flo
 
 func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id int64, delta float64) error {
 	if r.quotaWallet != nil {
-		before, err := r.quotaWallet.GetSummary(ctx, id)
-		if err != nil {
+		if delta >= 0 {
+			_, err := r.quotaWallet.LegacyAdjust(ctx, service.LegacyBalanceAdjustmentInput{UserID: id, Mode: "add", AmountUSD: decimal.NewFromFloat(delta), ReferenceType: "redeem"})
 			return err
 		}
-		if delta >= 0 {
-			_, err = r.quotaWallet.LegacyAdjust(ctx, service.LegacyBalanceAdjustmentInput{UserID: id, Mode: "add", AmountUSD: decimal.NewFromFloat(delta), ReferenceType: "redeem"})
+		if adjuster, ok := r.quotaWallet.(service.RedeemBalanceAdjuster); ok {
+			_, err := adjuster.AdjustRedeemBalance(ctx, id, decimal.NewFromFloat(delta))
+			return err
+		}
+		before, err := r.quotaWallet.GetSummary(ctx, id)
+		if err != nil {
 			return err
 		}
 		// Redeem's historical floor-at-zero behavior is retained. Negative

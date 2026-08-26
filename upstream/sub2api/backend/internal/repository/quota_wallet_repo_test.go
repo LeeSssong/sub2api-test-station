@@ -83,3 +83,29 @@ func TestQuotaWalletRepositoryReplayPreservesConsumptionSplit(t *testing.T) {
 	require.True(t, result.GiftConsumedUSD.IsZero())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestQuotaWalletRepositoryReusesAmbientTransaction(t *testing.T) {
+	r, mock, cleanup := newQuotaRepoMock(t)
+	defer cleanup()
+
+	mock.ExpectBegin()
+	tx, err := r.client.Tx(context.Background())
+	require.NoError(t, err)
+	txCtx := dbent.NewTxContext(context.Background(), tx)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT balance FROM users WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`)).
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow("5"))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO user_wallets (user_id,cash_balance_cny,paid_quota_balance_usd,gift_quota_balance_usd,version,created_at,updated_at) VALUES ($1,0,$2,0,1,NOW(),NOW()) ON CONFLICT (user_id) DO NOTHING`)).
+		WithArgs(int64(7), 5.0).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id,user_id,cash_balance_cny,paid_quota_balance_usd,gift_quota_balance_usd,version,updated_at FROM user_wallets WHERE user_id=$1 FOR UPDATE`)).
+		WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "cash", "paid", "gift", "version", "updated_at"}).AddRow(1, 7, "0", "5", "0", 1, time.Now()))
+	called := false
+	err = r.WithLockedWallet(txCtx, 7, func(_ context.Context, _ *service.QuotaWallet) error {
+		called = true
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, called)
+	mock.ExpectRollback()
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}

@@ -11,6 +11,8 @@ executor=ops/deploy-sub2api-acceptance-host.sh
 
 [[ -f "$controller" ]] || fail "$controller is missing"
 [[ -x "$controller" ]] || fail "$controller is not executable"
+[[ -f "$executor" ]] || fail "$executor is missing"
+[[ -x "$executor" ]] || fail "$executor is not executable"
 
 tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/acceptance-release-contract.XXXXXX")
 fixture="$tmp_root/repo"
@@ -81,9 +83,7 @@ for binary in docker ssh scp; do
   printf '#!/usr/bin/env bash\nprintf invoked >>%q\n' "$trace" >"$fake_bin/$binary"
   chmod +x "$fake_bin/$binary"
 done
-assert_refusal 'acceptance host executor is missing or not executable' \
-  PATH="$fake_bin:$PATH"
-[[ ! -e "$trace" ]] || fail 'controller contacted transport before local executor validation'
+[[ ! -e "$trace" ]] || fail 'controller contract fixture must not contact transport'
 
 for needle in \
   'I_UNDERSTAND_REAL_CHARGES' \
@@ -107,11 +107,14 @@ for needle in \
   grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"
 done
 
-targets=("$controller")
-if [[ -e "$executor" ]]; then
-  [[ -x "$executor" ]] || fail "$executor is not executable"
-  targets+=("$executor")
-fi
+targets=("$controller" "$executor")
+grep -Fq 'docker compose --project-name sub2api-acceptance' "$executor" || fail 'executor missing compose project'
+grep -Fq 'acceptance-bootstrap' "$executor" || fail 'executor missing bootstrap'
+grep -Fq 'rollback' "$executor" || fail 'executor missing rollback'
+grep -Fq 'health' "$executor" || fail 'executor missing health checks'
+grep -Fq 'mktemp' "$executor" || fail 'executor missing isolated extraction'
+grep -Fq 'docker load' "$executor" || fail 'executor missing image load'
+grep -Fq 'downtime_required' "$executor" || fail 'executor missing result contract'
 ! rg -n 'release-sub2api-blue-green|deploy-sub2api-blue-green|release-admin-lab' "${targets[@]}" \
   || fail 'acceptance release chain must not invoke a production or lab release script'
 

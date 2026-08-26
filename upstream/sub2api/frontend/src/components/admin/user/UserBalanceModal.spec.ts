@@ -70,4 +70,18 @@ describe('UserBalanceModal', () => {
     expect(showError).toHaveBeenCalledWith('quota wallet persistence failed')
     expect(showError).not.toHaveBeenCalledWith('common.error')
   })
+
+  it('shows refreshed quota summary rather than the stale users-list balance', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user: { ...user, balance: 0.33 }, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(getUserQuotaSummary).toHaveBeenCalledWith(1)
+    expect(wrapper.text()).toContain('$21.00')
+    expect(wrapper.text()).not.toContain('$0.33')
+  })
 })

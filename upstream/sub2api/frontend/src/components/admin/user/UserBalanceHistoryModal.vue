@@ -31,7 +31,7 @@
           <div class="flex-shrink-0 text-right">
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentBalance') }}</p>
             <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ user.balance?.toFixed(2) || '0.00' }}
+              {{ quotaSummary ? `$${formatBalance(Number(quotaSummary.total_quota_balance_usd))}` : '—' }}
             </p>
           </div>
         </div>
@@ -191,7 +191,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type BalanceHistoryItem, type QuotaLedgerEntry } from '@/api/admin'
+import { adminAPI, type BalanceHistoryItem, type QuotaLedgerEntry, type QuotaSummary } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -214,6 +214,7 @@ const quotaHistory = ref<QuotaLedgerEntry[]>([])
 const quotaLoading = ref(false)
 const quotaTotal = ref(0)
 const quotaPage = ref(1)
+const quotaSummary = ref<QuotaSummary | null>(null)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
 
@@ -234,9 +235,29 @@ watch(() => props.show, (v) => {
     typeFilter.value = ''
     activeTab.value = 'legacy'
     quotaHistory.value = []
+    quotaSummary.value = null
     loadHistory(1)
+    void loadQuotaSummary()
   }
 })
+
+const loadQuotaSummary = async () => {
+  if (!props.user) return
+  try {
+    quotaSummary.value = await adminAPI.users.getUserQuotaSummary(props.user.id)
+  } catch {
+    quotaSummary.value = null
+  }
+}
+
+const formatBalance = (value: number) => {
+  if (value === 0) return '0.00'
+  const formatted = value.toFixed(8).replace(/\.?0+$/, '')
+  const parts = formatted.split('.')
+  if (parts.length === 1) return formatted + '.00'
+  if (parts[1].length === 1) return formatted + '0'
+  return formatted
+}
 
 const loadHistory = async (page: number) => {
   if (!props.user) return

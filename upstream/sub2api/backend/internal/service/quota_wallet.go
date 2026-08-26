@@ -141,6 +141,12 @@ type QuotaWalletService interface {
 	LegacyAdjust(context.Context, LegacyBalanceAdjustmentInput) (QuotaMutationResult, error)
 }
 
+// RedeemBalanceAdjuster provides the historical floor-at-zero semantics for
+// negative redeem codes without a read-then-write race.
+type RedeemBalanceAdjuster interface {
+	AdjustRedeemBalance(context.Context, int64, decimal.Decimal) (QuotaMutationResult, error)
+}
+
 type quotaWalletService struct{ repo QuotaWalletRepository }
 
 func NewQuotaWalletService(repo QuotaWalletRepository) QuotaWalletService {
@@ -262,6 +268,22 @@ func (s *quotaWalletService) LegacyAdjust(ctx context.Context, in LegacyBalanceA
 		}
 		return mutationResult(w, decimal.Zero, in.AmountUSD, decimal.Zero, decimal.Zero, decimal.Zero), nil
 	}, QuotaRecordLegacyBalanceAdjust, in.ReferenceType, in.ReferenceID, in.Note, in.OperatorID)
+}
+
+// AdjustRedeemBalance applies a redeem balance delta while holding the wallet
+// row lock. Negative deltas only reduce paid quota and clamp at zero; gift
+// quota remains untouched to preserve the legacy redeem contract.
+func (s *quotaWalletService) AdjustRedeemBalance(ctx context.Context, userID int64, delta decimal.Decimal) (QuotaMutationResult, error) {
+	if delta.IsZero() {
+		return QuotaMutationResult{}, ErrQuotaInvalidAmount
+	}
+	return s.mutate(ctx, userID, "", quotaRequestFingerprint(QuotaRecordLegacyBalanceAdjust, "redeem_floor", delta), func(w *QuotaWallet) (QuotaMutationResult, error) {
+		paid := w.PaidQuotaBalanceUSD.Add(delta)
+		if paid.IsNegative() {
+			paid = decimal.Zero
+		}
+		return mutationResult(w, decimal.Zero, paid.Sub(w.PaidQuotaBalanceUSD), decimal.Zero, decimal.Zero, decimal.Zero), nil
+	}, QuotaRecordLegacyBalanceAdjust, "redeem", "", "", nil)
 }
 
 func quotaRequestFingerprint(parts ...any) string {

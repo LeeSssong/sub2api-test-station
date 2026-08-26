@@ -88,3 +88,17 @@ func TestQuotaWalletLegacySetCannotRemoveGift(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestQuotaWalletAdjustRedeemBalanceClampsPaidQuotaWithoutConsumingGift(t *testing.T) {
+	f := &quotaRepoFake{wallet: QuotaWallet{UserID: 1, PaidQuotaBalanceUSD: dec("2"), GiftQuotaBalanceUSD: dec("5")}}
+	result, err := NewQuotaWalletService(f).(RedeemBalanceAdjuster).AdjustRedeemBalance(context.Background(), 1, dec("-9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Summary.PaidQuotaBalanceUSD.IsZero() || !result.Summary.GiftQuotaBalanceUSD.Equal(dec("5")) {
+		t.Fatalf("unexpected redeem floor result: %+v", result.Summary)
+	}
+	if !f.wallet.PaidQuotaBalanceUSD.IsZero() || !f.wallet.GiftQuotaBalanceUSD.Equal(dec("5")) {
+		t.Fatalf("wallet mutation consumed gift quota: %+v", f.wallet)
+	}
+}

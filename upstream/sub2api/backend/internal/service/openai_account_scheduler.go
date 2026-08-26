@@ -163,6 +163,7 @@ type OpenAIAccountSchedulerMetricsSnapshot struct {
 
 type OpenAIAccountScheduler interface {
 	Select(ctx context.Context, req OpenAIAccountScheduleRequest) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error)
+	Project(context.Context, OpenAIAccountSchedulerProjectionRequest) (*OpenAIAccountSchedulerProjection, error)
 	ReportResult(accountID int64, success bool, firstTokenMs *int)
 	ReportSwitch()
 	SnapshotMetrics() OpenAIAccountSchedulerMetricsSnapshot
@@ -181,6 +182,7 @@ type openAIAccountSchedulerMetrics struct {
 type openAIAccountLoadPlan struct {
 	allCandidates             []openAIAccountCandidateScore
 	candidates                []openAIAccountCandidateScore
+	preTopKCandidates         []openAIAccountCandidateScore
 	staleSnapshotCompactRetry []openAIAccountCandidateScore
 	selectionOrder            []openAIAccountCandidateScore
 	candidateCount            int
@@ -1126,6 +1128,16 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	filtered []*Account,
 	loadMap map[int64]*AccountLoadInfo,
 ) openAIAccountLoadPlan {
+	return s.buildOpenAIAccountLoadPlanAt(ctx, req, filtered, loadMap, time.Now())
+}
+
+func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAt(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	filtered []*Account,
+	loadMap map[int64]*AccountLoadInfo,
+	now time.Time,
+) openAIAccountLoadPlan {
 	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
 	for _, account := range filtered {
 		loadInfo, loadKnown := loadMap[account.ID]
@@ -1208,20 +1220,10 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	}
 	plan.loadSkew = calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
 
-	fairness := defaultOpenAISchedulerFairnessSettings()
-	weights := s.service.openAIWSSchedulerWeightsForRequest(ctx)
-	configuredTopK := s.service.openAIWSLBTopKForRequest(ctx)
-	if s.service != nil {
-		runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
-		fairness = resolveOpenAISchedulerFairnessForGroup(runtime.fairness, valueOrZero(req.GroupID))
-		if policy, ok := runtime.groupPolicies[valueOrZero(req.GroupID)]; ok {
-			weights, fairness = applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
-			if policy.Values.TopK > 0 {
-				configuredTopK = policy.Values.TopK
-			}
-		}
-	}
-	now := time.Now()
+	resolvedPolicy := s.resolveOpenAIAccountSchedulerPolicy(ctx, valueOrZero(req.GroupID))
+	fairness := resolvedPolicy.fairness
+	weights := resolvedPolicy.weights
+	configuredTopK := resolvedPolicy.topK
 	upstreamCostFactors := map[int64]float64(nil)
 	if req.UseUpstreamTokenCost && weights.UpstreamCost > 0 {
 		accounts := make([]*Account, 0, len(candidates))
@@ -1315,6 +1317,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 			}
 		}
 	}
+	plan.preTopKCandidates = append([]openAIAccountCandidateScore(nil), candidates...)
 	plan.eligibleCount = len(candidates)
 	if configuredTopK <= 0 {
 		configuredTopK = 1
@@ -1336,7 +1339,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 			}
 		}
 		if fairness.CandidatePoolMode == OpenAISchedulerCandidatePoolModeHybrid && !req.StickyWeighted {
-			candidates = appendOldestStarvedOpenAICandidate(candidates, eligibleCandidates, fairness.StarvationThresholdSeconds, time.Now())
+			candidates = appendOldestStarvedOpenAICandidate(candidates, eligibleCandidates, fairness.StarvationThresholdSeconds, now)
 		}
 	}
 	plan.candidates = candidates

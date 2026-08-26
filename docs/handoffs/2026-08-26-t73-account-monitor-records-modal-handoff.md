@@ -3,9 +3,11 @@
 ## Candidate
 
 - Task: T73 account detection records modal and dual-evidence search.
-- Baseline: `main@6d30ac9ef5526aa6860969baf6806ddd604bf8bc`.
+- Original baseline: `main@6d30ac9ef5526aa6860969baf6806ddd604bf8bc`.
+- Refreshed baseline: `main@dd158600949dd65d196fd3511495791f3e24b327`.
+- Refreshed candidate before this handoff update: `76a3a956a`.
 - Branch: `codex/t73-account-monitor-modal`.
-- State: `READY_FOR_ROOT_REVIEW` after this candidate is committed.
+- State: `READY_FOR_ROOT_REVIEW`; the user has authorized production deployment through the root release controller.
 
 ## Delivered
 
@@ -19,7 +21,7 @@
 
 - `pnpm vitest run src/components/admin/account-monitor/AccountModelDetectionHistoryPanel.spec.ts src/components/admin/account-monitor/AccountMonitorCard.spec.ts`: 60 passed.
 - `pnpm typecheck`: passed.
-- `pnpm build`: passed; existing Browserslist and chunking warnings only.
+- `pnpm build`: passed after the `dd1586009` refresh; existing Browserslist and chunking warnings only.
 - `go test ./internal/handler/admin ./internal/service -run 'AccountModelDetection|DetectionHistory' -count=1`: passed.
 - `go build ./cmd/server`: passed.
 - `gofmt -d` for changed Go files and `git diff --check`: clean.
@@ -29,5 +31,5 @@
 
 - No migration, configuration, dependency, or production-data change.
 - Expected `downtime_required=false`; final release preflight remains the root controller's responsibility.
-- Do not merge, push, or deploy while T71 remains in `VERIFYING` and T72 occupies the root-review queue.
+- T71 is frozen and T72/T74 are deployed, so the release lane is available for T73.
 - Rollback is a revert of the candidate commit after integration; no data rollback is required.

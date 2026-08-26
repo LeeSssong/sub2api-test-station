@@ -2,6 +2,7 @@
 
 ## 最新发布更新（2026-08-26）
 
+- **T75 管理员余额摘要实时投影修复**：状态 `IMPLEMENTING`。生产确认 `290435516@qq.com` 的 `users.balance=13.22523576`、旧钱包合计 `20.57804890`；差异来自 T74 只在下一次扣费时校准旧钱包，而管理员弹窗当前直接读取旧钱包。T75 将 `/quota-summary` 改为只读联查原生实时余额和钱包分量：总余额严格等于 `users.balance`，赠送分量不超过非负实时余额，剩余为付费分量；无钱包时同样只读返回，不因查看而初始化钱包。保留 T74 后续自然消费的审计式校准，不批量写历史余额、不改账务、无迁移和配置变化。基线 `main@806777cba`，候选 `codex/t75-quota-summary-runtime-projection`；直接相关测试与构建通过后由根总控合并、推送并按 `downtime_required=false` 直接蓝绿发布。
 - **T74 原生扣费与充值额度账本一致性修复**：已部署生效（DONE）。根 `main@980310a423b173b0887c86e27352c78f816efced`、tree `64a4f83a4e0272237cb1be6919f37b8646a23786` 已推送；两个同一不可变镜像的宿主记录 `/var/lib/sub2api/release-records/20260826T100345Z-production-2243157.json`、`20260826T100456Z-production-2248670.json` 均为 `succeeded/promoted`、`downtime_required=false`。公网三项健康均 200，API 双槽与 worker 均健康且绑定 T74 source/tree/migration hash；自然请求已验证 `xuebii@qq.com` 在同一事务产生 `migration_projection` 和 `usage_consumption`，运行时余额与钱包总额一致为 `129.44331171`。未直接补款、未批量改历史余额；生产证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-26-main-980310a42-t74-billing-wallet-sync-production.json`。
 - **T72 兑换码事务修复**：已合入、推送并部署生效，根 `main@37d7467ba1e0ef987d718e44fa1abc181602990e`，tree `4fedefae5f5ef02990a25d06441b22552499a36f`；预加载蓝绿记录 `/var/lib/sub2api/release-records/20260826T093251Z-production-2173135.json` 为 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`，公网三项健康均 200。生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 只读仍为 `id=44/status=unused`，关联 `redeem_credit` 账本 0 条，未擅自为任意用户入账。
 - **T71**：因缺少管理员登录态将线上专项验收冻结为只读证据，候选 worktree/分支保留，未明确解冻前不继续写入、部署或清理；发布单车道转交 T72。

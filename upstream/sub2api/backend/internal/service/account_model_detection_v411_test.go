@@ -40,6 +40,19 @@ func TestEnqueueImmediateCreatesManualLowRunWithReason(t *testing.T) {
 	}
 }
 
+func TestCompleteRunPreservesRunMetadataWhenDetectionFailsBeforeSidecar(t *testing.T) {
+	repo := &executionDetectionRepoStub{}
+	svc := NewAccountModelDetectionService(repo, nil, nil)
+	run := AccountModelDetectionRun{ID: "run-1", Profile: AccountModelDetectionProfileMedium, PlannedRequests: 49}
+	if err := svc.completeRun(context.Background(), run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "detector_unavailable", "检测器不可用"); err != nil {
+		t.Fatal(err)
+	}
+	completion := repo.completion("run-1")
+	if completion.response.Profile != AccountModelDetectionProfileMedium || completion.response.PlannedRequests != 49 || completion.response.EvidenceState != AccountModelDetectionEvidenceUnavailable {
+		t.Fatalf("completion=%#v, want run metadata and unavailable evidence", completion)
+	}
+}
+
 func TestDetectionHistoryPageCursorFiltersWithoutDuplicates(t *testing.T) {
 	now := time.Date(2026, 8, 26, 2, 0, 0, 0, time.UTC)
 	repo := &detectionRepoStub{recent: []AccountModelDetectionRun{

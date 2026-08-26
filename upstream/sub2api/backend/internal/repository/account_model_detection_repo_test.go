@@ -167,3 +167,18 @@ func TestAccountModelDetectionRepositorySavesSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInferenceForLegacyQueuedRunRestoresTierMetadata(t *testing.T) {
+	run := service.AccountModelDetectionRun{Status: service.AccountModelDetectionStatusRunning, TriggerKind: "scheduled", SlotKey: ptrString("2026-08-26T00:00")}
+	if got := inferredQueuedDetectionProfile(run); got != service.AccountModelDetectionProfileMedium {
+		t.Fatalf("profile=%q, want medium", got)
+	}
+	if got := inferredQueuedDetectionMode(run); got != service.AccountModelDetectionModeMonitor {
+		t.Fatalf("mode=%q, want monitor", got)
+	}
+	if got := inferredDetectionPlannedRequests(service.AccountModelDetectionProfileMedium); got != 49 {
+		t.Fatalf("planned=%d, want 49", got)
+	}
+}
+
+func ptrString(value string) *string { return &value }

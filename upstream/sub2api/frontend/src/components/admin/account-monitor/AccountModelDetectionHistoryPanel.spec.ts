@@ -19,9 +19,27 @@ vi.mock('vue-i18n', async () => {
     'admin.accounts.modelDetection.loadMore': '加载更多',
     'admin.accounts.modelDetection.loading': '加载中',
     'admin.accounts.modelDetection.profile': '档位',
+    'admin.accounts.modelDetection.profileNames.low': 'low',
+    'admin.accounts.modelDetection.profileNames.medium': 'medium',
+    'admin.accounts.modelDetection.profileNames.high': 'high',
+    'admin.accounts.modelDetection.profileNames.unknown': '历史记录',
+    'admin.accounts.modelDetection.modeNames.monitor': 'monitor',
+    'admin.accounts.modelDetection.modeNames.manual': 'manual',
+    'admin.accounts.modelDetection.modeNames.escalation': 'escalation',
+    'admin.accounts.modelDetection.modeNames.historical': 'historical',
+    'admin.accounts.modelDetection.reasonValue.model_conflict': 'model_conflict',
+    'admin.accounts.modelDetection.historyEyebrow': 'MODEL EVIDENCE',
+    'admin.accounts.modelDetection.historySummaryTitle': '检测轨迹',
+    'admin.accounts.modelDetection.historySummaryHint': '查看每次检测',
+    'admin.accounts.modelDetection.historyCountSuffix': ' 条',
+    'admin.accounts.modelDetection.statusFilter': '结论',
+    'admin.accounts.modelDetection.profileFilter': '档位',
+    'admin.accounts.modelDetection.time': '时间',
+    'admin.accounts.modelDetection.statusLabel': '结论',
     'admin.accounts.modelDetection.mode': '模式',
     'admin.accounts.modelDetection.reason': '触发原因',
     'admin.accounts.modelDetection.samples': '有效样本',
+    'admin.accounts.modelDetection.samplesUnavailable': '历史记录',
     'admin.accounts.modelDetection.juice': 'Juice',
     'admin.accounts.modelDetection.fingerprint': '行为指纹',
     'admin.accounts.modelDetection.details': '查看详情',
@@ -48,7 +66,7 @@ describe('AccountModelDetectionHistoryPanel', () => {
     const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
     await flushPromises()
     expect(history).toHaveBeenCalledWith(7, expect.objectContaining({ limit: 25 }))
-    expect(wrapper.get('[data-test="detection-history-panel"]').text()).toContain('档位 high')
+    expect(wrapper.get('[data-test="detection-history-panel"]').text()).toContain('high')
     expect(wrapper.get('[data-test="detection-history-panel"]').text()).toContain('异常')
     expect(wrapper.get('[data-test="detection-history-panel"]').text()).not.toContain('sk-secret')
     expect(wrapper.get('[data-test="detection-history-panel"]').text()).not.toContain('hidden')
@@ -63,5 +81,19 @@ describe('AccountModelDetectionHistoryPanel', () => {
     await wrapper.get('[data-test="detection-history-status-filter"]').setValue('abnormal')
     await flushPromises()
     expect(history).toHaveBeenLastCalledWith(7, expect.objectContaining({ status: 'abnormal' }))
+  })
+
+  it('renders legacy rows as historical records instead of zero-sample evidence', async () => {
+    history.mockResolvedValueOnce({ items: [{
+      run_id: 'legacy-1', status: 'normal', source: 'historical', profile: 'unknown', mode: 'historical',
+      queued_at: '2026-08-26T00:00:00Z', finished_at: '2026-08-26T00:00:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    const text = wrapper.get('[data-test="detection-history-panel"]').text()
+    expect(text).toContain('历史记录')
+    expect(text).not.toContain('0/0')
+    expect(text).not.toContain('unknown')
+    expect(text).not.toContain('--')
   })
 })

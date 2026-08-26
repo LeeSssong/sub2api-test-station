@@ -171,6 +171,9 @@ func accountModelDetectionHasFinalEvidence(run AccountModelDetectionRun) bool {
 }
 
 func accountModelDetectionSummary(run AccountModelDetectionRun, source string) *AccountModelDetectionSummary {
+	if accountModelDetectionIsHistorical(run) && source == "current" {
+		source = "historical"
+	}
 	queued := run.QueuedAt
 	return &AccountModelDetectionSummary{
 		Status: run.Status, ModelID: run.ModelID, ClaimedModel: run.ClaimedModel,
@@ -181,6 +184,10 @@ func accountModelDetectionSummary(run AccountModelDetectionRun, source string) *
 		Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason, PlannedRequests: run.PlannedRequests,
 		ValidSamples: run.ValidSamples, EvidenceState: run.EvidenceState, FingerprintStatus: run.FingerprintStatus,
 	}
+}
+
+func accountModelDetectionIsHistorical(run AccountModelDetectionRun) bool {
+	return run.Profile == "" || run.Profile == AccountModelDetectionProfileUnknown || run.Mode == "" || run.Mode == AccountModelDetectionModeHistorical || run.EvidenceState == "" || run.EvidenceState == AccountModelDetectionEvidenceHistorical
 }
 
 func (s *AccountModelDetectionService) modelsForAccount(ctx context.Context, account *Account) (AccountModelDetectionModelsResponse, error) {
@@ -576,7 +583,7 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 	}
 	account, err := s.accounts.GetByID(ctx, run.AccountID)
 	if err != nil || account == nil || account.Type != AccountTypeAPIKey {
-		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "account_unavailable", "检测前账号已不可用")
+		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "account_unavailable", "检测前账号已不可用")
 		return
 	}
 	registered := nativeAccountTextModels(account)
@@ -586,22 +593,22 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 		if freshState == AccountModelDetectorStateUnconfigured {
 			errorCode = "detector_unconfigured"
 		}
-		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, errorCode, "检测服务不可用")
+		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, errorCode, "检测服务不可用")
 		return
 	}
 	if !containsString(registered, run.ModelID) || !containsString(freshCatalog, run.ModelID) {
-		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "model_unavailable", "检测模型已失效")
+		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "model_unavailable", "检测模型已失效")
 		return
 	}
 	apiKey, _ := account.Credentials["api_key"].(string)
 	if strings.TrimSpace(apiKey) == "" {
-		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "missing_api_key", "检测前未发现 API Key")
+		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "missing_api_key", "检测前未发现 API Key")
 		return
 	}
 	baseURL := account.GetBaseURL()
 	response, err := s.sidecar.Detect(ctx, AccountModelDetectionRequest{RunID: run.ID, DeclaredModel: run.ClaimedModel, RequestModel: run.ModelID, APIKey: apiKey, BaseURL: baseURL, Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason})
 	if err != nil {
-		_ = s.repo.Complete(ctx, run.ID, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "detector_unavailable", "检测器不可用")
+		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "detector_unavailable", "检测器不可用")
 		return
 	}
 	if response.Profile == "" {
@@ -617,7 +624,7 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 			response.EvidenceState = AccountModelDetectionEvidenceInsufficient
 		}
 	}
-	if err := s.repo.Complete(ctx, run.ID, response, "", ""); err != nil {
+	if err := s.completeRun(ctx, *run, response, "", ""); err != nil {
 		return
 	}
 	if run.Profile == AccountModelDetectionProfileMedium {
@@ -627,6 +634,25 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 			}
 		}
 	}
+}
+
+func (s *AccountModelDetectionService) completeRun(ctx context.Context, run AccountModelDetectionRun, response AccountModelDetectionResponse, errorCode, errorMessage string) error {
+	if response.Profile == "" {
+		response.Profile = run.Profile
+	}
+	if response.PlannedRequests == 0 {
+		response.PlannedRequests = run.PlannedRequests
+	}
+	if response.EvidenceState == "" {
+		if errorCode != "" {
+			response.EvidenceState = AccountModelDetectionEvidenceUnavailable
+		} else if response.Status == AccountModelDetectionStatusNormal || response.Status == AccountModelDetectionStatusAbnormal {
+			response.EvidenceState = AccountModelDetectionEvidenceComplete
+		} else {
+			response.EvidenceState = AccountModelDetectionEvidenceInsufficient
+		}
+	}
+	return s.repo.Complete(ctx, run.ID, response, errorCode, errorMessage)
 }
 
 func nativeAccountTextModels(account *Account) []string {

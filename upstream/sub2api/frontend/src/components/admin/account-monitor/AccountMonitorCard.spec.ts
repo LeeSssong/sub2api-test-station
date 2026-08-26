@@ -20,6 +20,7 @@ vi.mock('vue-i18n', async () => {
         'admin.accounts.modelDetection.observedAbnormal': '检测器观察到异常',
         'admin.accounts.modelDetection.viewRecent': '点击查看最近检测结果',
         'admin.accounts.modelDetection.historicalFallback': '当前证据不足，沿用最近一次最终检测结果',
+        'admin.accounts.modelDetection.historicalRecordHint': '历史记录：旧格式未保存档位与样本明细',
         'admin.accounts.monitor.historyFallback': '评分沿用最近一次有效结果',
         'admin.accounts.monitor.historyFallbackAt': '历史最终结果时间',
         'admin.accounts.modelDetection.title': '账号模型检测',
@@ -804,6 +805,22 @@ describe('AccountMonitorCard', () => {
     await wrapper.get('[data-test="model-detection-status-row"]').trigger('click')
     expect(wrapper.get('[data-test="model-detection-history-fallback"]').text()).toContain('当前证据不足')
     expect(wrapper.get('[data-test="model-detection-history-fallback"]').text()).toContain('2026')
+  })
+
+  it('does not label a legacy detection row as a fresh normal result', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        model_detection: {
+          status: 'normal',
+          settings: { account_id: 113, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
+          model_options: [{ id: 'gpt-5.6-sol', supported: true, selected: true }],
+          recent: { status: 'normal', source: 'historical', finished_at: '2026-08-25T08:00:00Z' },
+        },
+      },
+    })
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).toContain('历史记录')
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).not.toContain('正常')
   })
 
   it('shows mapping evidence without confusing the catalog with the upstream response model', async () => {

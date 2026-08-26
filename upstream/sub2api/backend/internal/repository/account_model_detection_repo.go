@@ -221,15 +221,57 @@ func scanClaimedModelDetectionRun(row scanner) (service.AccountModelDetectionRun
 	run.PlannedRequests, run.ValidSamples = int(planned.Int64), int(valid.Int64)
 	run.EvidenceState, run.FingerprintStatus = evidence.String, fingerprintStatus.String
 	if run.Profile == "" {
-		run.Profile = service.AccountModelDetectionProfileUnknown
+		run.Profile = inferredQueuedDetectionProfile(run)
+	}
+	if run.PlannedRequests == 0 {
+		run.PlannedRequests = inferredDetectionPlannedRequests(run.Profile)
 	}
 	if run.Mode == "" {
-		run.Mode = service.AccountModelDetectionModeHistorical
+		run.Mode = inferredQueuedDetectionMode(run)
 	}
-	if run.EvidenceState == "" {
+	if run.EvidenceState == "" && run.Status != service.AccountModelDetectionStatusQueued && run.Status != service.AccountModelDetectionStatusRunning {
 		run.EvidenceState = service.AccountModelDetectionEvidenceHistorical
 	}
 	return run, nil
+}
+
+func inferredQueuedDetectionProfile(run service.AccountModelDetectionRun) string {
+	if run.Status != service.AccountModelDetectionStatusQueued && run.Status != service.AccountModelDetectionStatusRunning {
+		return service.AccountModelDetectionProfileUnknown
+	}
+	if run.TriggerKind == "manual" {
+		return service.AccountModelDetectionProfileLow
+	}
+	if run.SlotKey != nil {
+		return service.AccountModelDetectionProfileMedium
+	}
+	return service.AccountModelDetectionProfileHigh
+}
+
+func inferredQueuedDetectionMode(run service.AccountModelDetectionRun) string {
+	if run.Status != service.AccountModelDetectionStatusQueued && run.Status != service.AccountModelDetectionStatusRunning {
+		return service.AccountModelDetectionModeHistorical
+	}
+	if run.TriggerKind == "manual" {
+		return service.AccountModelDetectionModeManual
+	}
+	if run.SlotKey != nil {
+		return service.AccountModelDetectionModeMonitor
+	}
+	return service.AccountModelDetectionModeEscalation
+}
+
+func inferredDetectionPlannedRequests(profile string) int {
+	switch profile {
+	case service.AccountModelDetectionProfileLow:
+		return 19
+	case service.AccountModelDetectionProfileMedium:
+		return 49
+	case service.AccountModelDetectionProfileHigh:
+		return 158
+	default:
+		return 0
+	}
 }
 
 func scanFullModelDetectionRun(row scanner) (service.AccountModelDetectionRun, error) {

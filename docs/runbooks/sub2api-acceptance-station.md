@@ -17,6 +17,7 @@
 由 operator 在验收宿主准备以下互不复用生产的值：
 
 - 独立域名和 DNS 记录；域名不得使用主站域名，例如 api.xingqiaolab.top 或 shop.xingqiaolab.top。当前 Caddy 配置使用自动 HTTPS，网络策略必须允许证书签发与续期所需流量。
+- 独立验收宿主（不与主站复用 Docker daemon、80/443 端口、运行目录或 SSH 发布账户）；宿主部署目录必须位于 /opt/sub2api/acceptance-*。
 - 独立 SSH 用户、私钥和 known_hosts；宿主已允许该用户使用 sudo -n bash -s。
 - 独立支付商户/回调配置、上游账号与 API key、通知通道；这些凭据只写入验收站 env 或后台，不提交 Git。
 - 宿主防火墙仅允许管理人员来源以及 Caddy 自动 HTTPS 所需的证书验证来源访问 80/443，SSH 只允许管理来源；PostgreSQL、Redis、detector、API 和 worker 不发布宿主端口。DNS/防火墙限制是网络边界，不能由 backend_mode_enabled 替代。
@@ -29,7 +30,7 @@
     chmod 600 /secure/sub2api/acceptance.env
     stat -f '%Lp %N' /secure/sub2api/acceptance.env  # Linux 可用 stat -c '%a %n'
 
-ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME 必须为 sub2api-acceptance-network，ACCEPTANCE_DEPLOY_ROOT 必须是 /opt/sub2api/acceptance-<name>。三个真实 provider 标识不能包含 mock/lab 值，并必须保留 ACCEPTANCE_REAL_FLOW_ACK=I_UNDERSTAND_REAL_CHARGES。示例密码和域名不可直接部署。
+ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME 必须为 sub2api-acceptance-network，ACCEPTANCE_DEPLOY_ROOT 必须是 /opt/sub2api/acceptance-<name>。三个 `ACCEPTANCE_*_PROVIDER` 值只是发布前的真实集成声明，不能包含 mock/lab 值；真实支付商户、上游 API key、通知 webhook 等凭据仍需按 Sub 原生配置方式写入验收站 env 或后台，不能只填写声明值。必须保留 ACCEPTANCE_REAL_FLOW_ACK=I_UNDERSTAND_REAL_CHARGES。示例密码和域名不可直接部署。
 
 ## 发布验收站
 

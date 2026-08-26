@@ -46,30 +46,37 @@ type accountMonitorRepoStub struct {
 	loadGlobalScoreWeightsCalls int
 	aggregates                  map[int64]AccountMonitorAggregate
 	windowAggregates            map[int64]AccountMonitorWindowAggregate
+	groupWindowAggregates       map[int64]map[int64]AccountMonitorWindowAggregate
 	groupAggregates             map[int64]map[int64]AccountMonitorAggregate
 	aggregate                   AccountMonitorAggregate
 	groupAggregate              map[int64]AccountMonitorAggregate
 	groupAggregateIDs           map[int64][]int64
 	groupAggregatesErr          error
-	latest                      map[int64]AccountMonitorLatest
-	timelines                   map[int64][]AccountMonitorTimelinePoint
-	timelineIDs                 []int64
-	timelineLimit               int
-	aggregateIDs                []int64
-	probeSince                  time.Time
-	probeUntil                  time.Time
-	windowSince                 time.Time
-	windowUntil                 time.Time
-	aggregateCalls              []time.Time
-	aggregateResults            []map[int64]AccountMonitorAggregate
-	monitorV2Scopes             []MonitorV2GroupAccountScope
-	monitorV2FreshSince         time.Time
-	monitorV2Start              time.Time
-	monitorV2End                time.Time
-	monitorV2BucketSize         time.Duration
-	monitorV2Projection         map[int64]MonitorV2NativeGroupProjection
-	monitorV2ProjectionErr      error
-	deleteBeforeCalls           []time.Time
+	groupWindowAggregateCalls   []struct {
+		groupID    int64
+		accountIDs []int64
+		since      time.Time
+		until      time.Time
+	}
+	latest                 map[int64]AccountMonitorLatest
+	timelines              map[int64][]AccountMonitorTimelinePoint
+	timelineIDs            []int64
+	timelineLimit          int
+	aggregateIDs           []int64
+	probeSince             time.Time
+	probeUntil             time.Time
+	windowSince            time.Time
+	windowUntil            time.Time
+	aggregateCalls         []time.Time
+	aggregateResults       []map[int64]AccountMonitorAggregate
+	monitorV2Scopes        []MonitorV2GroupAccountScope
+	monitorV2FreshSince    time.Time
+	monitorV2Start         time.Time
+	monitorV2End           time.Time
+	monitorV2BucketSize    time.Duration
+	monitorV2Projection    map[int64]MonitorV2NativeGroupProjection
+	monitorV2ProjectionErr error
+	deleteBeforeCalls      []time.Time
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -106,9 +113,25 @@ func (s *accountMonitorRepoStub) ListWindowAggregates(_ context.Context, _ []int
 	return s.windowAggregates, nil
 }
 
+func (s *accountMonitorRepoStub) ListGroupWindowAggregates(_ context.Context, groupID int64, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error) {
+	s.groupWindowAggregateCalls = append(s.groupWindowAggregateCalls, struct {
+		groupID    int64
+		accountIDs []int64
+		since      time.Time
+		until      time.Time
+	}{groupID: groupID, accountIDs: append([]int64(nil), accountIDs...), since: since, until: until})
+	if s.groupWindowAggregates == nil {
+		return s.windowAggregates, nil
+	}
+	return s.groupWindowAggregates[groupID], nil
+}
+
 func (s *accountMonitorRepoStub) ListGroupAggregates(_ context.Context, groupID int64, _ []int64, _ time.Time) (map[int64]AccountMonitorAggregate, error) {
 	if s.groupAggregatesErr != nil {
 		return nil, s.groupAggregatesErr
+	}
+	if s.groupAggregates == nil {
+		return s.aggregates, nil
 	}
 	return s.groupAggregates[groupID], nil
 }
@@ -158,6 +181,20 @@ func (s *accountMonitorRepoStub) ProjectMonitorV2Groups(
 		return nil, s.monitorV2ProjectionErr
 	}
 	return s.monitorV2Projection, nil
+}
+
+type accountMonitorSchedulerProjectionStub struct {
+	byGroup map[int64]*OpenAIAccountSchedulerProjection
+	calls   []OpenAIAccountSchedulerProjectionRequest
+}
+
+func (s *accountMonitorSchedulerProjectionStub) Project(_ context.Context, req OpenAIAccountSchedulerProjectionRequest) (*OpenAIAccountSchedulerProjection, error) {
+	s.calls = append(s.calls, req)
+	return s.byGroup[req.GroupID], nil
+}
+
+type accountMonitorLegacyRepoAdapter struct {
+	AccountMonitorRepository
 }
 
 func (s *accountMonitorRepoStub) ListGroups(context.Context) ([]AccountMonitorGroup, error) {
@@ -320,6 +357,163 @@ func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
 	if page.SchemaVersion != AccountMonitorSchemaVersion {
 		t.Fatalf("schema version changed: %d", page.SchemaVersion)
 	}
+}
+
+func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScoped(t *testing.T) {
+	rate := 1.0
+	now := time.Now().UTC()
+	accounts := []Account{
+		{ID: 1, Name: "shared", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7, 8}},
+		{ID: 2, Name: "group-seven", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}},
+		{ID: 3, Name: "group-eight", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{8}},
+		{ID: 4, Name: "no-evidence", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}},
+	}
+	probe := func(ttft, latency float64) AccountMonitorAggregate {
+		return AccountMonitorAggregate{
+			SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1,
+			TTFTSampleCount: 3, LatencySampleCount: 3, TTFTP50MS: &ttft, LatencyP95MS: &latency,
+			LastCheckedAt: &now,
+		}
+	}
+	window := func(ttft, latency float64) AccountMonitorWindowAggregate {
+		return AccountMonitorWindowAggregate{
+			RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTSampleCount: 3, LatencySampleCount: 3,
+			TTFTP50MS: &ttft, LatencyP95MS: &latency, LastObservedAt: &now,
+		}
+	}
+	rank := func(value int) *int { return &value }
+	scheduler := &accountMonitorSchedulerProjectionStub{byGroup: map[int64]*OpenAIAccountSchedulerProjection{
+		7: {SnapshotAt: now, PolicyKey: "group_policy", PolicyLabel: "利润优先", EffectiveWeights: map[string]float64{"priority": 1}, CandidateCount: 3, Candidates: []OpenAIAccountSchedulerProjectionCandidate{
+			{AccountID: 1, Rank: rank(1), Eligible: true, PrimaryReasonCode: AccountMonitorReasonStrategy},
+			{AccountID: 2, Rank: rank(2), Eligible: true},
+			{AccountID: 4, Eligible: false, PrimaryReasonCode: AccountMonitorReasonNotEligible},
+		}},
+		8: {SnapshotAt: now, PolicyKey: "group_policy", PolicyLabel: "体验优先", EffectiveWeights: map[string]float64{"priority": 2}, CandidateCount: 2, Candidates: []OpenAIAccountSchedulerProjectionCandidate{
+			{AccountID: 3, Rank: rank(1), Eligible: true},
+			{AccountID: 1, Rank: rank(2), Eligible: true, PrimaryReasonCode: AccountMonitorReasonTieBreak},
+		}},
+	}}
+	repo := &accountMonitorRepoStub{
+		settings:      AccountMonitorSettings{IntervalSeconds: 300},
+		globalWeights: AccountMonitorScoreWeights{Cost: 0, Success: 45, TTFT: 35, Latency: 20},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			1: window(400, 800), 2: window(100, 200), 3: window(200, 300),
+		},
+		groupWindowAggregates: map[int64]map[int64]AccountMonitorWindowAggregate{
+			7: {1: window(100, 200), 2: window(4000, 50000)},
+			8: {1: window(5000, 60000), 3: window(100, 200)},
+		},
+		aggregates: map[int64]AccountMonitorAggregate{1: probe(100, 200), 2: probe(100, 200), 3: probe(100, 200), 4: probe(100, 200)},
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{
+			7: {1: probe(100, 200), 2: probe(4000, 50000)},
+			8: {1: probe(5000, 60000), 3: probe(100, 200)},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			1: {Status: "success", CheckedAt: now}, 2: {Status: "success", CheckedAt: now}, 3: {Status: "success", CheckedAt: now}, 4: {Status: "success", CheckedAt: now},
+		},
+		groups: []AccountMonitorGroup{
+			{ID: 7, Name: "seven", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
+			{ID: 8, Name: "eight", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
+		},
+	}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate))
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+
+	page, err := svc.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatalf("ListWindow() error = %v", err)
+	}
+	if len(scheduler.calls) != 2 || len(repo.groupWindowAggregateCalls) != 2 {
+		t.Fatalf("projection calls = %d, group window calls = %d", len(scheduler.calls), len(repo.groupWindowAggregateCalls))
+	}
+	if !scheduler.calls[0].SnapshotAt.Equal(page.ObservedAt) || !repo.groupWindowAggregateCalls[0].until.Equal(page.ObservedAt) || !repo.groupWindowAggregateCalls[1].until.Equal(page.ObservedAt) {
+		t.Fatalf("snapshot timestamps drifted: page=%s scheduler=%s group_until=%s/%s", page.ObservedAt, scheduler.calls[0].SnapshotAt, repo.groupWindowAggregateCalls[0].until, repo.groupWindowAggregateCalls[1].until)
+	}
+	byGroup := make(map[int64]AccountMonitorGroup)
+	for _, group := range page.Groups {
+		byGroup[group.ID] = group
+	}
+	sharedSeven := findAccountMonitorGroupAccount(t, byGroup[7].Accounts, 1)
+	sharedEight := findAccountMonitorGroupAccount(t, byGroup[8].Accounts, 1)
+	if sharedSeven.Evidence.TTFTP50MS == nil || sharedEight.Evidence.TTFTP50MS == nil || *sharedSeven.Evidence.TTFTP50MS == *sharedEight.Evidence.TTFTP50MS || sharedSeven.Evidence.LatencyP95MS == nil || sharedEight.Evidence.LatencyP95MS == nil || *sharedSeven.Evidence.LatencyP95MS == *sharedEight.Evidence.LatencyP95MS {
+		t.Fatalf("shared account evidence was not group-scoped: seven=%#v eight=%#v", sharedSeven.Evidence, sharedEight.Evidence)
+	}
+	if sharedSeven.QualityRank == nil || sharedEight.QualityRank == nil || *sharedSeven.QualityRank == *sharedEight.QualityRank {
+		t.Fatalf("shared account quality ranks = %#v and %#v, want different group ranks", sharedSeven.QualityRank, sharedEight.QualityRank)
+	}
+	if sharedSeven.SchedulerRank == nil || *sharedSeven.SchedulerRank != 1 || sharedEight.SchedulerRank == nil || *sharedEight.SchedulerRank != 2 {
+		t.Fatalf("shared account scheduler ranks = %#v and %#v", sharedSeven.SchedulerRank, sharedEight.SchedulerRank)
+	}
+	if sharedSeven.SchedulerRankTotal != 2 || sharedEight.SchedulerRankTotal != 2 || sharedSeven.SchedulerExplanation == nil || sharedSeven.SchedulerExplanation.RankTotal != 2 || sharedSeven.SchedulerExplanation.CandidateTotal != 3 {
+		t.Fatalf("scheduler rank totals = seven=%#v eight=%#v", sharedSeven.SchedulerExplanation, sharedEight.SchedulerExplanation)
+	}
+	if sharedSeven.SchedulerExplanation == nil || sharedSeven.SchedulerExplanation.PolicyLabel != "利润优先" || sharedEight.SchedulerExplanation == nil || sharedEight.SchedulerExplanation.PolicyLabel != "体验优先" {
+		t.Fatalf("scheduler explanations = %#v / %#v", sharedSeven.SchedulerExplanation, sharedEight.SchedulerExplanation)
+	}
+	if sharedSeven.QualityExplanation == nil || sharedSeven.QualityExplanation.Breakdown.Success.Max != 45 || sharedSeven.QualityExplanation.Breakdown.TTFT.Max != 20 || sharedSeven.QualityExplanation.Breakdown.Latency.Max != 20 {
+		t.Fatalf("quality explanation maxima = %#v", sharedSeven.QualityExplanation)
+	}
+	noEvidence := findAccountMonitorGroupAccount(t, byGroup[7].Accounts, 4)
+	if noEvidence.QualityScore != nil || noEvidence.QualityRank != nil || noEvidence.SchedulerRank != nil {
+		t.Fatalf("account without evidence fabricated projection: %#v", noEvidence)
+	}
+	global := findAccountMonitorAccount(t, page.Accounts, 1)
+	if global.QualityRank == nil || global.SchedulerRank != nil {
+		t.Fatalf("full-site row left global quality path: %#v", global)
+	}
+}
+
+func TestAccountMonitorListWindowDoesNotLeakGlobalQualityIntoLegacyGroupRows(t *testing.T) {
+	rate := 1.0
+	now := time.Now().UTC()
+	accounts := []Account{{ID: 1, Name: "shared", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}}}
+	windowTTFT, windowLatency := 100.0, 200.0
+	probeTTFT, probeLatency := 100.0, 200.0
+	baseRepo := &accountMonitorRepoStub{
+		settings:      AccountMonitorSettings{IntervalSeconds: 300},
+		globalWeights: AccountMonitorScoreWeights{Cost: 0, Success: 45, TTFT: 35, Latency: 20},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{1: {
+			RequestCount: 3, SuccessCount: 3, SuccessRate: 1, TTFTSampleCount: 3, LatencySampleCount: 3,
+			TTFTP50MS: &windowTTFT, LatencyP95MS: &windowLatency, LastObservedAt: &now,
+		}},
+		aggregates: map[int64]AccountMonitorAggregate{1: {
+			SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1,
+			TTFTSampleCount: 3, LatencySampleCount: 3, TTFTP50MS: &probeTTFT, LatencyP95MS: &probeLatency,
+			LastCheckedAt: &now,
+		}},
+		latest: map[int64]AccountMonitorLatest{1: {Status: "success", CheckedAt: now}},
+		groups: []AccountMonitorGroup{{ID: 7, Name: "seven", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights}},
+	}
+	svc := NewAccountMonitorService(&accountMonitorLegacyRepoAdapter{AccountMonitorRepository: baseRepo}, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate))
+
+	page, err := svc.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatalf("ListWindow() error = %v", err)
+	}
+	row := findAccountMonitorGroupAccount(t, page.Groups[0].Accounts, 1)
+	if row.Evidence.SampleCount != 0 || row.QualityScore != nil || row.QualityRank != nil || row.QualityExplanation != nil {
+		t.Fatalf("legacy group row leaked global quality evidence: %#v", row)
+	}
+}
+
+func findAccountMonitorGroupAccount(t *testing.T, rows []AccountMonitorGroupAccount, accountID int64) AccountMonitorGroupAccount {
+	for _, row := range rows {
+		if row.AccountID == accountID {
+			return row
+		}
+	}
+	t.Fatalf("account %d not found in group rows %#v", accountID, rows)
+	return AccountMonitorGroupAccount{}
+}
+
+func findAccountMonitorAccount(t *testing.T, rows []AccountMonitorAccount, accountID int64) AccountMonitorAccount {
+	for _, row := range rows {
+		if row.AccountID == accountID {
+			return row
+		}
+	}
+	t.Fatalf("account %d not found in rows %#v", accountID, rows)
+	return AccountMonitorAccount{}
 }
 
 type accountMonitorMultiplierStub struct {

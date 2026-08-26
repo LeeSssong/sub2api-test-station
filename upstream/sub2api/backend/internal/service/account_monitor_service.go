@@ -90,14 +90,16 @@ type accountMonitorRecommendationEvaluator func(
 ) *AccountMonitorGroupRecommendation
 
 type AccountMonitorService struct {
-	repo           AccountMonitorRepository
-	accountRepo    AccountMonitorAccountRepository
-	testService    *AccountTestService
-	usage          *AccountUsageService
-	multiplier     accountMonitorMultiplierResolver
-	costPricing    accountMonitorModelPricingReader
-	recommend      accountMonitorRecommendationEvaluator
-	modelDetection *AccountModelDetectionService
+	repo                AccountMonitorRepository
+	accountRepo         AccountMonitorAccountRepository
+	testService         *AccountTestService
+	usage               *AccountUsageService
+	multiplier          accountMonitorMultiplierResolver
+	costPricing         accountMonitorModelPricingReader
+	recommend           accountMonitorRecommendationEvaluator
+	modelDetection      *AccountModelDetectionService
+	schedulerProjection OpenAIAccountSchedulerProjectionProvider
+	concurrencyService  *ConcurrencyService
 
 	probeConnection accountMonitorProbeConnection
 	probeTimeout    time.Duration
@@ -111,6 +113,22 @@ type AccountMonitorService struct {
 func (s *AccountMonitorService) SetModelDetectionService(detector *AccountModelDetectionService) {
 	if s != nil {
 		s.modelDetection = detector
+	}
+}
+
+// SetOpenAIAccountSchedulerProjectionProvider attaches the scheduler-owned
+// read-only projection without changing legacy constructors.
+func (s *AccountMonitorService) SetOpenAIAccountSchedulerProjectionProvider(provider OpenAIAccountSchedulerProjectionProvider) {
+	if s != nil {
+		s.schedulerProjection = provider
+	}
+}
+
+// SetAccountMonitorConcurrencyService attaches the read-only load snapshot
+// source used to build scheduler projection requests.
+func (s *AccountMonitorService) SetAccountMonitorConcurrencyService(concurrency *ConcurrencyService) {
+	if s != nil {
+		s.concurrencyService = concurrency
 	}
 }
 
@@ -434,8 +452,9 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	}
 	recommendationAggregates := probeAggregates
 	historicalAggregates := map[int64]AccountMonitorAggregate(nil)
+	historicalSince := observedAt.Add(-7 * 24 * time.Hour)
 	if rangeValue != AccountMonitorRange7Days {
-		recommendationSince := observedAt.Add(-7 * 24 * time.Hour)
+		recommendationSince := historicalSince
 		recommendationAggregates, err = s.repo.ListAggregates(ctx, ids, recommendationSince, observedAt)
 		if err != nil {
 			slog.WarnContext(ctx, "account monitor recommendation probe aggregates unavailable", "error", err)
@@ -443,7 +462,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		}
 		historicalAggregates = recommendationAggregates
 	} else {
-		historicalSince := observedAt.Add(-30 * 24 * time.Hour)
+		historicalSince = observedAt.Add(-30 * 24 * time.Hour)
 		historicalAggregates, err = s.repo.ListAggregates(ctx, ids, historicalSince, observedAt)
 		if err != nil {
 			slog.WarnContext(ctx, "account monitor historical score aggregates unavailable", "error", err)
@@ -518,7 +537,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
-	groups = s.projectGroupWindowQuality(groups, accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
+	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, latest, settings, historicalSince, since, observedAt)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
@@ -646,6 +665,11 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 			row.ScoreBreakdown = &breakdown
 			row.QualityScore = score
 			capAccountMonitorAbnormalScore(row)
+			row.QualityExplanation = &AccountMonitorQualityExplanation{
+				Score: row.QualityScore, Breakdown: qualityExplanationBreakdown(breakdown, weights),
+				Window: string(row.Range), SampleCount: scoreEvidence.SampleCount,
+				Source: scoreEvidence.Source, ObservedAt: scoreEvidence.ObservedAt,
+			}
 		}
 	}
 	sort.SliceStable(rows, func(left, right int) bool {
@@ -666,26 +690,37 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		}
 		return rows[left].AccountID < rows[right].AccountID
 	})
+	rankTotal := 0
+	for i := range rows {
+		if rows[i].Eligible {
+			rankTotal++
+		}
+	}
 	rank := 0
 	for i := range rows {
 		if rows[i].Eligible {
 			rank++
 			value := rank
 			rows[i].GroupRank = &value
+			rows[i].QualityRank = &value
+		}
+		rows[i].QualityRankTotal = rankTotal
+		if rows[i].QualityExplanation != nil {
+			rows[i].QualityExplanation.Rank = rows[i].QualityRank
+			rows[i].QualityExplanation.RankTotal = rankTotal
 		}
 	}
 	return rows
 }
 
 func (s *AccountMonitorService) projectGroupWindowQuality(
+	ctx context.Context,
 	groups []AccountMonitorGroup,
 	accounts []Account,
 	rows []AccountMonitorAccount,
-	windows map[int64]AccountMonitorWindowAggregate,
-	probes map[int64]AccountMonitorAggregate,
-	historicalProbes map[int64]AccountMonitorAggregate,
 	latest map[int64]AccountMonitorLatest,
 	settings AccountMonitorSettings,
+	historicalSince,
 	windowStart, now time.Time,
 ) []AccountMonitorGroup {
 	rowsByID := make(map[int64]AccountMonitorAccount, len(rows))
@@ -694,6 +729,41 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 	}
 	for i := range groups {
 		group := &groups[i]
+		members := make([]int64, 0)
+		memberAccounts := make([]*Account, 0)
+		for j := range accounts {
+			if accountMonitorAccountInGroup(accounts[j], group.ID) {
+				members = append(members, accounts[j].ID)
+				member := accounts[j]
+				memberAccounts = append(memberAccounts, &member)
+			}
+		}
+		groupWindows := map[int64]AccountMonitorWindowAggregate{}
+		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
+		if hasGroupWindowProvider && len(members) > 0 {
+			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
+				if loaded != nil {
+					groupWindows = loaded
+				}
+			}
+		}
+		groupProbes := map[int64]AccountMonitorAggregate{}
+		groupHistoricalProbes := map[int64]AccountMonitorAggregate{}
+		groupProbeScoped := false
+		groupAggregateProvider, hasGroupAggregateProvider := s.repo.(AccountMonitorGroupAggregateRepository)
+		if hasGroupAggregateProvider && len(members) > 0 {
+			if loaded, loadErr := groupAggregateProvider.ListGroupAggregates(ctx, group.ID, members, now.Add(-AccountMonitorGroupEvidenceWindow)); loadErr == nil {
+				if loaded != nil {
+					groupProbes = loaded
+					groupProbeScoped = true
+				}
+			}
+		}
+		if groupProbeScoped {
+			if loaded, loadErr := groupAggregateProvider.ListGroupAggregates(ctx, group.ID, members, historicalSince); loadErr == nil && loaded != nil {
+				groupHistoricalProbes = loaded
+			}
+		}
 		projected := make([]AccountMonitorGroupAccount, 0)
 		for _, account := range accounts {
 			if !accountMonitorAccountInGroup(account, group.ID) {
@@ -703,10 +773,22 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			if !ok {
 				continue
 			}
-			window := windows[account.ID]
-			probe := probes[account.ID]
+			window := groupWindows[account.ID]
+			probe := groupProbes[account.ID]
 			evidence := accountMonitorWindowEvidence(window, probe, latest[account.ID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
+			// The embedded base row carries the full-site projection. Clear its
+			// ranking fields before applying this group's evidence so a valid
+			// global score cannot leak into a group row with no group evidence.
+			row.QualityScore = nil
+			row.ScoreBreakdown = nil
+			row.GroupRank = nil
+			row.QualityRank = nil
+			row.QualityRankTotal = 0
+			row.QualityExplanation = nil
+			row.SchedulerRank = nil
+			row.SchedulerRankTotal = 0
+			row.SchedulerExplanation = nil
 			row.EvidenceSource = evidence.Source
 			row.SampleCount = evidence.SampleCount
 			row.SuccessSampleCount = evidence.SuccessSampleCount
@@ -728,7 +810,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
 			scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
 			if !scoreEligible {
-				if historical := accountMonitorHistoricalEvidence(historicalProbes[account.ID]); historical.SampleCount > 0 {
+				if historical := accountMonitorHistoricalEvidence(groupHistoricalProbes[account.ID]); historical.SampleCount > 0 {
 					scoreEvidence, scoreStatus, scoreEligible = accountMonitorWindowScoreProjection(account, row.ScoreStatus, historical)
 				}
 			}
@@ -741,6 +823,11 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 				row.ScoreBreakdown = &breakdown
 				row.QualityScore = score
 				capAccountMonitorAbnormalScore(&row.AccountMonitorAccount)
+				row.QualityExplanation = &AccountMonitorQualityExplanation{
+					Score: row.QualityScore, Breakdown: qualityExplanationBreakdown(breakdown, group.ScoreWeights),
+					Window: string(row.Range), SampleCount: scoreEvidence.SampleCount,
+					Source: scoreEvidence.Source, ObservedAt: scoreEvidence.ObservedAt,
+				}
 			}
 			projected = append(projected, row)
 		}
@@ -762,12 +849,26 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			}
 			return projected[left].AccountID < projected[right].AccountID
 		})
+		qualityRankTotal := 0
 		for j := range projected {
 			if projected[j].Eligible {
-				rank := j + 1
+				qualityRankTotal++
+				rank := qualityRankTotal
 				projected[j].GroupRank = &rank
+				projected[j].QualityRank = &rank
+			}
+			projected[j].QualityRankTotal = qualityRankTotal
+			if projected[j].QualityExplanation != nil {
+				projected[j].QualityExplanation.Rank = projected[j].QualityRank
 			}
 		}
+		for j := range projected {
+			projected[j].QualityRankTotal = qualityRankTotal
+			if projected[j].QualityExplanation != nil {
+				projected[j].QualityExplanation.RankTotal = qualityRankTotal
+			}
+		}
+		s.attachSchedulerProjection(ctx, group, memberAccounts, projected, now)
 		group.Accounts = projected
 		group.Health = summarizeGroupHealth(projected)
 		if !group.CustomerVisible {
@@ -779,6 +880,101 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 		}
 	}
 	return groups
+}
+
+func qualityExplanationBreakdown(breakdown AccountMonitorScoreBreakdown, weights AccountMonitorScoreWeights) AccountMonitorQualityExplanationBreakdown {
+	return AccountMonitorQualityExplanationBreakdown{
+		Cost:    AccountMonitorQualityScoreComponent{Score: breakdown.Cost, Max: float64(weights.Cost)},
+		Success: AccountMonitorQualityScoreComponent{Score: breakdown.Success, Max: float64(weights.Success)},
+		TTFT:    AccountMonitorQualityScoreComponent{Score: breakdown.TTFT, Max: float64(weights.TTFT)},
+		Latency: AccountMonitorQualityScoreComponent{Score: breakdown.Latency, Max: float64(weights.Latency)},
+	}
+}
+
+func accountMonitorReasonLabel(code AccountMonitorReasonCode) string {
+	switch code {
+	case AccountMonitorReasonStrategy:
+		return "当前分组策略改变候选顺序"
+	case AccountMonitorReasonQualityGate:
+		return "质量资格影响候选资格"
+	case AccountMonitorReasonRuntimeLoad:
+		return "实时负载或排队改变候选顺序"
+	case AccountMonitorReasonCooldown:
+		return "短时错误或冷却改变候选资格"
+	case AccountMonitorReasonTieBreak:
+		return "调度分相同，使用稳定次级排序"
+	case AccountMonitorReasonDataFreshness:
+		return "质量证据与调度快照存在时效差异"
+	case AccountMonitorReasonNotEligible:
+		return "账号不具备当前分组调度资格"
+	default:
+		return ""
+	}
+}
+
+func (s *AccountMonitorService) attachSchedulerProjection(
+	ctx context.Context,
+	group *AccountMonitorGroup,
+	accounts []*Account,
+	rows []AccountMonitorGroupAccount,
+	now time.Time,
+) {
+	if s == nil || group == nil || group.ID <= 0 || s.schedulerProjection == nil || len(accounts) == 0 {
+		return
+	}
+	platform := group.Platform
+	if platform == "" {
+		platform = PlatformOpenAI
+	}
+	loadMap := map[int64]*AccountLoadInfo{}
+	if s.concurrencyService != nil {
+		loadReq := buildOpenAIAccountLoadRequest(accounts)
+		loaded, err := s.concurrencyService.GetAccountsLoadBatch(ctx, loadReq)
+		if err != nil {
+			slog.WarnContext(ctx, "account monitor scheduler load snapshot unavailable", "group_id", group.ID, "error", err)
+			return
+		}
+		loadMap = loaded
+	}
+	projection, err := s.schedulerProjection.Project(ctx, OpenAIAccountSchedulerProjectionRequest{
+		GroupID:           group.ID,
+		Platform:          platform,
+		RequiredTransport: OpenAIUpstreamTransportAny,
+		SnapshotAt:        now.UTC(),
+		Accounts:          accounts,
+		LoadMap:           loadMap,
+	})
+	if err != nil || projection == nil {
+		if err != nil {
+			slog.WarnContext(ctx, "account monitor scheduler projection unavailable", "group_id", group.ID, "error", err)
+		}
+		return
+	}
+	candidates := make(map[int64]OpenAIAccountSchedulerProjectionCandidate, len(projection.Candidates))
+	eligibleTotal := 0
+	for _, candidate := range projection.Candidates {
+		candidates[candidate.AccountID] = candidate
+		if candidate.Eligible && candidate.Rank != nil {
+			eligibleTotal++
+		}
+	}
+	for i := range rows {
+		candidate, ok := candidates[rows[i].AccountID]
+		if !ok {
+			continue
+		}
+		snapshotAt := projection.SnapshotAt.UTC()
+		rows[i].SchedulerExplanation = &AccountMonitorSchedulerExplanation{
+			Rank: candidate.Rank, RankTotal: eligibleTotal, CandidateTotal: projection.CandidateCount,
+			Eligible: candidate.Eligible, PolicyKey: projection.PolicyKey, PolicyLabel: projection.PolicyLabel,
+			EffectiveWeights: projection.EffectiveWeights, CandidateScope: "group", SnapshotAt: &snapshotAt,
+			PrimaryReasonCode: candidate.PrimaryReasonCode, PrimaryReasonLabel: accountMonitorReasonLabel(candidate.PrimaryReasonCode),
+		}
+		if candidate.Eligible && candidate.Rank != nil {
+			rows[i].SchedulerRank = candidate.Rank
+			rows[i].SchedulerRankTotal = eligibleTotal
+		}
+	}
 }
 
 func (s *AccountMonitorService) projectGroupQualityEvidence(

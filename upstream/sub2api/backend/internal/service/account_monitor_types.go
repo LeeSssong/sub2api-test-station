@@ -151,6 +151,7 @@ type AccountMonitorQualityExplanation struct {
 type AccountMonitorSchedulerExplanation struct {
 	Rank               *int                     `json:"rank,omitempty"`
 	RankTotal          int                      `json:"rank_total,omitempty"`
+	CandidateTotal     int                      `json:"candidate_total,omitempty"`
 	Eligible           bool                     `json:"eligible"`
 	PolicyKey          string                   `json:"policy_key,omitempty"`
 	PolicyLabel        string                   `json:"policy_label"`
@@ -451,6 +452,12 @@ type AccountMonitorRepository interface {
 // rolled out.
 type AccountMonitorGroupAggregateRepository interface {
 	ListGroupAggregates(ctx context.Context, groupID int64, accountIDs []int64, since time.Time) (map[int64]AccountMonitorAggregate, error)
+}
+
+// AccountMonitorGroupWindowAggregateRepository is optional so legacy monitor
+// repositories can continue serving the global window projection.
+type AccountMonitorGroupWindowAggregateRepository interface {
+	ListGroupWindowAggregates(ctx context.Context, groupID int64, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)
 }
 
 // AccountMonitorCombinedAggregateRepository provides percentiles calculated

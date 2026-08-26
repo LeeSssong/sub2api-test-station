@@ -592,3 +592,32 @@ func TestAccountMonitorRepositoryListsRecentTimelinesInOneBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAccountMonitorRepositoryGroupWindowAggregatesIncludeRequestedGroupID(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	since := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	until := since.Add(24 * time.Hour)
+	observedAt := until.Add(-time.Minute)
+
+	mock.ExpectQuery(`(?s)FROM usage_logs u.*u\.group_id = \$1.*u\.account_id = ANY\(\$2\).*u\.created_at >= \$3.*u\.created_at < \$4.*FROM ops_error_logs e.*e\.group_id = \$1.*e\.account_id = ANY\(\$2\).*e\.created_at >= \$3.*e\.created_at < \$4`).
+		WithArgs(int64(77), sqlmock.AnyArg(), since, until).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count", "success_count", "error_count", "base_cost", "success_rate", "ttft_sample_count", "latency_sample_count", "ttft_p50", "latency_p95", "last_observed_at"}).
+			AddRow(11, 4, 3, 1, 8.0, 0.75, 3, 4, 80.0, 300.0, observedAt))
+
+	aggregates, err := repo.(*accountMonitorRepository).ListGroupWindowAggregates(context.Background(), 77, []int64{11}, since, until)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := aggregates[11]
+	if got.RequestCount != 4 || got.SuccessCount != 3 || got.ErrorCount != 1 || got.BaseCost != 8 || got.SuccessRate != 0.75 || got.TTFTP50MS == nil || *got.TTFTP50MS != 80 || got.LatencyP95MS == nil || *got.LatencyP95MS != 300 || got.LastObservedAt == nil || !got.LastObservedAt.Equal(observedAt) {
+		t.Fatalf("group window aggregate = %#v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

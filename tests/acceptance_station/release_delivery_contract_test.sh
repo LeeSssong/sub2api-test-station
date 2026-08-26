@@ -8,11 +8,17 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 controller=ops/release-sub2api-acceptance.sh
 executor=ops/deploy-sub2api-acceptance-host.sh
+runbook=docs/runbooks/sub2api-acceptance-station.md
 
 [[ -f "$controller" ]] || fail "$controller is missing"
 [[ -x "$controller" ]] || fail "$controller is not executable"
 [[ -f "$executor" ]] || fail "$executor is missing"
 [[ -x "$executor" ]] || fail "$executor is not executable"
+[[ -f "$runbook" ]] || fail 'acceptance runbook is missing'
+grep -Fq '本地直接验证 -> 部署验收站 -> 管理员真实验收 -> 人工合入 main -> 人工部署主站' "$runbook" \
+  || fail 'acceptance runbook is missing serial promotion boundary'
+grep -Fq '不自动晋级' "$runbook" || fail 'acceptance runbook is missing no-auto-promotion boundary'
+grep -Fq '/admin/lab/' "$runbook" || fail 'acceptance runbook is missing admin lab retirement boundary'
 
 tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/acceptance-release-contract.XXXXXX")
 fixture="$tmp_root/repo"

@@ -39,4 +39,5 @@
 - The first production promotion of `main@bdc12f20c` succeeded with `downtime_required=false` and activated the blue slot.
 - The authenticated production modal confirmed the centered layout, three filters, evidence-first columns, and historical-record semantics, but exposed the detector's raw Juice success value `verified` as an untranslated i18n key because the UI had assumed `pass`.
 - The follow-up fix keeps `verified` as the server-side filter value and maps it to the existing user-facing “通过 / Passed” presentation for labels, colors, and fallback detail copy. Legacy `pass` display compatibility remains intact.
+- Production `native-1` records can carry a Juice verdict and planned-request count without a reported `valid_samples` value. The UI now treats zero/missing valid samples as unavailable evidence instead of rendering the misleading `0 / 49`; positive reported sample counts remain unchanged.
 - TDD evidence: the new production-shaped regression failed against the released implementation, then passed after the minimal mapping fix. The two directly related component suites now pass 61/61; typecheck and production build also pass.

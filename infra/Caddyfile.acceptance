@@ -1,0 +1,17 @@
+{
+  servers {
+    timeouts {
+      read_body 15m
+    }
+  }
+}
+
+{$ACCEPTANCE_SITE_ADDRESS} {
+  encode zstd gzip
+
+  reverse_proxy acceptance-api:8080 {
+    transport http {
+      response_header_timeout 15m
+    }
+  }
+}

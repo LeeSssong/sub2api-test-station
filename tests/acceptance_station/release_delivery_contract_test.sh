@@ -19,6 +19,11 @@ grep -Fq '本地直接验证 -> 部署验收站 -> 管理员真实验收 -> 人�
   || fail 'acceptance runbook is missing serial promotion boundary'
 grep -Fq '不自动晋级' "$runbook" || fail 'acceptance runbook is missing no-auto-promotion boundary'
 grep -Fq '/admin/lab/' "$runbook" || fail 'acceptance runbook is missing admin lab retirement boundary'
+grep -Fq '仅保留脱敏失败证据' "$runbook" || fail 'acceptance runbook is missing failed-staging retention boundary'
+grep -Fq 'RELEASE_WORKTREE=/path/to/previous-verified-worktree' "$runbook" \
+  || fail 'acceptance runbook is missing executable manual rollback path'
+! grep -Fq 'sudo -n bash ops/deploy-sub2api-acceptance-host.sh' "$runbook" \
+  || fail 'acceptance runbook documents an executor path unavailable on the host'
 
 tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/acceptance-release-contract.XXXXXX")
 fixture="$tmp_root/repo"
@@ -107,6 +112,9 @@ for needle in \
   'docker buildx build --platform linux/amd64 --load' \
   'docker save' \
   'sha256_file' \
+  'cleanup_remote_stage' \
+  'sub2api-image.tar' \
+  '.env.acceptance' \
   'scp' \
   'ssh' \
   'sudo -n bash -s'; do
@@ -115,6 +123,10 @@ done
 
 targets=("$controller" "$executor")
 grep -Fq 'docker compose --project-name sub2api-acceptance' "$executor" || fail 'executor missing compose project'
+grep -Fq 'if ! ssh -i "$ssh_key"' "$controller" \
+  || fail 'controller must surface remote staging cleanup failure'
+grep -Fq 'return 1' "$controller" || fail 'controller must return cleanup failure'
+grep -Fq 'rm -rf -- "$staging_root"' "$executor" || fail 'executor must clean remote staging'
 grep -Fq 'acceptance-bootstrap' "$executor" || fail 'executor missing bootstrap'
 grep -Fq 'rollback' "$executor" || fail 'executor missing rollback'
 grep -Fq 'health' "$executor" || fail 'executor missing health checks'

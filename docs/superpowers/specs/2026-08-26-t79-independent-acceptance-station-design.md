@@ -113,7 +113,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
 
 - 缺少 env、env 非 0600、路径为符号链接、生产标识、mock provider 或未确认真实消费时 fail-closed，不能开始传输或启动容器。
 - Compose 配置、镜像加载、bootstrap、服务健康或验收站 URL 检查失败时，执行器恢复上一份 compose/Caddy/env（若存在）并重新拉起上一版本；不删除 named volumes、不清空数据库、不删除 Redis 数据。
-- 首次安装失败只停止本次服务并保留 volumes、bundle 和失败记录，供人工修复后重试。
+- 首次安装失败只停止本次服务并保留 volumes；远程 staging 中的 env、镜像归档和 bundle 在退出时删除，只保留脱敏日志供人工修复后重试。
 - Caddy 只监听验收站宿主的 80/443；API、worker、detector、数据库和 Redis 不发布宿主端口。
 - env、镜像归档和 staging 目录使用 root-owned 0600/0700；脚本输出不得打印密码、token、cookie 或支付/上游密钥。
 - 站点“不对外开放”由独立域名 DNS/防火墙和仅管理员登录共同保证；代码不把管理员模式误当作网络 ACL，operator 必须在宿主层限制来源。
@@ -158,4 +158,3 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
 
 - 待 operator 提供：验收站宿主、独立域名/DNS/防火墙、真实支付实例、真实上游账号、真实通知通道、SSH key/known_hosts。
 - 本规格不等待用户逐份批准；用户已在 2026-08-26 明确授权“规格书写完直接实施”，并确认测试站与主站完全独立、真实可商用、管理员专用、串行部署和敏捷小步发布。
-

@@ -266,4 +266,3 @@ git commit -m "docs: add acceptance station runbook"
 - Spec coverage: Tasks 1–3 implement independent topology, real-flow rejection, admin-only bootstrap, preservation/rollback and release controls. Task 4 documents manual acceptance and lab retirement.
 - Placeholder scan: no TODO/TBD/implicit test steps.
 - Interface consistency: controller emits staged bundle/archive/env consumed by host executor; Compose profile name is consistently `acceptance-bootstrap`; all topology names use `sub2api-acceptance`.
-

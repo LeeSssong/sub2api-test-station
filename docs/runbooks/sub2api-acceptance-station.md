@@ -39,7 +39,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
       RELEASE_WORKTREE="$PWD" \
       ops/release-sub2api-acceptance.sh
 
-控制器会构建一个 Linux/amd64 候选镜像、计算归档 SHA-256，经 SSH/SCP 传输到验收宿主，并只调用 deploy-sub2api-acceptance-host.sh。它会在建立 SSH 连接前拒绝脏 worktree、生产身份、mock provider、错误 project/network、非 0600 env 或缺少真实消费确认。控制器输出不包含密码、token、cookie 或支付/上游密钥。
+控制器会构建一个 Linux/amd64 候选镜像、计算归档 SHA-256，经 SSH/SCP 传输到验收宿主，并只调用 deploy-sub2api-acceptance-host.sh。它会在建立 SSH 连接前拒绝脏 worktree、生产身份、mock provider、错误 project/network、非 0600 env 或缺少真实消费确认。控制器输出不包含密码、token、cookie 或支付/上游密钥。无论成功或失败，控制器和宿主执行器都会删除远程 staging 中的 env、镜像归档及临时 bundle；仅保留脱敏失败证据和运行日志，不把真实凭据作为故障证据留在 /var/tmp。
 
 严禁从候选分支直接运行主站发布脚本，严禁调用生产蓝绿链，严禁把验收 env 复制进仓库。
 
@@ -74,21 +74,15 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 ## 回滚与恢复
 
-宿主执行器在替换 compose/Caddy/env 前会保存上一份运行配置。镜像加载、bootstrap、健康检查或 URL 检查失败时，会自动恢复上一份配置并重新拉起上一版本；named volumes 和验收数据不会删除。首次安装失败则停止本次服务并保留 volumes 与失败 staging 证据。
+宿主执行器在替换 compose/Caddy/env 前会保存上一份运行配置。镜像加载、bootstrap、健康检查或 URL 检查失败时，会自动恢复上一份配置并重新拉起上一版本；named volumes 和验收数据不会删除。首次安装失败则停止本次服务并保留 volumes；远程 staging 会被删除，失败原因只保留在脱敏日志中。
 
-需要人工恢复上一版本时，在宿主以 root 执行，路径按实际部署目录替换：
+需要人工恢复上一版本时，在本地保留或创建上一已验证提交的干净 worktree，并使用同一份验收站 0600 env 重新运行发布控制器：
 
-    sudo -n bash ops/deploy-sub2api-acceptance-host.sh \
-      --staging-root /var/tmp/sub2api-acceptance-release.<id> \
-      --image-archive /var/tmp/sub2api-acceptance-release.<id>/sub2api-image.tar \
-      --image-sha256 /var/tmp/sub2api-acceptance-release.<id>/sub2api-image.tar.sha256 \
-      --compose /var/tmp/sub2api-acceptance-release.<id>/compose.acceptance.yaml \
-      --caddy /var/tmp/sub2api-acceptance-release.<id>/Caddyfile.acceptance \
-      --env-file /var/tmp/sub2api-acceptance-release.<id>/.env.acceptance \
-      --source-commit <40位 SHA> --source-tree <40位 tree SHA> \
-      --deploy-root /opt/sub2api/acceptance-example
+    ACCEPTANCE_ENV_FILE=/secure/sub2api/acceptance.env \
+      RELEASE_WORKTREE=/path/to/previous-verified-worktree \
+      /path/to/previous-verified-worktree/ops/release-sub2api-acceptance.sh
 
-不要执行 docker compose down -v、删除 sub2api-acceptance-* volumes、重置数据库或把验收数据导入主站。若没有上一份配置，先停止服务并保留数据，修正候选后重新发布。
+这会构建并部署上一已验证提交，同时继续使用当前验收站的独立数据库和 named volumes。不要执行 docker compose down -v、删除 sub2api-acceptance-* volumes、重置数据库或把验收数据导入主站。若没有上一份配置，先停止服务并保留数据，修正候选后重新发布。
 
 ## 通过后的主站边界
 

@@ -121,7 +121,26 @@ command -v scp >/dev/null 2>&1 || fail 'SCP is required'
 image_ref="sub2api-acceptance:$source_commit"
 [[ "$image_ref" != *'"'* && "$image_ref" != *"'"* ]] || fail 'ACCEPTANCE_IMAGE is invalid'
 tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-acceptance-release.XXXXXX")
-trap 'rm -rf "$tmp_root"' EXIT
+remote_stage=
+cleanup_remote_stage() {
+  [[ -n "$remote_stage" ]] || return 0
+  if ! ssh -i "$ssh_key" -p "$ssh_port" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile="$ssh_known_hosts" "$ssh_target" \
+    "rm -rf -- $(printf '%q' "$remote_stage")" >/dev/null 2>&1; then
+    return 1
+  fi
+  remote_stage=
+}
+cleanup() {
+  local exit_status=$?
+  if ! cleanup_remote_stage; then
+    printf 'acceptance_release status=warning: remote staging cleanup failed\n' >&2
+  fi
+  rm -rf "$tmp_root"
+  trap - EXIT
+  exit "$exit_status"
+}
+trap cleanup EXIT
 archive="$tmp_root/sub2api-image.tar"
 bundle="$tmp_root/bundle"
 mkdir -m 700 "$bundle"

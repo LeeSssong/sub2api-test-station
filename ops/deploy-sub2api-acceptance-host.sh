@@ -58,6 +58,10 @@ done
 [[ -d "$staging_root" && ! -L "$staging_root" ]] || fail 'staging root is invalid'
 staging_root=$(canonical_path "$staging_root")
 [[ "$(mode_of "$staging_root")" == 700 ]] || fail 'staging root must be mode 0700'
+cleanup_staging() {
+  rm -rf -- "$staging_root"
+}
+trap cleanup_staging EXIT
 [[ "$deploy_root" =~ ^/opt/sub2api/acceptance-[A-Za-z0-9._-]+$ && "$deploy_root" != *..* ]] \
   || fail 'deploy root must be a canonical acceptance-only path'
 for protected_path in /opt /opt/sub2api "$deploy_root"; do
@@ -183,6 +187,7 @@ cleanup() {
   fi
   rm -rf "$extraction_root"
   [[ -z "$previous_root" ]] || rm -rf "$previous_root"
+  rm -rf -- "$staging_root"
 }
 trap cleanup EXIT
 

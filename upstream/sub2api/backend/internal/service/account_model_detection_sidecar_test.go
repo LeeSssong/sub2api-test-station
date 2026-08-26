@@ -8,7 +8,15 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestHTTPAccountModelDetectionSidecarDefaultTimeoutSupportsHighProfile(t *testing.T) {
+	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "private-token", nil)
+	if client.client.Timeout != 15*time.Minute {
+		t.Fatalf("timeout = %s, want %s", client.client.Timeout, 15*time.Minute)
+	}
+}
 
 func TestHTTPAccountModelDetectionSidecarReportsUnconfigured(t *testing.T) {
 	client := NewHTTPAccountModelDetectionSidecar("", "", nil)

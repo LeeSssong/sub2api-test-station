@@ -31,7 +31,7 @@ var (
 
 func NewHTTPAccountModelDetectionSidecar(baseURL, token string, client *http.Client) *HTTPAccountModelDetectionSidecar {
 	if client == nil {
-		client = &http.Client{Timeout: 45 * time.Second}
+		client = &http.Client{Timeout: 15 * time.Minute}
 	}
 	return &HTTPAccountModelDetectionSidecar{baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"), token: strings.TrimSpace(token), client: client}
 }

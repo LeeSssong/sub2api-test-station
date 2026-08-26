@@ -56,7 +56,7 @@ services:
     environment:
       MODEL_DETECTOR_LISTEN_ADDRESS: ":8090"
       MODEL_DETECTOR_MODELS: ${MODEL_DETECTOR_MODELS:-gpt-5.6-terra,gpt-5.6-sol,gpt-5.4,gpt-5.6,gpt-5.6-codex,claude-3-7-sonnet}
-      MODEL_DETECTOR_VERSION: ${MODEL_DETECTOR_VERSION:-native-1}
+      MODEL_DETECTOR_VERSION: ${MODEL_DETECTOR_VERSION:-4.1.1}
       SUB2API_MODEL_DETECTOR_TOKEN: ${SUB2API_MODEL_DETECTOR_TOKEN:-rehearsal-detector-token}
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8090/healthz"]

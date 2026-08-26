@@ -20,6 +20,22 @@ sha256_file() {
   fi
 }
 
+load_acceptance_env() {
+  local line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] \
+      || fail 'ACCEPTANCE_ENV_FILE contains an invalid assignment'
+    key=${BASH_REMATCH[1]}
+    value=${BASH_REMATCH[2]}
+    [[ "$key" == ACCEPTANCE_* ]] || fail 'ACCEPTANCE_ENV_FILE may only contain ACCEPTANCE_ variables'
+    [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] \
+      || fail 'ACCEPTANCE_ENV_FILE contains an invalid value'
+    printf -v "$key" '%s' "$value"
+    export "$key"
+  done <"$acceptance_env"
+}
+
 worktree=${RELEASE_WORKTREE:-$(pwd -P)}
 [[ "$worktree" == /* && -d "$worktree" && ! -L "$worktree" ]] || fail 'RELEASE_WORKTREE is invalid'
 worktree=$(cd "$worktree" && pwd -P)
@@ -34,11 +50,8 @@ acceptance_env=${ACCEPTANCE_ENV_FILE:-}
 [[ "$(mode_of "$acceptance_env")" == 600 ]] \
   || fail 'ACCEPTANCE_ENV_FILE must be a 0600 non-symlink file'
 
-# The operator-owned file is sourced privately; no values are echoed.
-set -a
-# shellcheck disable=SC1090
-source "$acceptance_env"
-set +a
+# Parse operator values as literal KEY=VALUE pairs; never evaluate the env file.
+load_acceptance_env
 
 real_flow_ack=${ACCEPTANCE_REAL_FLOW_ACK:-}
 [[ "$real_flow_ack" == I_UNDERSTAND_REAL_CHARGES ]] || fail 'ACCEPTANCE_REAL_FLOW_ACK is required'
@@ -54,6 +67,12 @@ case "$site_address:$deploy_root:$project_name:$network_name" in
 esac
 [[ -n "$site_address" && -n "$deploy_root" && -n "$project_name" && -n "$network_name" ]] \
   || fail 'acceptance identity is incomplete'
+[[ "$project_name" == sub2api-acceptance ]] || fail 'ACCEPTANCE_PROJECT_NAME must be sub2api-acceptance'
+[[ "$network_name" == sub2api-acceptance-network ]] || fail 'ACCEPTANCE_NETWORK_NAME must be sub2api-acceptance-network'
+[[ "$deploy_root" =~ ^/opt/sub2api/acceptance-[A-Za-z0-9._-]+$ ]] \
+  || fail 'ACCEPTANCE_DEPLOY_ROOT must be a canonical acceptance-only path'
+[[ "$deploy_root" != *$'\n'* && "$deploy_root" != *$'\r'* && "$deploy_root" != *'..'* ]] \
+  || fail 'ACCEPTANCE_DEPLOY_ROOT must be a canonical acceptance-only path'
 
 payment_provider=${ACCEPTANCE_PAYMENT_PROVIDER:-}
 upstream_provider=${ACCEPTANCE_UPSTREAM_PROVIDER:-}
@@ -69,14 +88,20 @@ source_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}') || fail 'could not res
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ ]] \
   || fail 'Git identity is invalid'
 
-build_context=${RELEASE_BUILD_CONTEXT:-$worktree/upstream/sub2api}
-[[ "$build_context" == /* && -d "$build_context" && ! -L "$build_context" ]] \
-  || fail 'RELEASE_BUILD_CONTEXT is invalid'
-build_context=$(cd "$build_context" && pwd -P)
-case "$build_context" in
-  "$worktree"/*) ;;
-  *) fail 'RELEASE_BUILD_CONTEXT must be inside RELEASE_WORKTREE' ;;
-esac
+expected_build_context="$worktree/upstream/sub2api"
+if [[ -n "${RELEASE_BUILD_CONTEXT:-}" && "$RELEASE_BUILD_CONTEXT" != "$expected_build_context" ]]; then
+  fail 'RELEASE_BUILD_CONTEXT must equal canonical upstream/sub2api'
+fi
+[[ -d "$expected_build_context" && ! -L "$expected_build_context" ]] \
+  || fail 'canonical upstream/sub2api build context is missing'
+build_context=$(cd "$expected_build_context" && pwd -P)
+[[ "$build_context" == "$expected_build_context" ]] \
+  || fail 'canonical upstream/sub2api build context is invalid'
+
+# Validate the local executor before spending time on a build or contacting the host.
+executor_source="$worktree/ops/deploy-sub2api-acceptance-host.sh"
+[[ -f "$executor_source" && -x "$executor_source" && ! -L "$executor_source" ]] \
+  || fail 'acceptance host executor is missing or not executable'
 
 ssh_target=${ACCEPTANCE_SSH_TARGET:-${RELEASE_SSH_TARGET:-}}
 ssh_port=${ACCEPTANCE_SSH_PORT:-${RELEASE_SSH_PORT:-22}}
@@ -125,7 +150,8 @@ remote_stage=$(ssh -i "$ssh_key" -p "$ssh_port" -o BatchMode=yes -o StrictHostKe
   -o UserKnownHostsFile="$ssh_known_hosts" "$ssh_target" \
   'umask 077; d=$(mktemp -d /var/tmp/sub2api-acceptance-release.XXXXXX); chmod 700 "$d"; printf "%s" "$d"') \
   || fail 'could not create remote staging directory'
-[[ "$remote_stage" == /var/tmp/sub2api-acceptance-release.* ]] || fail 'remote staging directory is invalid'
+[[ "$remote_stage" =~ ^/var/tmp/sub2api-acceptance-release\.[A-Za-z0-9._-]+$ ]] \
+  || fail 'remote staging directory is invalid'
 
 scp -q -i "$ssh_key" -P "$ssh_port" -o BatchMode=yes -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile="$ssh_known_hosts" "$archive" "$archive.sha256" \
@@ -134,11 +160,23 @@ scp -q -i "$ssh_key" -P "$ssh_port" -o BatchMode=yes -o StrictHostKeyChecking=ye
   || fail 'acceptance bundle transfer failed'
 
 # The only remote entrypoint is the dedicated acceptance host executor.
-executor_source="$worktree/ops/deploy-sub2api-acceptance-host.sh"
-[[ -f "$executor_source" ]] || fail 'acceptance host executor is missing'
+shell_quote() { printf '%q' "$1"; }
+remote_command="sudo -n bash -s --"
+for arg in \
+  --staging-root "$remote_stage" \
+  --image-archive "$remote_stage/$(basename "$archive")" \
+  --image-sha256 "$remote_stage/$(basename "$archive.sha256")" \
+  --compose "$remote_stage/compose.acceptance.yaml" \
+  --caddy "$remote_stage/Caddyfile.acceptance" \
+  --env-file "$remote_stage/.env.acceptance" \
+  --source-commit "$source_commit" \
+  --source-tree "$source_tree" \
+  --deploy-root "$deploy_root"; do
+  remote_command+=" $(shell_quote "$arg")"
+done
 ssh -i "$ssh_key" -p "$ssh_port" -o BatchMode=yes -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile="$ssh_known_hosts" "$ssh_target" \
-  "sudo -n bash -s -- --staging-root '$remote_stage' --image-archive '$remote_stage/$(basename "$archive")' --image-sha256 '$remote_stage/$(basename "$archive.sha256")' --compose '$remote_stage/compose.acceptance.yaml' --caddy '$remote_stage/Caddyfile.acceptance' --env-file '$remote_stage/.env.acceptance' --source-commit '$source_commit' --source-tree '$source_tree' --deploy-root '$deploy_root'" \
+  "$remote_command" \
   <"$executor_source" || fail 'acceptance host executor failed'
 
 printf 'acceptance_release status=succeeded source_commit=%s source_tree=%s image_sha256=%s\n' \

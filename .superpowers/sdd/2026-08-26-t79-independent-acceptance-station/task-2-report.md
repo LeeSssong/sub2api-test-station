@@ -42,3 +42,29 @@ ledger, production configuration, or deployment target was changed.
 The full release-delivery contract cannot pass until Task 3 supplies the
 dedicated host executor. No acceptance-host deployment was attempted: operator
 provided independent SSH/DNS and real-provider credentials are still required.
+
+## Round 1 review fixes
+
+- `ACCEPTANCE_PROJECT_NAME` is now required to equal
+  `sub2api-acceptance`, and `ACCEPTANCE_NETWORK_NAME` is now required to equal
+  `sub2api-acceptance-network` before build or transport.
+- `ACCEPTANCE_DEPLOY_ROOT` is constrained to a canonical,
+  acceptance-only `/opt/sub2api/acceptance-<safe-name>` path. The operator env
+  is parsed as literal `ACCEPTANCE_*=...` entries rather than sourced, so shell
+  syntax in a value is never evaluated. Remote executor arguments are shell
+  escaped and the returned remote staging path must match a strict absolute
+  staging regex.
+- The build context is fixed to canonical
+  `$RELEASE_WORKTREE/upstream/sub2api`; a differing `RELEASE_BUILD_CONTEXT` is
+  rejected. The local host-executor file must already exist, be executable and
+  be non-symlink before the image build or any SSH/SCP operation.
+- The delivery contract now creates a clean temporary Git fixture and runs
+  behavioral refusal checks for wrong project/network, unsafe deploy root and
+  overridden build context. It also installs fake docker/SSH/SCP commands and
+  proves none is invoked when the local host executor is absent.
+
+### Round 1 verification
+
+- `bash tests/acceptance_station/release_delivery_contract_test.sh` — PASS
+- `bash -n ops/release-sub2api-acceptance.sh tests/acceptance_station/release_delivery_contract_test.sh` — PASS
+- `git diff --check` — PASS

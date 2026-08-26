@@ -98,6 +98,7 @@ export interface AccountMonitorQualityExplanation {
 export interface AccountMonitorSchedulerExplanation {
   rank?: number | null
   rank_total?: number
+  candidate_total?: number
   eligible: boolean
   policy_key?: string
   policy_label: string

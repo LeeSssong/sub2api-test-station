@@ -31,6 +31,8 @@ type accountMonitorHandlerRepoStub struct {
 	timelines             map[int64][]service.AccountMonitorTimelinePoint
 	aggregates            map[int64]service.AccountMonitorAggregate
 	windowAggregates      map[int64]service.AccountMonitorWindowAggregate
+	groupWindowAggregates map[int64]map[int64]service.AccountMonitorWindowAggregate
+	groups                []service.AccountMonitorGroup
 }
 
 func monitorTimePtr(value time.Time) *time.Time { return &value }
@@ -40,8 +42,15 @@ func (*accountMonitorHandlerRepoStub) LoadSettings(context.Context) (service.Acc
 	return service.AccountMonitorSettings{IntervalSeconds: 300}, nil
 }
 
-func (*accountMonitorHandlerRepoStub) ListGroups(context.Context) ([]service.AccountMonitorGroup, error) {
-	return nil, nil
+func (s *accountMonitorHandlerRepoStub) ListGroups(context.Context) ([]service.AccountMonitorGroup, error) {
+	return append([]service.AccountMonitorGroup(nil), s.groups...), nil
+}
+
+func (s *accountMonitorHandlerRepoStub) ListGroupWindowAggregates(_ context.Context, groupID int64, _ []int64, _, _ time.Time) (map[int64]service.AccountMonitorWindowAggregate, error) {
+	if s.groupWindowAggregates == nil {
+		return s.windowAggregates, nil
+	}
+	return s.groupWindowAggregates[groupID], nil
 }
 
 func (s *accountMonitorHandlerRepoStub) ListLatest(context.Context, []int64) (map[int64]service.AccountMonitorLatest, error) {
@@ -372,6 +381,249 @@ func TestAccountMonitorHandlerReturnsUnavailableAndStaleRowsWithRetainedNativeSc
 	}
 	if row := byStatus["stale"]; !row.stale || row.score == nil || row.rank == nil {
 		t.Fatalf("stale row lost truthful state or score/rank: %#v", byStatus)
+	}
+}
+
+type accountMonitorHandlerSchedulerProjectionStub struct {
+	projection *service.OpenAIAccountSchedulerProjection
+	err        error
+	calls      int
+}
+
+func (s *accountMonitorHandlerSchedulerProjectionStub) Project(context.Context, service.OpenAIAccountSchedulerProjectionRequest) (*service.OpenAIAccountSchedulerProjection, error) {
+	s.calls++
+	return s.projection, s.err
+}
+
+type accountMonitorHandlerMultiplierStub struct{}
+
+func (*accountMonitorHandlerMultiplierStub) Resolve(*service.Account, time.Time) service.AccountMonitorMultiplier {
+	value := 1.0
+	return service.AccountMonitorMultiplier{Value: &value, Source: "declared", Status: "ok", SampleCount: 1}
+}
+
+func (*accountMonitorHandlerMultiplierStub) Refresh(context.Context, *service.Account, service.AccountMonitorRefreshOptions) error {
+	return nil
+}
+
+func TestAccountMonitorHandlerGroupResponseIncludesRankingContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 1.0
+	accounts := []*service.Account{
+		{ID: 7, Name: "quality-first", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}},
+		{ID: 8, Name: "scheduler-first", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}},
+	}
+	repo := &accountMonitorHandlerRepoStub{
+		globalWeights: service.DefaultAccountMonitorScoreWeights,
+		aggregates: map[int64]service.AccountMonitorAggregate{
+			7: {SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1, LastCheckedAt: &now},
+			8: {SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{
+			7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now},
+			8: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now},
+		},
+		groupWindowAggregates: map[int64]map[int64]service.AccountMonitorWindowAggregate{
+			42: {
+				7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now},
+				8: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now},
+			},
+		},
+		latest: map[int64]service.AccountMonitorLatest{
+			7: {Status: "success", CheckedAt: now},
+			8: {Status: "success", CheckedAt: now},
+		},
+		groups: []service.AccountMonitorGroup{{ID: 42, Name: "GPT-Pro", Platform: service.PlatformOpenAI, CustomerVisible: true, RateMultiplier: 1, ScoreWeights: service.DefaultAccountMonitorScoreWeights}},
+	}
+	accountRepo := &accountMonitorHandlerAccountRepoStub{accounts: accounts}
+	schedulerRank1, schedulerRank2 := 1, 2
+	scheduler := &accountMonitorHandlerSchedulerProjectionStub{projection: &service.OpenAIAccountSchedulerProjection{
+		SnapshotAt: now, PolicyKey: "group_policy", PolicyLabel: "利润优先", CandidateCount: 2,
+		EffectiveWeights: map[string]float64{"upstream_cost": 3},
+		Candidates: []service.OpenAIAccountSchedulerProjectionCandidate{
+			{AccountID: 8, Rank: &schedulerRank1, Eligible: true, PrimaryReasonCode: service.AccountMonitorReasonStrategy},
+			{AccountID: 7, Rank: &schedulerRank2, Eligible: true},
+		},
+	}}
+	svc := service.NewAccountMonitorService(repo, accountRepo, nil, nil, &accountMonitorHandlerMultiplierStub{})
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+	h := NewAccountMonitorHandler(svc, nil, nil, nil)
+
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var envelope struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Groups []struct {
+				Accounts []map[string]json.RawMessage `json:"accounts"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, res.Body.String())
+	}
+	if envelope.Code != 0 || envelope.Message != "success" || len(envelope.Data.Groups) != 1 || len(envelope.Data.Groups[0].Accounts) != 2 {
+		t.Fatalf("unexpected response envelope: %s", res.Body.String())
+	}
+	byID := make(map[int64]map[string]json.RawMessage, len(envelope.Data.Groups[0].Accounts))
+	for _, row := range envelope.Data.Groups[0].Accounts {
+		var accountID int64
+		if err := json.Unmarshal(row["account_id"], &accountID); err != nil {
+			t.Fatalf("decode account_id: %v", err)
+		}
+		byID[accountID] = row
+	}
+	var qualityRank, qualityRankTotal, groupRank, schedulerRank, schedulerRankTotal int
+	if err := json.Unmarshal(byID[7]["quality_rank"], &qualityRank); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(byID[7]["quality_rank_total"], &qualityRankTotal); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(byID[7]["group_rank"], &groupRank); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(byID[7]["scheduler_rank"], &schedulerRank); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(byID[7]["scheduler_rank_total"], &schedulerRankTotal); err != nil {
+		t.Fatal(err)
+	}
+	if qualityRank != groupRank || qualityRankTotal != 2 || schedulerRank != 2 || schedulerRankTotal != 2 {
+		t.Fatalf("ranking contract for account 7 = quality %d/%d group %d scheduler %d/%d", qualityRank, qualityRankTotal, groupRank, schedulerRank, schedulerRankTotal)
+	}
+	var explanation struct {
+		CandidateTotal    int    `json:"candidate_total"`
+		PolicyLabel       string `json:"policy_label"`
+		PrimaryReasonCode string `json:"primary_reason_code"`
+	}
+	if err := json.Unmarshal(byID[8]["scheduler_explanation"], &explanation); err != nil {
+		t.Fatal(err)
+	}
+	if explanation.CandidateTotal != 2 || explanation.PolicyLabel != "利润优先" || explanation.PrimaryReasonCode != string(service.AccountMonitorReasonStrategy) {
+		t.Fatalf("scheduler explanation = %#v", explanation)
+	}
+	if scheduler.calls != 1 {
+		t.Fatalf("scheduler projection calls = %d, want 1", scheduler.calls)
+	}
+}
+
+func TestAccountMonitorHandlerFullSiteRowsOmitSchedulerRanking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 1.0
+	repo := &accountMonitorHandlerRepoStub{
+		globalWeights:    service.DefaultAccountMonitorScoreWeights,
+		aggregates:       map[int64]service.AccountMonitorAggregate{7: {SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1, LastCheckedAt: &now}},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		groupWindowAggregates: map[int64]map[int64]service.AccountMonitorWindowAggregate{
+			42: {7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		},
+		latest: map[int64]service.AccountMonitorLatest{7: {Status: "success", CheckedAt: now}},
+		groups: []service.AccountMonitorGroup{{ID: 42, Name: "GPT-Pro", Platform: service.PlatformOpenAI, CustomerVisible: true, RateMultiplier: 1, ScoreWeights: service.DefaultAccountMonitorScoreWeights}},
+	}
+	accountRepo := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{ID: 7, Name: "full-site-account", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}}}}
+	rank := 1
+	scheduler := &accountMonitorHandlerSchedulerProjectionStub{projection: &service.OpenAIAccountSchedulerProjection{
+		SnapshotAt: now, PolicyLabel: "利润优先", CandidateCount: 1,
+		Candidates: []service.OpenAIAccountSchedulerProjectionCandidate{{AccountID: 7, Rank: &rank, Eligible: true}},
+	}}
+	svc := service.NewAccountMonitorService(repo, accountRepo, nil, nil, &accountMonitorHandlerMultiplierStub{})
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+	h := NewAccountMonitorHandler(svc, nil, nil, nil)
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			Accounts []map[string]json.RawMessage `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, res.Body.String())
+	}
+	if len(envelope.Data.Accounts) != 1 {
+		t.Fatalf("full-site accounts = %s", res.Body.String())
+	}
+	row := envelope.Data.Accounts[0]
+	if _, ok := row["quality_rank"]; !ok {
+		t.Fatalf("full-site quality rank missing: %s", res.Body.String())
+	}
+	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation"} {
+		if _, ok := row[field]; ok {
+			t.Fatalf("full-site row fabricated %s: %s", field, res.Body.String())
+		}
+	}
+}
+
+func TestAccountMonitorHandlerProjectionFailureLeavesSchedulerStateUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 1.0
+	repo := &accountMonitorHandlerRepoStub{
+		globalWeights:    service.DefaultAccountMonitorScoreWeights,
+		aggregates:       map[int64]service.AccountMonitorAggregate{7: {SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1, LastCheckedAt: &now}},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		groupWindowAggregates: map[int64]map[int64]service.AccountMonitorWindowAggregate{
+			42: {7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		},
+		latest: map[int64]service.AccountMonitorLatest{7: {Status: "success", CheckedAt: now}},
+		groups: []service.AccountMonitorGroup{{ID: 42, Name: "GPT-Pro", Platform: service.PlatformOpenAI, CustomerVisible: true, RateMultiplier: 1, ScoreWeights: service.DefaultAccountMonitorScoreWeights}},
+	}
+	accountRepo := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{ID: 7, Name: "projection-failure", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}}}}
+	scheduler := &accountMonitorHandlerSchedulerProjectionStub{err: errors.New("scheduler projection unavailable")}
+	svc := service.NewAccountMonitorService(repo, accountRepo, nil, nil, &accountMonitorHandlerMultiplierStub{})
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+	h := NewAccountMonitorHandler(svc, nil, nil, nil)
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var envelope struct {
+		Code int `json:"code"`
+		Data struct {
+			Groups []struct {
+				Accounts []map[string]json.RawMessage `json:"accounts"`
+			} `json:"groups"`
+			Accounts []map[string]json.RawMessage `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, res.Body.String())
+	}
+	if envelope.Code != 0 || len(envelope.Data.Groups) != 1 || len(envelope.Data.Groups[0].Accounts) != 1 || len(envelope.Data.Accounts) != 1 {
+		t.Fatalf("projection failure changed monitor envelope: %s", res.Body.String())
+	}
+	groupRow := envelope.Data.Groups[0].Accounts[0]
+	fullSiteRow := envelope.Data.Accounts[0]
+	if _, ok := groupRow["quality_rank"]; !ok {
+		t.Fatalf("projection failure discarded quality state: %s", res.Body.String())
+	}
+	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation"} {
+		if _, ok := groupRow[field]; ok {
+			t.Fatalf("projection failure fabricated %s: %s", field, res.Body.String())
+		}
+		if _, ok := fullSiteRow[field]; ok {
+			t.Fatalf("full-site row fabricated %s after projection failure: %s", field, res.Body.String())
+		}
+	}
+	if scheduler.calls != 1 {
+		t.Fatalf("scheduler projection calls = %d, want 1", scheduler.calls)
 	}
 }
 

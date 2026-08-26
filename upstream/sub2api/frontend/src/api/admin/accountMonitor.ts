@@ -7,6 +7,7 @@ export type AccountModelDetectorState = 'ready' | 'unconfigured' | 'unavailable'
 export type AccountMonitorRange = '24h' | '7d' | '30d'
 export type AccountMonitorAvailabilityStatus = 'normal' | 'abnormal' | 'unavailable' | 'disabled' | 'stale' | string
 export type AccountMonitorScoreStatus = 'eligible' | 'capped' | 'ineligible' | string
+export type AccountMonitorReasonCode = 'strategy' | 'quality_gate' | 'runtime_load' | 'cooldown' | 'tie_break' | 'data_freshness' | 'not_eligible'
 export type AccountMonitorGroupRecommendationStatus = 'recommended' | 'observe' | 'blocked' | 'not_recommended' | string
 export type AccountMonitorGroupRecommendationTarget = 'gpt_pro' | 'gpt_plus' | 'gpt_special' | string
 export type AccountMonitorGroupRecommendationAction = 'keep' | 'migrate' | 'hold' | 'none' | string
@@ -69,6 +70,42 @@ export interface AccountMonitorScoreBreakdown {
   success: number
   ttft: number
   latency: number
+}
+
+export interface AccountMonitorQualityScoreComponent {
+  score: number
+  max: number
+}
+
+export interface AccountMonitorQualityExplanationBreakdown {
+  cost: AccountMonitorQualityScoreComponent
+  success: AccountMonitorQualityScoreComponent
+  ttft: AccountMonitorQualityScoreComponent
+  latency: AccountMonitorQualityScoreComponent
+}
+
+export interface AccountMonitorQualityExplanation {
+  score?: number | null
+  rank?: number | null
+  rank_total?: number
+  breakdown?: AccountMonitorQualityExplanationBreakdown
+  window: string
+  sample_count: number
+  source: string
+  observed_at: string
+}
+
+export interface AccountMonitorSchedulerExplanation {
+  rank?: number | null
+  rank_total?: number
+  eligible: boolean
+  policy_key?: string
+  policy_label: string
+  effective_weights?: Record<string, number>
+  candidate_scope?: string
+  snapshot_at?: string | null
+  primary_reason_code?: AccountMonitorReasonCode
+  primary_reason_label?: string
 }
 
 export interface AccountMonitorScoreWeights {
@@ -204,6 +241,12 @@ export interface AccountMonitorAccount {
   score_breakdown?: AccountMonitorScoreBreakdown | null
   evidence_source?: string
   group_rank?: number | null
+  quality_rank?: number | null
+  quality_rank_total?: number
+  scheduler_rank?: number | null
+  scheduler_rank_total?: number
+  quality_explanation?: AccountMonitorQualityExplanation | null
+  scheduler_explanation?: AccountMonitorSchedulerExplanation | null
   eligible?: boolean
   evidence?: AccountMonitorQualityEvidence
   group_recommendation?: AccountMonitorGroupRecommendation | null

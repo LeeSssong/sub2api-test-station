@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -20,6 +21,10 @@ const (
 	captureBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance\s+\+ CASE WHEN \$1 > \$2 THEN \$1 - \$2 ELSE 0 END\s+- CASE WHEN \$2 > \$1 THEN \$2 - \$1 ELSE 0 END,\s+frozen_balance = COALESCE\(frozen_balance, 0\) - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$3 AND deleted_at IS NULL AND COALESCE\(frozen_balance, 0\) >= \$1\s+RETURNING balance, frozen_balance`
 	releaseBatchImageHoldSQL    = `(?s)UPDATE users\s+SET balance = balance \+ \$1,\s+frozen_balance = COALESCE\(frozen_balance, 0\) - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND COALESCE\(frozen_balance, 0\) >= \$1\s+RETURNING balance, frozen_balance`
 	userExistsForBillingSQL     = `(?s)SELECT 1\s+FROM users\s+WHERE id = \$1 AND deleted_at IS NULL`
+	walletInsertForUsageSQL     = `(?s)INSERT INTO user_wallets \(user_id,cash_balance_cny,paid_quota_balance_usd,gift_quota_balance_usd,version,created_at,updated_at\)\s+VALUES \(\$1,0,\$2,0,1,NOW\(\),NOW\(\)\)\s+ON CONFLICT \(user_id\) DO NOTHING`
+	walletLockForUsageSQL       = `(?s)SELECT cash_balance_cny,paid_quota_balance_usd,gift_quota_balance_usd\s+FROM user_wallets\s+WHERE user_id=\$1\s+FOR UPDATE`
+	walletUpdateForUsageSQL     = `(?s)UPDATE user_wallets\s+SET paid_quota_balance_usd=\$1,gift_quota_balance_usd=\$2,version=version\+1,updated_at=NOW\(\)\s+WHERE user_id=\$3`
+	walletLedgerInsertSQL       = `(?s)INSERT INTO user_quota_ledger_entries \(user_id,record_type,cash_delta_cny,paid_quota_delta_usd,gift_quota_delta_usd,cash_before_cny,cash_after_cny,paid_before_usd,paid_after_usd,gift_before_usd,gift_after_usd,reference_type,reference_id,note,status,created_at\)`
 )
 
 func TestDeductUsageBillingBalance_UsesSufficientBalanceGuard(t *testing.T) {
@@ -84,12 +89,14 @@ func TestApplyUsageBillingEffects_FlagsBalanceOverdraft(t *testing.T) {
 	mock.ExpectQuery(overdraftBalanceDeductSQL).
 		WithArgs(10.0, int64(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(-5.0))
+	expectUsageWalletProjection(mock, 42, 5, 0, 10, -5, "request-42")
 	mock.ExpectCommit()
 
 	result := &service.UsageBillingApplyResult{Applied: true}
 	err = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
 		UserID:      42,
 		BalanceCost: 10,
+		RequestID:   "request-42",
 	}, result)
 	require.NoError(t, err)
 	require.NotNil(t, result.NewBalance)
@@ -97,6 +104,100 @@ func TestApplyUsageBillingEffects_FlagsBalanceOverdraft(t *testing.T) {
 	require.True(t, result.BalanceOverdrafted)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProjectUsageBillingWallet_UsesPaidBeforeGift(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	expectUsageWalletProjection(mock, 42, 2, 8, 5, 5, "request-paid-first")
+	mock.ExpectCommit()
+
+	err = projectUsageBillingWallet(ctx, tx, 42, 5, 5, "request-paid-first")
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProjectUsageBillingWallet_ReconcilesPriorDriftBeforeActualUsage(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	// 钱包旧值 20、原生扣费前余额只有 10：先写 migration_projection -10，
+	// 再如实写本请求 -2，最终余额和原生新余额 8 相同。
+	mock.ExpectExec(walletInsertForUsageSQL).WithArgs(int64(42), "10.00000000").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(walletLockForUsageSQL).WithArgs(int64(42)).WillReturnRows(sqlmock.NewRows([]string{"cash_balance_cny", "paid_quota_balance_usd", "gift_quota_balance_usd"}).AddRow("0", "20", "0"))
+	mock.ExpectExec(walletUpdateForUsageSQL).WithArgs("10.00000000", "0.00000000", int64(42)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(walletLedgerInsertSQL).WithArgs(int64(42), "migration_projection", "0.00000000", "-10.00000000", "0.00000000", "0.00000000", "0.00000000", "20.00000000", "10.00000000", "0.00000000", "0.00000000", "usage_wallet_sync", "request-drift", "reconciled wallet projection to native balance before usage billing", "confirmed").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(90))
+	mock.ExpectExec(walletUpdateForUsageSQL).WithArgs("8.00000000", "0.00000000", int64(42)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(walletLedgerInsertSQL).WithArgs(int64(42), "usage_consumption", "0.00000000", "-2.00000000", "0.00000000", "0.00000000", "0.00000000", "10.00000000", "8.00000000", "0.00000000", "0.00000000", "usage_billing", "request-drift", "", "confirmed").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(91))
+	mock.ExpectCommit()
+
+	err = projectUsageBillingWallet(ctx, tx, 42, 2, 8, "request-drift")
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProjectUsageBillingWallet_PreservesNativeOverdraft(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	expectUsageWalletProjection(mock, 42, 5, 0, 10, -5, "request-overdraft")
+	mock.ExpectCommit()
+
+	err = projectUsageBillingWallet(ctx, tx, 42, 10, -5, "request-overdraft")
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func expectUsageWalletProjection(mock sqlmock.Sqlmock, userID int64, paid, gift, cost, newBalance float64, requestID string) {
+	beforeBalance := newBalance + cost
+	mock.ExpectExec(walletInsertForUsageSQL).WithArgs(userID, decimalString(beforeBalance)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(walletLockForUsageSQL).WithArgs(userID).WillReturnRows(sqlmock.NewRows([]string{"cash_balance_cny", "paid_quota_balance_usd", "gift_quota_balance_usd"}).AddRow("0", decimalString(paid), decimalString(gift)))
+	paidAfter, giftAfter := expectedUsageWalletBalances(paid, gift, cost)
+	mock.ExpectExec(walletUpdateForUsageSQL).WithArgs(decimalString(paidAfter), decimalString(giftAfter), userID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(walletLedgerInsertSQL).WithArgs(userID, "usage_consumption", decimalString(0), decimalString(paidAfter-paid), decimalString(giftAfter-gift), decimalString(0), decimalString(0), decimalString(paid), decimalString(paidAfter), decimalString(gift), decimalString(giftAfter), "usage_billing", requestID, "", "confirmed").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+}
+
+func expectedUsageWalletBalances(paid, gift, cost float64) (float64, float64) {
+	paidConsumed := minFloat(cost, maxFloat(paid, 0))
+	remaining := cost - paidConsumed
+	giftConsumed := minFloat(remaining, maxFloat(gift, 0))
+	return paid - paidConsumed - (remaining - giftConsumed), gift - giftConsumed
+}
+
+func decimalString(value float64) string {
+	return fmt.Sprintf("%.8f", value)
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {

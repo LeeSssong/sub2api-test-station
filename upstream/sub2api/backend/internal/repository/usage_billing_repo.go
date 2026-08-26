@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"math"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -186,6 +188,9 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		if err != nil {
 			return err
 		}
+		if err := projectUsageBillingWallet(ctx, tx, cmd.UserID, cmd.BalanceCost, newBalance, cmd.RequestID); err != nil {
+			return err
+		}
 		result.NewBalance = &newBalance
 		result.BalanceOverdrafted = !sufficient
 	}
@@ -214,6 +219,89 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 
 	return nil
 }
+
+// projectUsageBillingWallet mirrors an already-applied native users.balance deduction
+// into the wallet audit projection. It intentionally operates on the caller's SQL
+// transaction: usage_billing_dedup is the only idempotency boundary for this path.
+func projectUsageBillingWallet(ctx context.Context, tx *sql.Tx, userID int64, amount, newBalance float64, requestID string) error {
+	if tx == nil {
+		return errors.New("usage billing wallet projection transaction is nil")
+	}
+	beforeBalance := newBalance + amount
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_wallets (user_id,cash_balance_cny,paid_quota_balance_usd,gift_quota_balance_usd,version,created_at,updated_at)
+		VALUES ($1,0,$2,0,1,NOW(),NOW())
+		ON CONFLICT (user_id) DO NOTHING
+	`, userID, quotaDecimal(beforeBalance)); err != nil {
+		return err
+	}
+
+	var cash, paid, gift float64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT cash_balance_cny,paid_quota_balance_usd,gift_quota_balance_usd
+		FROM user_wallets
+		WHERE user_id=$1
+		FOR UPDATE
+	`, userID).Scan(&cash, &paid, &gift); err != nil {
+		return err
+	}
+
+	// T67 only changed users.balance, so existing wallets may already be stale.
+	// Bring the compatibility projection to the proven native pre-charge value in
+	// this same audit transaction before recording this request's real consumption.
+	if !sameQuotaTotal(paid+gift, beforeBalance) {
+		projectedPaid := beforeBalance - gift
+		if err := updateUsageWallet(ctx, tx, userID, projectedPaid, gift); err != nil {
+			return err
+		}
+		if err := insertUsageWalletLedger(ctx, tx, userID, "migration_projection",
+			cash, paid, gift, projectedPaid, gift,
+			"usage_wallet_sync", requestID,
+			"reconciled wallet projection to native balance before usage billing"); err != nil {
+			return err
+		}
+		paid = projectedPaid
+	}
+
+	paidConsumed := math.Min(amount, math.Max(paid, 0))
+	remaining := amount - paidConsumed
+	giftConsumed := math.Min(remaining, math.Max(gift, 0))
+	paidAfter := paid - paidConsumed - (remaining - giftConsumed)
+	giftAfter := gift - giftConsumed
+	if !sameQuotaTotal(paidAfter+giftAfter, newBalance) {
+		return fmt.Errorf("usage billing wallet projection invariant failed for user %d", userID)
+	}
+	if err := updateUsageWallet(ctx, tx, userID, paidAfter, giftAfter); err != nil {
+		return err
+	}
+	return insertUsageWalletLedger(ctx, tx, userID, service.QuotaRecordUsageConsumption,
+		cash, paid, gift, paidAfter, giftAfter, "usage_billing", requestID, "")
+}
+
+func updateUsageWallet(ctx context.Context, tx *sql.Tx, userID int64, paid, gift float64) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE user_wallets
+		SET paid_quota_balance_usd=$1,gift_quota_balance_usd=$2,version=version+1,updated_at=NOW()
+		WHERE user_id=$3
+	`, quotaDecimal(paid), quotaDecimal(gift), userID)
+	return err
+}
+
+func insertUsageWalletLedger(ctx context.Context, tx *sql.Tx, userID int64, recordType string, cash, paidBefore, giftBefore, paidAfter, giftAfter float64, referenceType, referenceID, note string) error {
+	var entryID int64
+	return tx.QueryRowContext(ctx, `
+		INSERT INTO user_quota_ledger_entries (user_id,record_type,cash_delta_cny,paid_quota_delta_usd,gift_quota_delta_usd,cash_before_cny,cash_after_cny,paid_before_usd,paid_after_usd,gift_before_usd,gift_after_usd,reference_type,reference_id,note,status,created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
+		RETURNING id
+	`, userID, recordType,
+		quotaDecimal(0), quotaDecimal(paidAfter-paidBefore), quotaDecimal(giftAfter-giftBefore),
+		quotaDecimal(cash), quotaDecimal(cash), quotaDecimal(paidBefore), quotaDecimal(paidAfter), quotaDecimal(giftBefore), quotaDecimal(giftAfter),
+		referenceType, referenceID, note, "confirmed").Scan(&entryID)
+}
+
+func quotaDecimal(value float64) string { return fmt.Sprintf("%.8f", value) }
+
+func sameQuotaTotal(a, b float64) bool { return math.Abs(a-b) < 0.00000001 }
 
 func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
 	const updateSQL = `

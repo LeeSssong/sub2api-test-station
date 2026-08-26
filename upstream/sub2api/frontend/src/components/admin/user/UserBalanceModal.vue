@@ -3,7 +3,7 @@
     <form v-if="user" id="balance-form" @submit.prevent="handleBalanceSubmit" class="space-y-5">
       <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
-        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentBalance') }}: ${{ formatBalance(Number(summary?.total_quota_balance_usd ?? user.balance)) }}</p><p v-if="summary" class="text-xs text-gray-400">¥{{ summary.cash_balance_cny }} 现金 · ${{ summary.paid_quota_balance_usd }} 付费 · ${{ summary.gift_quota_balance_usd }} 赠送</p></div>
+        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentBalance') }}: {{ summary ? `$${formatBalance(Number(summary.total_quota_balance_usd))}` : '—' }}</p><p v-if="summary" class="text-xs text-gray-400">¥{{ summary.cash_balance_cny }} 现金 · ${{ summary.paid_quota_balance_usd }} 付费 · ${{ summary.gift_quota_balance_usd }} 赠送</p></div>
       </div>
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
@@ -59,15 +59,15 @@ const formatBalance = (value: number) => {
 
 // 填入全部余额
 const fillAllBalance = () => {
-  if (props.user) {
-    form.amount = Math.min(Number(summary.value?.cash_balance_cny ?? props.user.balance), Number(summary.value?.paid_quota_balance_usd ?? props.user.balance))
+  if (summary.value) {
+    form.amount = Math.min(Number(summary.value.cash_balance_cny), Number(summary.value.paid_quota_balance_usd))
   }
 }
 
 const calculateNewBalance = () => {
-  if (!props.user) return 0
-  const paid = Number(summary.value?.paid_quota_balance_usd ?? props.user.balance)
-  const gift = Number(summary.value?.gift_quota_balance_usd ?? 0)
+  if (!summary.value) return 0
+  const paid = Number(summary.value.paid_quota_balance_usd)
+  const gift = Number(summary.value.gift_quota_balance_usd)
   const result = props.operation === 'add' ? paid + gift + form.amount + form.giftQuota : paid + gift - form.amount
   // 避免浮点数精度问题导致的 -0.00 显示
   return Math.abs(result) < 1e-10 ? 0 : result
@@ -79,7 +79,12 @@ const handleBalanceSubmit = async () => {
     return
   }
   // 退款时验证金额不超过实际余额
-  if (props.operation === 'subtract' && form.amount > Math.min(Number(summary.value?.cash_balance_cny ?? props.user.balance), Number(summary.value?.paid_quota_balance_usd ?? props.user.balance))) {
+  const currentSummary = summary.value
+  if (props.operation === 'subtract' && !currentSummary) {
+    appStore.showError(t('common.error'))
+    return
+  }
+  if (props.operation === 'subtract' && form.amount > Math.min(Number(currentSummary!.cash_balance_cny), Number(currentSummary!.paid_quota_balance_usd))) {
     appStore.showError(t('admin.users.insufficientBalance'))
     return
   }

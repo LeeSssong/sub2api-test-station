@@ -12,7 +12,7 @@
 
 ## 当前实现任务（2026-08-26，T73）
 
-- **T73 账号检测记录居中弹窗与双证据检索**：状态 `READY_FOR_ROOT_REVIEW`。用户已确认视觉稿：以原生深色遮罩的居中弹窗替换右侧抽屉；记录表把 `Juice 结果`、`行为指纹` 与 `综合结论` 作为主列，档位/样本降为辅助信息；行展开后分别展示两条证据及有限元数据。筛选固定为 Juice 结果、指纹结果、综合结论，其中综合结论复用历史接口既有 `status`，新增 Juice/指纹状态的稳定服务端分页筛选，不能只过滤当前一页。复用现有 `account_model_detection_runs`、`/admin/account-monitors/:id/detection` 与结构化字段，不新建事实源、表、迁移或生产数据写入；历史记录继续明确为“历史记录”，不得伪造双证据。候选 `codex/t73-account-monitor-modal@f1f1de611`，基线 `main@6d30ac9ef`；前端检测记录/账号卡片 60 项、typecheck、production build、Go handler/service 检测历史测试、server build、gofmt/diff-check 通过，实际组件在桌面与 390px 核验无错误和横向溢出。交接：`docs/handoffs/2026-08-26-t73-account-monitor-records-modal-handoff.md`。T71 仍在 VERIFYING、T72 已 READY_FOR_ROOT_REVIEW，T73 不得抢占合并/部署单车道。
+- **T73 账号检测记录居中弹窗与双证据检索**：状态 `DEPLOYING`。用户已确认视觉稿并明确要求部署生效：以原生深色遮罩的居中弹窗替换右侧抽屉；记录表把 `Juice 结果`、`行为指纹` 与 `综合结论` 作为主列，档位/样本降为辅助信息；行展开后分别展示两条证据及有限元数据。筛选固定为 Juice 结果、指纹结果、综合结论，其中综合结论复用历史接口既有 `status`，新增 Juice/指纹状态的稳定服务端分页筛选，不能只过滤当前一页。复用现有 `account_model_detection_runs`、`/admin/account-monitors/:id/detection` 与结构化字段，不新建事实源、表、迁移或生产数据写入；历史记录继续明确为“历史记录”，不得伪造双证据。刷新候选 `codex/t73-account-monitor-modal@07bd0da51` 已合入根 `main@ee7dda11e`；合并后前端 60 项、typecheck/build、Go 专项/server build、gofmt/diff-check 通过，正在生成最终树证据并执行发布预检。交接：`docs/handoffs/2026-08-26-t73-account-monitor-records-modal-handoff.md`。
 
 ## 当前待根审任务（2026-08-26，T72）
 

@@ -232,6 +232,28 @@ afterEach(() => {
 		expect(explanation.text()).toContain('2026')
 	})
 
+	it('keeps the row safely stacked before the wide desktop breakpoint', () => {
+		const wrapper = mountCard()
+		const row = wrapper.get('[data-test="monitor-card-header"]')
+
+		expect(row.classes()).toEqual(expect.arrayContaining(['grid', 'min-w-0', 'gap-x-4']))
+		expect(row.classes()).toContain('xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]')
+		expect(row.classes()).not.toContain('lg:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]')
+		expect(wrapper.find('[data-test="ranking-explanation"]').exists()).toBe(false)
+		expect(wrapper.get('[data-test="account-actions"]').classes()).not.toContain('lg:flex-col')
+		expect(wrapper.get('[data-test="account-actions"]').classes()).toContain('xl:flex-col')
+	})
+
+	it('uses legacy group_rank for selected-group quality display without changing scheduler rank', () => {
+		const wrapper = mountCard({
+			rankingScope: 'group',
+			account: { ...account, quality_rank: undefined, quality_rank_total: undefined, group_rank: 7, scheduler_rank: 2, scheduler_rank_total: 9 },
+		})
+
+		expect(wrapper.get('[data-test="quality-rank"]').text()).toContain('第 7')
+		expect(wrapper.get('[data-test="scheduler-rank"]').text()).toContain('第 2')
+	})
+
 	const recommendation = {
 		status: 'recommended',
 		target: 'gpt_pro',

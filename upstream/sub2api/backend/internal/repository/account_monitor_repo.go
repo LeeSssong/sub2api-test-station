@@ -602,6 +602,119 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 	return result, nil
 }
 
+func (r *accountMonitorRepository) ListGroupWindowAggregates(
+	ctx context.Context,
+	groupID int64,
+	accountIDs []int64,
+	since, until time.Time,
+) (map[int64]service.AccountMonitorWindowAggregate, error) {
+	result := make(map[int64]service.AccountMonitorWindowAggregate, len(accountIDs))
+	if groupID <= 0 || len(accountIDs) == 0 || !until.After(since) {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx, `
+		WITH group_usage AS (
+			SELECT
+				u.request_id,
+				u.account_id,
+				u.first_token_ms,
+				u.duration_ms,
+				u.total_cost,
+				u.created_at
+			FROM usage_logs u
+			WHERE u.group_id = $1
+				AND u.account_id = ANY($2)
+				AND u.created_at >= $3
+				AND u.created_at < $4
+		), group_errors AS (
+			SELECT e.request_id, e.account_id, e.created_at
+			FROM ops_error_logs e
+			WHERE e.group_id = $1
+				AND e.account_id = ANY($2)
+				AND e.created_at >= $3
+				AND e.created_at < $4
+				AND COALESCE(e.is_count_tokens, FALSE) = FALSE
+				AND COALESCE(e.status_code, 0) >= 400
+		), group_requests AS (
+			SELECT
+				u.account_id,
+				u.first_token_ms,
+				u.duration_ms,
+				u.total_cost,
+				u.created_at,
+				EXISTS (
+					SELECT 1
+					FROM group_errors e
+					WHERE e.request_id IS NOT NULL
+						AND u.request_id IS NOT NULL
+						AND e.request_id = u.request_id
+						AND e.account_id = u.account_id
+				) AS has_error
+			FROM group_usage u
+			UNION ALL
+			SELECT e.account_id, NULL, NULL, NULL, e.created_at, TRUE
+			FROM group_errors e
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM group_usage u
+				WHERE u.request_id IS NOT NULL
+					AND e.request_id IS NOT NULL
+					AND u.request_id = e.request_id
+					AND u.account_id = e.account_id
+			)
+		)
+		SELECT
+			account_id,
+			COUNT(*)::bigint,
+			COUNT(*) FILTER (WHERE NOT has_error)::bigint,
+			COUNT(*) FILTER (WHERE has_error)::bigint,
+			COALESCE(SUM(total_cost), 0)::double precision,
+			COALESCE(
+				COUNT(*) FILTER (WHERE NOT has_error)::double precision / NULLIF(COUNT(*), 0),
+				0
+			),
+			COUNT(first_token_ms)::int,
+			COUNT(duration_ms)::int,
+			PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_token_ms)
+				FILTER (WHERE first_token_ms IS NOT NULL),
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)
+				FILTER (WHERE duration_ms IS NOT NULL),
+			MAX(created_at)
+		FROM group_requests
+		GROUP BY account_id
+	`, groupID, pq.Array(accountIDs), since.UTC(), until.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var accountID int64
+		var aggregate service.AccountMonitorWindowAggregate
+		if err := rows.Scan(
+			&accountID,
+			&aggregate.RequestCount,
+			&aggregate.SuccessCount,
+			&aggregate.ErrorCount,
+			&aggregate.BaseCost,
+			&aggregate.SuccessRate,
+			&aggregate.TTFTSampleCount,
+			&aggregate.LatencySampleCount,
+			&aggregate.TTFTP50MS,
+			&aggregate.LatencyP95MS,
+			&aggregate.LastObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		result[accountID] = aggregate
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *accountMonitorRepository) LoadAggregate(
 	ctx context.Context,
 	accountIDs []int64,

@@ -1194,12 +1194,16 @@ func ProvideAccountMonitorService(
 	billingService *BillingService,
 	upstreamBillingProbeService *UpstreamBillingProbeService,
 	detectionService *AccountModelDetectionService,
+	openAIGatewayService *OpenAIGatewayService,
+	concurrencyService *ConcurrencyService,
 ) *AccountMonitorService {
 	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
 	multiplierService.SetDeclarationProbe(upstreamBillingProbeService)
 	service := NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
 	service.costPricing = billingService
 	service.SetModelDetectionService(detectionService)
+	service.SetOpenAIAccountSchedulerProjectionProvider(openAIGatewayService)
+	service.SetAccountMonitorConcurrencyService(concurrencyService)
 	return service
 }
 

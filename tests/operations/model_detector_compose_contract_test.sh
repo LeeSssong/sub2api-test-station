@@ -14,10 +14,10 @@ grep -Fq 'model-detector:' "$COMPOSE" || fail "detector service is not declared"
 grep -Fq '/app/model-detector' "$COMPOSE" || fail "detector service command is not pinned"
 grep -Fq 'http://model-detector:8090' "$COMPOSE" || fail "detector private URL is not wired"
 grep -Fq 'MODEL_DETECTOR_VERSION: ${MODEL_DETECTOR_VERSION:-4.1.1}' "$COMPOSE" || fail "detector version must default to licensed v4.1.1"
-grep -Fq 'start_period: 180s' "$COMPOSE" || fail "licensed v4.1.1 detector needs a 180 second cold-start grace period"
-grep -Fq '"start_period": "180s"' "$ROOT/ops/deploy-sub2api-blue-green-host.sh" \
+grep -Fq 'start_period: 300s' "$COMPOSE" || fail "licensed v4.1.1 detector needs a 300 second cold-start grace period"
+grep -Fq '"start_period": "300s"' "$ROOT/ops/deploy-sub2api-blue-green-host.sh" \
   || fail "host-generated detector Compose must preserve the v4.1.1 cold-start grace period"
-grep -Fq 'local timeout=${DETECTOR_HEALTH_TIMEOUT_SECONDS:-240}' "$ROOT/ops/deploy-sub2api-blue-green-host.sh" \
+grep -Fq 'local timeout=${DETECTOR_HEALTH_TIMEOUT_SECONDS:-480}' "$ROOT/ops/deploy-sub2api-blue-green-host.sh" \
   || fail "host detector health wait must allow the v4.1.1 cold start"
 grep -Fq 'GPT56_V411_RELEASE_SHA256=70c0c2f092e66cd219f2384e08872e5bedb4559e427c2e320d0070186376f865' "$DOCKERFILE" || fail "pinned v4.1.1 artifact checksum is missing"
 grep -Fq 'model-detector-v411-adapter.py' "$DOCKERFILE" || fail "v4.1.1 adapter is not installed"

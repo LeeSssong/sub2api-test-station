@@ -388,10 +388,12 @@ type accountMonitorHandlerSchedulerProjectionStub struct {
 	projection *service.OpenAIAccountSchedulerProjection
 	err        error
 	calls      int
+	requests   []service.OpenAIAccountSchedulerProjectionRequest
 }
 
-func (s *accountMonitorHandlerSchedulerProjectionStub) Project(context.Context, service.OpenAIAccountSchedulerProjectionRequest) (*service.OpenAIAccountSchedulerProjection, error) {
+func (s *accountMonitorHandlerSchedulerProjectionStub) Project(_ context.Context, request service.OpenAIAccountSchedulerProjectionRequest) (*service.OpenAIAccountSchedulerProjection, error) {
 	s.calls++
+	s.requests = append(s.requests, request)
 	return s.projection, s.err
 }
 
@@ -497,22 +499,51 @@ func TestAccountMonitorHandlerGroupResponseIncludesRankingContract(t *testing.T)
 	if err := json.Unmarshal(byID[7]["scheduler_rank_total"], &schedulerRankTotal); err != nil {
 		t.Fatal(err)
 	}
-	if qualityRank != groupRank || qualityRankTotal != 2 || schedulerRank != 2 || schedulerRankTotal != 2 {
+	var schedulerRank8, schedulerRankTotal8 int
+	if err := json.Unmarshal(byID[8]["scheduler_rank"], &schedulerRank8); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(byID[8]["scheduler_rank_total"], &schedulerRankTotal8); err != nil {
+		t.Fatal(err)
+	}
+	if qualityRank != groupRank || qualityRankTotal != 2 || schedulerRank != 2 || schedulerRankTotal != 2 || schedulerRank8 != 1 || schedulerRankTotal8 != 2 {
 		t.Fatalf("ranking contract for account 7 = quality %d/%d group %d scheduler %d/%d", qualityRank, qualityRankTotal, groupRank, schedulerRank, schedulerRankTotal)
 	}
 	var explanation struct {
-		CandidateTotal    int    `json:"candidate_total"`
-		PolicyLabel       string `json:"policy_label"`
-		PrimaryReasonCode string `json:"primary_reason_code"`
+		Rank               *int               `json:"rank"`
+		RankTotal          int                `json:"rank_total"`
+		CandidateTotal     int                `json:"candidate_total"`
+		Eligible           bool               `json:"eligible"`
+		PolicyKey          string             `json:"policy_key"`
+		PolicyLabel        string             `json:"policy_label"`
+		EffectiveWeights   map[string]float64 `json:"effective_weights"`
+		CandidateScope     string             `json:"candidate_scope"`
+		SnapshotAt         time.Time          `json:"snapshot_at"`
+		PrimaryReasonCode  string             `json:"primary_reason_code"`
+		PrimaryReasonLabel string             `json:"primary_reason_label"`
 	}
 	if err := json.Unmarshal(byID[8]["scheduler_explanation"], &explanation); err != nil {
 		t.Fatal(err)
 	}
-	if explanation.CandidateTotal != 2 || explanation.PolicyLabel != "利润优先" || explanation.PrimaryReasonCode != string(service.AccountMonitorReasonStrategy) {
+	if explanation.Rank == nil || *explanation.Rank != 1 || explanation.RankTotal != 2 || explanation.CandidateTotal != 2 || !explanation.Eligible || explanation.PolicyKey != "group_policy" || explanation.PolicyLabel != "利润优先" || explanation.EffectiveWeights["upstream_cost"] != 3 || explanation.CandidateScope != "group" || !explanation.SnapshotAt.Equal(now) || explanation.PrimaryReasonCode != string(service.AccountMonitorReasonStrategy) || explanation.PrimaryReasonLabel == "" {
 		t.Fatalf("scheduler explanation = %#v", explanation)
+	}
+	var secondExplanation struct {
+		Rank      *int `json:"rank"`
+		RankTotal int  `json:"rank_total"`
+		Eligible  bool `json:"eligible"`
+	}
+	if err := json.Unmarshal(byID[7]["scheduler_explanation"], &secondExplanation); err != nil {
+		t.Fatal(err)
+	}
+	if secondExplanation.Rank == nil || *secondExplanation.Rank != 2 || secondExplanation.RankTotal != 2 || !secondExplanation.Eligible {
+		t.Fatalf("account 7 scheduler explanation = %#v", secondExplanation)
 	}
 	if scheduler.calls != 1 {
 		t.Fatalf("scheduler projection calls = %d, want 1", scheduler.calls)
+	}
+	if len(scheduler.requests) != 1 || scheduler.requests[0].GroupID != 42 || scheduler.requests[0].Platform != service.PlatformOpenAI || scheduler.requests[0].SnapshotAt.IsZero() {
+		t.Fatalf("scheduler projection request = %#v", scheduler.requests)
 	}
 }
 
@@ -561,7 +592,7 @@ func TestAccountMonitorHandlerFullSiteRowsOmitSchedulerRanking(t *testing.T) {
 	if _, ok := row["quality_rank"]; !ok {
 		t.Fatalf("full-site quality rank missing: %s", res.Body.String())
 	}
-	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation"} {
+	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation", "scheduler_unavailable"} {
 		if _, ok := row[field]; ok {
 			t.Fatalf("full-site row fabricated %s: %s", field, res.Body.String())
 		}
@@ -622,8 +653,139 @@ func TestAccountMonitorHandlerProjectionFailureLeavesSchedulerStateUnavailable(t
 			t.Fatalf("full-site row fabricated %s after projection failure: %s", field, res.Body.String())
 		}
 	}
+	var schedulerUnavailable bool
+	if err := json.Unmarshal(groupRow["scheduler_unavailable"], &schedulerUnavailable); err != nil {
+		t.Fatalf("decode scheduler_unavailable: %v", err)
+	}
+	if !schedulerUnavailable {
+		t.Fatalf("projection failure did not expose scheduler unavailability: %s", res.Body.String())
+	}
 	if scheduler.calls != 1 {
 		t.Fatalf("scheduler projection calls = %d, want 1", scheduler.calls)
+	}
+}
+
+func TestAccountMonitorHandlerNilProjectionExposesSchedulerUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 1.0
+	repo := &accountMonitorHandlerRepoStub{
+		globalWeights:    service.DefaultAccountMonitorScoreWeights,
+		aggregates:       map[int64]service.AccountMonitorAggregate{7: {SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1, LastCheckedAt: &now}},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		groupWindowAggregates: map[int64]map[int64]service.AccountMonitorWindowAggregate{
+			42: {7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		},
+		latest: map[int64]service.AccountMonitorLatest{7: {Status: "success", CheckedAt: now}},
+		groups: []service.AccountMonitorGroup{{ID: 42, Name: "GPT-Pro", Platform: service.PlatformOpenAI, CustomerVisible: true, RateMultiplier: 1, ScoreWeights: service.DefaultAccountMonitorScoreWeights}},
+	}
+	accountRepo := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{ID: 7, Name: "nil-projection", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}}}}
+	scheduler := &accountMonitorHandlerSchedulerProjectionStub{}
+	svc := service.NewAccountMonitorService(repo, accountRepo, nil, nil, &accountMonitorHandlerMultiplierStub{})
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+	h := NewAccountMonitorHandler(svc, nil, nil, nil)
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var envelope struct {
+		Code int `json:"code"`
+		Data struct {
+			Groups []struct {
+				Accounts []map[string]json.RawMessage `json:"accounts"`
+			} `json:"groups"`
+			Accounts []map[string]json.RawMessage `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, res.Body.String())
+	}
+	if envelope.Code != 0 || len(envelope.Data.Groups) != 1 || len(envelope.Data.Groups[0].Accounts) != 1 || len(envelope.Data.Accounts) != 1 {
+		t.Fatalf("nil projection changed monitor envelope: %s", res.Body.String())
+	}
+	groupRow := envelope.Data.Groups[0].Accounts[0]
+	fullSiteRow := envelope.Data.Accounts[0]
+	if _, ok := groupRow["quality_rank"]; !ok {
+		t.Fatalf("nil projection discarded quality state: %s", res.Body.String())
+	}
+	var schedulerUnavailable bool
+	if err := json.Unmarshal(groupRow["scheduler_unavailable"], &schedulerUnavailable); err != nil {
+		t.Fatalf("decode scheduler_unavailable: %v", err)
+	}
+	if !schedulerUnavailable {
+		t.Fatalf("nil projection did not expose scheduler unavailability: %s", res.Body.String())
+	}
+	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation"} {
+		if _, ok := groupRow[field]; ok {
+			t.Fatalf("nil projection fabricated %s: %s", field, res.Body.String())
+		}
+		if _, ok := fullSiteRow[field]; ok {
+			t.Fatalf("full-site row fabricated %s after nil projection: %s", field, res.Body.String())
+		}
+	}
+	if scheduler.calls != 1 {
+		t.Fatalf("scheduler projection calls = %d, want 1", scheduler.calls)
+	}
+}
+
+func TestAccountMonitorHandlerNilLoadSnapshotExposesSchedulerUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 1.0
+	repo := &accountMonitorHandlerRepoStub{
+		globalWeights:    service.DefaultAccountMonitorScoreWeights,
+		aggregates:       map[int64]service.AccountMonitorAggregate{7: {SampleCount: 3, SuccessCount: 3, SuccessSampleCount: 3, SuccessRate: 1, LastCheckedAt: &now}},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		groupWindowAggregates: map[int64]map[int64]service.AccountMonitorWindowAggregate{
+			42: {7: {RequestCount: 3, SuccessCount: 3, SuccessRate: 1, LastObservedAt: &now}},
+		},
+		latest: map[int64]service.AccountMonitorLatest{7: {Status: "success", CheckedAt: now}},
+		groups: []service.AccountMonitorGroup{{ID: 42, Name: "GPT-Pro", Platform: service.PlatformOpenAI, CustomerVisible: true, RateMultiplier: 1, ScoreWeights: service.DefaultAccountMonitorScoreWeights}},
+	}
+	accountRepo := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{ID: 7, Name: "nil-load-snapshot", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}}}}
+	scheduler := &accountMonitorHandlerSchedulerProjectionStub{projection: &service.OpenAIAccountSchedulerProjection{CandidateCount: 1}}
+	svc := service.NewAccountMonitorService(repo, accountRepo, nil, nil, &accountMonitorHandlerMultiplierStub{})
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+	svc.SetAccountMonitorConcurrencyService(service.NewConcurrencyService(nil))
+	h := NewAccountMonitorHandler(svc, nil, nil, nil)
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			Groups []struct {
+				Accounts []map[string]json.RawMessage `json:"accounts"`
+			} `json:"groups"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, res.Body.String())
+	}
+	if len(envelope.Data.Groups) != 1 || len(envelope.Data.Groups[0].Accounts) != 1 {
+		t.Fatalf("nil load snapshot changed monitor envelope: %s", res.Body.String())
+	}
+	row := envelope.Data.Groups[0].Accounts[0]
+	var unavailable bool
+	if err := json.Unmarshal(row["scheduler_unavailable"], &unavailable); err != nil {
+		t.Fatalf("decode scheduler_unavailable: %v", err)
+	}
+	if !unavailable {
+		t.Fatalf("nil load snapshot did not expose scheduler unavailability: %s", res.Body.String())
+	}
+	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation"} {
+		if _, ok := row[field]; ok {
+			t.Fatalf("nil load snapshot fabricated %s: %s", field, res.Body.String())
+		}
+	}
+	if scheduler.calls != 0 {
+		t.Fatalf("scheduler projection calls = %d, want 0 when load snapshot is unavailable", scheduler.calls)
 	}
 }
 

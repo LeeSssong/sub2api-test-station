@@ -921,11 +921,20 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 	rows []AccountMonitorGroupAccount,
 	now time.Time,
 ) {
-	if s == nil || group == nil || group.ID <= 0 || s.schedulerProjection == nil || len(accounts) == 0 {
+	if s == nil || group == nil || group.ID <= 0 || len(accounts) == 0 {
 		return
 	}
 	platform := NormalizeGroupPlatform(group.Platform)
 	if platform != PlatformOpenAI && platform != PlatformGrok {
+		return
+	}
+	if s.schedulerProjection == nil {
+		markSchedulerProjectionUnavailable(rows)
+		return
+	}
+	if s.concurrencyService != nil && s.concurrencyService.cache == nil {
+		slog.WarnContext(ctx, "account monitor scheduler load snapshot unavailable", "group_id", group.ID, "reason", "concurrency cache unavailable")
+		markSchedulerProjectionUnavailable(rows)
 		return
 	}
 	loadMap := map[int64]*AccountLoadInfo{}
@@ -934,6 +943,7 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 		loaded, err := s.concurrencyService.GetAccountsLoadBatch(ctx, loadReq)
 		if err != nil {
 			slog.WarnContext(ctx, "account monitor scheduler load snapshot unavailable", "group_id", group.ID, "error", err)
+			markSchedulerProjectionUnavailable(rows)
 			return
 		}
 		loadMap = loaded
@@ -949,7 +959,10 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 	if err != nil || projection == nil {
 		if err != nil {
 			slog.WarnContext(ctx, "account monitor scheduler projection unavailable", "group_id", group.ID, "error", err)
+		} else {
+			slog.WarnContext(ctx, "account monitor scheduler projection unavailable", "group_id", group.ID, "reason", "nil projection")
 		}
+		markSchedulerProjectionUnavailable(rows)
 		return
 	}
 	candidates := make(map[int64]OpenAIAccountSchedulerProjectionCandidate, len(projection.Candidates))
@@ -976,6 +989,12 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 			rows[i].SchedulerRank = candidate.Rank
 			rows[i].SchedulerRankTotal = eligibleTotal
 		}
+	}
+}
+
+func markSchedulerProjectionUnavailable(rows []AccountMonitorGroupAccount) {
+	for i := range rows {
+		rows[i].SchedulerUnavailable = true
 	}
 }
 

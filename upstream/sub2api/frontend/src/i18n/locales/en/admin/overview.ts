@@ -633,6 +633,9 @@ export default {
       refundGiftClears: 'Refund clears all remaining gift quota; gift quota is not converted to cash.',
       withdrawAll: 'All',
       currentBalance: 'Current Balance',
+      currentSpendableBalance: 'Current Spendable Quota',
+      refundableCashBalance: 'Refundable Cash Balance',
+      paidQuota: 'Paid Quota',
       depositNotesPlaceholder:
         'e.g., New user registration bonus, promotional credit, compensation, etc.',
       withdrawNotesPlaceholder:

@@ -496,6 +496,127 @@ func TestAccountMonitorListWindowDoesNotLeakGlobalQualityIntoLegacyGroupRows(t *
 	}
 }
 
+func TestAccountMonitorListWindowSeparatesGroupRequestsFromProbeEvidence(t *testing.T) {
+	rate := 1.0
+	now := time.Now().UTC()
+	accounts := []Account{
+		{ID: 101, Name: "overlapping-request", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}},
+		{ID: 102, Name: "request-only", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+		aggregates: map[int64]AccountMonitorAggregate{
+			// This is the only distinct probe sample for account 101. The two
+			// group request rows below must not be treated as more probes.
+			101: {SampleCount: 1, SuccessCount: 1, SuccessSampleCount: 1, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			101: {RequestCount: 2, SuccessCount: 2, SuccessRate: 1, LastObservedAt: &now},
+			102: {RequestCount: 100, SuccessCount: 100, SuccessRate: 1, LastObservedAt: &now},
+		},
+		groupWindowAggregates: map[int64]map[int64]AccountMonitorWindowAggregate{
+			7: {
+				101: {RequestCount: 2, SuccessCount: 2, SuccessRate: 1, LastObservedAt: &now},
+				102: {RequestCount: 100, SuccessCount: 100, SuccessRate: 1, LastObservedAt: &now},
+			},
+		},
+		// These fixtures represent the same group-scoped request domain as
+		// groupWindowAggregates. They must never become probe evidence.
+		groupAggregates: map[int64]map[int64]AccountMonitorAggregate{
+			7: {
+				101: {SampleCount: 2, SuccessCount: 2, SuccessSampleCount: 2, SuccessRate: 1, LastCheckedAt: &now},
+				102: {SampleCount: 100, SuccessCount: 100, SuccessSampleCount: 100, SuccessRate: 1, LastCheckedAt: &now},
+			},
+		},
+		latest: map[int64]AccountMonitorLatest{
+			101: {Status: "success", CheckedAt: now},
+			102: {Status: "success", CheckedAt: now},
+		},
+		groups: []AccountMonitorGroup{{ID: 7, Name: "openai", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights}},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make(map[int64]AccountMonitorGroupAccount, len(page.Groups[0].Accounts))
+	for _, row := range page.Groups[0].Accounts {
+		rows[row.AccountID] = row
+	}
+
+	if got := rows[101].Evidence.SampleCount; got != 3 {
+		t.Fatalf("overlapping request/probe evidence sample count = %d, want 3 distinct samples", got)
+	}
+	if got := rows[101].Evidence.SuccessSampleCount; got != 3 {
+		t.Fatalf("overlapping request/probe evidence success count = %d, want 3 distinct samples", got)
+	}
+	if rows[101].QualityRank == nil {
+		t.Fatalf("account with one real probe and group requests should remain rankable: %#v", rows[101])
+	}
+	if rows[102].Evidence.Source != "stale" || rows[102].Evidence.SampleCount != 0 || rows[102].QualityRank != nil || rows[102].QualityScore != nil {
+		t.Fatalf("request-only group traffic bypassed the probe gate: %#v", rows[102])
+	}
+}
+
+func TestAccountMonitorListWindowSkipsSchedulerProjectionForNonOpenAIGroups(t *testing.T) {
+	rate := 1.0
+	now := time.Now().UTC()
+	account := Account{ID: 201, Name: "shared", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7, 8, 9}}
+	rank := 1
+	projection := func() *OpenAIAccountSchedulerProjection {
+		return &OpenAIAccountSchedulerProjection{
+			SnapshotAt:     now,
+			PolicyKey:      "group_policy",
+			PolicyLabel:    "policy",
+			CandidateCount: 1,
+			Candidates:     []OpenAIAccountSchedulerProjectionCandidate{{AccountID: account.ID, Rank: &rank, Eligible: true}},
+		}
+	}
+	repo := &accountMonitorRepoStub{
+		settings:         AccountMonitorSettings{IntervalSeconds: 300},
+		aggregates:       map[int64]AccountMonitorAggregate{201: {SampleCount: 1, SuccessCount: 1, SuccessSampleCount: 1, SuccessRate: 1, LastCheckedAt: &now}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{201: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now}},
+		groupWindowAggregates: map[int64]map[int64]AccountMonitorWindowAggregate{
+			7: {201: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now}},
+			8: {201: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now}},
+			9: {201: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now}},
+		},
+		latest: map[int64]AccountMonitorLatest{201: {Status: "success", CheckedAt: now}},
+		groups: []AccountMonitorGroup{
+			{ID: 7, Name: "default-anthropic", Platform: "", RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
+			{ID: 8, Name: "anthropic", Platform: PlatformAnthropic, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
+			{ID: 9, Name: "openai", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
+		},
+	}
+	scheduler := &accountMonitorSchedulerProjectionStub{byGroup: map[int64]*OpenAIAccountSchedulerProjection{
+		7: projection(),
+		8: projection(),
+		9: projection(),
+	}}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate))
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+
+	page, err := svc.ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scheduler.calls) != 1 || scheduler.calls[0].GroupID != 9 || scheduler.calls[0].Platform != PlatformOpenAI {
+		t.Fatalf("scheduler projection calls = %#v, want only OpenAI group 9", scheduler.calls)
+	}
+	for _, group := range page.Groups {
+		row := findAccountMonitorGroupAccount(t, group.Accounts, account.ID)
+		if group.ID == 9 {
+			if row.SchedulerExplanation == nil || row.SchedulerRank == nil {
+				t.Fatalf("OpenAI group lost scheduler projection: %#v", row)
+			}
+			continue
+		}
+		if row.SchedulerExplanation != nil || row.SchedulerRank != nil {
+			t.Fatalf("non-OpenAI group received scheduler metadata: group=%d row=%#v", group.ID, row)
+		}
+	}
+}
+
 func findAccountMonitorGroupAccount(t *testing.T, rows []AccountMonitorGroupAccount, accountID int64) AccountMonitorGroupAccount {
 	for _, row := range rows {
 		if row.AccountID == accountID {

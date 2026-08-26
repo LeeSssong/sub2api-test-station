@@ -537,7 +537,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
-	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, latest, settings, historicalSince, since, observedAt)
+	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
@@ -718,9 +718,10 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 	groups []AccountMonitorGroup,
 	accounts []Account,
 	rows []AccountMonitorAccount,
+	probes map[int64]AccountMonitorAggregate,
+	historicalProbes map[int64]AccountMonitorAggregate,
 	latest map[int64]AccountMonitorLatest,
 	settings AccountMonitorSettings,
-	historicalSince,
 	windowStart, now time.Time,
 ) []AccountMonitorGroup {
 	rowsByID := make(map[int64]AccountMonitorAccount, len(rows))
@@ -739,30 +740,26 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			}
 		}
 		groupWindows := map[int64]AccountMonitorWindowAggregate{}
+		groupWindowCompatibilityFallback := false
 		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
 		if hasGroupWindowProvider && len(members) > 0 {
 			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
 				if loaded != nil {
 					groupWindows = loaded
+				} else {
+					// Older adapters used nil to signal that no window read was
+					// available; preserve their native probe-only projection.
+					groupWindowCompatibilityFallback = true
 				}
 			}
 		}
-		groupProbes := map[int64]AccountMonitorAggregate{}
-		groupHistoricalProbes := map[int64]AccountMonitorAggregate{}
-		groupProbeScoped := false
-		groupAggregateProvider, hasGroupAggregateProvider := s.repo.(AccountMonitorGroupAggregateRepository)
-		if hasGroupAggregateProvider && len(members) > 0 {
-			if loaded, loadErr := groupAggregateProvider.ListGroupAggregates(ctx, group.ID, members, now.Add(-AccountMonitorGroupEvidenceWindow)); loadErr == nil {
-				if loaded != nil {
-					groupProbes = loaded
-					groupProbeScoped = true
-				}
-			}
-		}
-		if groupProbeScoped {
-			if loaded, loadErr := groupAggregateProvider.ListGroupAggregates(ctx, group.ID, members, historicalSince); loadErr == nil && loaded != nil {
-				groupHistoricalProbes = loaded
-			}
+		groupProbes := probes
+		groupHistoricalProbes := historicalProbes
+		if !hasGroupWindowProvider {
+			// Group quality requires group-scoped request evidence. Do not let
+			// account-scoped probes populate legacy adapters that lack it.
+			groupProbes = nil
+			groupHistoricalProbes = nil
 		}
 		projected := make([]AccountMonitorGroupAccount, 0)
 		for _, account := range accounts {
@@ -773,8 +770,13 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			if !ok {
 				continue
 			}
-			window := groupWindows[account.ID]
-			probe := groupProbes[account.ID]
+			window, hasGroupWindow := groupWindows[account.ID]
+			probe := AccountMonitorAggregate{}
+			historicalProbe := AccountMonitorAggregate{}
+			if groupWindowCompatibilityFallback || hasGroupWindow {
+				probe = groupProbes[account.ID]
+				historicalProbe = groupHistoricalProbes[account.ID]
+			}
 			evidence := accountMonitorWindowEvidence(window, probe, latest[account.ID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
 			// The embedded base row carries the full-site projection. Clear its
@@ -810,7 +812,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
 			scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
 			if !scoreEligible {
-				if historical := accountMonitorHistoricalEvidence(groupHistoricalProbes[account.ID]); historical.SampleCount > 0 {
+				if historical := accountMonitorHistoricalEvidence(historicalProbe); historical.SampleCount > 0 {
 					scoreEvidence, scoreStatus, scoreEligible = accountMonitorWindowScoreProjection(account, row.ScoreStatus, historical)
 				}
 			}
@@ -922,9 +924,9 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 	if s == nil || group == nil || group.ID <= 0 || s.schedulerProjection == nil || len(accounts) == 0 {
 		return
 	}
-	platform := group.Platform
-	if platform == "" {
-		platform = PlatformOpenAI
+	platform := NormalizeGroupPlatform(group.Platform)
+	if platform != PlatformOpenAI && platform != PlatformGrok {
+		return
 	}
 	loadMap := map[int64]*AccountLoadInfo{}
 	if s.concurrencyService != nil {

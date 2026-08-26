@@ -39,7 +39,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
       RELEASE_WORKTREE="$PWD" \
       ops/release-sub2api-acceptance.sh
 
-控制器会构建一个 Linux/amd64 候选镜像、计算归档 SHA-256，经 SSH/SCP 传输到验收宿主，并只调用 deploy-sub2api-acceptance-host.sh。它会在建立 SSH 连接前拒绝脏 worktree、生产身份、mock provider、错误 project/network、非 0600 env 或缺少真实消费确认。控制器输出不包含密码、token、cookie 或支付/上游密钥。无论成功或失败，控制器和宿主执行器都会删除远程 staging 中的 env、镜像归档及临时 bundle；仅保留脱敏失败证据和运行日志，不把真实凭据作为故障证据留在 /var/tmp。
+控制器会构建一个 Linux/amd64 候选镜像、计算归档 SHA-256，经 SSH/SCP 传输到验收宿主，并只调用 deploy-sub2api-acceptance-host.sh。它会在建立 SSH 连接前拒绝脏 worktree、生产身份、mock provider、错误 project/network、非 0600 env 或缺少真实消费确认。控制器输出不包含密码、token、cookie 或支付/上游密钥。控制器和宿主执行器都会尝试删除远程 staging 中的 env、镜像归档及临时 bundle；若 SSH 失联导致清理失败，控制器会明确告警，operator 必须立即在宿主清理该目录。正常情况下仅保留脱敏失败证据和运行日志，不把真实凭据作为故障证据留在 /var/tmp。
 
 严禁从候选分支直接运行主站发布脚本，严禁调用生产蓝绿链，严禁把验收 env 复制进仓库。
 

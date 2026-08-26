@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -50,11 +51,13 @@ type OpenAIAccountSchedulerProjectionProvider interface {
 }
 
 type openAIAccountSchedulerPolicyResolution struct {
-	weights    GatewayOpenAIWSSchedulerScoreWeightsView
-	fairness   OpenAISchedulerFairnessSettings
-	topK       int
-	policy     OpenAISchedulerGroupPolicy
-	configured bool
+	weights         GatewayOpenAIWSSchedulerScoreWeightsView
+	fairness        OpenAISchedulerFairnessSettings
+	topK            int
+	policy          OpenAISchedulerGroupPolicy
+	configured      bool
+	qualityWeights  GatewayOpenAIWSSchedulerScoreWeightsView
+	qualityFairness OpenAISchedulerFairnessSettings
 }
 
 func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicy(ctx context.Context, groupID int64) openAIAccountSchedulerPolicyResolution {
@@ -85,6 +88,97 @@ func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicy(ctx 
 		policy:     policy,
 		configured: configured,
 	}
+}
+
+func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicyForProjection(ctx context.Context, groupID int64) (openAIAccountSchedulerPolicyResolution, error) {
+	if s == nil || s.service == nil {
+		return openAIAccountSchedulerPolicyResolution{
+			weights:         (&OpenAIGatewayService{}).openAIWSSchedulerWeights(),
+			fairness:        defaultOpenAISchedulerFairnessSettings(),
+			topK:            7,
+			configured:      false,
+			qualityWeights:  (&OpenAIGatewayService{}).openAIWSSchedulerWeights(),
+			qualityFairness: defaultOpenAISchedulerFairnessSettings(),
+		}, nil
+	}
+
+	weights := s.service.openAIWSSchedulerWeights()
+	topK := s.service.openAIWSLBTopK()
+	runtime, err := s.service.openAIAdvancedSchedulerRuntimeSettingsForProjection(ctx)
+	if err != nil {
+		return openAIAccountSchedulerPolicyResolution{}, err
+	}
+	if !runtime.enabled {
+		return openAIAccountSchedulerPolicyResolution{
+			weights:         weights,
+			fairness:        defaultOpenAISchedulerFairnessSettings(),
+			topK:            topK,
+			configured:      false,
+			qualityWeights:  weights,
+			qualityFairness: defaultOpenAISchedulerFairnessSettings(),
+		}, nil
+	}
+	overridden := applyOpenAIAdvancedSchedulerWeightOverrides(weights, runtime.weightOverrides)
+	if overridden.configWeights().IsValid() {
+		weights = overridden
+	}
+	if runtime.lbTopKOverride > 0 {
+		topK = runtime.lbTopKOverride
+	}
+	qualityWeights := weights
+	qualityFairness := resolveOpenAISchedulerFairnessForGroup(runtime.fairness, groupID)
+	fairness := qualityFairness
+	policy, configured := runtime.groupPolicies[groupID]
+	if configured {
+		weights, fairness = applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
+		if policy.Values.TopK > 0 {
+			topK = policy.Values.TopK
+		}
+	}
+	return openAIAccountSchedulerPolicyResolution{
+		weights:         weights,
+		fairness:        fairness,
+		topK:            topK,
+		policy:          policy,
+		configured:      configured,
+		qualityWeights:  qualityWeights,
+		qualityFairness: qualityFairness,
+	}, nil
+}
+
+func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettingsForProjection(ctx context.Context) (openAIAdvancedSchedulerRuntimeSettings, error) {
+	settings := openAIAdvancedSchedulerRuntimeSettings{
+		oauthSchedulingRateMultiplier: defaultOpenAIOAuthSchedulingRateMultiplier,
+		weightOverrides:               map[string]float64{},
+		fairness:                      defaultOpenAISchedulerFairnessSettings(),
+		groupPolicies:                 map[int64]OpenAISchedulerGroupPolicy{},
+	}
+	if s == nil {
+		return settings, nil
+	}
+	repo := s.openAIAdvancedSchedulerSettingRepo()
+	if repo == nil {
+		return settings, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
+	defer cancel()
+	values, err := repo.GetMultiple(dbCtx, openAIAdvancedSchedulerRuntimeSettingKeys())
+	if err != nil {
+		return openAIAdvancedSchedulerRuntimeSettings{}, err
+	}
+	settings.lowUpstreamRatePriorityEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAILowUpstreamRatePriorityEnabled]), "true")
+	settings.oauthSchedulingRateMultiplier = parseOpenAIOAuthSchedulingRateMultiplier(values[SettingKeyOpenAIOAuthSchedulingRateMultiplier])
+	settings.enabled = strings.EqualFold(strings.TrimSpace(values[openAIAdvancedSchedulerSettingKey]), "true")
+	settings.stickyWeightedEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled]), "true")
+	settings.subscriptionPriorityEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled]), "true")
+	settings.lbTopKOverride = parsePositiveIntOverride(values[SettingKeyOpenAIAdvancedSchedulerLBTopK])
+	settings.weightOverrides = parseOpenAIAdvancedSchedulerWeightOverrides(values)
+	settings.fairness = parseOpenAISchedulerFairnessRuntimeSettings(values)
+	settings.groupPolicies = normalizeOpenAISchedulerRuntimeGroupPolicies(settings.lbTopKOverride, settings.weightOverrides, settings.fairness, values[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
+	return settings, nil
 }
 
 func schedulerProjectionEffectiveWeights(weights GatewayOpenAIWSSchedulerScoreWeightsView) map[string]float64 {
@@ -150,7 +244,10 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 		now = now.UTC()
 	}
 	platform := normalizeOpenAICompatiblePlatform(req.Platform)
-	policy := s.resolveOpenAIAccountSchedulerPolicy(ctx, req.GroupID)
+	policy, err := s.resolveOpenAIAccountSchedulerPolicyForProjection(ctx, req.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve OpenAI scheduler projection policy: %w", err)
+	}
 	projection := &OpenAIAccountSchedulerProjection{
 		SnapshotAt:       now,
 		PolicyKey:        schedulerProjectionPolicyKey(policy.configured),
@@ -196,7 +293,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 		case req.RequirePrivacySet && !account.IsPrivacySet():
 			reason = "privacy_not_set"
 		default:
-			if compatible, compatibilityReason := s.isAccountRequestCompatibleReason(ctx, account, scheduleReq); !compatible {
+			if compatible, compatibilityReason := s.isAccountRequestProjectionCompatibleReason(ctx, account, scheduleReq, now); !compatible {
 				reason = compatibilityReason
 			} else if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 				reason = "transport_incompatible"
@@ -214,11 +311,22 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	}
 
 	if len(eligible) > 0 {
-		plan := s.buildOpenAIAccountLoadPlanAt(ctx, scheduleReq, eligible, req.LoadMap, now)
+		plan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, eligible, req.LoadMap, now, &policy, false)
 		ranked := append([]openAIAccountCandidateScore(nil), plan.preTopKCandidates...)
 		sort.SliceStable(ranked, func(i, j int) bool {
 			return isOpenAIAccountCandidateBetter(ranked[i], ranked[j])
 		})
+		qualityPolicy := policy
+		qualityPolicy.weights = policy.qualityWeights
+		qualityPolicy.fairness = policy.qualityFairness
+		qualityPolicy.policy = OpenAISchedulerGroupPolicy{}
+		qualityPolicy.configured = false
+		qualityPlan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, eligible, req.LoadMap, now, &qualityPolicy, false)
+		qualityRanked := append([]openAIAccountCandidateScore(nil), qualityPlan.preTopKCandidates...)
+		sort.SliceStable(qualityRanked, func(i, j int) bool {
+			return isOpenAIAccountCandidateBetter(qualityRanked[i], qualityRanked[j])
+		})
+		strategyOrderDiffers := schedulerProjectionOrderDiffers(ranked, qualityRanked)
 		for index, rankedCandidate := range ranked {
 			rank := index + 1
 			candidate := OpenAIAccountSchedulerProjectionCandidate{
@@ -226,7 +334,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 				Rank:      &rank,
 				Eligible:  true,
 			}
-			if index == 0 && schedulerProjectionUsesStrategy(policy.policy, policy.configured) {
+			if index == 0 && strategyOrderDiffers {
 				candidate.PrimaryReasonCode = AccountMonitorReasonStrategy
 			} else if index > 0 && rankedCandidate.score == ranked[index-1].score {
 				candidate.PrimaryReasonCode = AccountMonitorReasonTieBreak
@@ -254,11 +362,55 @@ func hasOpenAIAccountID(ids map[int64]struct{}, accountID int64) bool {
 	return ok
 }
 
-func schedulerProjectionUsesStrategy(policy OpenAISchedulerGroupPolicy, configured bool) bool {
-	if !configured || policy.Priority == (OpenAISchedulerBusinessPriority{}) {
-		return false
+func schedulerProjectionOrderDiffers(left, right []openAIAccountCandidateScore) bool {
+	if len(left) != len(right) {
+		return true
 	}
-	return true
+	for i := range left {
+		if left[i].account == nil || right[i].account == nil || left[i].account.ID != right[i].account.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestProjectionCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, now time.Time) (bool, string) {
+	if account == nil {
+		return false, "account_nil"
+	}
+	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedAtReadOnly(account, req.RequestedModel, now) {
+		return false, "runtime_blocked"
+	}
+	if s != nil && s.service != nil && s.service.isOpenAIProxyStreamQuarantinedAtReadOnly(ctx, account, now) {
+		return false, "proxy_stream_quarantined"
+	}
+	if paused, decision := shouldAutoPauseOpenAIAccountByQuotaAt(ctx, account, now); paused {
+		reason := "quota_auto_pause"
+		if decision.window != "" {
+			reason += "_" + decision.window
+		}
+		return false, reason
+	}
+	if !parentHealthyForShadow(account, func(id int64) *Account {
+		return s.lookupShadowParentAccount(ctx, id)
+	}) {
+		return false, "shadow_parent_unhealthy"
+	}
+	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+		return false, "model_not_supported"
+	}
+	if req.GroupID != nil && s != nil && s.service != nil &&
+		s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
+		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
+		return false, "channel_upstream_restricted"
+	}
+	if !accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) {
+		return false, "capability_mismatch"
+	}
+	if vetoed, reason := openAIProfitControlVetoReasonReadOnly(ctx, account); vetoed {
+		return false, reason
+	}
+	return true, ""
 }
 
 func schedulerProjectionReasonCode(account *Account, reason string, now time.Time) AccountMonitorReasonCode {

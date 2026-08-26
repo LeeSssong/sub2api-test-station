@@ -265,6 +265,17 @@ func (s *openAIAccountModelTransientState) isBlocked(accountID int64, model stri
 	return !entry.blockUntil.IsZero()
 }
 
+func (s *openAIAccountModelTransientState) isBlockedReadOnly(accountID int64, model string, now time.Time) bool {
+	key, ok := openAIAccountModelTransientKey(accountID, model)
+	if s == nil || !ok {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, exists := s.entries[key]
+	return exists && !entry.blockUntil.IsZero() && now.Before(entry.blockUntil)
+}
+
 func (s *openAIAccountModelTransientState) size() int {
 	if s == nil {
 		return 0

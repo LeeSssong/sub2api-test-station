@@ -1138,6 +1138,18 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAt(
 	loadMap map[int64]*AccountLoadInfo,
 	now time.Time,
 ) openAIAccountLoadPlan {
+	return s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, req, filtered, loadMap, now, nil, true)
+}
+
+func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAtWithPolicy(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	filtered []*Account,
+	loadMap map[int64]*AccountLoadInfo,
+	now time.Time,
+	resolvedPolicy *openAIAccountSchedulerPolicyResolution,
+	populateSelectionOrder bool,
+) openAIAccountLoadPlan {
 	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
 	for _, account := range filtered {
 		loadInfo, loadKnown := loadMap[account.ID]
@@ -1179,8 +1191,14 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAt(
 		candidateCount:            len(candidates),
 	}
 	if len(candidates) == 0 {
-		plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan, ctx)
+		if populateSelectionOrder {
+			plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan, ctx)
+		}
 		return plan
+	}
+	if resolvedPolicy == nil {
+		policy := s.resolveOpenAIAccountSchedulerPolicy(ctx, valueOrZero(req.GroupID))
+		resolvedPolicy = &policy
 	}
 
 	minPriority, maxPriority := openAIAccountSchedulingPriority(candidates[0].account), openAIAccountSchedulingPriority(candidates[0].account)
@@ -1220,7 +1238,6 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAt(
 	}
 	plan.loadSkew = calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
 
-	resolvedPolicy := s.resolveOpenAIAccountSchedulerPolicy(ctx, valueOrZero(req.GroupID))
 	fairness := resolvedPolicy.fairness
 	weights := resolvedPolicy.weights
 	configuredTopK := resolvedPolicy.topK
@@ -1365,7 +1382,9 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAt(
 		req.decisionDetails.qualityFallback = plan.qualityFallback
 	}
 
-	plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan, ctx)
+	if populateSelectionOrder {
+		plan.selectionOrder = s.buildOpenAISelectionOrder(req, plan, ctx)
+	}
 	return plan
 }
 

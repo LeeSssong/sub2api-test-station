@@ -424,6 +424,27 @@ func (s *OpenAIGatewayService) readOpenAISharedHealthSnapshot(ctx context.Contex
 	return OpenAISharedHealthSnapshot{Key: key, State: OpenAISharedHealthStateUnknown}, false, err
 }
 
+func (s *OpenAIGatewayService) readOpenAISharedHealthSnapshotCached(key OpenAISharedHealthKey, now time.Time) (OpenAISharedHealthSnapshot, bool) {
+	if s == nil {
+		return OpenAISharedHealthSnapshot{}, false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	staleAfter := time.Duration(s.openAISharedHealthConfig().StaleAfterSeconds) * time.Second
+	if staleAfter <= 0 || staleAfter > 30*time.Second {
+		staleAfter = 30 * time.Second
+	}
+	cacheKey := openAISharedHealthCacheKey(key)
+	s.sharedHealthSnapshotMu.Lock()
+	cached, cachedOK := s.sharedHealthSnapshots[cacheKey]
+	s.sharedHealthSnapshotMu.Unlock()
+	if cachedOK && cached.Freshness(now, staleAfter) == OpenAISharedHealthFresh {
+		return cached, true
+	}
+	return OpenAISharedHealthSnapshot{Key: key, State: OpenAISharedHealthStateUnknown}, false
+}
+
 func openAISharedHealthSnapshotBlocks(snapshot OpenAISharedHealthSnapshot) bool {
 	return snapshot.State == OpenAISharedHealthStateCooldown || snapshot.State == OpenAISharedHealthStateHalfOpen
 }

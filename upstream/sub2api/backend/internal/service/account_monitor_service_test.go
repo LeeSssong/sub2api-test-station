@@ -2496,6 +2496,49 @@ func TestAccountMonitorProjectionIncludesReusableTodayStatsWithoutSecrets(t *tes
 	}
 }
 
+func TestAccountMonitorProjectionExposesExplainableQualityAndSchedulerRanks(t *testing.T) {
+	qualityRank, schedulerRank, legacyRank := 2, 1, 2
+	row := AccountMonitorAccount{
+		AccountID:            7,
+		QualityRank:          &qualityRank,
+		QualityRankTotal:     5,
+		SchedulerRank:        &schedulerRank,
+		SchedulerRankTotal:   4,
+		GroupRank:            &legacyRank,
+		QualityExplanation:   &AccountMonitorQualityExplanation{Window: "24h", SampleCount: 12},
+		SchedulerExplanation: &AccountMonitorSchedulerExplanation{PolicyLabel: "利润优先", PrimaryReasonCode: "strategy"},
+	}
+	body, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["quality_rank"] != float64(2) {
+		t.Fatalf("quality_rank = %v", payload["quality_rank"])
+	}
+	if payload["quality_rank_total"] != float64(5) {
+		t.Fatalf("quality_rank_total = %v", payload["quality_rank_total"])
+	}
+	if payload["scheduler_rank"] != float64(1) {
+		t.Fatalf("scheduler_rank = %v", payload["scheduler_rank"])
+	}
+	if payload["scheduler_rank_total"] != float64(4) {
+		t.Fatalf("scheduler_rank_total = %v", payload["scheduler_rank_total"])
+	}
+	if payload["group_rank"] != float64(2) {
+		t.Fatalf("group_rank = %v", payload["group_rank"])
+	}
+	if payload["quality_explanation"] == nil {
+		t.Fatal("quality_explanation missing")
+	}
+	if payload["scheduler_explanation"] == nil {
+		t.Fatal("scheduler_explanation missing")
+	}
+}
+
 func TestAccountMonitorProjectionSerializesUngroupedAccountListsAsEmptyArrays(t *testing.T) {
 	service := NewAccountMonitorService(
 		&accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}},

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
+import type { AccountMonitorAccount, AccountMonitorReasonCode } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from './AccountMonitorCard.vue'
 
 vi.mock('vue-i18n', async () => {
@@ -155,6 +156,21 @@ afterEach(() => {
 })
 
 describe('AccountMonitorCard', () => {
+	it('mirrors the explainable ranking response contract', () => {
+		const reasonCode: AccountMonitorReasonCode = 'strategy'
+		const ranking: Pick<AccountMonitorAccount, 'quality_rank' | 'quality_rank_total' | 'scheduler_rank' | 'scheduler_rank_total' | 'quality_explanation' | 'scheduler_explanation'> = {
+			quality_rank: 2,
+			quality_rank_total: 5,
+			scheduler_rank: 1,
+			scheduler_rank_total: 4,
+			quality_explanation: { window: '24h', sample_count: 12, source: 'hybrid', observed_at: '2026-08-26T00:00:00Z' },
+			scheduler_explanation: { eligible: true, policy_label: '利润优先', primary_reason_code: reasonCode },
+		}
+
+		expect(ranking.quality_rank).toBe(2)
+		expect(ranking.scheduler_explanation?.primary_reason_code).toBe('strategy')
+	})
+
 	const recommendation = {
 		status: 'recommended',
 		target: 'gpt_pro',

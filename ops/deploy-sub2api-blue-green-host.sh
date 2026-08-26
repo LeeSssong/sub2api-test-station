@@ -552,7 +552,7 @@ configure_detector_topology() {
         "SUB2API_MODEL_DETECTOR_TOKEN": $token
       },
       "expose": ["8090"],
-      "healthcheck": {"test": ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8090/healthz"], "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "10s"},
+      "healthcheck": {"test": ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8090/healthz"], "interval": "30s", "timeout": "5s", "retries": 3, "start_period": "180s"},
       "image": $image,
       "logging": {"driver": "json-file", "options": {"max-file": "5", "max-size": "20m"}},
       "networks": {"default": null},
@@ -830,7 +830,7 @@ wait_for_worker_healthy() {
 }
 
 wait_for_detector_healthy() {
-  local timeout=${DETECTOR_HEALTH_TIMEOUT_SECONDS:-90} poll=${DETECTOR_HEALTH_POLL_SECONDS:-1}
+  local timeout=${DETECTOR_HEALTH_TIMEOUT_SECONDS:-240} poll=${DETECTOR_HEALTH_POLL_SECONDS:-1}
   local deadline now remaining attempts=0 max_attempts status id
   [[ "$timeout" =~ ^[1-9][0-9]*$ && "$poll" =~ ^[1-9][0-9]*$ ]] || return 1
   deadline=$(( $(date -u +%s) + timeout ))

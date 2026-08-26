@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,7 @@ type OpenAIAccountSchedulerProjectionRequest struct {
 	RequirePrivacySet       bool
 	UseUpstreamTokenCost    bool
 	ExcludedIDs             map[int64]struct{}
+	QualityOrder            []int64
 	SnapshotAt              time.Time
 	Accounts                []*Account
 	LoadMap                 map[int64]*AccountLoadInfo
@@ -31,10 +33,14 @@ type OpenAIAccountSchedulerProjectionRequest struct {
 // OpenAIAccountSchedulerProjection is the scheduler-owned, side-effect-free
 // candidate view consumed by account monitoring.
 type OpenAIAccountSchedulerProjection struct {
-	SnapshotAt       time.Time                                   `json:"snapshot_at"`
-	PolicyKey        string                                      `json:"policy_key"`
-	PolicyLabel      string                                      `json:"policy_label"`
-	EffectiveWeights map[string]float64                          `json:"effective_weights"`
+	SnapshotAt  time.Time `json:"snapshot_at"`
+	PolicyKey   string    `json:"policy_key"`
+	PolicyLabel string    `json:"policy_label"`
+	// EffectiveWeights remains available to in-process callers but is not part
+	// of the public projection JSON; EffectiveFacts is the readable contract.
+	EffectiveWeights map[string]float64                          `json:"-"`
+	EffectiveFacts   []AccountMonitorSchedulerFact               `json:"effective_facts"`
+	ModelQuotaParity string                                      `json:"model_quota_parity,omitempty"`
 	CandidateCount   int                                         `json:"candidate_count"`
 	Candidates       []OpenAIAccountSchedulerProjectionCandidate `json:"candidates"`
 }
@@ -196,6 +202,22 @@ func schedulerProjectionEffectiveWeights(weights GatewayOpenAIWSSchedulerScoreWe
 	}
 }
 
+func schedulerProjectionEffectiveFacts(weights GatewayOpenAIWSSchedulerScoreWeightsView) []AccountMonitorSchedulerFact {
+	facts := []AccountMonitorSchedulerFact{
+		{Label: "账号优先级权重", Value: strconv.FormatFloat(weights.Priority, 'g', -1, 64)},
+		{Label: "当前负载权重", Value: strconv.FormatFloat(weights.Load, 'g', -1, 64)},
+		{Label: "排队量权重", Value: strconv.FormatFloat(weights.Queue, 'g', -1, 64)},
+		{Label: "错误率权重", Value: strconv.FormatFloat(weights.ErrorRate, 'g', -1, 64)},
+		{Label: "首 Token 权重", Value: strconv.FormatFloat(weights.TTFT, 'g', -1, 64)},
+		{Label: "重置时间权重", Value: strconv.FormatFloat(weights.Reset, 'g', -1, 64)},
+		{Label: "额度余量权重", Value: strconv.FormatFloat(weights.QuotaHeadroom, 'g', -1, 64)},
+		{Label: "上游成本权重", Value: strconv.FormatFloat(weights.UpstreamCost, 'g', -1, 64)},
+		{Label: "上次响应权重", Value: strconv.FormatFloat(weights.Previous, 'g', -1, 64)},
+		{Label: "会话粘性权重", Value: strconv.FormatFloat(weights.SessionSticky, 'g', -1, 64)},
+	}
+	return facts
+}
+
 func schedulerProjectionPolicyKey(configured bool) string {
 	if configured {
 		return "group_policy"
@@ -253,6 +275,10 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 		PolicyKey:        schedulerProjectionPolicyKey(policy.configured),
 		PolicyLabel:      schedulerProjectionPolicyLabel(policy.policy, policy.configured),
 		EffectiveWeights: schedulerProjectionEffectiveWeights(policy.weights),
+		EffectiveFacts:   schedulerProjectionEffectiveFacts(policy.weights),
+	}
+	if platform == PlatformGrok && strings.TrimSpace(req.RequestedModel) == "" {
+		projection.ModelQuotaParity = "unknown"
 	}
 
 	groupID := req.GroupID
@@ -311,22 +337,39 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	}
 
 	if len(eligible) > 0 {
+		if platform == PlatformGrok {
+			quotaAccounts := make([]Account, 0, len(eligible))
+			for _, account := range eligible {
+				if account != nil {
+					quotaAccounts = append(quotaAccounts, *account)
+				}
+			}
+			quotaFiltered := s.filterGrokFreeQuotaAccounts(ctx, quotaAccounts)
+			quotaAllowed := make(map[int64]struct{}, len(quotaFiltered))
+			for i := range quotaFiltered {
+				quotaAllowed[quotaFiltered[i].ID] = struct{}{}
+			}
+			filteredEligible := make([]*Account, 0, len(eligible))
+			for _, account := range eligible {
+				if _, allowed := quotaAllowed[account.ID]; allowed {
+					filteredEligible = append(filteredEligible, account)
+					continue
+				}
+				ineligible = append(ineligible, OpenAIAccountSchedulerProjectionCandidate{
+					AccountID: account.ID, PrimaryReasonCode: AccountMonitorReasonNotEligible,
+				})
+			}
+			eligible = filteredEligible
+		}
+	}
+
+	if len(eligible) > 0 {
 		plan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, eligible, req.LoadMap, now, &policy, false)
 		ranked := append([]openAIAccountCandidateScore(nil), plan.preTopKCandidates...)
 		sort.SliceStable(ranked, func(i, j int) bool {
 			return isOpenAIAccountCandidateBetter(ranked[i], ranked[j])
 		})
-		qualityPolicy := policy
-		qualityPolicy.weights = policy.qualityWeights
-		qualityPolicy.fairness = policy.qualityFairness
-		qualityPolicy.policy = OpenAISchedulerGroupPolicy{}
-		qualityPolicy.configured = false
-		qualityPlan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, eligible, req.LoadMap, now, &qualityPolicy, false)
-		qualityRanked := append([]openAIAccountCandidateScore(nil), qualityPlan.preTopKCandidates...)
-		sort.SliceStable(qualityRanked, func(i, j int) bool {
-			return isOpenAIAccountCandidateBetter(qualityRanked[i], qualityRanked[j])
-		})
-		strategyOrderDiffers := schedulerProjectionOrderDiffers(ranked, qualityRanked)
+		strategyOrderDiffers := schedulerProjectionOrderDiffersFromQualityOrder(ranked, req.QualityOrder)
 		for index, rankedCandidate := range ranked {
 			rank := index + 1
 			candidate := OpenAIAccountSchedulerProjectionCandidate{
@@ -362,12 +405,15 @@ func hasOpenAIAccountID(ids map[int64]struct{}, accountID int64) bool {
 	return ok
 }
 
-func schedulerProjectionOrderDiffers(left, right []openAIAccountCandidateScore) bool {
-	if len(left) != len(right) {
+func schedulerProjectionOrderDiffersFromQualityOrder(ranked []openAIAccountCandidateScore, qualityOrder []int64) bool {
+	if len(qualityOrder) == 0 {
+		return false
+	}
+	if len(ranked) != len(qualityOrder) {
 		return true
 	}
-	for i := range left {
-		if left[i].account == nil || right[i].account == nil || left[i].account.ID != right[i].account.ID {
+	for i := range ranked {
+		if ranked[i].account == nil || ranked[i].account.ID != qualityOrder[i] {
 			return true
 		}
 	}

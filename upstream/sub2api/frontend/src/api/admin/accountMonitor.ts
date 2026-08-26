@@ -103,10 +103,17 @@ export interface AccountMonitorSchedulerExplanation {
   policy_key?: string
   policy_label: string
   effective_weights?: Record<string, number>
+  effective_facts?: AccountMonitorSchedulerFact[]
+  model_quota_parity?: string
   candidate_scope?: string
   snapshot_at?: string | null
   primary_reason_code?: AccountMonitorReasonCode
   primary_reason_label?: string
+}
+
+export interface AccountMonitorSchedulerFact {
+  label: string
+  value: string
 }
 
 export interface AccountMonitorScoreWeights {
@@ -344,6 +351,7 @@ export interface AccountMonitorGroup {
   active_account_count?: number
   rate_limited_account_count?: number
   customer_visible: boolean
+  require_privacy_set?: boolean
   native_order: number
   score_weights: AccountMonitorScoreWeights
   operational_state: 'operational' | 'unavailable' | 'closed' | string

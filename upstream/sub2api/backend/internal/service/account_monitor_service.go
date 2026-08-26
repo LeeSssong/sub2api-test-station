@@ -740,16 +740,11 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			}
 		}
 		groupWindows := map[int64]AccountMonitorWindowAggregate{}
-		groupWindowCompatibilityFallback := false
 		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
 		if hasGroupWindowProvider && len(members) > 0 {
 			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
 				if loaded != nil {
 					groupWindows = loaded
-				} else {
-					// Older adapters used nil to signal that no window read was
-					// available; preserve their native probe-only projection.
-					groupWindowCompatibilityFallback = true
 				}
 			}
 		}
@@ -773,7 +768,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			window, hasGroupWindow := groupWindows[account.ID]
 			probe := AccountMonitorAggregate{}
 			historicalProbe := AccountMonitorAggregate{}
-			if groupWindowCompatibilityFallback || hasGroupWindow {
+			if hasGroupWindow {
 				probe = groupProbes[account.ID]
 				historicalProbe = groupHistoricalProbes[account.ID]
 			}
@@ -870,7 +865,13 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 				projected[j].QualityExplanation.RankTotal = qualityRankTotal
 			}
 		}
-		s.attachSchedulerProjection(ctx, group, memberAccounts, projected, now)
+		qualityOrder := make([]int64, 0, len(projected))
+		for _, row := range projected {
+			if row.Eligible {
+				qualityOrder = append(qualityOrder, row.AccountID)
+			}
+		}
+		s.attachSchedulerProjection(ctx, group, memberAccounts, projected, qualityOrder, now)
 		group.Accounts = projected
 		group.Health = summarizeGroupHealth(projected)
 		if !group.CustomerVisible {
@@ -919,6 +920,7 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 	group *AccountMonitorGroup,
 	accounts []*Account,
 	rows []AccountMonitorGroupAccount,
+	qualityOrder []int64,
 	now time.Time,
 ) {
 	if s == nil || group == nil || group.ID <= 0 || len(accounts) == 0 {
@@ -952,6 +954,8 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 		GroupID:           group.ID,
 		Platform:          platform,
 		RequiredTransport: OpenAIUpstreamTransportAny,
+		RequirePrivacySet: group.RequirePrivacySet,
+		QualityOrder:      append([]int64(nil), qualityOrder...),
 		SnapshotAt:        now.UTC(),
 		Accounts:          accounts,
 		LoadMap:           loadMap,
@@ -982,7 +986,8 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 		rows[i].SchedulerExplanation = &AccountMonitorSchedulerExplanation{
 			Rank: candidate.Rank, RankTotal: eligibleTotal, CandidateTotal: projection.CandidateCount,
 			Eligible: candidate.Eligible, PolicyKey: projection.PolicyKey, PolicyLabel: projection.PolicyLabel,
-			EffectiveWeights: projection.EffectiveWeights, CandidateScope: "group", SnapshotAt: &snapshotAt,
+			EffectiveWeights: projection.EffectiveWeights, EffectiveFacts: projection.EffectiveFacts,
+			ModelQuotaParity: projection.ModelQuotaParity, CandidateScope: "group", SnapshotAt: &snapshotAt,
 			PrimaryReasonCode: candidate.PrimaryReasonCode, PrimaryReasonLabel: accountMonitorReasonLabel(candidate.PrimaryReasonCode),
 		}
 		if candidate.Eligible && candidate.Rank != nil {

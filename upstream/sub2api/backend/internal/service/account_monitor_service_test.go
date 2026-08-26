@@ -47,6 +47,7 @@ type accountMonitorRepoStub struct {
 	aggregates                  map[int64]AccountMonitorAggregate
 	windowAggregates            map[int64]AccountMonitorWindowAggregate
 	groupWindowAggregates       map[int64]map[int64]AccountMonitorWindowAggregate
+	groupWindowAggregatesNil    bool
 	groupAggregates             map[int64]map[int64]AccountMonitorAggregate
 	aggregate                   AccountMonitorAggregate
 	groupAggregate              map[int64]AccountMonitorAggregate
@@ -120,6 +121,9 @@ func (s *accountMonitorRepoStub) ListGroupWindowAggregates(_ context.Context, gr
 		since      time.Time
 		until      time.Time
 	}{groupID: groupID, accountIDs: append([]int64(nil), accountIDs...), since: since, until: until})
+	if s.groupWindowAggregatesNil {
+		return nil, nil
+	}
 	if s.groupWindowAggregates == nil {
 		return s.windowAggregates, nil
 	}
@@ -412,7 +416,7 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 			1: {Status: "success", CheckedAt: now}, 2: {Status: "success", CheckedAt: now}, 3: {Status: "success", CheckedAt: now}, 4: {Status: "success", CheckedAt: now},
 		},
 		groups: []AccountMonitorGroup{
-			{ID: 7, Name: "seven", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
+			{ID: 7, Name: "seven", Platform: PlatformOpenAI, RateMultiplier: 1, RequirePrivacySet: true, ScoreWeights: DefaultAccountMonitorScoreWeights},
 			{ID: 8, Name: "eight", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights},
 		},
 	}
@@ -425,6 +429,9 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 	}
 	if len(scheduler.calls) != 2 || len(repo.groupWindowAggregateCalls) != 2 {
 		t.Fatalf("projection calls = %d, group window calls = %d", len(scheduler.calls), len(repo.groupWindowAggregateCalls))
+	}
+	if !scheduler.calls[0].RequirePrivacySet || !reflect.DeepEqual(scheduler.calls[0].QualityOrder, []int64{1, 2}) || !reflect.DeepEqual(scheduler.calls[1].QualityOrder, []int64{3, 1}) {
+		t.Fatalf("scheduler projection context = %#v", scheduler.calls)
 	}
 	if !scheduler.calls[0].SnapshotAt.Equal(page.ObservedAt) || !repo.groupWindowAggregateCalls[0].until.Equal(page.ObservedAt) || !repo.groupWindowAggregateCalls[1].until.Equal(page.ObservedAt) {
 		t.Fatalf("snapshot timestamps drifted: page=%s scheduler=%s group_until=%s/%s", page.ObservedAt, scheduler.calls[0].SnapshotAt, repo.groupWindowAggregateCalls[0].until, repo.groupWindowAggregateCalls[1].until)
@@ -555,6 +562,29 @@ func TestAccountMonitorListWindowSeparatesGroupRequestsFromProbeEvidence(t *test
 	}
 	if rows[102].Evidence.Source != "stale" || rows[102].Evidence.SampleCount != 0 || rows[102].QualityRank != nil || rows[102].QualityScore != nil {
 		t.Fatalf("request-only group traffic bypassed the probe gate: %#v", rows[102])
+	}
+}
+
+func TestAccountMonitorListWindowDoesNotUseAccountScopedEvidenceWhenGroupWindowProviderReturnsNil(t *testing.T) {
+	rate := 1.0
+	now := time.Now().UTC()
+	account := Account{ID: 104, Name: "group-window-unavailable", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}}
+	repo := &accountMonitorRepoStub{
+		settings:                 AccountMonitorSettings{IntervalSeconds: 300},
+		groupWindowAggregatesNil: true,
+		windowAggregates:         map[int64]AccountMonitorWindowAggregate{104: {RequestCount: 10, SuccessCount: 10, SuccessRate: 1, LastObservedAt: &now}},
+		aggregates:               map[int64]AccountMonitorAggregate{104: {SampleCount: 4, SuccessSampleCount: 4, SuccessRate: 1, LastCheckedAt: &now}},
+		latest:                   map[int64]AccountMonitorLatest{104: {Status: "success", CheckedAt: now}},
+		groups:                   []AccountMonitorGroup{{ID: 7, Name: "openai", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights}},
+	}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := findAccountMonitorGroupAccount(t, page.Groups[0].Accounts, account.ID)
+	if row.Evidence.SampleCount != 0 || row.Evidence.Source != "stale" || row.QualityScore != nil || row.QualityRank != nil {
+		t.Fatalf("group row used account-scoped evidence after nil group-window projection: %#v", row)
 	}
 }
 
@@ -816,8 +846,8 @@ func TestAccountMonitorListWindowRetainsSchedulableUnavailableAndStaleNativeScor
 	}
 	byGroup := accountMonitorGroupRowsByID(page.Groups[0].Accounts)
 	for _, id := range []int64{501, 502} {
-		if row := byGroup[id]; row.QualityScore == nil || row.GroupRank == nil || !row.Eligible || row.Evidence.Source != "monitor_probe" {
-			t.Fatalf("group account %d = %#v, want retained native score/rank", id, row)
+		if row := byGroup[id]; row.QualityScore != nil || row.GroupRank != nil || row.Eligible || row.Evidence.Source != "stale" {
+			t.Fatalf("group account %d used account-scoped evidence without a group-window projection: %#v", id, row)
 		}
 	}
 	for _, id := range []int64{503, 504} {

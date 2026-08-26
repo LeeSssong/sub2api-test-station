@@ -30,6 +30,7 @@ func TestOpenAIAccountSchedulerProjection_UsesGroupPolicyOrderWithoutChangingQua
 		UseUpstreamTokenCost: true,
 		SnapshotAt:           now,
 		Accounts:             []*Account{lessPerformant, performant},
+		QualityOrder:         []int64{2, 1},
 		LoadMap: map[int64]*AccountLoadInfo{
 			1: {AccountID: 1, LoadRate: 10, WaitingCount: 0},
 			2: {AccountID: 2, LoadRate: 0, WaitingCount: 0},
@@ -43,8 +44,58 @@ func TestOpenAIAccountSchedulerProjection_UsesGroupPolicyOrderWithoutChangingQua
 	require.Equal(t, []int64{1, 2}, projectionAccountIDs(projection.Candidates))
 	require.Equal(t, AccountMonitorReasonStrategy, projection.Candidates[0].PrimaryReasonCode)
 	require.Equal(t, 3.0, projection.EffectiveWeights["upstream_cost"])
+	require.Equal(t, AccountMonitorSchedulerFact{Label: "上游成本权重", Value: "3"}, projection.EffectiveFacts[7])
+	encoded, err := json.Marshal(projection)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), "上游成本权重")
+	require.NotContains(t, string(encoded), "effective_weights")
+	require.NotContains(t, string(encoded), "upstream_cost")
 	require.Empty(t, *acquiredIDs)
 	require.Empty(t, *releasedIDs)
+}
+
+func TestOpenAIAccountSchedulerProjectionAppliesGroupPrivacyEligibility(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	withoutPrivacy := projectionTestAccount(101)
+	withPrivacy := projectionTestAccount(102)
+	withPrivacy.Extra = map[string]any{"privacy_mode": PrivacyModeTrainingOff}
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequirePrivacySet: true, SnapshotAt: now,
+		Accounts: []*Account{withoutPrivacy, withPrivacy},
+		LoadMap:  map[int64]*AccountLoadInfo{101: {AccountID: 101}, 102: {AccountID: 102}},
+	})
+
+	require.NoError(t, err)
+	withoutPrivacyCandidate := projectionCandidateByID(projection.Candidates, withoutPrivacy.ID)
+	withPrivacyCandidate := projectionCandidateByID(projection.Candidates, withPrivacy.ID)
+	require.False(t, withoutPrivacyCandidate.Eligible)
+	require.Equal(t, AccountMonitorReasonNotEligible, withoutPrivacyCandidate.PrimaryReasonCode)
+	require.True(t, withPrivacyCandidate.Eligible)
+}
+
+func TestOpenAIAccountSchedulerProjectionAppliesGrokFreeQuotaSoftGateAndMarksModelParityUnknown(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.cfg = projectionGrokFreeQuotaTestConfig()
+	scheduler.service.usageLogRepo = &struct{ UsageLogRepository }{}
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	free := projectionTestAccount(103)
+	free.Platform = PlatformGrok
+	free.Type = AccountTypeOAuth
+	free.Credentials = map[string]any{"subscription_tier": "free"}
+	scheduler.grokFreeQuotaGateCache.Store(free.ID, grokFreeQuotaGateCacheEntry{tokens: 480_000, checkedAt: time.Now().UTC(), known: true})
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformGrok, SnapshotAt: now, Accounts: []*Account{free},
+		LoadMap: map[int64]*AccountLoadInfo{free.ID: {AccountID: free.ID}},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "unknown", projection.ModelQuotaParity)
+	candidate := projectionCandidateByID(projection.Candidates, free.ID)
+	require.False(t, candidate.Eligible)
+	require.Equal(t, AccountMonitorReasonNotEligible, candidate.PrimaryReasonCode)
 }
 
 func TestOpenAIAccountSchedulerProjection_MarksCooldownWithoutMutatingSelectionState(t *testing.T) {
@@ -177,6 +228,25 @@ func TestOpenAIAccountSchedulerProjection_UsesSnapshotForReadOnlyRuntimeEligibil
 	require.Equal(t, beforeProxy, service.openaiProxyStreamCircuit.entries[proxyID])
 }
 
+func TestOpenAIAccountSchedulerProjectionReadOnlyEligibilityUsesLazyRuntimeGetters(t *testing.T) {
+	service := &OpenAIGatewayService{}
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	account := projectionTestAccount(902)
+	proxyID := int64(903)
+	account.ProxyID = &proxyID
+	model := "gpt-5.4-mini"
+
+	require.False(t, service.isOpenAIAccountModelRuntimeBlockedAtReadOnly(account, model, now))
+	require.NotNil(t, service.openaiModelTransient)
+	service.openaiModelTransient.entries[openAIAccountModelKey{AccountID: account.ID, Model: model}] = openAIAccountModelTransientEntry{blockUntil: now.Add(time.Hour)}
+	require.True(t, service.isOpenAIAccountModelRuntimeBlockedAtReadOnly(account, model, now))
+
+	require.False(t, service.isOpenAIProxyStreamQuarantinedAtReadOnly(context.Background(), account, now))
+	require.NotNil(t, service.openaiProxyStreamCircuit)
+	service.openaiProxyStreamCircuit.entries[proxyID] = openAIProxyStreamCircuitEntry{blockedUntil: now.Add(time.Hour)}
+	require.True(t, service.isOpenAIProxyStreamQuarantinedAtReadOnly(context.Background(), account, now))
+}
+
 func TestOpenAIAccountSchedulerProjection_UsesSnapshotForQuotaEligibility(t *testing.T) {
 	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
 	snapshot := time.Now().UTC().Add(-time.Hour)
@@ -269,6 +339,7 @@ func TestOpenAIAccountSchedulerProjection_DoesNotLabelMatchingQualityOrderAsStra
 		RequestedModel: "gpt-5.4-mini",
 		SnapshotAt:     now,
 		Accounts:       []*Account{first, second},
+		QualityOrder:   []int64{93, 94},
 		LoadMap: map[int64]*AccountLoadInfo{
 			first.ID:  {AccountID: first.ID, LoadRate: 0},
 			second.ID: {AccountID: second.ID, LoadRate: 0},
@@ -338,10 +409,29 @@ func projectionTestUpstreamBillingExtra(now time.Time, rate float64) map[string]
 	}
 }
 
+func projectionGrokFreeQuotaTestConfig() *config.Config {
+	cfg := &config.Config{}
+	cfg.Gateway.Grok.FreeQuotaSoftGateEnabled = true
+	cfg.Gateway.Grok.FreeQuotaTokenLimit = 500_000
+	cfg.Gateway.Grok.FreeQuotaSoftGatePercent = 95
+	cfg.Gateway.Grok.FreeQuotaWindowHours = 24
+	cfg.Gateway.Grok.FreeQuotaStatsCacheSeconds = 60
+	return cfg
+}
+
 func projectionAccountIDs(candidates []OpenAIAccountSchedulerProjectionCandidate) []int64 {
 	ids := make([]int64, 0, len(candidates))
 	for _, candidate := range candidates {
 		ids = append(ids, candidate.AccountID)
 	}
 	return ids
+}
+
+func projectionCandidateByID(candidates []OpenAIAccountSchedulerProjectionCandidate, accountID int64) OpenAIAccountSchedulerProjectionCandidate {
+	for _, candidate := range candidates {
+		if candidate.AccountID == accountID {
+			return candidate
+		}
+	}
+	return OpenAIAccountSchedulerProjectionCandidate{}
 }

@@ -436,9 +436,9 @@ func TestAccountMonitorRepositoryPersistsGroupScoreWeightsAndReadsNativeGroups(t
 	}
 
 	mock.ExpectQuery("SELECT[[:space:]]+g.id").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "status", "platform", "rate_multiplier", "rpm_limit", "account_count", "active_account_count", "rate_limited_account_count", "customer_visible", "native_order", "cost_weight", "success_weight", "ttft_weight", "latency_weight", "ttft_target_ms", "ttft_limit_ms", "latency_target_ms", "latency_limit_ms", "updated_by", "updated_at"}).
-			AddRow(7, "public", "active", "openai", 1.25, 60, 4, 3, 1, true, 4, 15, 45, 20, 20, 1000, 5000, 10000, 60000, 0, time.Time{}).
-			AddRow(8, "private", "disabled", "anthropic", 2.0, 0, 9, 2, 3, false, 9, 20, 40, 20, 20, 1200, 6000, 15000, 50000, 3, updatedAt))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "status", "platform", "rate_multiplier", "rpm_limit", "account_count", "active_account_count", "rate_limited_account_count", "customer_visible", "require_privacy_set", "native_order", "cost_weight", "success_weight", "ttft_weight", "latency_weight", "ttft_target_ms", "ttft_limit_ms", "latency_target_ms", "latency_limit_ms", "updated_by", "updated_at"}).
+			AddRow(7, "public", "active", "openai", 1.25, 60, 4, 3, 1, true, true, 4, 15, 45, 20, 20, 1000, 5000, 10000, 60000, 0, time.Time{}).
+			AddRow(8, "private", "disabled", "anthropic", 2.0, 0, 9, 2, 3, false, false, 9, 20, 40, 20, 20, 1200, 6000, 15000, 50000, 3, updatedAt))
 	groups, err := repo.ListGroups(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -471,8 +471,8 @@ func TestAccountMonitorRepositoryExcludesSoftDeletedGroups(t *testing.T) {
 	// Monitor tabs must use the same active-group set as /admin/groups. A
 	// missing g.deleted_at guard would expose soft-deleted groups here.
 	mock.ExpectQuery("(?s)SELECT[[:space:]]+g\\.id.*FROM[[:space:]]+groups[[:space:]]+g.*WHERE[[:space:]]+g\\.deleted_at[[:space:]]+IS[[:space:]]+NULL").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "status", "platform", "rate_multiplier", "rpm_limit", "account_count", "active_account_count", "rate_limited_account_count", "customer_visible", "native_order", "cost_weight", "success_weight", "ttft_weight", "latency_weight", "ttft_target_ms", "ttft_limit_ms", "latency_target_ms", "latency_limit_ms", "updated_by", "updated_at"}).
-			AddRow(7, "active", "active", "openai", 1.25, 0, 1, 1, 0, true, 4, 15, 45, 20, 20, 1000, 5000, 10000, 60000, 0, time.Time{}))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "status", "platform", "rate_multiplier", "rpm_limit", "account_count", "active_account_count", "rate_limited_account_count", "customer_visible", "require_privacy_set", "native_order", "cost_weight", "success_weight", "ttft_weight", "latency_weight", "ttft_target_ms", "ttft_limit_ms", "latency_target_ms", "latency_limit_ms", "updated_by", "updated_at"}).
+			AddRow(7, "active", "active", "openai", 1.25, 0, 1, 1, 0, true, false, 4, 15, 45, 20, 20, 1000, 5000, 10000, 60000, 0, time.Time{}))
 
 	groups, err := repo.ListGroups(context.Background())
 	if err != nil {

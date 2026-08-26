@@ -367,7 +367,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtReadOnly(acco
 		return false
 	}
 	canonicalModel := canonicalOpenAIAccountSchedulingModel(account, requestedModel)
-	if state := s.openaiModelTransient; state != nil && state.isBlockedReadOnly(account.ID, openAIAccountModelTransientModel(canonicalModel), now) {
+	if state := s.getOpenAIAccountModelTransientState(); state != nil && state.isBlockedReadOnly(account.ID, openAIAccountModelTransientModel(canonicalModel), now) {
 		return true
 	}
 	key, err := NewOpenAISharedHealthKey(account.ID, canonicalModel)

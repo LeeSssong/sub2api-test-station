@@ -1,8 +1,8 @@
 # 原生 Sub 小步发布任务包队列
 
-## 当前设计任务（2026-08-26，T72）
+## 当前待根审任务（2026-08-26，T72）
 
-- **T72 兑换码充值事务边界修复与余额写入审计**：状态 `DESIGNING`。用户已确认修复范围：钱包协调器在兑换事务上下文中复用现有事务，避免二次 `BEGIN` 导致兑换回滚；补齐兑换码正/负值、钱包幂等、支付履约、返利、用量扣费和并发/失败回滚的直接相关回归；生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 只读核验为 `id=44/type=balance/value=20/status=unused`，不在代码修复前改动。候选必须从最新 `main@e6d5655cb` 创建独立 worktree；T71 仍处于 VERIFYING，T72 只进入实现车道，不能抢占合并/部署单车道。无计划迁移、配置或账务口径变化；发布预检若返回 `downtime_required=true` 必须停在生产动作前。 
+- **T72 兑换码充值事务边界修复与余额写入审计**：状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t72-redeem-transaction-fix@23455280a` 基于登记后 `main@801f5a915` 完成 ambient transaction 复用，修复兑换正向充值回滚；新增负数兑换锁内原子扣减，保留封顶 0 且不消费赠送额度语义。直接相关 service/repository/handler 回归、`go build ./cmd/server`、`git diff --check` 通过；RED/GREEN 证据与调用点审计见 `docs/handoffs/2026-08-26-t72-redeem-transaction-fix-handoff.md`。生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 仍为 `unused`；无迁移、配置或依赖变化，尚未合并、推送、部署或线上验收。T71 仍处于 VERIFYING，T72 不得抢占合并/部署单车道。
 
 ## 当前设计任务（2026-08-26，T71）
 

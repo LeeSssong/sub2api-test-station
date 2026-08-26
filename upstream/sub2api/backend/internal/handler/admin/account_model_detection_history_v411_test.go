@@ -12,8 +12,8 @@ import (
 )
 
 type historyDetectionRepo struct {
-	gotLimit                                  int
-	gotCursor, gotStatus, gotProfile, gotMode string
+	gotLimit                                                                        int
+	gotCursor, gotStatus, gotProfile, gotMode, gotJuiceStatus, gotFingerprintStatus string
 }
 
 func (r *historyDetectionRepo) LoadSettings(context.Context, int64) (service.AccountModelDetectionSettings, error) {
@@ -32,8 +32,8 @@ func (r *historyDetectionRepo) Claim(context.Context, string) (*service.AccountM
 func (r *historyDetectionRepo) Complete(context.Context, string, service.AccountModelDetectionResponse, string, string) error {
 	return nil
 }
-func (r *historyDetectionRepo) ListRecent(_ context.Context, _ int64, limit int, cursor, status, profile, mode string) (service.AccountModelDetectionHistoryPage, error) {
-	r.gotLimit, r.gotCursor, r.gotStatus, r.gotProfile, r.gotMode = limit, cursor, status, profile, mode
+func (r *historyDetectionRepo) ListRecent(_ context.Context, _ int64, limit int, cursor, status, profile, mode, juiceStatus, fingerprintStatus string) (service.AccountModelDetectionHistoryPage, error) {
+	r.gotLimit, r.gotCursor, r.gotStatus, r.gotProfile, r.gotMode, r.gotJuiceStatus, r.gotFingerprintStatus = limit, cursor, status, profile, mode, juiceStatus, fingerprintStatus
 	finished := time.Date(2026, 8, 26, 2, 0, 0, 0, time.UTC)
 	return service.AccountModelDetectionHistoryPage{Items: []service.AccountModelDetectionRun{{ID: "run-1", Status: service.AccountModelDetectionStatusAbnormal, Profile: profile, Mode: mode, TriggerReason: service.AccountModelDetectionTriggerModelConflict, PlannedRequests: 158, ValidSamples: 157, EvidenceState: service.AccountModelDetectionEvidenceComplete, FingerprintStatus: "strong_match", FinishedAt: &finished, QueuedAt: finished.Add(-time.Second)}}, NextCursor: "next-page"}, nil
 }
@@ -65,12 +65,12 @@ func TestAccountModelDetectionHistoryParsesCursorAndFilters(t *testing.T) {
 	router := gin.New()
 	router.GET("/accounts/:account_id/detection", h.AccountModelDetectionHistory)
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/accounts/7/detection?limit=2&cursor=abc&status=abnormal&profile=high&mode=escalation", nil))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/accounts/7/detection?limit=2&cursor=abc&status=abnormal&profile=high&mode=escalation&juice_status=mismatch&fingerprint_status=strong_match", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if repo.gotLimit != 2 || repo.gotCursor != "abc" || repo.gotStatus != "abnormal" || repo.gotProfile != "high" || repo.gotMode != "escalation" {
-		t.Fatalf("repo args limit=%d cursor=%q status=%q profile=%q mode=%q", repo.gotLimit, repo.gotCursor, repo.gotStatus, repo.gotProfile, repo.gotMode)
+	if repo.gotLimit != 2 || repo.gotCursor != "abc" || repo.gotStatus != "abnormal" || repo.gotProfile != "high" || repo.gotMode != "escalation" || repo.gotJuiceStatus != "mismatch" || repo.gotFingerprintStatus != "strong_match" {
+		t.Fatalf("repo args limit=%d cursor=%q status=%q profile=%q mode=%q juice_status=%q fingerprint_status=%q", repo.gotLimit, repo.gotCursor, repo.gotStatus, repo.gotProfile, repo.gotMode, repo.gotJuiceStatus, repo.gotFingerprintStatus)
 	}
 	body := recorder.Body.String()
 	for _, fragment := range []string{`"next_cursor":"next-page"`, `"profile":"high"`, `"planned_requests":158`, `"fingerprint_status":"strong_match"`} {
@@ -101,7 +101,7 @@ func TestAccountModelDetectionHistoryMarksLegacyRowsAsHistorical(t *testing.T) {
 
 type legacyHistoryDetectionRepo struct{ historyDetectionRepo }
 
-func (r *legacyHistoryDetectionRepo) ListRecent(context.Context, int64, int, string, string, string, string) (service.AccountModelDetectionHistoryPage, error) {
+func (r *legacyHistoryDetectionRepo) ListRecent(context.Context, int64, int, string, string, string, string, string, string) (service.AccountModelDetectionHistoryPage, error) {
 	finished := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
 	return service.AccountModelDetectionHistoryPage{Items: []service.AccountModelDetectionRun{{ID: "legacy-1", Status: service.AccountModelDetectionStatusNormal, FinishedAt: &finished, QueuedAt: finished}}}, nil
 }

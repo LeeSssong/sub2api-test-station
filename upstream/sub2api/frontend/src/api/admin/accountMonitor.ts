@@ -284,6 +284,8 @@ export interface AccountModelDetectionHistoryParams {
   status?: string
   profile?: string
   mode?: string
+  juice_status?: string
+  fingerprint_status?: string
 }
 
 export interface AccountMonitorGroup {

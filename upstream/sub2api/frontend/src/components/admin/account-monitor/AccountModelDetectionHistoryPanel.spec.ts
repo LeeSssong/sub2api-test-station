@@ -34,6 +34,24 @@ vi.mock('vue-i18n', async () => {
     'admin.accounts.modelDetection.historyCountSuffix': ' 条',
     'admin.accounts.modelDetection.statusFilter': '结论',
     'admin.accounts.modelDetection.profileFilter': '档位',
+    'admin.accounts.modelDetection.juiceFilter': 'Juice 结果',
+    'admin.accounts.modelDetection.fingerprintFilter': '指纹结果',
+    'admin.accounts.modelDetection.conclusionFilter': '综合结论',
+    'admin.accounts.modelDetection.profileAndSamples': '档位与样本',
+    'admin.accounts.modelDetection.fingerprintShort': '指纹',
+    'admin.accounts.modelDetection.historyDetailsHint': '点击任意记录行可展开查看该次检测详情',
+    'admin.accounts.modelDetection.juiceStatus.pass': '通过',
+    'admin.accounts.modelDetection.juiceStatus.mismatch': '与申报不一致',
+    'admin.accounts.modelDetection.juiceStatus.insufficient': '证据不足',
+    'admin.accounts.modelDetection.juiceStatus.non_gpt': '可能非 GPT',
+    'admin.accounts.modelDetection.juiceStatus.unavailable': '未取得证据',
+    'admin.accounts.modelDetection.fingerprintStatus.strong_match': '强烈指向',
+    'admin.accounts.modelDetection.fingerprintStatus.unclear': '证据不明确',
+    'admin.accounts.modelDetection.fingerprintStatus.unavailable': '无已知指纹',
+    'admin.accounts.modelDetection.conclusion.normal': '与申报一致',
+    'admin.accounts.modelDetection.conclusion.abnormal': '检测异常',
+    'admin.accounts.modelDetection.conclusion.insufficient': '证据不足',
+    'admin.accounts.modelDetection.conclusion.failed': '检测失败',
     'admin.accounts.modelDetection.time': '时间',
     'admin.accounts.modelDetection.statusLabel': '结论',
     'admin.accounts.modelDetection.mode': '模式',
@@ -79,9 +97,36 @@ describe('AccountModelDetectionHistoryPanel', () => {
     history.mockResolvedValue({ items: [], next_cursor: '' })
     const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
     await flushPromises()
-    await wrapper.get('[data-test="detection-history-status-filter"]').setValue('abnormal')
+    await wrapper.get('[data-test="detection-history-conclusion-filter"]').setValue('abnormal')
     await flushPromises()
     expect(history).toHaveBeenLastCalledWith(7, expect.objectContaining({ status: 'abnormal' }))
+  })
+
+  it('uses a centered modal and sends Juice, fingerprint, and conclusion filters to the complete history query', async () => {
+    history.mockResolvedValue({ items: [{
+      run_id: 'run-evidence', status: 'abnormal', profile: 'high', mode: 'escalation',
+      planned_requests: 158, valid_samples: 158, evidence_state: 'complete',
+      juice_status: 'mismatch', fingerprint_status: 'strong_match', fingerprint_candidate: 'gpt-5.6-terra',
+      finished_at: '2026-08-26T02:00:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="detection-history-panel"]').attributes('class')).toContain('items-center')
+    expect(wrapper.get('[data-test="detection-history-table"]').text()).toContain('Juice 结果')
+    expect(wrapper.get('[data-test="detection-history-table"]').text()).toContain('行为指纹')
+    expect(wrapper.get('[data-test="detection-history-table"]').text()).toContain('与申报不一致')
+    expect(wrapper.get('[data-test="detection-history-table"]').text()).toContain('强烈指向')
+    expect(wrapper.get('[data-test="detection-history-timeline"] strong').classes()).not.toContain('truncate')
+
+    await wrapper.get('[data-test="detection-history-juice-filter"]').setValue('mismatch')
+    await wrapper.get('[data-test="detection-history-fingerprint-filter"]').setValue('strong_match')
+    await wrapper.get('[data-test="detection-history-conclusion-filter"]').setValue('abnormal')
+    await flushPromises()
+
+    expect(history).toHaveBeenLastCalledWith(7, expect.objectContaining({
+      juice_status: 'mismatch', fingerprint_status: 'strong_match', status: 'abnormal',
+    }))
   })
 
   it('renders legacy rows as historical records instead of zero-sample evidence', async () => {

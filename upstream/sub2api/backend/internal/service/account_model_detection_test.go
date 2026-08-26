@@ -397,7 +397,7 @@ func (s *detectionRepoStub) ListQueued(context.Context, int) ([]string, error) {
 func (s *detectionRepoStub) Complete(context.Context, string, AccountModelDetectionResponse, string, string) error {
 	return nil
 }
-func (s *detectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
+func (s *detectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items := append([]AccountModelDetectionRun(nil), s.recent...)
@@ -474,7 +474,7 @@ func (s *executionDetectionRepoStub) Complete(_ context.Context, runID string, r
 	s.completions[runID] = executionDetectionCompletion{response: response, errorCode: errorCode, errorMessage: errorMessage}
 	return nil
 }
-func (s *executionDetectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
+func (s *executionDetectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
 	return AccountModelDetectionHistoryPage{}, nil
 }
 func (s *executionDetectionRepoStub) completion(runID string) executionDetectionCompletion {
@@ -570,7 +570,7 @@ func (s *workerQueueDetectionRepoStub) Complete(_ context.Context, runID string,
 	s.runs[runID] = run
 	return nil
 }
-func (s *workerQueueDetectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
+func (s *workerQueueDetectionRepoStub) ListRecent(context.Context, int64, int, string, string, string, string, string, string) (AccountModelDetectionHistoryPage, error) {
 	return AccountModelDetectionHistoryPage{}, nil
 }
 func (s *countingDetectionSidecar) Detect(context.Context, AccountModelDetectionRequest) (AccountModelDetectionResponse, error) {

@@ -29,7 +29,7 @@ type AccountModelDetectionRepository interface {
 	ListQueued(context.Context, int) ([]string, error)
 	Claim(context.Context, string) (*AccountModelDetectionRun, error)
 	Complete(context.Context, string, AccountModelDetectionResponse, string, string) error
-	ListRecent(context.Context, int64, int, string, string, string, string) (AccountModelDetectionHistoryPage, error)
+	ListRecent(context.Context, int64, int, string, string, string, string, string, string) (AccountModelDetectionHistoryPage, error)
 }
 
 type AccountModelDetectionSidecar interface {
@@ -505,15 +505,15 @@ func (s *AccountModelDetectionService) RunQueued(ctx context.Context) (int, erro
 }
 
 func (s *AccountModelDetectionService) Recent(ctx context.Context, accountID int64, limit int) ([]AccountModelDetectionRun, error) {
-	page, err := s.RecentPage(ctx, accountID, limit, "", "", "", "")
+	page, err := s.RecentPage(ctx, accountID, limit, "", "", "", "", "", "")
 	return page.Items, err
 }
 
-func (s *AccountModelDetectionService) RecentPage(ctx context.Context, accountID int64, limit int, cursor, status, profile, mode string) (AccountModelDetectionHistoryPage, error) {
+func (s *AccountModelDetectionService) RecentPage(ctx context.Context, accountID int64, limit int, cursor, status, profile, mode, juiceStatus, fingerprintStatus string) (AccountModelDetectionHistoryPage, error) {
 	if s == nil || s.repo == nil {
 		return AccountModelDetectionHistoryPage{}, errors.New("account model detection is unavailable")
 	}
-	page, err := s.repo.ListRecent(ctx, accountID, limit, cursor, status, profile, mode)
+	page, err := s.repo.ListRecent(ctx, accountID, limit, cursor, status, profile, mode, juiceStatus, fingerprintStatus)
 	if err != nil {
 		return AccountModelDetectionHistoryPage{}, err
 	}

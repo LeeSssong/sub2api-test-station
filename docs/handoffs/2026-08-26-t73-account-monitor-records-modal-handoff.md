@@ -33,3 +33,10 @@
 - Expected `downtime_required=false`; final release preflight remains the root controller's responsibility.
 - T71 is frozen and T72/T74 are deployed, so the release lane is available for T73.
 - Rollback is a revert of the candidate commit after integration; no data rollback is required.
+
+## Production Verification Follow-up
+
+- The first production promotion of `main@bdc12f20c` succeeded with `downtime_required=false` and activated the blue slot.
+- The authenticated production modal confirmed the centered layout, three filters, evidence-first columns, and historical-record semantics, but exposed the detector's raw Juice success value `verified` as an untranslated i18n key because the UI had assumed `pass`.
+- The follow-up fix keeps `verified` as the server-side filter value and maps it to the existing user-facing “通过 / Passed” presentation for labels, colors, and fallback detail copy. Legacy `pass` display compatibility remains intact.
+- TDD evidence: the new production-shaped regression failed against the released implementation, then passed after the minimal mapping fix. The two directly related component suites now pass 61/61; typecheck and production build also pass.

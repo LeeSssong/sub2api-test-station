@@ -129,6 +129,24 @@ describe('AccountModelDetectionHistoryPanel', () => {
     }))
   })
 
+  it('renders the detector verified Juice result as passed and filters with the raw detector value', async () => {
+    history.mockResolvedValue({ items: [{
+      run_id: 'run-verified', status: 'normal', source: 'current', profile: 'medium', mode: 'monitor',
+      trigger_reason: 'scheduled', planned_requests: 49, valid_samples: 49, evidence_state: 'complete',
+      juice_status: 'verified', fingerprint_status: 'unavailable', finished_at: '2026-08-26T10:01:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+
+    const tableText = wrapper.get('[data-test="detection-history-table"]').text()
+    expect(tableText).toContain('通过')
+    expect(tableText).not.toContain('admin.accounts.modelDetection.juiceStatus.verified')
+
+    await wrapper.get('[data-test="detection-history-juice-filter"]').setValue('verified')
+    await flushPromises()
+    expect(history).toHaveBeenLastCalledWith(7, expect.objectContaining({ juice_status: 'verified' }))
+  })
+
   it('renders legacy rows as historical records instead of zero-sample evidence', async () => {
     history.mockResolvedValueOnce({ items: [{
       run_id: 'legacy-1', status: 'normal', source: 'historical', profile: 'unknown', mode: 'historical',

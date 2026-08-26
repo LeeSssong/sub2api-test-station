@@ -20,6 +20,7 @@ docker compose --project-name sub2api-acceptance \
 
 grep -Fq 'name: sub2api-acceptance' "$compose_file" || fail 'independent project name is missing'
 grep -Fq 'sub2api-acceptance-network' "$compose_file" || fail 'independent network is missing'
+grep -Fq 'sub2api-acceptance-egress-network' "$compose_file" || fail 'dedicated egress network is missing'
 grep -Fq 'acceptance-bootstrap' "$compose_file" || fail 'bootstrap profile service is missing'
 
 for service in acceptance-api acceptance-worker acceptance-detector acceptance-postgres acceptance-redis acceptance-caddy; do
@@ -34,6 +35,7 @@ grep -Fq "('backend_mode_enabled', 'true')" "$compose_file" || fail 'backend mod
 grep -Fq "('registration_enabled', 'false')" "$compose_file" || fail 'registration closure bootstrap setting is missing'
 grep -Fq 'ON CONFLICT (key) DO UPDATE' "$compose_file" || fail 'bootstrap upsert is missing'
 grep -Fq 'response_header_timeout 15m' "$caddy_file" || fail '15-minute upstream timeout is missing'
+grep -Fq 'header=\"Host: $$ACCEPTANCE_SITE_ADDRESS\"' "$compose_file" || fail 'caddy healthcheck must use acceptance host header'
 
 if rg -n 'mock-upstream|PAYMENT_PROVIDER: mock|lab-outbox|sub2api_default|sub2api-blue|sub2api-green' \
   "$compose_file" "$caddy_file"; then

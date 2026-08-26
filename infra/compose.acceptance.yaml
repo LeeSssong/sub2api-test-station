@@ -38,7 +38,7 @@ services:
       SERVER_PROCESS_ROLE: api
     volumes:
       - sub2api-acceptance-data:/app/data
-    networks: [acceptance]
+    networks: [acceptance, egress]
     depends_on:
       acceptance-postgres: {condition: service_healthy}
       acceptance-redis: {condition: service_healthy}
@@ -59,7 +59,7 @@ services:
       SERVER_PROCESS_ROLE: worker
     volumes:
       - sub2api-acceptance-data:/app/data
-    networks: [acceptance]
+    networks: [acceptance, egress]
     depends_on:
       acceptance-postgres: {condition: service_healthy}
       acceptance-redis: {condition: service_healthy}
@@ -76,7 +76,7 @@ services:
       MODEL_DETECTOR_MODELS: ${ACCEPTANCE_DETECTOR_MODELS:-gpt-5.6-terra,gpt-5.6-sol,gpt-5.4}
       MODEL_DETECTOR_VERSION: ${ACCEPTANCE_DETECTOR_VERSION:-4.1.1}
       SUB2API_MODEL_DETECTOR_TOKEN: ${ACCEPTANCE_DETECTOR_TOKEN:?ACCEPTANCE_DETECTOR_TOKEN is required}
-    networks: [acceptance]
+    networks: [acceptance, egress]
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
       interval: 30s
@@ -134,11 +134,11 @@ services:
       - ./Caddyfile.acceptance:/etc/caddy/Caddyfile:ro
       - sub2api-acceptance-caddy-data:/data
       - sub2api-acceptance-caddy-config:/config
-    networks: [acceptance]
+    networks: [acceptance, egress]
     depends_on:
       acceptance-api: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "wget", "--no-check-certificate", "-q", "-T", "5", "-O", "/dev/null", "https://127.0.0.1/health"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --header=\"Host: $$ACCEPTANCE_SITE_ADDRESS\" -q -T 5 -O /dev/null https://127.0.0.1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -181,3 +181,5 @@ networks:
   acceptance:
     name: sub2api-acceptance-network
     internal: true
+  egress:
+    name: sub2api-acceptance-egress-network

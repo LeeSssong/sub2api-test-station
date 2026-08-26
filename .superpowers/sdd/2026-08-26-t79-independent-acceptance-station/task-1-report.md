@@ -66,3 +66,17 @@ git diff --check
 - The later dedicated release controller and host executor still need to enforce
   the environment-file, non-production identity, staging, rollback, bootstrap,
   and health-check runtime controls.
+
+## Review fix (2026-08-27)
+
+- Added a dedicated `sub2api-acceptance-egress-network` for API, worker,
+  detector, and Caddy. The database and Redis remain on the internal
+  `sub2api-acceptance-network`; no production network or service is reused.
+  This permits real upstream/payment/notification traffic and Caddy ACME while
+  preserving private data-plane isolation.
+- Updated the Caddy healthcheck to send the configured acceptance virtual-host
+  header when probing `https://127.0.0.1/health`, so virtual-host routing and
+  certificate behavior are checked against the acceptance site.
+- Extended the topology contract to assert the egress network and Host-header
+  healthcheck. The pre-fix topology fails the new egress assertion; the fixed
+  topology passes all focused checks.

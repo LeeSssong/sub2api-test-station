@@ -32,6 +32,11 @@ authentication, envelope, and legacy-field contract.
 ## Commit
 
 - Fix commit: `c47257a63` (`fix: make scheduler projection unavailability explicit`)
+- Fix round 2 commit: `917a39faf` (`test: assert scheduler projection transport contract`)
+- Round 2 changed only `upstream/sub2api/backend/internal/handler/admin/account_monitor_handler_test.go`.
+  The handler contract now asserts `RequiredTransport == OpenAIUpstreamTransportAny`
+  and `RequestedModel == ""`, preserving the approved transport contract without
+  introducing a model dimension.
 
 ## Tests and results
 
@@ -40,6 +45,10 @@ authentication, envelope, and legacy-field contract.
 - `cd upstream/sub2api/backend && go test ./internal/handler/admin -run 'TestAccountMonitorHandler.*(Rank|Projection|Group|LoadSnapshot)' -count=1`
   - RED before the production guard: `TestAccountMonitorHandlerNilLoadSnapshotExposesSchedulerUnavailable` failed because `scheduler_unavailable` was absent; PASS after the guard.
 - `cd upstream/sub2api/backend && go test ./internal/handler/admin -run 'AccountMonitor' -count=1`
+  - PASS
+- `gofmt -w internal/handler/admin/account_monitor_handler_test.go`
+  - PASS
+- `git diff --check`
   - PASS
 - `cd upstream/sub2api/frontend && pnpm typecheck`
   - PASS (`vue-tsc --noEmit`)

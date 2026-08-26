@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 当前设计任务（2026-08-26，T72）
+
+- **T72 兑换码充值事务边界修复与余额写入审计**：状态 `DESIGNING`。用户已确认修复范围：钱包协调器在兑换事务上下文中复用现有事务，避免二次 `BEGIN` 导致兑换回滚；补齐兑换码正/负值、钱包幂等、支付履约、返利、用量扣费和并发/失败回滚的直接相关回归；生产码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 只读核验为 `id=44/type=balance/value=20/status=unused`，不在代码修复前改动。候选必须从最新 `main@e6d5655cb` 创建独立 worktree；T71 仍处于 VERIFYING，T72 只进入实现车道，不能抢占合并/部署单车道。无计划迁移、配置或账务口径变化；发布预检若返回 `downtime_required=true` 必须停在生产动作前。 
+
 ## 当前设计任务（2026-08-26，T71）
 
 - **T71 调度设置独立页面与交互修复**：状态 `VERIFYING`。候选 `codex/t71-scheduler-settings-page@c45ef4af0b43fa28a3e868e07422586ce1e105ab` 已合入并推送 `main@3770a8015`；直接相关 Vitest、类型检查、生产构建和 diff-check 已通过。宿主发布记录 `/var/lib/sub2api/release-records/20260826T022654Z-production-1256992.json` 返回 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`；公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。生产 `/admin/scheduler-settings` 已通过 Playwright 匿名访问守卫并跳转到 `/login?redirect=/admin/scheduler-settings`。当前没有管理员登录态，数字选中态、三段控件联动、场景预览、保存反馈及浅深色/移动端登录态验收待补；候选 worktree/分支保留。继续复用 Sub2API 原生管理员权限、现有 settings API 及 `openai_advanced_scheduler_*` 字段；不改变调度算法、服务不中断护栏、数据库、配置事实源或生产数据。T71 不与 T69 合并发布。

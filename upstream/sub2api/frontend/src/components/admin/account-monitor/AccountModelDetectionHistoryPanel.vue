@@ -97,7 +97,11 @@ function profileLabel(item: AccountModelDetectionSummary) { return item.profile 
 function profileClass(item: AccountModelDetectionSummary) { return item.profile === 'high' ? 'border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-200' : item.profile === 'medium' ? 'border-cyan-400/30 bg-cyan-400/10 text-cyan-200' : item.profile === 'low' ? 'border-slate-500 bg-slate-800 text-slate-200' : 'border-slate-700 bg-slate-900 text-slate-400' }
 function modeLabel(item: AccountModelDetectionSummary) { return item.mode === 'monitor' ? t('admin.accounts.modelDetection.modeNames.monitor') : item.mode === 'manual' ? t('admin.accounts.modelDetection.modeNames.manual') : item.mode === 'escalation' ? t('admin.accounts.modelDetection.modeNames.escalation') : t('admin.accounts.modelDetection.modeNames.historical') }
 function reasonLabel(item: AccountModelDetectionSummary) { return item.trigger_reason ? t(`admin.accounts.modelDetection.reasonValue.${item.trigger_reason}`) : t('admin.accounts.modelDetection.historical') }
-function samplesLabel(item: AccountModelDetectionSummary) { return item.source === 'historical' || item.source === 'historical_final' ? t('admin.accounts.modelDetection.samplesUnavailable') : `${item.valid_samples ?? 0}/${item.planned_requests ?? 0}` }
+function samplesLabel(item: AccountModelDetectionSummary) {
+  if (item.source === 'historical' || item.source === 'historical_final') return t('admin.accounts.modelDetection.samplesUnavailable')
+  if (item.evidence_state !== 'complete' && (item.valid_samples == null || item.valid_samples === 0)) return t('admin.accounts.modelDetection.evidenceUnavailable')
+  return `${item.valid_samples ?? 0}/${item.planned_requests ?? 0}`
+}
 function formatTime(value?: string) { if (!value) return '--'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date) }
 function safeSummary(value?: Record<string, unknown>) {
   if (!value) return ''

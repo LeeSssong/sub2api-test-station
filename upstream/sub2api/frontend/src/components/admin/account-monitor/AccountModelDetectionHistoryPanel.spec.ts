@@ -40,6 +40,7 @@ vi.mock('vue-i18n', async () => {
     'admin.accounts.modelDetection.reason': '触发原因',
     'admin.accounts.modelDetection.samples': '有效样本',
     'admin.accounts.modelDetection.samplesUnavailable': '历史记录',
+    'admin.accounts.modelDetection.evidenceUnavailable': '未取得证据',
     'admin.accounts.modelDetection.juice': 'Juice',
     'admin.accounts.modelDetection.fingerprint': '行为指纹',
     'admin.accounts.modelDetection.details': '查看详情',
@@ -95,5 +96,17 @@ describe('AccountModelDetectionHistoryPanel', () => {
     expect(text).not.toContain('0/0')
     expect(text).not.toContain('unknown')
     expect(text).not.toContain('--')
+  })
+
+  it('does not turn missing detector samples into a zero-sample result', async () => {
+    history.mockResolvedValueOnce({ items: [{
+      run_id: 'insufficient-1', status: 'insufficient', source: 'current', profile: 'medium', mode: 'monitor',
+      planned_requests: 49, valid_samples: 0, evidence_state: 'insufficient', finished_at: '2026-08-26T00:00:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    const text = wrapper.get('[data-test="detection-history-panel"]').text()
+    expect(text).toContain('未取得证据')
+    expect(text).not.toContain('0/49')
   })
 })

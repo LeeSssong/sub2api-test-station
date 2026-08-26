@@ -24,16 +24,25 @@ Rebuilt the admin account monitor as dense, full-width explainable account rows.
 - Commit SHA: 76c916dc2cdca877965373a58db2483a8668025d
 - Commit message: `feat: redesign account monitor as explainable full-width rows`
 
+## Fix Round 1
+
+- Commit SHA: f962fcdd6
+- Commit message: `fix: harden account monitor row responsiveness and compatibility`
+- Moved the wide desktop grid, column spans, action labels, and action stacking from `lg` to `xl`, so the row remains safely stacked around the 1024px breakpoint without clipping controls or introducing page-level horizontal overflow.
+- Changed the card quality-rank display to `quality_rank ?? group_rank` in both global and selected-group scopes. Scheduler display and ordering remain based only on `scheduler_rank`.
+- Added focused regression coverage for the pre-wide breakpoint contract and selected-group legacy `group_rank` fallback while keeping scheduler rank independent.
+
 ## Verification
 
-- Focused Vitest: PASS, 2 files / 105 tests.
+- Focused Vitest: PASS, 2 files / 107 tests (`59` component tests, `48` view tests).
+- TDD fix cycle: PASS. Both new regression tests were run red before the production changes, then green after the fixes.
 - `pnpm typecheck`: PASS.
-- `pnpm build`: PASS on the completed production build run; a final rebuild after the last presentation-only cleanup reached module transformation before the command time cap and was not repeated.
+- `pnpm build`: PASS, completed in 12.66s after transforming 1,076 modules.
 - `git diff --check`: PASS.
 
 ## Unresolved Issues
 
-- Browser-based desktop/mobile visual inspection was not run. Rendered markup and responsive class contracts are covered by the focused component/view tests.
+- Browser-based desktop/mobile visual inspection was not run; the requested time-bounded fallback was used. Rendered markup and responsive class contracts are covered by the focused component/view tests.
 - Existing Browserslist and Node deprecation warnings remain unrelated to this task.
 
 ## Release Scope

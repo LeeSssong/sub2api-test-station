@@ -21,7 +21,7 @@
 - Compose network：`sub2api-acceptance-network`
 - 验收边缘：`172.18.0.1:8181`
 - 验收服务：`acceptance-api`、`acceptance-worker`、`acceptance-detector`、`acceptance-postgres`、`acceptance-redis`、`acceptance-caddy`
-- 允许来源：生产 Caddy 只接受 Cloudflare 官方网段，并要求 `CF-Connecting-IP` 命中管理员 IP 白名单；源站直连伪造转发头必须拒绝
+- 网络入口：生产 Caddy 仅按 `/admin/lab` 路径反代到独立验收边缘，不做 Cloudflare/IP 白名单；访问控制由验收应用自身的管理员登录与 TOTP 承担
 
 注册默认关闭。验收站只允许独立管理员登录；“测试站可商用”不等于向公网开放注册。
 

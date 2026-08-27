@@ -56,12 +56,9 @@ grep -Fq '@acceptance_lab path /admin/lab /admin/lab/*' "$production_caddy_file"
   || fail 'production caddy must proxy only the acceptance prefix'
 grep -Fq '{$ACCEPTANCE_LAB_UPSTREAM:172.18.0.1:8181}' "$production_caddy_file" \
   || fail 'production caddy must proxy acceptance through the loopback upstream'
-grep -Fq 'remote_ip 173.245.48.0/20' "$production_caddy_file" \
-  || fail 'production caddy must trust Cloudflare source ranges for acceptance'
-grep -Fq 'header_regexp Cf-Connecting-Ip ^(?:{$ACCEPTANCE_LAB_ALLOWED_IPS:127\\.0\\.0\\.1})$' "$production_caddy_file" \
-  || fail 'production caddy must require the exact acceptance admin IP'
-grep -Fq 'respond 403' "$production_caddy_file" \
-  || fail 'production caddy must default-deny acceptance sources'
+if rg -n 'remote_ip|Cf-Connecting-Ip|ACCEPTANCE_LAB_ALLOWED_IPS|respond 403' "$production_caddy_file"; then
+  fail 'production caddy must not impose a network-layer ACL on the acceptance station'
+fi
 if rg -n 'admin-lab-gateway' "$production_caddy_file"; then
   fail 'production caddy must not route to the retired mock gateway'
 fi

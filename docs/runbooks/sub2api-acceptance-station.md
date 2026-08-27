@@ -10,6 +10,8 @@
 
 部署为单实例、串行更新。验收站不使用蓝绿槽、临时环境或自动晋级；明确不自动晋级。任何失败都保留验收站 PostgreSQL、Redis、应用数据和 Caddy named volumes，不得通过清库掩盖问题。只有管理员在验收记录中明确通过后，才可以由发布负责人从已验证的 main 单独执行主站发布。
 
+首次安装必须是**从零开始的空站**：不得导入、挂载、复制或同步主站数据库、Redis、对象存储、应用数据、账户、会话、账单、支付订单或任何生产环境文件。首次启动只能创建全新的验收 named volumes、空数据库和独立管理员；后续部署只保留验收站自身产生的数据。支付、上游和通知实例随后只在验收站自身后台录入独立配置；在完成这一步前，不得把真实充值、消费或通知链路标记为验收通过。
+
 旧 admin lab mock 方案（包括 /admin/lab/、PAYMENT_PROVIDER=mock、UPSTREAM_PROVIDER=mock-upstream 和 NOTIFICATION_TRANSPORT=lab-outbox）不属于验收站能力，禁止继续扩展或接入。
 
 ## 安装前置

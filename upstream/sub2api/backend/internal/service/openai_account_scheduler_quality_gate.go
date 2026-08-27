@@ -39,6 +39,7 @@ type openAIQualityGateState struct {
 
 func defaultOpenAIQualityGatePolicy() OpenAISchedulerQualityGatePolicy {
 	return OpenAISchedulerQualityGatePolicy{
+		Enabled:            true,
 		MinSamples:         openAIQualityGateDefaultMinSamples,
 		ErrorRateThreshold: openAIQualityGateDefaultErrorRate,
 		TTFTThresholdMs:    openAIQualityGateDefaultTTFTMs,
@@ -237,10 +238,19 @@ func (s *defaultOpenAIAccountScheduler) qualityGatePolicyForGroup(ctx context.Co
 	}
 	runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
 	policy, ok := runtime.groupPolicies[groupID]
-	if !ok || policy.QualityGate == nil || !policy.QualityGate.Enabled {
+	if !ok || policy.QualityGate == nil {
+		// A missing group override must not silently disable the safety gate. The
+		// scheduler uses the conservative defaults unless an administrator
+		// explicitly supplies quality_gate.enabled=false.
+		return defaultOpenAIQualityGatePolicy(), true
+	}
+	if !policy.QualityGate.Enabled {
 		return OpenAISchedulerQualityGatePolicy{}, false
 	}
-	return *policy.QualityGate, true
+	if normalized := normalizeOpenAISchedulerQualityGateForRead(policy.QualityGate); normalized != nil {
+		return *normalized, true
+	}
+	return defaultOpenAIQualityGatePolicy(), true
 }
 
 func (s *defaultOpenAIAccountScheduler) qualityGateBlockedForGroup(ctx context.Context, groupID, accountID int64, policy OpenAISchedulerQualityGatePolicy, now time.Time, advance bool) bool {

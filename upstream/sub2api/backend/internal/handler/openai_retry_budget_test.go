@@ -11,24 +11,24 @@ import (
 
 func TestOpenAIRetryBudgetBoundsAttemptsAndAccountSwitches(t *testing.T) {
 	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
-	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 3, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 2, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
 
 	require.True(t, budget.ConsumeAttempt(11))
 	require.True(t, budget.ConsumeAttempt(11), "same-account retry does not consume an account switch")
 	require.True(t, budget.ConsumeAttempt(12))
 	require.True(t, budget.ConsumeAttempt(13))
-	require.False(t, budget.ConsumeAttempt(14), "the fifth real upstream attempt is rejected")
+	require.False(t, budget.ConsumeAttempt(14), "the third account switch is rejected")
 }
 
 func TestOpenAIRetryBudgetRejectsFourthAccountSwitch(t *testing.T) {
 	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
-	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 8, MaxAccountSwitches: 3, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 8, MaxAccountSwitches: 2, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
 
-	for _, accountID := range []int64{11, 12, 13, 14} {
+	for _, accountID := range []int64{11, 12, 13} {
 		require.True(t, budget.ConsumeAttempt(accountID))
 	}
-	require.False(t, budget.CanSwitch(15, false, false))
-	require.False(t, budget.ConsumeAttempt(15))
+	require.False(t, budget.CanSwitch(14, false, false))
+	require.False(t, budget.ConsumeAttempt(14))
 }
 
 func TestOpenAIRetryBudgetCountsUnknownAsOneFailureDomain(t *testing.T) {
@@ -145,6 +145,12 @@ func TestOpenAITTFTReportEligibleRequiresSafePreOutputCapacity(t *testing.T) {
 	require.True(t, budget.ConsumeAttempt(11))
 	require.True(t, budget.ConsumeAttempt(11))
 	require.False(t, openAITTFTReportEligible(true, false, false, 2, budget))
+}
+
+func TestOpenAISameAccountRetryLimitCaps502503ToOne(t *testing.T) {
+	require.Equal(t, 1, openAISameAccountRetryLimit(http.StatusBadGateway, 3))
+	require.Equal(t, 1, openAISameAccountRetryLimit(http.StatusServiceUnavailable, 2))
+	require.Equal(t, 3, openAISameAccountRetryLimit(http.StatusTooManyRequests, 3))
 }
 
 func minDuration(left, right time.Duration) time.Duration {

@@ -26,6 +26,12 @@ const (
 	openAIModelTransientStreakTTL     = 30 * time.Minute
 	openAIModelTransientShortCooldown = 10 * time.Second
 	openAIModelTransientLongCooldown  = 45 * time.Second
+	openAIModelWindowShortCooldown    = 60 * time.Second
+	openAIModelWindowMediumCooldown   = 5 * time.Minute
+	openAIModelWindowLongCooldown     = 30 * time.Minute
+	openAIModelFailureWindowShort     = 60 * time.Second
+	openAIModelFailureWindowMedium    = 5 * time.Minute
+	openAIModelFailureWindowLong      = 15 * time.Minute
 	openAIModelTransientDefaultMax    = 4096
 	openAIModelTransientMaxModelBytes = 512
 )
@@ -36,14 +42,16 @@ type openAIAccountModelKey struct {
 }
 
 type openAIAccountModelTransientEntry struct {
-	failureStreak    int
-	lastFailure      time.Time
-	blockUntil       time.Time
-	lastTouched      time.Time
-	halfOpenInFlight bool
-	lastStatusCode   int
-	lastErrorType    string
-	outputStarted    bool
+	failureStreak     int
+	lastFailure       time.Time
+	blockUntil        time.Time
+	lastTouched       time.Time
+	halfOpenInFlight  bool
+	lastStatusCode    int
+	lastErrorType     string
+	outputStarted     bool
+	recentFailures    []time.Time
+	halfOpenSuccesses int
 }
 
 type openAIAccountModelTransientDecision struct {
@@ -211,6 +219,63 @@ func (s *openAIAccountModelTransientState) recordFailure(accountID int64, model 
 	}
 }
 
+// recordFailureWindowed applies the production 502/503 escalation policy while
+// retaining recordFailure's small local cooldown for legacy callers/tests.
+func (s *openAIAccountModelTransientState) recordFailureWindowed(accountID int64, model string, now time.Time) openAIAccountModelTransientDecision {
+	key, ok := openAIAccountModelTransientKey(accountID, model)
+	if s == nil || !ok {
+		return openAIAccountModelTransientDecision{}
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	raw := s.recordFailure(accountID, model, now)
+	s.mu.Lock()
+	entry := s.entries[key]
+	if len(entry.recentFailures) > 0 {
+		cutoff := now.Add(-openAIModelFailureWindowLong)
+		kept := entry.recentFailures[:0]
+		for _, failureAt := range entry.recentFailures {
+			if !failureAt.Before(cutoff) {
+				kept = append(kept, failureAt)
+			}
+		}
+		entry.recentFailures = kept
+	}
+	entry.recentFailures = append(entry.recentFailures, now)
+	entry.halfOpenSuccesses = 0
+	countWithin := func(window time.Duration) int {
+		cutoff := now.Add(-window)
+		count := 0
+		for _, failureAt := range entry.recentFailures {
+			if !failureAt.Before(cutoff) {
+				count++
+			}
+		}
+		return count
+	}
+	cooldown := time.Duration(0)
+	switch {
+	case countWithin(openAIModelFailureWindowLong) >= 5:
+		cooldown = openAIModelWindowLongCooldown
+	case countWithin(openAIModelFailureWindowMedium) >= 3:
+		cooldown = openAIModelWindowMediumCooldown
+	case countWithin(openAIModelFailureWindowShort) >= 2:
+		cooldown = openAIModelWindowShortCooldown
+	}
+	if cooldown > 0 {
+		entry.blockUntil = now.Add(cooldown)
+	}
+	entry.lastTouched = now
+	s.entries[key] = entry
+	s.mu.Unlock()
+	if cooldown > raw.Cooldown {
+		raw.Cooldown = cooldown
+		raw.BlockUntil = now.Add(cooldown)
+	}
+	return raw
+}
+
 func (s *openAIAccountModelTransientState) setFailureDetails(accountID int64, model string, statusCode int, errorType string, outputStarted bool) {
 	key, ok := openAIAccountModelTransientKey(accountID, model)
 	if s == nil || !ok {
@@ -359,7 +424,7 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 	if state == nil {
 		return decision
 	}
-	raw := state.recordFailure(event.AccountID, event.CanonicalModel, now)
+	raw := state.recordFailureWindowed(event.AccountID, event.CanonicalModel, now)
 	if event.ImmediateCooldown && raw.Cooldown < openAIModelTransientShortCooldown {
 		raw.Cooldown = openAIModelTransientShortCooldown
 		raw.BlockUntil = now.Add(openAIModelTransientShortCooldown)
@@ -393,6 +458,16 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 		AccountID: event.AccountID, CanonicalModel: event.CanonicalModel, StatusCode: event.StatusCode,
 		OutputStarted: event.OutputStarted, UsageProduced: event.UsageKnown, FailureStreak: decision.FailureStreak,
 		CacheMode: event.CacheMode, CooldownSeconds: int(decision.Cooldown.Seconds()), RetryAfterSeconds: decision.RetryAfterSeconds,
+		CooldownUntil: decision.BlockUntil,
+		HealthState: func() string {
+			if decision.HalfOpenProbe {
+				return "half_open"
+			}
+			if decision.BlockUntil.After(now) {
+				return "open"
+			}
+			return "degraded"
+		}(),
 		Outcome: "failure",
 	}
 	RecordOpenAIResilienceOutcomeWithContext(ctx, resilienceEvent)
@@ -512,8 +587,14 @@ func (s *OpenAIGatewayService) AcquireOpenAIAccountModelHalfOpenProbe(accountID 
 	if readErr != nil {
 		return false
 	}
-	sharedEligible := sharedKnown && shared.State == OpenAISharedHealthStateCooldown && !shared.CooldownUntil.IsZero() && !now.Before(shared.CooldownUntil)
-	if sharedKnown && (shared.State == OpenAISharedHealthStateHalfOpen || (shared.State == OpenAISharedHealthStateCooldown && now.Before(shared.CooldownUntil))) {
+	sharedCooldownEligible := sharedKnown && shared.State == OpenAISharedHealthStateCooldown && !shared.CooldownUntil.IsZero() && !now.Before(shared.CooldownUntil)
+	// A shared half-open snapshot with an expired probe marker means the first
+	// successful probe completed and the second independent probe is now due.
+	// A half-open snapshot without that marker is still owned by an in-flight
+	// or legacy probe and must remain blocked.
+	sharedHalfOpenEligible := sharedKnown && shared.State == OpenAISharedHealthStateHalfOpen && !shared.CooldownUntil.IsZero() && !now.Before(shared.CooldownUntil)
+	sharedEligible := sharedCooldownEligible || sharedHalfOpenEligible
+	if sharedKnown && ((shared.State == OpenAISharedHealthStateHalfOpen && !sharedHalfOpenEligible) || (shared.State == OpenAISharedHealthStateCooldown && now.Before(shared.CooldownUntil))) {
 		return false
 	}
 
@@ -585,14 +666,26 @@ func (s *OpenAIGatewayService) ReleaseOpenAIAccountModelHalfOpenProbe(accountID 
 	state.mu.Lock()
 	entry, exists := state.entries[key]
 	if exists && success {
-		delete(state.entries, key)
+		entry.halfOpenSuccesses++
+		if entry.halfOpenSuccesses >= 2 {
+			delete(state.entries, key)
+		} else {
+			entry.halfOpenInFlight = false
+			entry.lastTouched = now
+			// Keep the account in half-open until the second consecutive
+			// successful probe; no cooldown is added between those probes.
+			entry.blockUntil = now
+			state.entries[key] = entry
+		}
 	} else if exists {
 		entry.halfOpenInFlight = false
 		entry.lastTouched = now
 		entry.lastFailure = now
-		cooldown := openAIModelTransientShortCooldown
-		if entry.failureStreak >= 3 {
-			cooldown = openAIModelTransientLongCooldown
+		cooldown := openAIModelWindowShortCooldown
+		if len(entry.recentFailures) >= 5 {
+			cooldown = openAIModelWindowLongCooldown
+		} else if len(entry.recentFailures) >= 3 {
+			cooldown = openAIModelWindowMediumCooldown
 		}
 		entry.blockUntil = now.Add(cooldown)
 		state.entries[key] = entry

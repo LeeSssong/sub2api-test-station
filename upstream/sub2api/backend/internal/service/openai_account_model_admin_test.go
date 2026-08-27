@@ -44,7 +44,12 @@ func TestOpenAIAccountModelAdminProbeAcquiresAndReleasesHalfOpenLease(t *testing
 	require.NoError(t, err)
 	require.False(t, probed)
 	svc.ReleaseOpenAIAccountModelHalfOpenProbe(72, "gpt-5.5", true, now.Add(3*time.Second))
-	require.Empty(t, svc.SnapshotOpenAIAccountModelRuntime(now.Add(3*time.Second)))
+	// Recovery is hysteretic: one successful probe keeps the account in
+	// half-open until a second independent success confirms stability.
+	require.Len(t, svc.SnapshotOpenAIAccountModelRuntime(now.Add(3*time.Second)), 1)
+	require.True(t, svc.AcquireOpenAIAccountModelHalfOpenProbe(72, "gpt-5.5", now.Add(4*time.Second)))
+	svc.ReleaseOpenAIAccountModelHalfOpenProbe(72, "gpt-5.5", true, now.Add(5*time.Second))
+	require.Empty(t, svc.SnapshotOpenAIAccountModelRuntime(now.Add(5*time.Second)))
 }
 
 func TestOpenAIAccountModelAdminCooldownSurvivesFailureStreakWindow(t *testing.T) {

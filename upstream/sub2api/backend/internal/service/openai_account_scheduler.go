@@ -107,6 +107,9 @@ type openAIAccountScheduleDecisionDetails struct {
 	qualityFallback       bool
 	selectionLayer        string
 	stickyEscapeReason    string
+	candidateAccountIDs   []int64
+	excludedAccountIDs    []int64
+	excludeReasons        map[string]int
 }
 
 type openAIForcedAccountContextKey struct{}
@@ -145,6 +148,11 @@ type OpenAIAccountScheduleDecision struct {
 	StickyKept            bool
 	StickyEscapeReason    string
 	TTFTReportEligible    bool
+	CandidateAccountIDs   []int64
+	ExcludedAccountIDs    []int64
+	ExcludeReasons        map[string]int
+	HealthState           string
+	CooldownUntil         time.Time
 }
 
 type OpenAIAccountSchedulerMetricsSnapshot struct {
@@ -606,6 +614,13 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	decision := OpenAIAccountScheduleDecision{}
+	if len(req.ExcludedIDs) > 0 {
+		decision.ExcludedAccountIDs = make([]int64, 0, len(req.ExcludedIDs))
+		for accountID := range req.ExcludedIDs {
+			decision.ExcludedAccountIDs = append(decision.ExcludedAccountIDs, accountID)
+		}
+		sort.Slice(decision.ExcludedAccountIDs, func(i, j int) bool { return decision.ExcludedAccountIDs[i] < decision.ExcludedAccountIDs[j] })
+	}
 	details := &openAIAccountScheduleDecisionDetails{}
 	req.decisionDetails = details
 	start := time.Now()
@@ -680,6 +695,22 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		if stickyEscapeReason != "" {
 			req.PreserveStickyBinding = true
 			decision.StickyEscapeReason = stickyEscapeReason
+			// A quality/concurrency escape must be sticky-safe for the whole
+			// logical request: carry the escaped account into the load-balanced
+			// exclusion set so the next layer cannot immediately select it again.
+			escapedID := req.StickyAccountID
+			if escapedID <= 0 && req.SessionHash != "" && s.service != nil && s.service.cache != nil {
+				if boundID, lookupErr := s.service.getStickySessionAccountID(ctx, req.GroupID, req.SessionHash); lookupErr == nil {
+					escapedID = boundID
+				}
+			}
+			if escapedID > 0 {
+				req.ExcludedIDs = cloneExcludedAccountIDs(req.ExcludedIDs)
+				if req.ExcludedIDs == nil {
+					req.ExcludedIDs = make(map[int64]struct{})
+				}
+				req.ExcludedIDs[escapedID] = struct{}{}
+			}
 		}
 	}
 
@@ -692,6 +723,11 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	decision.EffectiveTopK = details.effectiveTopK
 	decision.MinimumScoreThreshold = details.minimumScoreThreshold
 	decision.SelectionLayer = details.selectionLayer
+	decision.ExcludedAccountIDs = append(decision.ExcludedAccountIDs, details.excludedAccountIDs...)
+	if len(details.candidateAccountIDs) > 0 {
+		decision.CandidateAccountIDs = append([]int64(nil), details.candidateAccountIDs...)
+	}
+	decision.ExcludeReasons = cloneStringIntMap(details.excludeReasons)
 	if decision.SelectionLayer == "" {
 		decision.SelectionLayer = decision.Layer
 	}
@@ -708,6 +744,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		if selection.HalfOpenProbe {
 			decision.Layer = openAIAccountScheduleLayerHalfOpenProbe
 			decision.SelectionLayer = openAIAccountScheduleLayerHalfOpenProbe
+			decision.HealthState = "half_open"
+		} else {
+			decision.HealthState = "healthy"
 		}
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
@@ -726,6 +765,17 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		}
 	}
 	return selection, decision, nil
+}
+
+func cloneStringIntMap(in map[string]int) map[string]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *defaultOpenAIAccountScheduler) selectForcedAccount(ctx context.Context, req OpenAIAccountScheduleRequest) (*AccountSelectionResult, error) {
@@ -945,6 +995,12 @@ func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccountAtGroup(groupID
 		return "", 0, 0, false
 	}
 	errorRate, ttft, hasTTFT := s.stats.snapshotForGroup(groupID, accountID)
+	if groupID > 0 && !hasTTFT && errorRate == 0 {
+		// Legacy sticky-escape settings historically reported group-neutral
+		// runtime observations. Keep that compatibility path while the new
+		// quality gate remains strictly group-scoped.
+		errorRate, ttft, hasTTFT = s.stats.snapshotForGroup(0, accountID)
+	}
 	if hasTTFT && ttft > cfg.ttftMs {
 		return "ttft", errorRate, ttft, true
 	}
@@ -1981,8 +2037,9 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 // The reasons map is lazily allocated: on the happy path (nothing filtered
 // out, or an account is eventually selected) no extra allocation happens.
 type openAISelectionFilterStats struct {
-	pool    int
-	reasons map[string]int
+	pool        int
+	reasons     map[string]int
+	excludedIDs map[int64]struct{}
 }
 
 func (s *openAISelectionFilterStats) exclude(reason string) {
@@ -1990,6 +2047,16 @@ func (s *openAISelectionFilterStats) exclude(reason string) {
 		s.reasons = make(map[string]int, 4)
 	}
 	s.reasons[reason]++
+}
+
+func (s *openAISelectionFilterStats) excludeAccount(accountID int64, reason string) {
+	s.exclude(reason)
+	if accountID > 0 {
+		if s.excludedIDs == nil {
+			s.excludedIDs = make(map[int64]struct{})
+		}
+		s.excludedIDs[accountID] = struct{}{}
+	}
 }
 
 // summary renders deterministic exclusion statistics for scheduling error
@@ -2063,6 +2130,14 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	}
 
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
+	if req.decisionDetails != nil {
+		req.decisionDetails.candidateAccountIDs = make([]int64, 0, len(accounts))
+		for _, account := range accounts {
+			if account.ID > 0 {
+				req.decisionDetails.candidateAccountIDs = append(req.decisionDetails.candidateAccountIDs, account.ID)
+			}
+		}
+	}
 	filtered := make([]*Account, 0, len(accounts))
 	qualityBlocked := make([]*Account, 0, len(accounts))
 	halfOpenCandidates := make([]*Account, 0, len(accounts))
@@ -2074,16 +2149,16 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		account := &accounts[i]
 		if req.ExcludedIDs != nil {
 			if _, excluded := req.ExcludedIDs[account.ID]; excluded {
-				filterStats.exclude("excluded")
+				filterStats.excludeAccount(account.ID, "excluded")
 				continue
 			}
 		}
 		if !account.IsSchedulable() {
-			filterStats.exclude("not_schedulable")
+			filterStats.excludeAccount(account.ID, "not_schedulable")
 			continue
 		}
 		if account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
-			filterStats.exclude("platform_mismatch")
+			filterStats.excludeAccount(account.ID, "platform_mismatch")
 			continue
 		}
 		// require_privacy_set: 跳过 privacy 未设置的账号并标记异常
@@ -2091,24 +2166,24 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			s.service.BlockAccountScheduling(account, time.Time{}, "privacy_not_set")
 			_ = s.service.accountRepo.SetError(ctx, account.ID,
 				fmt.Sprintf("Privacy not set, required by group [%s]", schedGroup.Name))
-			filterStats.exclude("privacy_not_set")
+			filterStats.excludeAccount(account.ID, "privacy_not_set")
 			continue
 		}
 		if compatible, reason := s.isAccountRequestCompatibleWithoutRuntimeReason(ctx, account, req); !compatible {
-			filterStats.exclude(reason)
+			filterStats.excludeAccount(account.ID, reason)
 			continue
 		}
 		if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
-			filterStats.exclude("transport_incompatible")
+			filterStats.excludeAccount(account.ID, "transport_incompatible")
 			continue
 		}
 		if s.service.isOpenAIAccountRuntimeBlocked(account) {
-			filterStats.exclude("runtime_blocked")
+			filterStats.excludeAccount(account.ID, "runtime_blocked")
 			continue
 		}
 		if groupID := schedulerGroupID(req.GroupID); groupID > 0 {
 			if policy, enabled := s.qualityGatePolicyForGroup(ctx, groupID); enabled && s.qualityGateBlockedForGroup(ctx, groupID, account.ID, policy, s.selectionNow(), true) {
-				filterStats.exclude("quality_gate")
+				filterStats.excludeAccount(account.ID, "quality_gate")
 				qualityBlocked = append(qualityBlocked, account)
 				continue
 			}
@@ -2118,11 +2193,23 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			sharedHealthReads++
 		}
 		if s.service.isOpenAIAccountModelRuntimeBlockedAtContext(sharedHealthCtx, account, req.RequestedModel, s.selectionNow(), allowSharedRead) {
-			filterStats.exclude("runtime_blocked")
+			filterStats.excludeAccount(account.ID, "runtime_blocked")
 			halfOpenCandidates = append(halfOpenCandidates, account)
 			continue
 		}
 		filtered = append(filtered, account)
+	}
+	if req.decisionDetails != nil {
+		if len(filterStats.excludedIDs) > 0 {
+			req.decisionDetails.excludedAccountIDs = make([]int64, 0, len(filterStats.excludedIDs))
+			for accountID := range filterStats.excludedIDs {
+				req.decisionDetails.excludedAccountIDs = append(req.decisionDetails.excludedAccountIDs, accountID)
+			}
+			sort.Slice(req.decisionDetails.excludedAccountIDs, func(i, j int) bool {
+				return req.decisionDetails.excludedAccountIDs[i] < req.decisionDetails.excludedAccountIDs[j]
+			})
+		}
+		req.decisionDetails.excludeReasons = filterStats.reasons
 	}
 	if len(filtered) == 0 {
 		if len(qualityBlocked) > 0 {

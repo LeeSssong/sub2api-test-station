@@ -425,11 +425,14 @@ func NewOpenAIGatewayHandler(
 	cfg *config.Config,
 ) *OpenAIGatewayHandler {
 	pingInterval := time.Duration(0)
-	maxAccountSwitches := 3
+	maxAccountSwitches := openAIMaxAccountSwitches
 	if cfg != nil {
 		pingInterval = time.Duration(cfg.Concurrency.PingInterval) * time.Second
 		if cfg.Gateway.MaxAccountSwitches > 0 {
 			maxAccountSwitches = cfg.Gateway.MaxAccountSwitches
+			if maxAccountSwitches > openAIMaxAccountSwitches {
+				maxAccountSwitches = openAIMaxAccountSwitches
+			}
 		}
 	}
 	return &OpenAIGatewayHandler{
@@ -1012,6 +1015,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Bool("unsafe_to_replay", unsafeToReplay),
 				zap.Bool("switch_allowed", switchAllowed),
 				zap.String("switch_reason", switchReason),
+				zap.String("switch_block_reason", map[bool]string{true: "", false: switchReason}[switchAllowed]),
+				zap.Time("cooldown_until", runtimeDecision.BlockUntil),
+				zap.String("health_state", map[bool]string{true: "open", false: "degraded"}[runtimeDecision.BlockUntil.After(time.Now())]),
 			)
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
@@ -1061,6 +1067,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// pool retry rule, but semantic output and side effects still make
 					// replay unsafe.
 					poolRetryLimit := account.GetPoolModeRetryCount()
+					poolRetryLimit = openAISameAccountRetryLimit(failoverErr.StatusCode, poolRetryLimit)
 					semanticReplaySafe := !failure.OutputStarted && !failure.HasSideEffect
 					poolRetryEligible := failoverErr.RetryableOnSameAccount && semanticReplaySafe
 					poolRetryAllowed := poolRetryEligible && sameAccountRetryCount[account.ID] < poolRetryLimit
@@ -1846,6 +1853,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					// See Responses: an explicit pool retry rule may cover hard auth
 					// status codes, but it never permits replay after output or side effects.
 					poolRetryLimit := account.GetPoolModeRetryCount()
+					poolRetryLimit = openAISameAccountRetryLimit(failoverErr.StatusCode, poolRetryLimit)
 					semanticReplaySafe := !failure.OutputStarted && !failure.HasSideEffect
 					poolRetryEligible := failoverErr.RetryableOnSameAccount && semanticReplaySafe
 					poolRetryAllowed := poolRetryEligible && sameAccountRetryCount[account.ID] < poolRetryLimit

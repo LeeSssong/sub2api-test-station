@@ -113,7 +113,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	switchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
 	if maxAccountSwitches <= 0 {
-		maxAccountSwitches = 3
+		maxAccountSwitches = openAIMaxAccountSwitches
 	}
 	routingStart := time.Now()
 

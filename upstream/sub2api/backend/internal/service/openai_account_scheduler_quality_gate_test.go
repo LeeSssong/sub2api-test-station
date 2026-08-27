@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
-func TestOpenAISchedulerLegacyGroupPolicyKeepsQualityGateDisabled(t *testing.T) {
+func TestOpenAISchedulerLegacyGroupPolicyKeepsQualityGateOverrideUnset(t *testing.T) {
 	policies, err := parseOpenAISchedulerGroupPolicies(`{"7":{"mode":"weighted_override","top_k":2}}`)
 	if err != nil {
 		t.Fatal(err)
@@ -16,6 +17,38 @@ func TestOpenAISchedulerLegacyGroupPolicyKeepsQualityGateDisabled(t *testing.T) 
 	policy := normalizeOpenAISchedulerGroupPoliciesForRead(policies)[7]
 	if policy.QualityGate != nil || policy.SessionEscape != nil {
 		t.Fatalf("legacy policy unexpectedly enabled new controls: %#v", policy)
+	}
+}
+
+func TestOpenAISchedulerUnconfiguredGroupUsesDefaultQualityGate(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+	settings := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
+		openAIAdvancedSchedulerSettingKey: "true",
+	}}
+	svc := &OpenAIGatewayService{
+		rateLimitService: &RateLimitService{settingService: NewSettingService(settings, &config.Config{})},
+	}
+	scheduler := &defaultOpenAIAccountScheduler{service: svc, stats: newOpenAIAccountRuntimeStats()}
+	policy, ok := scheduler.qualityGatePolicyForGroup(context.Background(), 77)
+	if !ok || !policy.Enabled || policy.MinSamples != 5 || policy.ErrorRateThreshold != 0.5 || policy.TTFTThresholdMs != 15000 {
+		t.Fatalf("unconfigured group must use enabled defaults: policy=%#v ok=%v", policy, ok)
+	}
+}
+
+func TestOpenAISchedulerExplicitQualityGateDisableRemainsDisabled(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+	settings := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
+		openAIAdvancedSchedulerSettingKey:               "true",
+		SettingKeyOpenAIAdvancedSchedulerGroupOverrides: `{"77":{"quality_gate":{"enabled":false,"min_samples":5,"error_rate_threshold":0.5,"ttft_threshold_ms":15000,"enter_consecutive":2,"recover_consecutive":2,"cooldown_seconds":30}}}`,
+	}}
+	svc := &OpenAIGatewayService{
+		rateLimitService: &RateLimitService{settingService: NewSettingService(settings, &config.Config{})},
+	}
+	scheduler := &defaultOpenAIAccountScheduler{service: svc, stats: newOpenAIAccountRuntimeStats()}
+	if _, ok := scheduler.qualityGatePolicyForGroup(context.Background(), 77); ok {
+		t.Fatal("explicit quality_gate.enabled=false must remain disabled")
 	}
 }
 

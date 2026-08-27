@@ -153,7 +153,15 @@ func TestOpenAISharedHealthHalfOpenLeaseHasOneWinnerAndRejectsStaleFence(t *test
 	require.NoError(t, store.CompleteHalfOpen(ctx, newLease, true, time.Now().UTC()))
 	snapshot, err := store.GetAccountModel(ctx, key)
 	require.NoError(t, err)
-	require.Equal(t, service.OpenAISharedHealthStateHealthy, snapshot.State)
+	require.Equal(t, service.OpenAISharedHealthStateHalfOpen, snapshot.State, "one successful probe must not restore normal scheduling")
+
+	secondLease, ok, err := store.AcquireHalfOpen(ctx, key, "instance-d", leaseTTL)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, store.CompleteHalfOpen(ctx, secondLease, true, time.Now().UTC()))
+	snapshot, err = store.GetAccountModel(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, service.OpenAISharedHealthStateHealthy, snapshot.State, "two consecutive successful probes restore normal scheduling")
 }
 
 func TestOpenAISharedHealthPropagatesCanceledContext(t *testing.T) {

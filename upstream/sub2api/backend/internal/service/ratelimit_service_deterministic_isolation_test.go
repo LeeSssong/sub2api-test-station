@@ -54,6 +54,7 @@ func TestRateLimitService_DeterministicBalanceUsesNativeTempUnschedulable(t *tes
 	require.Equal(t, 1, repo.tempCalls)
 	require.Zero(t, repo.setErrorCalls)
 	require.Contains(t, repo.lastTempReason, `"failure_class":"balance_exhausted"`)
+	require.Contains(t, repo.lastTempReason, `"recovery_policy":"probe_required"`)
 	require.Equal(t, 0, len(repo.modelRateLimitCalls))
 }
 

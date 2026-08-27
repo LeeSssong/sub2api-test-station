@@ -78,6 +78,7 @@ func (s *openAISharedHealthStoreStub) RecordAttempt(ctx context.Context, event O
 	snapshot.Revision++
 	snapshot.ObservedAt = event.ObservedAt
 	if event.Success {
+		snapshot.HalfOpenSuccesses = 0
 		snapshot.State = OpenAISharedHealthStateHealthy
 		snapshot.FailureStreak = 0
 		snapshot.CooldownUntil = time.Time{}
@@ -123,10 +124,18 @@ func (s *openAISharedHealthStoreStub) CompleteHalfOpen(_ context.Context, lease 
 	snapshot.ObservedAt = observedAt
 	snapshot.Revision++
 	if success {
-		snapshot.State = OpenAISharedHealthStateHealthy
+		snapshot.HalfOpenSuccesses++
+		if snapshot.HalfOpenSuccesses >= 2 {
+			snapshot.HalfOpenSuccesses = 0
+			snapshot.State = OpenAISharedHealthStateHealthy
+			snapshot.CooldownUntil = time.Time{}
+		} else {
+			snapshot.State = OpenAISharedHealthStateHalfOpen
+			snapshot.CooldownUntil = observedAt
+		}
 		snapshot.FailureStreak = 0
-		snapshot.CooldownUntil = time.Time{}
 	} else {
+		snapshot.HalfOpenSuccesses = 0
 		snapshot.State = OpenAISharedHealthStateCooldown
 		snapshot.FailureStreak++
 		snapshot.CooldownUntil = observedAt.Add(openAIModelTransientShortCooldown)

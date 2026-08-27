@@ -59,7 +59,7 @@ func TestDeterministicBalanceIsolationDurationBounds(t *testing.T) {
 		configured int
 		want       time.Duration
 	}{
-		{60, 60 * time.Minute}, {90, 90 * time.Minute}, {120, 120 * time.Minute}, {59, 90 * time.Minute}, {121, 90 * time.Minute},
+		{60, 3650 * 24 * time.Hour}, {90, 3650 * 24 * time.Hour}, {120, 3650 * 24 * time.Hour}, {59, 3650 * 24 * time.Hour}, {121, 3650 * 24 * time.Hour},
 	} {
 		cfg := &config.Config{}
 		cfg.RateLimit.BalanceExhaustedIsolationMinutes = tc.configured

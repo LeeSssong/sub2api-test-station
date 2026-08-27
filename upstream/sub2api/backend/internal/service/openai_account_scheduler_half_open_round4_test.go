@@ -51,7 +51,7 @@ func openAIHalfOpenRound4Account(id int64, groupID int64) Account {
 
 func expireOpenAIHalfOpenRound4Cooldown(t *testing.T, svc *OpenAIGatewayService, account Account, model string) {
 	t.Helper()
-	first := openAIHalfOpenRound4Now.Add(-12 * time.Second)
+	first := openAIHalfOpenRound4Now.Add(-72 * time.Second)
 	canonicalModel := account.GetMappedModel(model)
 	svc.RecordOpenAIAccountModelFailure(context.Background(), OpenAIAccountModelFailureEvent{
 		AccountID: account.ID, CanonicalModel: canonicalModel, StatusCode: 502, Now: first,
@@ -242,7 +242,16 @@ func TestOpenAIHalfOpenScheduler_ValidProbeOwnsSingleLeaseUntilCompleted(t *test
 	require.Nil(t, second)
 
 	selection.CompleteHalfOpenProbe(true)
+	require.Len(t, svc.SnapshotOpenAIAccountModelRuntime(openAIHalfOpenRound4Now), 1)
+	second, _, secondErr = scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.5",
+	})
+	require.NoError(t, secondErr)
+	require.NotNil(t, second)
+	require.True(t, second.HalfOpenProbe)
+	second.CompleteHalfOpenProbe(true)
 	selection.ReleaseFunc()
+	second.ReleaseFunc()
 	require.Empty(t, svc.SnapshotOpenAIAccountModelRuntime(openAIHalfOpenRound4Now))
 }
 

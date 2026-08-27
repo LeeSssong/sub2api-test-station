@@ -30,7 +30,7 @@ func TestOpenAIHalfOpenSchedulerDisabled_PublicSelectionProbesAtCooldownExpiry(t
 
 	now := time.Now()
 	canonicalModel := canonicalOpenAIAccountSchedulingModel(&account, "gpt-5.5")
-	for _, failedAt := range []time.Time{now.Add(-12 * time.Second), now.Add(-11 * time.Second)} {
+	for _, failedAt := range []time.Time{now.Add(-72 * time.Second), now.Add(-71 * time.Second)} {
 		svc.RecordOpenAIAccountModelFailure(context.Background(), OpenAIAccountModelFailureEvent{
 			AccountID: account.ID, CanonicalModel: canonicalModel, StatusCode: 502, Now: failedAt,
 		})
@@ -66,10 +66,14 @@ func TestOpenAIHalfOpenSchedulerDisabled_PublicSelectionProbesAtCooldownExpiry(t
 	require.Equal(t, []int64{account.ID}, acquiredIDs, "only the lease owner may acquire a slot")
 
 	selection.CompleteHalfOpenProbe(true)
-	selection.CompleteHalfOpenProbe(true)
+	secondSelection, secondErr := selectAccount()
+	require.NoError(t, secondErr)
+	require.NotNil(t, secondSelection)
+	require.True(t, secondSelection.HalfOpenProbe)
+	secondSelection.CompleteHalfOpenProbe(true)
 	selection.ReleaseFunc()
-	selection.ReleaseFunc()
-	require.Equal(t, []int64{account.ID}, releasedIDs)
+	secondSelection.ReleaseFunc()
+	require.Equal(t, []int64{account.ID, account.ID}, releasedIDs)
 	require.Empty(t, svc.SnapshotOpenAIAccountModelRuntime(time.Now()))
 	require.Nil(t, svc.openaiScheduler, "the half-open fallback must not enable advanced scheduling globally")
 	require.Equal(t, OpenAIAccountSchedulerMetricsSnapshot{}, svc.SnapshotOpenAIAccountSchedulerMetrics())

@@ -304,6 +304,8 @@ func (s *openAIAccountRuntimeStats) reportForGroup(groupID, accountID int64, suc
 	}
 	const alpha = 0.2
 	stat := s.loadOrCreateForGroup(groupID, accountID)
+	stat.qualityMu.Lock()
+	defer stat.qualityMu.Unlock()
 	stat.sampleCount.Add(1)
 	stat.lastReportAt.Store(time.Now().UTC().UnixNano())
 
@@ -421,20 +423,23 @@ func (s *openAIAccountRuntimeStats) qualityGateEvidenceAt(groupID, accountID int
 }
 
 func (s *openAIAccountRuntimeStats) qualityGateState(groupID, accountID int64, policy OpenAISchedulerQualityGatePolicy, now time.Time, advance bool) (openAIQualityGateState, openAIQualityGateEvaluation) {
-	evidence, ok := s.qualityGateEvidenceAt(groupID, accountID, now.UTC(), openAIAccountRuntimeEvidenceTTL)
-	if !ok {
-		return openAIQualityGateState{}, evaluateOpenAIQualityGate(policy, openAIQualityGateEvidence{ReadError: true})
-	}
-	evaluation := evaluateOpenAIQualityGate(policy, evidence)
 	statValue, _ := s.loadForGroup(groupID, accountID)
 	stat, _ := statValue.(*openAIAccountRuntimeStat)
 	if stat == nil {
-		return openAIQualityGateState{}, evaluation
+		return openAIQualityGateState{}, evaluateOpenAIQualityGate(policy, openAIQualityGateEvidence{ReadError: true})
 	}
 	stat.qualityMu.Lock()
 	defer stat.qualityMu.Unlock()
-	if advance {
+	evidence, ok := s.qualityGateEvidenceAt(groupID, accountID, now.UTC(), openAIAccountRuntimeEvidenceTTL)
+	if !ok {
+		return stat.qualityState, evaluateOpenAIQualityGate(policy, openAIQualityGateEvidence{ReadError: true})
+	}
+	evaluation := evaluateOpenAIQualityGate(policy, evidence)
+	if advance && evidence.SampleCount > stat.qualityState.LastObservationSampleCount {
 		stat.qualityState = advanceOpenAIQualityGateState(policy, stat.qualityState, evaluation, now)
+		if policy.Enabled && evaluation.Known {
+			stat.qualityState.LastObservationSampleCount = evidence.SampleCount
+		}
 	}
 	return stat.qualityState, evaluation
 }

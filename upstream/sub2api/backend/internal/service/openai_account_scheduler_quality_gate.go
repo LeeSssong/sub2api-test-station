@@ -30,10 +30,11 @@ type openAIQualityGateEvaluation struct {
 }
 
 type openAIQualityGateState struct {
-	BlockedUntil time.Time
-	BadStreak    int
-	GoodStreak   int
-	Blocked      bool
+	BlockedUntil               time.Time
+	BadStreak                  int
+	GoodStreak                 int
+	Blocked                    bool
+	LastObservationSampleCount int
 }
 
 func defaultOpenAIQualityGatePolicy() OpenAISchedulerQualityGatePolicy {

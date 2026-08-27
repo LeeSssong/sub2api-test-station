@@ -5,8 +5,8 @@
 ## 候选身份
 
 - 根分支：`main`
-- 候选提交：`d537afcba`（完整值以 `git rev-parse HEAD` 为准）
-- 候选树：`0bee12ba141445ee35356d1aa7a9e2145bf76e17`
+- 候选提交：`c06c5263a22db3f4ecd74abd25fe46c64d30cff0`
+- 候选树：`3f62ac8c8901f733cbfedd074f9a6d5ea9424cd2`
 - 工作区：`/Users/gongtengxinwen/Documents/sub2api搭建`
 - 工作区状态：合并后干净；未推送、未部署
 

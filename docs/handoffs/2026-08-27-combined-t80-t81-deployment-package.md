@@ -5,7 +5,7 @@
 ## 候选身份
 
 - 根分支：`main`
-- 候选提交：`main@6722bfb01`（完整 SHA 以 `git rev-parse HEAD` 为准）
+- 候选提交：以本交接文件所在根 `main` 的 `git rev-parse HEAD` 为准（更新后重新生成绑定证据）
 - 候选树：以该提交的 `HEAD^{tree}` 为准
 - 工作区：`/Users/gongtengxinwen/Documents/sub2api搭建`
 - 工作区状态：合并后干净；未推送、未部署

@@ -2098,12 +2098,14 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			continue
 		}
 		g.Go(func() error {
-			if reader := s.activeProbeUsageReader(); reader != nil {
-				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
-				used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
-				if usageErr != nil || used {
-					return nil
-				}
+			reader := s.activeProbeUsageReader()
+			if reader == nil {
+				return nil
+			}
+			bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
+			used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
+			if usageErr != nil || used {
+				return nil
 			}
 			result := s.probeAccount(gctx, account)
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {

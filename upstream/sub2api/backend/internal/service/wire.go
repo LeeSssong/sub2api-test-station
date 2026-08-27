@@ -1171,15 +1171,13 @@ func ProvideMonitorV4Service(
 // 通过 SetScheduler 注入回 service 后再 Start，确保启动时加载所有 enabled monitor，
 // 后续 CRUD 也能即时同步任务表。Runner.Stop 由 cleanup function 调用。
 // settingService 用于 runner 每次 fire 读取功能开关。
-func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService, cfg *config.Config, usageServices ...*AccountUsageService) *ChannelMonitorRunner {
+func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService, cfg *config.Config, usageService *AccountUsageService) *ChannelMonitorRunner {
 	r := NewChannelMonitorRunner(svc, settingService)
 	if svc != nil {
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).
 		svc.SetRuntimeReader(settingService)
-		if len(usageServices) > 0 && usageServices[0] != nil {
-			svc.SetActiveProbeUsageReader(usageServices[0])
-		}
+		svc.SetActiveProbeUsageReader(usageService)
 		svc.SetScheduler(r)
 	}
 	if shouldStartSingleton(cfg) {
@@ -1231,8 +1229,10 @@ func ProvideAccountModelDetectionSidecar() AccountModelDetectionSidecar {
 	return NewHTTPAccountModelDetectionSidecar(os.Getenv("SUB2API_MODEL_DETECTOR_URL"), os.Getenv("SUB2API_MODEL_DETECTOR_TOKEN"), &http.Client{Timeout: 15 * time.Minute})
 }
 
-func ProvideAccountModelDetectionService(repo AccountModelDetectionRepository, accounts AccountModelDetectionAccountReader, sidecar AccountModelDetectionSidecar) *AccountModelDetectionService {
-	return NewAccountModelDetectionService(repo, accounts, sidecar)
+func ProvideAccountModelDetectionService(repo AccountModelDetectionRepository, accounts AccountModelDetectionAccountReader, sidecar AccountModelDetectionSidecar, usageService *AccountUsageService) *AccountModelDetectionService {
+	service := NewAccountModelDetectionService(repo, accounts, sidecar)
+	service.SetActiveProbeUsageReader(usageService)
+	return service
 }
 
 // ProvideChannelMonitorV2Service wires settings for user-facing privacy flags

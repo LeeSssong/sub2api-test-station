@@ -1033,6 +1033,20 @@ func TestAccountMonitorRunAllSkipsAccountWithCurrentBucketUsage(t *testing.T) {
 	require.Empty(t, monitorRepo.results)
 }
 
+func TestAccountMonitorRunAllSkipsWhenUsageReaderIsUnavailable(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{ID: 709, Status: StatusActive, Schedulable: true}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+		t.Fatal("probe must not be called when usage reader is unavailable")
+		return AccountMonitorProbeResult{}, nil
+	}
+	completed, err := service.RunAll(context.Background(), 1)
+	require.NoError(t, err)
+	require.Zero(t, completed)
+	require.Empty(t, monitorRepo.results)
+}
+
 func TestAccountMonitorRunOneKeepsUnschedulableActiveAccount(t *testing.T) {
 	monitorRepo := &accountMonitorRepoStub{}
 	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{ID: 708, Status: StatusActive, Schedulable: false}}}
@@ -1170,7 +1184,7 @@ func TestAccountMonitorModelFallsBackToNativePlatformDefaults(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorListPoolKeepsActiveAccountsIncludingPaused(t *testing.T) {
+func TestAccountMonitorListPoolKeepsOnlyActiveSchedulableAccounts(t *testing.T) {
 	service := NewAccountMonitorService(nil, &accountMonitorAccountRepoStub{accounts: []Account{
 		{ID: 9, Status: StatusActive, Schedulable: true},
 		{ID: 2, Status: StatusActive, Schedulable: true},
@@ -1182,7 +1196,7 @@ func TestAccountMonitorListPoolKeepsActiveAccountsIncludingPaused(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts) != 3 || accounts[0].ID != 2 || accounts[1].ID != 6 || accounts[2].ID != 9 {
+	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
 	}
 }
@@ -3509,7 +3523,7 @@ func TestAccountMonitorPausedProbeProjectionScoresRanksAndKeepsNoEvidencePending
 	}
 }
 
-func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *testing.T) {
+func TestAccountMonitorRunAllSkipsUnschedulableAccounts(t *testing.T) {
 	makeService := func(latest AccountMonitorLatest) (*AccountMonitorService, *accountMonitorRepoStub, *int) {
 		repo := &accountMonitorRepoStub{
 			latest:   map[int64]AccountMonitorLatest{405: latest},
@@ -3529,8 +3543,8 @@ func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *te
 	if _, err := service.RunAll(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	if *calls != 1 || len(repo.results) != 1 {
-		t.Fatalf("closed success run = calls %d results %d, want one physical probe", *calls, len(repo.results))
+	if *calls != 0 || len(repo.results) != 0 {
+		t.Fatalf("unschedulable run = calls %d results %d, want skipped", *calls, len(repo.results))
 	}
 
 	service, repo, calls = makeService(AccountMonitorLatest{Status: "failed", HTTPStatus: intPtr(http.StatusBadGateway), CheckedAt: time.Now().UTC()})
@@ -3538,7 +3552,7 @@ func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *te
 		t.Fatal(err)
 	}
 	if *calls != 0 || len(repo.results) != 0 {
-		t.Fatalf("closed HTTP error run = calls %d results %d, want stopped", *calls, len(repo.results))
+		t.Fatalf("unschedulable HTTP run = calls %d results %d, want skipped", *calls, len(repo.results))
 	}
 }
 func TestAccountMonitorWindowScoreBreakdownSumsToRoundedQualityScore(t *testing.T) {

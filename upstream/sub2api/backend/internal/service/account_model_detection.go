@@ -50,6 +50,7 @@ type AccountModelDetectionService struct {
 	repo           AccountModelDetectionRepository
 	accounts       AccountModelDetectionAccountReader
 	sidecar        AccountModelDetectionSidecar
+	usage          ActiveProbeUsageWindowReader
 	location       *time.Location
 	now            func() time.Time
 	executionSlots chan struct{}
@@ -67,6 +68,14 @@ func NewAccountModelDetectionService(repo AccountModelDetectionRepository, accou
 		location = time.FixedZone("Asia/Shanghai", 8*60*60)
 	}
 	return &AccountModelDetectionService{repo: repo, accounts: accounts, sidecar: sidecar, location: location, now: time.Now, executionSlots: make(chan struct{}, 4), escalationAt: make(map[int64]time.Time)}
+}
+
+// SetActiveProbeUsageReader injects the authoritative usage reader used to
+// fail closed before scheduled detection runs contact an upstream account.
+func (s *AccountModelDetectionService) SetActiveProbeUsageReader(reader ActiveProbeUsageWindowReader) {
+	if s != nil {
+		s.usage = reader
+	}
 }
 
 func newAccountModelDetectionRun(accountID int64, modelID, profile, mode, reason string) AccountModelDetectionRun {
@@ -465,7 +474,12 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 	completed := 0
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Type != AccountTypeAPIKey {
+		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || s.usage == nil {
+			continue
+		}
+		bucketStart, bucketEnd := currentActiveProbeBucket(now)
+		used, usageErr := s.usage.HasAccountUsageInWindow(ctx, account.ID, bucketStart, bucketEnd)
+		if usageErr != nil || used {
 			continue
 		}
 		models, err := s.modelsForAccount(ctx, account)
@@ -473,7 +487,7 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 			continue
 		}
 		slotCopy := slot
-		run := newAccountModelDetectionRun(account.ID, models.ModelDetectionModel, AccountModelDetectionProfileMedium, AccountModelDetectionModeMonitor, AccountModelDetectionTriggerScheduled)
+		run := newAccountModelDetectionRun(account.ID, models.ModelDetectionModel, AccountModelDetectionProfileLow, AccountModelDetectionModeMonitor, AccountModelDetectionTriggerScheduled)
 		run.SlotKey = &slotCopy
 		run.TriggerKind = "scheduled"
 		run.QueuedAt = now.UTC()
@@ -627,13 +641,6 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 	if err := s.completeRun(ctx, *run, response, "", ""); err != nil {
 		return
 	}
-	if run.Profile == AccountModelDetectionProfileMedium {
-		if recent, recentErr := s.Recent(ctx, run.AccountID, 3); recentErr == nil {
-			if escalate, reason := shouldEscalateDetection(recent); escalate {
-				_, _, _ = s.EnqueueEscalationHigh(ctx, run.AccountID, reason)
-			}
-		}
-	}
 }
 
 func (s *AccountModelDetectionService) completeRun(ctx context.Context, run AccountModelDetectionRun, response AccountModelDetectionResponse, errorCode, errorMessage string) error {
@@ -730,7 +737,7 @@ func dueDetectionSlot(now time.Time) string {
 	if minutes >= 30 {
 		return ""
 	}
-	slots := []int{0, 10, 12, 15, 18, 21}
+	slots := []int{0, 6, 12, 18}
 	best := -1
 	for _, slotHour := range slots {
 		if slotHour < now.Hour() || (slotHour == now.Hour() && minutes >= 0) {

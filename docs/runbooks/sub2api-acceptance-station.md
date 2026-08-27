@@ -1,14 +1,20 @@
 # Sub2API 独立准生产验收站运行手册
 
+> 本手册受 [`docs/project/acceptance-station-global-constraints.md`](../project/acceptance-station-global-constraints.md)、`AGENTS.md` 与原生小步发布全局约束共同约束；若入口、操作或授权语义不一致，以全局约束为准。
+
 本验收站是一个长期存在、可真实商用的独立 Sub2API 实例。它只允许管理员登录，默认不对公网开放；站点、数据、凭据和运行资源均与主站隔离。对外入口复用主站域名下的 https://api.xingqiaolab.top/admin/lab/ 路径，由生产 Caddy 仅转发到同宿主的专用 acceptance edge 端口；/admin/accounts 继续由主站原生页面处理。部署成功只表示服务已启动，不表示功能验收通过，也不会自动部署主站。
 
 ## 运行边界
 
-固定流程：
+常规固定流程：
 
-本地直接验证 -> 部署验收站 -> 管理员真实验收 -> 人工合入 main -> 人工部署主站
+本地直接验证 -> 部署验收站 -> 管理员真实验收并明确通过 -> 人工合入并推送 main -> 人工部署主站 -> 用同一 commit 同步/核对验收站
 
-部署为单实例、串行更新。验收站不使用蓝绿槽、临时环境或自动晋级；明确不自动晋级。任何失败都保留验收站 PostgreSQL、Redis、应用数据和 Caddy named volumes，不得通过清库掩盖问题。只有管理员在验收记录中明确通过后，才可以由发布负责人从已验证的 main 单独执行主站发布。
+紧急流程仅在用户明确授权“快速部署到主站”时启用：
+
+记录紧急原因与最小验证 -> 合入并推送 main -> 部署主站并健康检查 -> 立即用同一 commit 部署/核对验收站；同步完成前不得开始下一次主站发布。
+
+部署为单实例、串行更新。验收站不使用蓝绿槽、临时环境或自动晋级；明确不自动晋级。任何失败都保留验收站 PostgreSQL、Redis、应用数据和 Caddy named volumes，不得通过清库掩盖问题。常规主站发布必须有管理员验收记录和用户明确的“测试站验收通过，部署主站”指令；紧急路径可跳过先验收，但必须满足全局约束中的“快速部署到主站”授权、最小验证、主站健康检查及同 commit 验收站同步合同。
 
 首次安装必须是**从零开始的空站**：不得导入、挂载、复制或同步主站数据库、Redis、对象存储、应用数据、账户、会话、账单、支付订单或任何生产环境文件。首次启动只能创建全新的验收 named volumes、空数据库和独立管理员；后续部署只保留验收站自身产生的数据。支付、上游和通知实例随后只在验收站自身后台录入独立配置；在完成这一步前，不得把真实充值、消费或通知链路标记为验收通过。
 
@@ -50,7 +56,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 发布控制器返回 result=succeeded 只代表宿主部署和基础健康检查完成。管理员仍需在主站路径入口执行：
 
-1. 访问 /health 和 /auth/login，确认 HTTPS、登录入口和站点标识正确；确认注册入口关闭。
+1. 访问 `/admin/lab/health` 和 `/admin/lab/login`，确认 HTTPS、登录入口和站点标识正确；确认注册入口关闭。
 2. 使用验收站独立管理员登录后台，确认 backend_mode_enabled=true、registration_enabled=false；非管理员 token 访问受保护用户路由应被原生后端拒绝。
 3. 核对 acceptance-api、acceptance-worker、acceptance-detector、acceptance-postgres、acceptance-redis、acceptance-caddy 六个服务均 healthy。
 4. 确认 Compose project 为 sub2api-acceptance，网络为 sub2api-acceptance-network，named volumes 为 sub2api-acceptance-*；不要执行 docker compose down -v。
@@ -58,10 +64,10 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 宿主只读核对命令：
 
     docker compose --project-name sub2api-acceptance \
-      --env-file /opt/sub2api/acceptance-example/.env \
-      -f /opt/sub2api/acceptance-example/compose.acceptance.yaml ps
+      --env-file /opt/sub2api/acceptance-live/.env \
+      -f /opt/sub2api/acceptance-live/compose.acceptance.yaml ps
     curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/health
-    curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/auth/login
+    curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/login
 
 ## 管理员真实验收清单
 
@@ -89,7 +95,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 ## 通过后的主站边界
 
-管理员验收记录必须明确通过、候选 commit/tree、验收范围和未验证项。发布负责人随后人工合入 main，在合并后的 main 上按主站既有发布链部署主站并做线上专项验证。验收发布控制器不会合入、推送或部署主站，也不会因验收站成功而触发任何自动晋级。
+管理员验收记录必须明确通过、候选 commit/tree、验收范围和未验证项。常规路径只有在用户明确说“测试站验收通过，部署主站”后，发布负责人才能人工合入并推送 main，再按主站既有发布链部署主站并做线上专项验证；主站成功后必须立即同步/核对验收站同一 commit。紧急路径只有在用户明确说“快速部署到主站”后，才可先部署主站，但主站成功后必须立即同步/核对验收站同一 commit；同步失败时标记“主站已生效、验收站同步失败”，阻止下一次主站发布。验收发布控制器不会合入、推送或部署主站，也不会因验收站成功而触发任何自动晋级。
 
 ## 退役旧 admin lab
 

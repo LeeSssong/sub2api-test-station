@@ -236,9 +236,17 @@ type openAIAccountRuntimeStats struct {
 	accountCount atomic.Int64
 }
 
+type openAIAccountRuntimeKey struct {
+	groupID   int64
+	accountID int64
+}
+
 type openAIAccountRuntimeStat struct {
 	errorRateEWMABits atomic.Uint64
 	ttftEWMABits      atomic.Uint64
+	sampleCount       atomic.Int64
+	qualityMu         sync.Mutex
+	qualityState      openAIQualityGateState
 }
 
 func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
@@ -246,7 +254,12 @@ func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
 }
 
 func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccountRuntimeStat {
-	if value, ok := s.accounts.Load(accountID); ok {
+	return s.loadOrCreateForGroup(0, accountID)
+}
+
+func (s *openAIAccountRuntimeStats) loadOrCreateForGroup(groupID, accountID int64) *openAIAccountRuntimeStat {
+	key := openAIAccountRuntimeKey{groupID: groupID, accountID: accountID}
+	if value, ok := s.accounts.Load(key); ok {
 		stat, _ := value.(*openAIAccountRuntimeStat)
 		if stat != nil {
 			return stat
@@ -255,7 +268,7 @@ func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccount
 
 	stat := &openAIAccountRuntimeStat{}
 	stat.ttftEWMABits.Store(math.Float64bits(math.NaN()))
-	actual, loaded := s.accounts.LoadOrStore(accountID, stat)
+	actual, loaded := s.accounts.LoadOrStore(key, stat)
 	if !loaded {
 		s.accountCount.Add(1)
 		return stat
@@ -279,11 +292,16 @@ func updateEWMAAtomic(target *atomic.Uint64, sample float64, alpha float64) {
 }
 
 func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstTokenMs *int) {
+	s.reportForGroup(0, accountID, success, firstTokenMs)
+}
+
+func (s *openAIAccountRuntimeStats) reportForGroup(groupID, accountID int64, success bool, firstTokenMs *int) {
 	if s == nil || accountID <= 0 {
 		return
 	}
 	const alpha = 0.2
-	stat := s.loadOrCreate(accountID)
+	stat := s.loadOrCreateForGroup(groupID, accountID)
+	stat.sampleCount.Add(1)
 
 	errorSample := 1.0
 	if success {
@@ -312,10 +330,14 @@ func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstT
 }
 
 func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
+	return s.snapshotForGroup(0, accountID)
+}
+
+func (s *openAIAccountRuntimeStats) snapshotForGroup(groupID, accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
 	if s == nil || accountID <= 0 {
 		return 0, 0, false
 	}
-	value, ok := s.accounts.Load(accountID)
+	value, ok := s.loadForGroup(groupID, accountID)
 	if !ok {
 		return 0, 0, false
 	}
@@ -329,6 +351,56 @@ func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64
 		return errorRate, 0, false
 	}
 	return errorRate, ttftValue, true
+}
+
+func (s *openAIAccountRuntimeStats) loadForGroup(groupID, accountID int64) (any, bool) {
+	value, ok := s.accounts.Load(openAIAccountRuntimeKey{groupID: groupID, accountID: accountID})
+	if ok || groupID == 0 {
+		return value, ok
+	}
+	// Preserve callers that predate group-aware reporting until their next
+	// request carries group context. A real group sample always wins.
+	return s.accounts.Load(openAIAccountRuntimeKey{groupID: 0, accountID: accountID})
+}
+
+func (s *openAIAccountRuntimeStats) qualityGateEvidence(groupID, accountID int64) (openAIQualityGateEvidence, bool) {
+	if s == nil || accountID <= 0 {
+		return openAIQualityGateEvidence{ReadError: true}, false
+	}
+	value, ok := s.loadForGroup(groupID, accountID)
+	if !ok {
+		return openAIQualityGateEvidence{}, false
+	}
+	stat, _ := value.(*openAIAccountRuntimeStat)
+	if stat == nil {
+		return openAIQualityGateEvidence{ReadError: true}, false
+	}
+	errorRate, ttft, hasTTFT := s.snapshotForGroup(groupID, accountID)
+	return openAIQualityGateEvidence{
+		SampleCount: int(stat.sampleCount.Load()),
+		ErrorRate:   errorRate,
+		TTFTMs:      ttft,
+		HasTTFT:     hasTTFT,
+	}, true
+}
+
+func (s *openAIAccountRuntimeStats) qualityGateState(groupID, accountID int64, policy OpenAISchedulerQualityGatePolicy, now time.Time, advance bool) (openAIQualityGateState, openAIQualityGateEvaluation) {
+	evidence, ok := s.qualityGateEvidence(groupID, accountID)
+	if !ok {
+		return openAIQualityGateState{}, evaluateOpenAIQualityGate(policy, openAIQualityGateEvidence{ReadError: true})
+	}
+	evaluation := evaluateOpenAIQualityGate(policy, evidence)
+	statValue, _ := s.loadForGroup(groupID, accountID)
+	stat, _ := statValue.(*openAIAccountRuntimeStat)
+	if stat == nil {
+		return openAIQualityGateState{}, evaluation
+	}
+	stat.qualityMu.Lock()
+	defer stat.qualityMu.Unlock()
+	if advance {
+		stat.qualityState = advanceOpenAIQualityGateState(policy, stat.qualityState, evaluation, now)
+	}
+	return stat.qualityState, evaluation
 }
 
 func (s *openAIAccountRuntimeStats) size() int {
@@ -712,7 +784,8 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, "capability", nil
 	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
-	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape {
+	groupID := schedulerGroupID(req.GroupID)
+	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccountForGroup(ctx, groupID, accountID, s.selectionNow()); shouldEscape {
 		slog.Info("sticky_escape_triggered",
 			"account_id", accountID,
 			"reason", reason,
@@ -735,7 +808,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	// WaitPlan.MaxConcurrency 使用 Concurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
 	if s.service.concurrencyService != nil {
 		if escapeCfg.enabled && acquireErr == nil && result != nil && !result.Acquired {
-			errorRate, ttft, _ := s.stats.snapshot(accountID)
+			errorRate, ttft, _ := s.stats.snapshotForGroup(groupID, accountID)
 			slog.Info("sticky_escape_triggered",
 				"account_id", accountID,
 				"reason", "concurrency_full",
@@ -823,10 +896,14 @@ func fairnessExplorationDue(sessionHash string, ratio int) bool {
 }
 
 func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int64, cfg openAIStickyEscapeConfig) (reason string, errorRate float64, ttft float64, shouldEscape bool) {
+	return s.shouldEscapeStickyAccountAtGroup(0, accountID, cfg, s.selectionNow())
+}
+
+func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccountAtGroup(groupID, accountID int64, cfg openAIStickyEscapeConfig, now time.Time) (reason string, errorRate float64, ttft float64, shouldEscape bool) {
 	if !cfg.enabled || s == nil || s.stats == nil || accountID <= 0 {
 		return "", 0, 0, false
 	}
-	errorRate, ttft, hasTTFT := s.stats.snapshot(accountID)
+	errorRate, ttft, hasTTFT := s.stats.snapshotForGroup(groupID, accountID)
 	if hasTTFT && ttft > cfg.ttftMs {
 		return "ttft", errorRate, ttft, true
 	}
@@ -837,15 +914,16 @@ func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int6
 }
 
 type openAIAccountCandidateScore struct {
-	account   *Account
-	loadInfo  *AccountLoadInfo
-	loadKnown bool
-	score     float64
-	fairness  float64
-	priority  int
-	errorRate float64
-	ttft      float64
-	hasTTFT   bool
+	account     *Account
+	loadInfo    *AccountLoadInfo
+	loadKnown   bool
+	score       float64
+	fairness    float64
+	priority    int
+	prioritySet bool
+	errorRate   float64
+	ttft        float64
+	hasTTFT     bool
 }
 
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
@@ -884,11 +962,11 @@ func isOpenAIAccountCandidateBetter(left openAIAccountCandidateScore, right open
 		return left.score > right.score
 	}
 	leftPriority := left.priority
-	if leftPriority == 0 {
+	if !left.prioritySet {
 		leftPriority = openAIAccountSchedulingPriority(left.account)
 	}
 	rightPriority := right.priority
-	if rightPriority == 0 {
+	if !right.prioritySet {
 		rightPriority = openAIAccountSchedulingPriority(right.account)
 	}
 	if leftPriority != rightPriority {
@@ -1168,16 +1246,18 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAtWithPolicy(
 		}
 		errorRate, ttft, hasTTFT := 0.0, 0.0, false
 		if s.stats != nil {
-			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID)
+			errorRate, ttft, hasTTFT = s.stats.snapshotForGroup(schedulerGroupID(req.GroupID), account.ID)
 		}
+		priority, prioritySet := accountSchedulingPriorityForGroupWithPresence(account, req.GroupID)
 		allCandidates = append(allCandidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			loadKnown: loadKnown,
-			priority:  openAIAccountSchedulingPriorityForGroup(account, req.GroupID),
-			errorRate: errorRate,
-			ttft:      ttft,
-			hasTTFT:   hasTTFT,
+			account:     account,
+			loadInfo:    loadInfo,
+			loadKnown:   loadKnown,
+			priority:    priority,
+			prioritySet: prioritySet,
+			errorRate:   errorRate,
+			ttft:        ttft,
+			hasTTFT:     hasTTFT,
 		})
 	}
 
@@ -1943,6 +2023,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	filtered := make([]*Account, 0, len(accounts))
+	qualityBlocked := make([]*Account, 0, len(accounts))
 	halfOpenCandidates := make([]*Account, 0, len(accounts))
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	sharedHealthCtx, cancelSharedHealthReads := s.service.openAISharedHealthSelectionContext(ctx)
@@ -1984,6 +2065,13 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			filterStats.exclude("runtime_blocked")
 			continue
 		}
+		if groupID := schedulerGroupID(req.GroupID); groupID > 0 {
+			if policy, enabled := s.qualityGatePolicyForGroup(ctx, groupID); enabled && s.qualityGateBlockedForGroup(ctx, groupID, account.ID, policy, s.selectionNow(), true) {
+				filterStats.exclude("quality_gate")
+				qualityBlocked = append(qualityBlocked, account)
+				continue
+			}
+		}
 		allowSharedRead := sharedHealthReads < openAISharedHealthReadLimit
 		if allowSharedRead && s.service.hasOpenAISharedHealthStore() {
 			sharedHealthReads++
@@ -1994,6 +2082,23 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			continue
 		}
 		filtered = append(filtered, account)
+	}
+	if len(filtered) == 0 {
+		if len(qualityBlocked) > 0 {
+			blockedIDs := make(map[int64]struct{}, len(qualityBlocked))
+			for _, account := range qualityBlocked {
+				if account != nil {
+					blockedIDs[account.ID] = struct{}{}
+				}
+			}
+			if fallback, ok := selectOpenAIQualityGateFallback(qualityBlocked, blockedIDs); ok {
+				filtered = []*Account{fallback}
+			}
+			if req.decisionDetails != nil {
+				req.decisionDetails.qualityFallback = true
+				req.decisionDetails.stickyEscapeReason = "quality_gate_fallback"
+			}
+		}
 	}
 	if len(filtered) == 0 {
 		if len(halfOpenCandidates) == 0 {
@@ -2362,6 +2467,15 @@ func (s *defaultOpenAIAccountScheduler) ReportResult(accountID int64, success bo
 		return
 	}
 	s.stats.report(accountID, success, firstTokenMs)
+}
+
+// ReportResultForGroup is the group-aware runtime signal path. The legacy
+// ReportResult remains unchanged for callers that do not have group context.
+func (s *defaultOpenAIAccountScheduler) ReportResultForGroup(groupID, accountID int64, success bool, firstTokenMs *int) {
+	if s == nil || s.stats == nil {
+		return
+	}
+	s.stats.reportForGroup(groupID, accountID, success, firstTokenMs)
 }
 
 func (s *defaultOpenAIAccountScheduler) ReportSwitch() {
@@ -3068,6 +3182,17 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(accountID int64
 	scheduler.ReportResult(accountID, success, firstTokenMs)
 }
 
+func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResultForGroup(groupID, accountID int64, model string, success bool, firstTokenMs *int) {
+	if success {
+		s.clearOpenAIAccountModelTransientState(accountID, normalizeOpenAIAccountModelTransientModel(model))
+	}
+	scheduler, ok := s.getOpenAIAccountScheduler(context.Background()).(*defaultOpenAIAccountScheduler)
+	if !ok || scheduler == nil {
+		return
+	}
+	scheduler.ReportResultForGroup(groupID, accountID, success, firstTokenMs)
+}
+
 func (s *OpenAIGatewayService) RecordOpenAIAccountSwitch() {
 	scheduler := s.getOpenAIAccountScheduler(context.Background())
 	if scheduler == nil {
@@ -3299,12 +3424,13 @@ func buildOpenAIAccountSchedulerScoreSnapshot(
 			loadInfo = &AccountLoadInfo{AccountID: account.ID}
 		}
 		candidates = append(candidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			priority:  openAIAccountSchedulingPriority(account),
-			errorRate: 0,
-			ttft:      0,
-			hasTTFT:   false,
+			account:     account,
+			loadInfo:    loadInfo,
+			priority:    openAIAccountSchedulingPriority(account),
+			prioritySet: true,
+			errorRate:   0,
+			ttft:        0,
+			hasTTFT:     false,
 		})
 	}
 	if len(candidates) == 0 {

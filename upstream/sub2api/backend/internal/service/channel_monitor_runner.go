@@ -29,7 +29,7 @@ type MonitorScheduler interface {
 // 避免依赖完整的 repo + encryptor 链路。生产实现 *ChannelMonitorService 自然满足。
 type monitorRunnerSvc interface {
 	ListEnabledMonitors(ctx context.Context) ([]*ChannelMonitor, error)
-	RunCheck(ctx context.Context, id int64) ([]*CheckResult, error)
+	RunScheduledCheck(ctx context.Context, id int64) ([]*CheckResult, error)
 }
 
 // ChannelMonitorRunner 渠道监控调度器。
@@ -302,7 +302,7 @@ func (r *ChannelMonitorRunner) releaseInFlight(id int64) {
 func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
-		monitorChannelCheckMaxAttempts*monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer,
+		monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer,
 	)
 	defer cancel()
 
@@ -315,7 +315,7 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 		}
 	}()
 
-	if _, err := r.svc.RunCheck(ctx, id); err != nil {
+	if _, err := r.svc.RunScheduledCheck(ctx, id); err != nil {
 		if errors.Is(err, ErrChannelMonitorAPIKeyDecryptFailed) {
 			r.Unschedule(id)
 		}

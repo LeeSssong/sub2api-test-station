@@ -5,6 +5,8 @@ import (
 	"math/rand/v2"
 	"regexp"
 	"strconv"
+
+	"github.com/google/uuid"
 )
 
 // monitorChallengePromptTemplate 1:1 复刻 BingZi-233/check-cx 的 few-shot 模板。
@@ -41,7 +43,7 @@ func generateChallenge() monitorChallenge {
 	if rand.IntN(2) == 0 { //nolint:gosec // 仅用于生成测试问题，无安全影响
 		// 加法
 		return monitorChallenge{
-			Prompt:   fmt.Sprintf(monitorChallengePromptTemplate, a, "+", b),
+			Prompt:   fmt.Sprintf("Nonce: %s\\n"+monitorChallengePromptTemplate, uuid.NewString(), a, "+", b),
 			Expected: strconv.Itoa(a + b),
 		}
 	}
@@ -52,7 +54,7 @@ func generateChallenge() monitorChallenge {
 		hi, lo = lo, hi
 	}
 	return monitorChallenge{
-		Prompt:   fmt.Sprintf(monitorChallengePromptTemplate, hi, "-", lo),
+		Prompt:   fmt.Sprintf("Nonce: %s\\n"+monitorChallengePromptTemplate, uuid.NewString(), hi, "-", lo),
 		Expected: strconv.Itoa(hi - lo),
 	}
 }

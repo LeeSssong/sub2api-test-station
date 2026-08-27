@@ -1171,12 +1171,15 @@ func ProvideMonitorV4Service(
 // 通过 SetScheduler 注入回 service 后再 Start，确保启动时加载所有 enabled monitor，
 // 后续 CRUD 也能即时同步任务表。Runner.Stop 由 cleanup function 调用。
 // settingService 用于 runner 每次 fire 读取功能开关。
-func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService, cfg *config.Config) *ChannelMonitorRunner {
+func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *SettingService, cfg *config.Config, usageServices ...*AccountUsageService) *ChannelMonitorRunner {
 	r := NewChannelMonitorRunner(svc, settingService)
 	if svc != nil {
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).
 		svc.SetRuntimeReader(settingService)
+		if len(usageServices) > 0 && usageServices[0] != nil {
+			svc.SetActiveProbeUsageReader(usageServices[0])
+		}
 		svc.SetScheduler(r)
 	}
 	if shouldStartSingleton(cfg) {

@@ -97,6 +97,13 @@ type AccountMonitorHealthSummary struct {
 
 type AccountMonitorQualityEvidence struct {
 	Source             string    `json:"source"`
+	Known              bool      `json:"known"`
+	Freshness          string    `json:"freshness"`
+	UnknownReason      string    `json:"unknown_reason,omitempty"`
+	RealRequestSamples int       `json:"real_request_sample_count"`
+	ProbeSamples       int       `json:"probe_sample_count"`
+	RealRequestWeight  float64   `json:"real_request_weight"`
+	ProbeWeight        float64   `json:"probe_weight"`
 	SampleCount        int       `json:"sample_count"`
 	SuccessSampleCount int       `json:"success_sample_count"`
 	TTFTSampleCount    int       `json:"ttft_sample_count"`

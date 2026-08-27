@@ -21,6 +21,7 @@ type openAIQualityGateEvidence struct {
 	TTFTMs      float64
 	HasTTFT     bool
 	ReadError   bool
+	Fused       *AccountMonitorQualityEvidence
 }
 
 type openAIQualityGateEvaluation struct {
@@ -71,6 +72,9 @@ func (p OpenAISchedulerSessionEscapePolicy) asQualityGatePolicy() OpenAISchedule
 }
 
 func evaluateOpenAIQualityGate(policy OpenAISchedulerQualityGatePolicy, evidence openAIQualityGateEvidence) openAIQualityGateEvaluation {
+	if evidence.Fused != nil {
+		evidence = openAIQualityGateEvidenceFromAccountMonitorEvidence(*evidence.Fused)
+	}
 	if !policy.Enabled || evidence.ReadError || evidence.SampleCount < policy.MinSamples {
 		return openAIQualityGateEvaluation{}
 	}
@@ -79,6 +83,22 @@ func evaluateOpenAIQualityGate(policy OpenAISchedulerQualityGatePolicy, evidence
 		bad = true
 	}
 	return openAIQualityGateEvaluation{Known: true, Bad: bad}
+}
+
+func openAIQualityGateEvidenceFromAccountMonitorEvidence(evidence AccountMonitorQualityEvidence) openAIQualityGateEvidence {
+	if !evidence.Known {
+		return openAIQualityGateEvidence{ReadError: evidence.UnknownReason == "read_error", Fused: &evidence}
+	}
+	result := openAIQualityGateEvidence{
+		SampleCount: evidence.SampleCount,
+		ErrorRate:   1 - evidence.SuccessRate,
+		Fused:       &evidence,
+	}
+	if evidence.TTFTP50MS != nil {
+		result.TTFTMs = *evidence.TTFTP50MS
+		result.HasTTFT = true
+	}
+	return result
 }
 
 func advanceOpenAIQualityGateState(policy OpenAISchedulerQualityGatePolicy, state openAIQualityGateState, evaluation openAIQualityGateEvaluation, now time.Time) openAIQualityGateState {

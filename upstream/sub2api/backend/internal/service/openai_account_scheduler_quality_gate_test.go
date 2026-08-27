@@ -37,6 +37,37 @@ func TestOpenAIQualityGateRuntimeIsolatedByGroup(t *testing.T) {
 	}
 }
 
+func TestOpenAIQualityGateUsesTheSharedFusedEvidenceProjection(t *testing.T) {
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	observedAt := now.Add(-time.Minute)
+	evidence := fuseAccountMonitorQualityEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 1, LastObservedAt: &observedAt},
+		AccountMonitorAggregate{},
+		AccountMonitorLatest{},
+		AccountMonitorSettings{IntervalSeconds: 300},
+		now,
+	)
+	policy := defaultOpenAIQualityGatePolicy()
+	policy.Enabled = true
+	policy.MinSamples = 5
+	projected := openAIQualityGateEvidenceFromAccountMonitorEvidence(evidence)
+	result := evaluateOpenAIQualityGate(policy, projected)
+	if !result.Known || !result.Bad || projected.SampleCount != evidence.SampleCount || projected.ErrorRate != 0.8 {
+		t.Fatalf("shared fused gate projection = %#v, evaluation = %#v, evidence = %#v", projected, result, evidence)
+	}
+}
+
+func TestOpenAIQualityGateLegacyGroupNeutralReportRemainsIsolatedCompatibilityPath(t *testing.T) {
+	stats := newOpenAIAccountRuntimeStats()
+	stats.report(42, true, nil)
+	if _, ok := stats.qualityGateEvidence(11, 42); !ok {
+		t.Fatal("legacy group-neutral runtime report should remain readable")
+	}
+	if _, ok := stats.qualityGateEvidence(12, 42); !ok {
+		t.Fatal("legacy group-neutral fallback should remain compatible")
+	}
+}
+
 func TestOpenAIQualityGateInsufficientSamplesFailsOpen(t *testing.T) {
 	policy := defaultOpenAIQualityGatePolicy()
 	policy.Enabled = true

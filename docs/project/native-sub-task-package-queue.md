@@ -2,7 +2,7 @@
 
 ## 最新发布更新（2026-08-26）
 
-- **T79 独立准生产验收站**：状态 `DESIGNING`。基线 `main@65c51f7b5`，工作区将为 `.worktrees/t79-independent-acceptance-station`，分支 `codex/t79-independent-acceptance-station`。按用户已确认的产品边界，测试站是可独立商用的完整实例，不对外开放，只允许独立管理员登录；它与主站不共享域名、Caddy、Docker project/network、数据库、Redis、对象存储、运行目录、账户/会话、支付、上游、通知或任何凭据。流程固定为本地直接验证 -> 人工部署测试站 -> 管理员真实验收（真实充值/消费/支付/上游）-> 人工合入 `main` -> 人工部署主站；串行单实例，不做蓝绿槽、临时环境、自动晋级或扩展门禁。每次测试站部署保留其独立数据，不以清库掩盖失败；旧生产宿主 `/admin/lab/` mock 方案将退役，后续不得扩展。当前尚未提供验收站宿主、域名和独立支付/上游凭据，代码只提供 fail-closed 的安装契约与发布链，绝不猜测或复用生产密钥。
+- **T79 独立准生产验收站**：状态 `READY_FOR_ROOT_REVIEW`。基线 `main@cc3819024`，候选工作区 `.worktrees/t79-independent-acceptance-station`、分支 `codex/t79-independent-acceptance-station`，提交 `f5f11bd10`（含 `f56e43209`），已推送 `origin/codex/t79-independent-acceptance-station`。按用户已确认的产品边界，测试站是可独立商用的完整实例，不对外开放，只允许独立管理员登录；对外复用主站 `https://api.xingqiaolab.top/admin/lab/` 路径，内部 Compose、网络、数据库、Redis、对象存储、运行目录、账户/会话和凭据独立，`/admin/accounts` 继续走主站原生页面。流程固定为本地直接验证 -> 人工部署验收站 -> 管理员真实验收（真实充值/消费/支付/上游）-> 人工合入 `main` -> 人工部署主站；串行单实例，不做蓝绿槽、临时环境、自动晋级或扩展门禁。专项契约、Compose 解析、脚本语法和 Caddy 配置验证均通过。真实部署仍阻塞于未提供验收站专用 SSH 身份/known_hosts、管理员来源 ACL，以及独立支付、上游、通知凭据；不得复制生产凭据或把占位值冒充真实配置。
 
 - **T78 管理员余额语义澄清**：状态 `DONE`。根 `main@0ea5820f29ee15a9c02871fc57976bc79d512e56` 已推送并经无停机蓝绿链发布；将管理员余额弹窗的“当前余额”明确为“当前可消费额度”，将原“现金”明确为“可退款现金余额”，并分别显示付费/赠送额度，避免把退款校验字段误解为可消费金额。前端定向 Vitest（3 项）、typecheck、production build 与 diff-check 通过；无迁移、无配置变更、无生产账务写入。宿主记录 `/var/lib/sub2api/release-records/20260826T165339Z-production-3138884.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。回滚为恢复上一个已验证蓝绿镜像。
 

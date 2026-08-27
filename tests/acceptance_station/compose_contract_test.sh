@@ -36,6 +36,7 @@ done
 grep -Fq "('backend_mode_enabled', 'true')" "$compose_file" || fail 'backend mode bootstrap setting is missing'
 grep -Fq "('registration_enabled', 'false')" "$compose_file" || fail 'registration closure bootstrap setting is missing'
 grep -Fq 'ON CONFLICT (key) DO UPDATE' "$compose_file" || fail 'bootstrap upsert is missing'
+grep -Fq 'acceptance-worker: {condition: service_healthy}' "$compose_file" || fail 'api must wait for worker auto-setup'
 grep -Fq 'response_header_timeout 15m' "$caddy_file" || fail '15-minute upstream timeout is missing'
 grep -Fq '${ACCEPTANCE_LOOPBACK_BIND:-0.0.0.0}:${ACCEPTANCE_LOOPBACK_PORT:?ACCEPTANCE_LOOPBACK_PORT is required}:80' "$compose_file" \
   || fail 'acceptance caddy must bind only a configurable dedicated edge port'

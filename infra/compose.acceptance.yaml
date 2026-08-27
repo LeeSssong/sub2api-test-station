@@ -40,6 +40,7 @@ services:
       - sub2api-acceptance-data:/app/data
     networks: [acceptance, egress]
     depends_on:
+      acceptance-worker: {condition: service_healthy}
       acceptance-postgres: {condition: service_healthy}
       acceptance-redis: {condition: service_healthy}
       acceptance-detector: {condition: service_healthy}

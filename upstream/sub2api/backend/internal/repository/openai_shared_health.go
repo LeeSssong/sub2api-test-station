@@ -78,6 +78,7 @@ local function update_state(key)
     "canonical_model", ARGV[4],
     "state", state,
     "failure_streak", streak,
+    "half_open_successes", 0,
     "cooldown_until_unix_ms", cooldown_ms,
     "last_status_code", ARGV[6],
     "last_error_type", ARGV[7],
@@ -120,6 +121,7 @@ redis.call("DEL", KEYS[1])
 local success = ARGV[3] == "1"
 local observed_ms = tonumber(ARGV[4])
 local streak = tonumber(redis.call("HGET", KEYS[2], "failure_streak") or "0")
+local half_open_successes = tonumber(redis.call("HGET", KEYS[2], "half_open_successes") or "0")
 local old_error = redis.call("HGET", KEYS[2], "ewma_error_rate")
 local sample_error = 1
 local state = "cooldown"
@@ -128,8 +130,17 @@ local ttl_ms = tonumber(ARGV[8])
 if success then
   streak = 0
   sample_error = 0
-  state = "healthy"
+  half_open_successes = half_open_successes + 1
+  if half_open_successes >= 2 then
+    half_open_successes = 0
+    state = "healthy"
+  else
+    state = "half_open"
+    -- Keep the account blocked while requiring the second independent probe.
+    cooldown_ms = observed_ms
+  end
 else
+  half_open_successes = 0
   streak = streak + 1
   local cooldown_seconds = 10
   if streak >= 3 then
@@ -152,6 +163,7 @@ redis.call("HSET", KEYS[2],
   "canonical_model", ARGV[7],
   "state", state,
   "failure_streak", streak,
+  "half_open_successes", half_open_successes,
   "cooldown_until_unix_ms", cooldown_ms,
   "last_status_code", 0,
   "last_error_type", success and "" or "half_open_failed",
@@ -561,6 +573,7 @@ func decodeOpenAISharedHealthSnapshot(key service.OpenAISharedHealthKey, values 
 	snapshot.SchemaVersion = schemaVersion
 	snapshot.Revision, _ = strconv.ParseInt(values["revision"], 10, 64)
 	snapshot.FailureStreak, _ = strconv.Atoi(values["failure_streak"])
+	snapshot.HalfOpenSuccesses, _ = strconv.Atoi(values["half_open_successes"])
 	snapshot.LastStatusCode, _ = strconv.Atoi(values["last_status_code"])
 	snapshot.LastErrorType = values["last_error_type"]
 	snapshot.EWMAErrorRate, _ = strconv.ParseFloat(values["ewma_error_rate"], 64)

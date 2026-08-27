@@ -1200,6 +1200,10 @@ func ProvideAccountMonitorService(
 	multiplierService := NewAccountMultiplierService(fullAccountRepo, accountTestService, billingService)
 	multiplierService.SetDeclarationProbe(upstreamBillingProbeService)
 	service := NewAccountMonitorService(repo, accountRepo, accountTestService, accountUsageService, multiplierService)
+	if upstreamBillingProbeService != nil {
+		upstreamBillingProbeService.SetAccountRuntimeBlocker(openAIGatewayService)
+	}
+	service.SetAccountRuntimeBlocker(openAIGatewayService)
 	service.costPricing = billingService
 	service.SetModelDetectionService(detectionService)
 	service.SetOpenAIAccountSchedulerProjectionProvider(openAIGatewayService)

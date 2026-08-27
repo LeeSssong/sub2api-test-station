@@ -27,6 +27,22 @@ type upstreamBillingProbeAccountRepo struct {
 	syncTriggers []string
 }
 
+type upstreamBillingProbeRecoveryRepo struct {
+	*upstreamBillingProbeAccountRepo
+	clearTempCalls int
+}
+
+func (r *upstreamBillingProbeRecoveryRepo) ClearTempUnschedulable(_ context.Context, id int64) error {
+	r.clearTempCalls++
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if account := r.accounts[id]; account != nil {
+		account.TempUnschedulableUntil = nil
+		account.TempUnschedulableReason = ""
+	}
+	return nil
+}
+
 type staleDueUpstreamBillingProbeAccountRepo struct {
 	*upstreamBillingProbeAccountRepo
 	due []Account
@@ -753,6 +769,27 @@ func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing
 	require.NotContains(t, snapshot.LastError, "do not persist")
 	require.NotNil(t, account.RateMultiplier)
 	require.Equal(t, initialRate, *account.RateMultiplier)
+}
+
+func TestUpstreamBillingProbeSuccessfulBalanceRecoveryRequiresTwoProbes(t *testing.T) {
+	until := time.Date(2036, time.January, 1, 0, 0, 0, 0, time.UTC)
+	account := &Account{
+		ID: 901, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+		TempUnschedulableUntil: &until, TempUnschedulableReason: `{"failure_class":"balance_exhausted","recovery_policy":"probe_required"}`,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://upstream.example"},
+		Extra:       map[string]any{UpstreamBillingProbeEnabledExtraKey: true},
+	}
+	baseRepo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	repo := &upstreamBillingProbeRecoveryRepo{upstreamBillingProbeAccountRepo: baseRepo}
+	svc := newUpstreamBillingProbeTestService(repo, &upstreamBillingProbeHTTPStub{}, &upstreamBillingProbeSettingRepo{})
+
+	_, err := svc.ProbeAccount(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Zero(t, repo.clearTempCalls, "one successful probe must not recover the account")
+	_, err = svc.ProbeAccount(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.clearTempCalls)
+	require.Nil(t, repo.accounts[account.ID].TempUnschedulableUntil)
 }
 
 func TestUpstreamBillingProbeRetryAfterIsNotShortened(t *testing.T) {

@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/stretchr/testify/require"
 )
 
 type accountMonitorAccountRepoStub struct {
@@ -27,6 +28,32 @@ type accountMonitorAccountRepoStub struct {
 	listAllStatus         string
 	listAllCalled         bool
 	listSchedulableCalled bool
+}
+
+type accountMonitorAPIKeyRecoveryRepoStub struct {
+	accountMonitorAccountRepoStub
+	clearTempCalls int
+}
+
+type accountMonitorRuntimeBlockerStub struct {
+	cleared []int64
+}
+
+func (s *accountMonitorRuntimeBlockerStub) BlockAccountScheduling(_ *Account, _ time.Time, _ string) {
+}
+
+func (s *accountMonitorRuntimeBlockerStub) ClearAccountSchedulingBlock(id int64) {
+	s.cleared = append(s.cleared, id)
+}
+
+func (s *accountMonitorAPIKeyRecoveryRepoStub) ClearTempUnschedulable(_ context.Context, id int64) error {
+	s.clearTempCalls++
+	for i := range s.accounts {
+		if s.accounts[i].ID == id {
+			s.accounts[i].TempUnschedulableUntil = nil
+		}
+	}
+	return nil
 }
 
 type accountMonitorRepoStub struct {
@@ -3492,6 +3519,31 @@ func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *te
 	if *calls != 0 || len(repo.results) != 0 {
 		t.Fatalf("closed HTTP error run = calls %d results %d, want stopped", *calls, len(repo.results))
 	}
+}
+
+func TestAccountMonitorRunAllProbesAPIKey401RecoveryAndClearsTempState(t *testing.T) {
+	repo := &accountMonitorRepoStub{
+		latest:   map[int64]AccountMonitorLatest{406: {Status: "failed", HTTPStatus: intPtr(http.StatusUnauthorized)}},
+		settings: AccountMonitorSettings{IntervalSeconds: 300},
+	}
+	until := time.Now().UTC().Add(time.Hour)
+	accountRepo := &accountMonitorAPIKeyRecoveryRepoStub{accountMonitorAccountRepoStub: accountMonitorAccountRepoStub{
+		accounts: []Account{{ID: 406, Status: StatusActive, Schedulable: true, Type: AccountTypeAPIKey, TempUnschedulableUntil: &until}},
+	}}
+	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	runtimeBlocker := &accountMonitorRuntimeBlockerStub{}
+	svc.SetAccountRuntimeBlocker(runtimeBlocker)
+	calls := 0
+	svc.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+		calls++
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+
+	_, err := svc.RunAll(context.Background(), 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	require.Equal(t, 1, accountRepo.clearTempCalls)
+	require.Equal(t, []int64{406}, runtimeBlocker.cleared)
 }
 func TestAccountMonitorWindowScoreBreakdownSumsToRoundedQualityScore(t *testing.T) {
 	now := time.Now().UTC()

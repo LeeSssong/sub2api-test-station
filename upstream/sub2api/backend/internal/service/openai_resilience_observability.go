@@ -52,10 +52,16 @@ type OpenAIResilienceEvent struct {
 	UnsafeToReplay        bool
 	SwitchAllowed         bool
 	SwitchReason          string
+	SwitchBlockReason     string
 	FailureStreak         int
 	CacheMode             string
 	CooldownSeconds       int
 	RetryAfterSeconds     int
+	CooldownUntil         time.Time
+	HealthState           string
+	CandidateAccountIDs   []int64
+	ExcludedAccountIDs    []int64
+	ExcludeReasons        map[string]int
 	Outcome               string // success, failure, selected, cache_hit, started
 	SelectionLayer        string
 	CandidateCount        int
@@ -121,9 +127,23 @@ func RecordOpenAIResilienceOutcome(event OpenAIResilienceEvent) {
 	event.CacheMode = strings.TrimSpace(event.CacheMode)
 	event.Outcome = strings.TrimSpace(event.Outcome)
 	event.SwitchReason = strings.TrimSpace(event.SwitchReason)
+	event.SwitchBlockReason = strings.TrimSpace(event.SwitchBlockReason)
 	event.SelectionLayer = strings.TrimSpace(event.SelectionLayer)
 	event.StickyEscapeReason = strings.TrimSpace(event.StickyEscapeReason)
 	event.FinalOutcome = strings.TrimSpace(event.FinalOutcome)
+	if len(event.CandidateAccountIDs) > 0 {
+		event.CandidateAccountIDs = append([]int64(nil), event.CandidateAccountIDs...)
+	}
+	if len(event.ExcludedAccountIDs) > 0 {
+		event.ExcludedAccountIDs = append([]int64(nil), event.ExcludedAccountIDs...)
+	}
+	if len(event.ExcludeReasons) > 0 {
+		reasons := make(map[string]int, len(event.ExcludeReasons))
+		for key, value := range event.ExcludeReasons {
+			reasons[key] = value
+		}
+		event.ExcludeReasons = reasons
+	}
 	if event.Name == "" {
 		return
 	}
@@ -142,6 +162,8 @@ func RecordOpenAISchedulerSelection(ctx context.Context, platform string, groupI
 		EligibleCount: decision.EligibleCount, EffectiveTopK: decision.EffectiveTopK,
 		MinimumScoreThreshold: decision.MinimumScoreThreshold, StickyKept: decision.StickyKept,
 		StickyEscapeReason: decision.StickyEscapeReason, TTFTReportEligible: decision.TTFTReportEligible,
+		CandidateAccountIDs: decision.CandidateAccountIDs, ExcludedAccountIDs: decision.ExcludedAccountIDs,
+		ExcludeReasons: decision.ExcludeReasons, HealthState: decision.HealthState, CooldownUntil: decision.CooldownUntil,
 	})
 }
 

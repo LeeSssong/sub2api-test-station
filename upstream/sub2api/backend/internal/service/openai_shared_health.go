@@ -182,17 +182,18 @@ const (
 )
 
 type OpenAISharedHealthSnapshot struct {
-	SchemaVersion  int
-	Revision       int64
-	Key            OpenAISharedHealthKey
-	State          OpenAISharedHealthState
-	FailureStreak  int
-	CooldownUntil  time.Time
-	LastStatusCode int
-	LastErrorType  string
-	EWMAErrorRate  float64
-	EWMATTFT       time.Duration
-	ObservedAt     time.Time
+	SchemaVersion     int
+	Revision          int64
+	Key               OpenAISharedHealthKey
+	State             OpenAISharedHealthState
+	FailureStreak     int
+	HalfOpenSuccesses int
+	CooldownUntil     time.Time
+	LastStatusCode    int
+	LastErrorType     string
+	EWMAErrorRate     float64
+	EWMATTFT          time.Duration
+	ObservedAt        time.Time
 }
 
 func (s OpenAISharedHealthSnapshot) Freshness(now time.Time, staleAfter time.Duration) OpenAISharedHealthFreshness {

@@ -513,8 +513,19 @@ func (s *RateLimitService) handleDeterministicUpstreamFailure(ctx context.Contex
 		}
 		return true, true
 	case deterministicCredentialClass:
-		if err := s.accountRepo.SetError(ctx, account.ID, reason); err != nil {
-			slog.Warn("deterministic_credential_set_error_failed", "account_id", account.ID, "error", err)
+		if account.IsOAuth() {
+			if err := s.accountRepo.SetError(ctx, account.ID, reason); err != nil {
+				slog.Warn("deterministic_credential_set_error_failed", "account_id", account.ID, "error", err)
+			}
+			return true, true
+		}
+		// API-key 401 is recoverable through a fresh background probe. Keep the
+		// account active and isolate it temporarily instead of permanently
+		// converting a transient credential outage into status=error.
+		until := time.Now().UTC().Add(5 * time.Minute)
+		s.notifyAccountSchedulingBlocked(account, until, "api_key_401")
+		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+			slog.Warn("deterministic_credential_set_temp_unsched_failed", "account_id", account.ID, "error", err)
 		}
 		return true, true
 	case deterministicModelClass:

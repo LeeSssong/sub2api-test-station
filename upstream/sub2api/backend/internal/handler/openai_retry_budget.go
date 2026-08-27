@@ -13,12 +13,27 @@ import (
 )
 
 const (
+	openAIMaxAccountSwitches            = 2
 	openAIRetryReasonAttemptLimit       = "attempt_limit"
 	openAIRetryReasonAccountSwitchLimit = "account_switch_limit"
 	openAIRetryReasonFailureDomainLimit = "failure_domain_limit"
 	openAIRetryReasonRetryDeadline      = "retry_deadline"
 	openAIRetryReasonUnsafeToReplay     = "unsafe_to_replay"
 )
+
+func openAISameAccountRetryLimit(statusCode, configuredLimit int) int {
+	if configuredLimit < 0 {
+		configuredLimit = 0
+	}
+	// T82's automatic 502/503 recovery is deliberately bounded to one
+	// same-account replay even when pool-mode configuration asks for more.
+	if statusCode == http.StatusBadGateway || statusCode == http.StatusServiceUnavailable {
+		if configuredLimit > 1 {
+			return 1
+		}
+	}
+	return configuredLimit
+}
 
 type openAIRetryBudgetConfig struct {
 	MaxAttempts        int
@@ -72,8 +87,8 @@ func openAIRetryBudgetConfigFromConfig(cfg *config.Config) openAIRetryBudgetConf
 	if shared.MaxAttempts > 4 {
 		shared.MaxAttempts = 4
 	}
-	if shared.MaxAccountSwitches > 3 {
-		shared.MaxAccountSwitches = 3
+	if shared.MaxAccountSwitches > openAIMaxAccountSwitches {
+		shared.MaxAccountSwitches = openAIMaxAccountSwitches
 	}
 	if shared.MaxFailureDomains > 2 {
 		shared.MaxFailureDomains = 2
@@ -102,8 +117,8 @@ func newOpenAIRetryBudget(cfg openAIRetryBudgetConfig, now func() time.Time) *op
 	if cfg.MaxAttempts <= 0 || cfg.MaxAttempts > 4 {
 		cfg.MaxAttempts = 4
 	}
-	if cfg.MaxAccountSwitches < 0 || cfg.MaxAccountSwitches > 3 {
-		cfg.MaxAccountSwitches = 3
+	if cfg.MaxAccountSwitches < 0 || cfg.MaxAccountSwitches > openAIMaxAccountSwitches {
+		cfg.MaxAccountSwitches = openAIMaxAccountSwitches
 	}
 	if cfg.MaxFailureDomains <= 0 || cfg.MaxFailureDomains > 2 {
 		cfg.MaxFailureDomains = 2

@@ -34,7 +34,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 
 	maxAccountSwitches := h.maxAccountSwitches
 	if maxAccountSwitches <= 0 {
-		maxAccountSwitches = 3
+		maxAccountSwitches = openAIMaxAccountSwitches
 	}
 	failedAccountIDs := make(map[int64]struct{})
 	switchCount := 0

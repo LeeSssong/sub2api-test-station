@@ -54,7 +54,7 @@ func classifyDeterministicUpstreamFailure(account *Account, statusCode int, resp
 		return DeterministicFailureDecision{}
 	}
 	if isDeterministicBalanceEvidence(code, text) {
-		return DeterministicFailureDecision{Classified: true, FailureClass: deterministicBalanceClass, Scope: deterministicAccountScope, EvidenceCode: firstNonEmptyDeterministic(code, "insufficient_balance"), RecoveryPolicy: deterministicExpiresPolicy}
+		return DeterministicFailureDecision{Classified: true, FailureClass: deterministicBalanceClass, Scope: deterministicAccountScope, EvidenceCode: firstNonEmptyDeterministic(code, "insufficient_balance"), RecoveryPolicy: deterministicProbePolicy}
 	}
 	if statusCode == 401 && (account.Type == AccountTypeAPIKey || isCredentialFailureCode(code, text)) {
 		return DeterministicFailureDecision{Classified: true, FailureClass: deterministicCredentialClass, Scope: deterministicAccountScope, EvidenceCode: firstNonEmptyDeterministic(code, "unauthorized"), RecoveryPolicy: deterministicProbePolicy}
@@ -115,11 +115,10 @@ func buildDeterministicFailureReason(decision DeterministicFailureDecision, mess
 }
 
 func deterministicBalanceIsolationDuration(cfg *config.Config) time.Duration {
-	minutes := 90
-	if cfg != nil && cfg.RateLimit.BalanceExhaustedIsolationMinutes >= 60 && cfg.RateLimit.BalanceExhaustedIsolationMinutes <= 120 {
-		minutes = cfg.RateLimit.BalanceExhaustedIsolationMinutes
-	}
-	return time.Duration(minutes) * time.Minute
+	// Balance exhaustion remains isolated until a successful billing probe. The
+	// persisted timestamp is intentionally far in the future; recovery clears it
+	// explicitly instead of allowing a wall-clock expiry to re-admit the account.
+	return 3650 * 24 * time.Hour
 }
 
 func firstNonEmptyDeterministic(values ...string) string {

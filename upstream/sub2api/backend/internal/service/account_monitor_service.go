@@ -100,12 +100,16 @@ type AccountMonitorService struct {
 	modelDetection      *AccountModelDetectionService
 	schedulerProjection OpenAIAccountSchedulerProjectionProvider
 	concurrencyService  *ConcurrencyService
+	runtimeBlocker      AccountRuntimeBlocker
 
 	probeConnection accountMonitorProbeConnection
 	probeTimeout    time.Duration
 
-	runStateMu sync.Mutex
-	activeRun  *accountMonitorRun
+	runStateMu          sync.Mutex
+	activeRun           *accountMonitorRun
+	probeRecoveryMu     sync.Mutex
+	apiKeyProbeFailures map[int64]int
+	apiKeyProbeNextAt   map[int64]time.Time
 }
 
 // SetModelDetectionService attaches the optional detector projection and
@@ -132,6 +136,14 @@ func (s *AccountMonitorService) SetAccountMonitorConcurrencyService(concurrency 
 	}
 }
 
+// SetAccountRuntimeBlocker lets a successful API-key recovery probe clear the
+// request-path fast-path block together with the persisted temporary isolation.
+func (s *AccountMonitorService) SetAccountRuntimeBlocker(blocker AccountRuntimeBlocker) {
+	if s != nil {
+		s.runtimeBlocker = blocker
+	}
+}
+
 type AccountMonitorAccountRepository interface {
 	ListAllWithFilters(
 		ctx context.Context,
@@ -152,13 +164,15 @@ func NewAccountMonitorService(
 	multiplier accountMonitorMultiplierResolver,
 ) *AccountMonitorService {
 	return &AccountMonitorService{
-		repo:         repo,
-		accountRepo:  accountRepo,
-		testService:  testService,
-		usage:        usage,
-		multiplier:   multiplier,
-		recommend:    EvaluateAccountMonitorGroupRecommendation,
-		probeTimeout: accountMonitorProbeTimeout,
+		repo:                repo,
+		accountRepo:         accountRepo,
+		testService:         testService,
+		usage:               usage,
+		multiplier:          multiplier,
+		recommend:           EvaluateAccountMonitorGroupRecommendation,
+		probeTimeout:        accountMonitorProbeTimeout,
+		apiKeyProbeFailures: make(map[int64]int),
+		apiKeyProbeNextAt:   make(map[int64]time.Time),
 	}
 }
 
@@ -1459,6 +1473,12 @@ func accountMonitorProbeShouldStop(account Account, latest AccountMonitorLatest)
 	if !accountMonitorAccountPaused(account, time.Now().UTC()) {
 		return false
 	}
+	// API-key 401 is a recoverable credential outage. Keep it in the monitor
+	// pool so the five-minute recovery probe can re-admit the account after a
+	// successful check instead of permanently suppressing all probes.
+	if account.Type == AccountTypeAPIKey && latest.HTTPStatus != nil && *latest.HTTPStatus == http.StatusUnauthorized {
+		return false
+	}
 	return accountMonitorHTTPFailure(latest)
 }
 
@@ -2087,11 +2107,15 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 		if accountMonitorProbeShouldStop(account, latest[account.ID]) {
 			continue
 		}
+		if s.shouldSkipAPIKeyRecoveryProbe(account, time.Now().UTC()) {
+			continue
+		}
 		g.Go(func() error {
 			result := s.probeAccount(gctx, account)
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
+			s.recordAPIKeyRecoveryProbe(gctx, account, result)
 			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
 				RefreshDeclaration: true, RefreshBalance: true,
 			})
@@ -2151,18 +2175,81 @@ func (s *AccountMonitorService) RunOne(
 		runErr = fmt.Errorf("account %d monitor probe stopped after closed-scheduling HTTP error", accountID)
 		return AccountMonitorProbeResult{}, runErr
 	}
+	if s.shouldSkipAPIKeyRecoveryProbe(*target, time.Now().UTC()) {
+		runErr = fmt.Errorf("account %d API-key recovery probe is not due", accountID)
+		return AccountMonitorProbeResult{}, runErr
+	}
 	result := s.probeAccount(ctx, *target)
 	if err := s.repo.InsertResult(ctx, result, uuid.NewString()); err != nil {
 		runErr = err
 		return AccountMonitorProbeResult{}, err
 	}
 	completed = 1
+	s.recordAPIKeyRecoveryProbe(ctx, *target, result)
 	s.refreshAuxiliary(ctx, target, AccountMonitorRefreshOptions{
 		RefreshDeclaration: true, RefreshBalance: true,
 	})
 	_ = s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorResultRetentionDays*24*time.Hour))
 	_ = actorID
 	return result, nil
+}
+
+type accountMonitorTempUnschedulableRecoveryRepository interface {
+	ClearTempUnschedulable(context.Context, int64) error
+}
+
+func (s *AccountMonitorService) shouldSkipAPIKeyRecoveryProbe(account Account, now time.Time) bool {
+	if s == nil || account.Type != AccountTypeAPIKey || account.TempUnschedulableUntil == nil {
+		return false
+	}
+	s.probeRecoveryMu.Lock()
+	defer s.probeRecoveryMu.Unlock()
+	if s.apiKeyProbeNextAt == nil {
+		s.apiKeyProbeNextAt = make(map[int64]time.Time)
+	}
+	next := s.apiKeyProbeNextAt[account.ID]
+	return !next.IsZero() && now.Before(next)
+}
+
+func (s *AccountMonitorService) recordAPIKeyRecoveryProbe(ctx context.Context, account Account, result AccountMonitorProbeResult) {
+	if s == nil || account.Type != AccountTypeAPIKey || account.TempUnschedulableUntil == nil {
+		return
+	}
+	now := result.CheckedAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	s.probeRecoveryMu.Lock()
+	if s.apiKeyProbeFailures == nil {
+		s.apiKeyProbeFailures = make(map[int64]int)
+	}
+	if s.apiKeyProbeNextAt == nil {
+		s.apiKeyProbeNextAt = make(map[int64]time.Time)
+	}
+	if strings.EqualFold(strings.TrimSpace(result.Status), "success") {
+		delete(s.apiKeyProbeFailures, account.ID)
+		delete(s.apiKeyProbeNextAt, account.ID)
+		s.probeRecoveryMu.Unlock()
+		if repo, ok := s.accountRepo.(accountMonitorTempUnschedulableRecoveryRepository); ok {
+			if err := repo.ClearTempUnschedulable(ctx, account.ID); err != nil {
+				slog.Warn("account_monitor.api_key_recovery_clear_temp_failed", "account_id", account.ID, "error", err)
+				return
+			}
+			if s.runtimeBlocker != nil {
+				s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
+			}
+			slog.Info("account_monitor.api_key_recovered", "account_id", account.ID)
+		}
+		return
+	}
+	failures := s.apiKeyProbeFailures[account.ID] + 1
+	s.apiKeyProbeFailures[account.ID] = failures
+	interval := 5 * time.Minute
+	if failures >= 3 {
+		interval = 15 * time.Minute
+	}
+	s.apiKeyProbeNextAt[account.ID] = now.Add(interval)
+	s.probeRecoveryMu.Unlock()
 }
 
 // ProbeOpenAIAccountModel performs one real account-test request for the

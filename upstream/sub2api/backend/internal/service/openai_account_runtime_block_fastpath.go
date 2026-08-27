@@ -363,6 +363,10 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedAtReadOnly(ac
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtReadOnly(account *Account, requestedModel string, now time.Time) bool {
+	return s.isOpenAIAccountModelRuntimeBlockedAtReadOnlyContext(context.Background(), account, requestedModel, now, false)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtReadOnlyContext(ctx context.Context, account *Account, requestedModel string, now time.Time, allowSharedRead bool) bool {
 	if s == nil || account == nil {
 		return false
 	}
@@ -374,7 +378,7 @@ func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtReadOnly(acco
 	if err != nil {
 		return false
 	}
-	snapshot, known := s.readOpenAISharedHealthSnapshotCached(key, now)
+	snapshot, known, _ := s.readOpenAISharedHealthSnapshot(ctx, key, now, allowSharedRead)
 	return known && openAISharedHealthSnapshotBlocks(snapshot)
 }
 

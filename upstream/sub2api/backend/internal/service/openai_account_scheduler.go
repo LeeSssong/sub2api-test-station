@@ -2691,6 +2691,13 @@ func (s *OpenAIGatewayService) getOpenAIAccountScheduler(ctx context.Context) Op
 	if !s.isOpenAIAdvancedSchedulerEnabled(ctx) {
 		return nil
 	}
+	return s.getOrCreateOpenAIAccountScheduler()
+}
+
+func (s *OpenAIGatewayService) getOrCreateOpenAIAccountScheduler() OpenAIAccountScheduler {
+	if s == nil {
+		return nil
+	}
 	s.openaiSchedulerOnce.Do(func() {
 		if s.openaiAccountStats == nil {
 			s.openaiAccountStats = newOpenAIAccountRuntimeStats()

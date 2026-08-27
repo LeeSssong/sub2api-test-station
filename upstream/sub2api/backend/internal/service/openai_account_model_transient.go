@@ -273,7 +273,16 @@ func (s *openAIAccountModelTransientState) isBlockedReadOnly(accountID int64, mo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry, exists := s.entries[key]
-	return exists && !entry.blockUntil.IsZero() && now.Before(entry.blockUntil)
+	if !exists {
+		return false
+	}
+	if !entry.lastFailure.IsZero() && now.Sub(entry.lastFailure) > openAIModelTransientStreakTTL && (entry.blockUntil.IsZero() || !now.Before(entry.blockUntil)) {
+		return false
+	}
+	// The live scheduler keeps an expired entry blocked until its half-open
+	// lease is acquired. Projection must mirror that eligibility state without
+	// acquiring or mutating the lease.
+	return !entry.blockUntil.IsZero()
 }
 
 func (s *openAIAccountModelTransientState) size() int {

@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+## 组合部署包（2026-08-27）
+
+- **组合候选 T80 + T81**：状态 `READY_FOR_ROOT_REVIEW`（已在根主线形成单一候选，等待主站明确授权）。根 `main@6722bfb01`，tree 以该提交为准；包含 T80 OpenAI 长请求调度准入韧性与 T81 管理员仅赠送额度充值。组合候选无迁移、无生产配置变化、无生产账务写入。T80 的 config/repository/service/handler 直接测试、`go build ./cmd/server`，以及 T81 的 `UserBalanceModal` 4/4、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；绑定证据待最终根文档提交后重生成。截图中的测试站邮箱配置、图片 URL 排障、服务质量日志排查均为无代码只读事项，不纳入包；图片故障涉及的退款候选 `usage_log_id=166983/167016` 未执行。主站发布仍只接受用户明确“测试站验收通过，部署主站”或“快速部署到主站”；授权前不得推送主站、切换流量、停机或执行生产账务操作。组合交接：`docs/handoffs/2026-08-27-combined-t80-t81-deployment-package.md`。
+
 ## 最新发布更新（2026-08-26）
 
 - **T80 OpenAI 长请求调度准入韧性**：状态 `INTEGRATING`（纳入用户要求的组合部署包）。用户基于 2026-08-27 GPT-Pro 账号 `286` 的高 TTFT 事故，已确认优先解决“第一批长请求尚未完成时，同一慢账号仍被连续准入”的风险。候选 `codex/t80-openai-scheduling-admission-resilience@27aa5e062` 已刷新到根 `main@f98a6b641`，worktree 干净；刷新后 config/repository/service/handler 直接相关测试、`go build ./cmd/server`、`gofmt`/`git diff --check` 均通过。实现仍为账号级跨模型/跨分组首输出前 admission lease、slow-session guard、首语义输出释放、失败/取消幂等清理、共享写入 context 隔离和脱敏可观测性；无迁移、生产配置或业务数据写入。将与 T81 在单一根候选中组合验证；T77/T79 的 VERIFYING 只读验收结论不被伪装成代码变更。

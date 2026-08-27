@@ -504,6 +504,32 @@ func TestLoadDefaultOpenAIFirstOutputTimeoutsDisabled(t *testing.T) {
 	require.Zero(t, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
 }
 
+func TestLoadDefaultOpenAISharedHealthAdmissionConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAISharedHealth.AdmissionEnabled)
+	require.Equal(t, 65536, cfg.Gateway.OpenAISharedHealth.LongRequestBodyThresholdBytes)
+	require.Equal(t, 2, cfg.Gateway.OpenAISharedHealth.MaxPreFirstOutputNormal)
+	require.Equal(t, 1, cfg.Gateway.OpenAISharedHealth.MaxPreFirstOutputLong)
+	require.Equal(t, 30, cfg.Gateway.OpenAISharedHealth.StalledBeforeFirstOutputSeconds)
+	require.Equal(t, 90, cfg.Gateway.OpenAISharedHealth.AdmissionLeaseTTLSeconds)
+	require.Equal(t, 25, cfg.Gateway.OpenAISharedHealth.AdmissionRenewSeconds)
+	require.Equal(t, 30000, cfg.Gateway.OpenAISharedHealth.SlowTTFTMS)
+	require.Equal(t, 600, cfg.Gateway.OpenAISharedHealth.SlowQualityCooldownSeconds)
+}
+
+func TestValidateOpenAISharedHealthAdmissionConfig(t *testing.T) {
+	cfg := DefaultGatewayOpenAISharedHealthConfig()
+	cfg.AdmissionRenewSeconds = cfg.AdmissionLeaseTTLSeconds
+	require.ErrorContains(t, cfg.Validate(), "admission_renew_seconds")
+
+	cfg = DefaultGatewayOpenAISharedHealthConfig()
+	cfg.LongRequestBodyThresholdBytes = 4095
+	require.ErrorContains(t, cfg.Validate(), "long_request_body_threshold_bytes")
+}
+
 func TestLoadOpenAIFirstOutputTimeoutsFromEnv(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("GATEWAY_OPENAI_FIRST_OUTPUT_TIMEOUT_SECONDS", "90")

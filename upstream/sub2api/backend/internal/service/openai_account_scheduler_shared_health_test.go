@@ -28,6 +28,13 @@ func newOpenAISharedHealthStoreStub() *openAISharedHealthStoreStub {
 	return &openAISharedHealthStoreStub{snapshots: make(map[string]OpenAISharedHealthSnapshot)}
 }
 
+func TestClassifyOpenAIAdmissionRequestShape(t *testing.T) {
+	require.Equal(t, OpenAIAdmissionShapeUnknown, ClassifyOpenAIAdmissionRequestShape(-1, 65536))
+	require.Equal(t, OpenAIAdmissionShapeUnknown, ClassifyOpenAIAdmissionRequestShape(0, 0))
+	require.Equal(t, OpenAIAdmissionShapeNormal, ClassifyOpenAIAdmissionRequestShape(65536, 65536))
+	require.Equal(t, OpenAIAdmissionShapeLong, ClassifyOpenAIAdmissionRequestShape(65537, 65536))
+}
+
 func sharedHealthStubKey(key OpenAISharedHealthKey) string {
 	return fmt.Sprintf("%d:%s", key.AccountID, key.HashedSuffix())
 }

@@ -27,6 +27,50 @@ type OpenAISharedHealthKey struct {
 	CanonicalModel string
 }
 
+type OpenAIAdmissionRequestShape string
+
+const (
+	OpenAIAdmissionShapeUnknown OpenAIAdmissionRequestShape = "unknown"
+	OpenAIAdmissionShapeNormal  OpenAIAdmissionRequestShape = "normal"
+	OpenAIAdmissionShapeLong    OpenAIAdmissionRequestShape = "long"
+)
+
+func ClassifyOpenAIAdmissionRequestShape(bodyBytes, thresholdBytes int) OpenAIAdmissionRequestShape {
+	if bodyBytes < 0 || thresholdBytes <= 0 {
+		return OpenAIAdmissionShapeUnknown
+	}
+	if bodyBytes > thresholdBytes {
+		return OpenAIAdmissionShapeLong
+	}
+	return OpenAIAdmissionShapeNormal
+}
+
+type OpenAISharedAdmissionRequest struct {
+	Key        OpenAISharedHealthKey
+	LeaseID    string
+	Shape      OpenAIAdmissionRequestShape
+	ObservedAt time.Time
+}
+
+type OpenAISharedAdmissionDecision struct {
+	Allowed        bool
+	Reason         string
+	ActiveNormal   int
+	ActiveLong     int
+	Stalled        bool
+	LeaseExpiresAt time.Time
+}
+
+type OpenAISharedRequestQualitySnapshot struct {
+	Key             OpenAISharedHealthKey
+	Shape           OpenAIAdmissionRequestShape
+	RealSampleCount int
+	EWMATTFT        time.Duration
+	LastTTFT        time.Duration
+	ObservedAt      time.Time
+	CooldownUntil   time.Time
+}
+
 func NewOpenAISharedHealthKey(accountID int64, model string) (OpenAISharedHealthKey, error) {
 	canonicalModel := strings.ToLower(strings.TrimSpace(model))
 	if accountID <= 0 {

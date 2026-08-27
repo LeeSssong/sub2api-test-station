@@ -749,10 +749,12 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 		groupWindows := map[int64]AccountMonitorWindowAggregate{}
 		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
 		groupWindowReadError := false
+		groupWindowResultAvailable := false
 		if hasGroupWindowProvider && len(members) > 0 {
 			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
 				if loaded != nil {
 					groupWindows = loaded
+					groupWindowResultAvailable = true
 				}
 			} else {
 				groupWindowReadError = true
@@ -784,9 +786,10 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			}
 			evidence := accountMonitorWindowEvidence(window, probe, latest[account.ID], settings, now)
 			if groupWindowReadError {
-				evidence = accountMonitorStaleQualityEvidence()
-			}
-			if !hasGroupWindowProvider && !evidence.Known {
+				evidence = accountMonitorUnknownQualityEvidence("read_error")
+			} else if !groupWindowResultAvailable {
+				evidence = accountMonitorUnknownQualityEvidence("missing")
+			} else if !hasGroupWindow {
 				evidence = accountMonitorStaleQualityEvidence()
 			}
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
@@ -1877,6 +1880,11 @@ func accountMonitorWindowEvidence(
 ) AccountMonitorQualityEvidence {
 	evidence := fuseAccountMonitorQualityEvidence(window, probe, latest, settings, now)
 	if window.RequestCount > 0 && probe.SampleCount == 0 && evidence.Known {
+		if accountMonitorWindowObservedAt(window).IsZero() {
+			evidence = accountMonitorUnknownQualityEvidence("missing")
+			evidence.ObservedAt = accountMonitorProbeObservedAt(probe, latest)
+			return evidence
+		}
 		return accountMonitorStaleQualityEvidenceAt(latestEvidenceTime(accountMonitorWindowObservedAt(window), accountMonitorProbeObservedAt(probe, latest)))
 	}
 	if !evidence.Known && evidence.Freshness == accountMonitorQualityFreshnessStale {

@@ -2,7 +2,7 @@
 
 ## 组合部署包（2026-08-27）
 
-- **组合候选 T80 + T81**：状态 `READY_FOR_ROOT_REVIEW`（已在根主线形成单一候选，等待主站明确授权）。根候选提交/tree 以工作区实时 `git rev-parse` 为准，并由最终绑定证据精确锁定；包含 T80 OpenAI 长请求调度准入韧性与 T81 管理员仅赠送额度充值。组合候选无迁移、无生产配置变化、无生产账务写入。T80 的 config/repository/service/handler 直接测试、`go build ./cmd/server`，以及 T81 的 `UserBalanceModal` 4/4、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；最终绑定证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-27-main-combined-t80-t81-final.json`（0600）。验收站发布交付契约测试已通过；宿主蓝绿测试已执行关键 fail-closed/预加载/停机门禁场景，完整宿主测试因本地长耗时未在 180 秒窗口结束，未宣称完整通过。截图中的测试站邮箱配置、图片 URL 排障、服务质量日志排查均为无代码只读事项，不纳入包；图片故障涉及的退款候选 `usage_log_id=166983/167016` 未执行。主站发布仍只接受用户明确“测试站验收通过，部署主站”或“快速部署到主站”；授权前不得推送主站、切换流量、停机或执行生产账务操作。组合交接：`docs/handoffs/2026-08-27-combined-t80-t81-deployment-package.md`。
+- **组合候选 T80 + T81**：状态 `VERIFYING`（验收站已部署，等待管理员真实功能验收与主站明确授权）。验收站运行提交/tree 为 `be4b8de4a0f15c55b96bb6d5e06e606d82cab89a` / `3dac2acb173f819af29b0d67223eff60bf5244d4`，镜像归档 SHA-256 为 `7c6d4e7ab40988ecd625fd092410964dedc3ce82364c54a4bb23fcf2660b5bbd`；包含 T80 OpenAI 长请求调度准入韧性与 T81 管理员仅赠送额度充值。组合候选无迁移、无生产配置变化、无生产账务写入。T80 的 config/repository/service/handler 直接测试、`go build ./cmd/server`，以及 T81 的 `UserBalanceModal` 4/4、`pnpm typecheck`、`pnpm build`、`git diff --check` 均通过；最终绑定证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-27-main-combined-t80-t81-final.json`（0600）。验收站固定入口健康、登录页、管理员登录、系统版本和管理员用户列表只读核对均通过；T81 真实充值账务写入未自动执行。验收站发布交付契约测试已通过；宿主蓝绿测试已执行关键 fail-closed/预加载/停机门禁场景，完整宿主测试因本地长耗时未在 180 秒窗口结束，未宣称完整通过。截图中的测试站邮箱配置、图片 URL 排障、服务质量日志排查均为无代码只读事项，不纳入包；图片故障涉及的退款候选 `usage_log_id=166983/167016` 未执行。主站发布仍只接受用户明确“测试站验收通过，部署主站”或“快速部署到主站”；授权前不得推送主站、切换流量、停机或执行生产账务操作。组合交接：`docs/handoffs/2026-08-27-combined-t80-t81-deployment-package.md`。
 
 ## 最新发布更新（2026-08-26）
 

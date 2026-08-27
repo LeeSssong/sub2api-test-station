@@ -12,18 +12,19 @@ import (
 )
 
 type openAISharedHealthStoreStub struct {
-	mu            sync.Mutex
-	snapshots     map[string]OpenAISharedHealthSnapshot
-	getErr        error
-	recordErr     error
-	lease         OpenAISharedHalfOpenLease
-	leaseHeld     bool
-	nextFence     int64
-	recordCalls   int
-	completeCalls int
-	lastEvent     OpenAISharedHealthEvent
-	admissions    map[string]OpenAISharedAdmissionRequest
-	quality       map[string]OpenAISharedRequestQualitySnapshot
+	mu               sync.Mutex
+	snapshots        map[string]OpenAISharedHealthSnapshot
+	getErr           error
+	recordErr        error
+	lease            OpenAISharedHalfOpenLease
+	leaseHeld        bool
+	nextFence        int64
+	recordCalls      int
+	completeCalls    int
+	lastEvent        OpenAISharedHealthEvent
+	admissions       map[string]OpenAISharedAdmissionRequest
+	quality          map[string]OpenAISharedRequestQualitySnapshot
+	recordContextErr error
 }
 
 func newOpenAISharedHealthStoreStub() *openAISharedHealthStoreStub {
@@ -58,11 +59,12 @@ func (s *openAISharedHealthStoreStub) GetAccountModel(_ context.Context, key Ope
 	return snapshot, nil
 }
 
-func (s *openAISharedHealthStoreStub) RecordAttempt(_ context.Context, event OpenAISharedHealthEvent) (OpenAISharedHealthSnapshot, error) {
+func (s *openAISharedHealthStoreStub) RecordAttempt(ctx context.Context, event OpenAISharedHealthEvent) (OpenAISharedHealthSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.recordCalls++
 	s.lastEvent = event
+	s.recordContextErr = ctx.Err()
 	if s.recordErr != nil {
 		return OpenAISharedHealthSnapshot{Key: event.Key, State: OpenAISharedHealthStateUnknown}, s.recordErr
 	}
@@ -316,6 +318,21 @@ func TestOpenAIAccountModelTransientSharedSuccessWriteFailureStillClearsLocalSta
 
 	require.False(t, svc.openaiModelTransient.isBlocked(153, "gpt-5.6-sol", now.Add(time.Second)))
 	require.Equal(t, 1, store.recordCalls)
+}
+
+func TestOpenAISharedHealthRecordWritesIgnoreCanceledRequestContext(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	svc.SetOpenAISharedHealthStore(store)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	svc.RecordOpenAIAccountModelSuccess(ctx, OpenAIAccountModelSuccessEvent{
+		EventID: "cancelled-request-success", AccountID: 153, CanonicalModel: "gpt-5.6-sol", Now: time.Now().UTC(),
+	})
+
+	require.Equal(t, 1, store.recordCalls)
+	require.NoError(t, store.recordContextErr)
 }
 
 func TestOpenAISharedHealthStaleFallbackMarksRequestDegraded(t *testing.T) {

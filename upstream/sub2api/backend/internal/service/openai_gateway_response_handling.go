@@ -307,6 +307,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			firstOutputScanGuard.Store(false)
 			firstOutputProgressObserved = true
 			stopFirstOutputTimer()
+			notifyOpenAIFirstSemanticOutput(ctx)
 		}
 		if completedVisibleEvent && firstTokenMs == nil {
 			ms := int(time.Since(startTime).Milliseconds())
@@ -629,6 +630,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 				stopFirstOutputTimer()
+				notifyOpenAIFirstSemanticOutput(ctx)
 			}
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return

@@ -8,6 +8,8 @@
 
 **本轮全部未部署任务验收站发布（2026-08-27）：** T69 已合入并推送 `main@1b6c6e1d5f73eb0df58c02d1738bbd631b0527a9`，验收站首轮发布成功；随后 T76 刷新并合入，最终根 `main@1eed79a547a4276127beace8024869dbf0137255` 已推送并再次部署验收站成功。最终验收站运行 tree `ede8d8e49baf2609447944925761e9cf79d50e6c`，镜像归档 SHA-256 `230dbb772381f4d40eda33d40d6857b8a8d2cd3a9afc0de614d439531852ebb0`；`/admin/lab/health` 返回 `{"status":"ok"}`、登录页 HTTP 200，API/worker/detector/PostgreSQL/Redis/Caddy 全部 healthy。T69、T76、T80、T81 当前均进入 `VERIFYING`，等待管理员人工功能验收；主站未部署。
 
+**状态纠偏（2026-08-27）：** 以上验收站发布记录是当前事实源，覆盖本文件较早的过程快照：T69、T76 已不再是 `READY_FOR_ROOT_REVIEW`，T81 已不再是“尚未推送/部署”，三者均随最终 `main@1eed79a54` 进入验收站 `VERIFYING`；主站仍未部署。
+
 **最新发布更新（2026-08-26）：** T72 已完成生产发布：根 `main@37d7467ba1e0ef987d718e44fa1abc181602990e`、tree `4fedefae5f5ef02990a25d06441b22552499a36f`，宿主记录 `/var/lib/sub2api/release-records/20260826T093251Z-production-2173135.json` 返回 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`；公网 `/healthz`/`/readyz`/`/health` 均 HTTP 200。兑换码 `eb1bc00840de1b7ff6d3c66d7ea1f648` 保持 `id=44/status=unused`，`redeem_credit` 账本 0 条，未为任意用户执行实际兑换；T71 已冻结为只读证据。
 
 **T81 管理员仅赠送额度充值（2026-08-27）：** 状态：已纳入上方组合候选。运营反馈管理员充值弹窗无法只赠送额度；当前实现已允许现金金额或赠送额度任一大于零即可提交，退款仍要求现金金额大于零，双零继续由前后端拒绝。直接相关 `UserBalanceModal` 测试 4/4、`pnpm typecheck`、生产构建和 `git diff --check` 已在组合根主线上重新通过。无迁移、配置或账务事实源变化；尚未推送、部署或触碰生产，统一由组合部署包交接。

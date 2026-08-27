@@ -231,7 +231,7 @@
 			@acceptance_lab_root path /admin/lab
 			redir @acceptance_lab_root /admin/lab/ 308
 
-			reverse_proxy {$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181} {
+			reverse_proxy {$ACCEPTANCE_LAB_UPSTREAM:172.18.0.1:8181} {
 				header_up X-Forwarded-Proto {http.request.proto}
 			}
 		}

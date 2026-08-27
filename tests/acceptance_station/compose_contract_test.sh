@@ -54,7 +54,7 @@ grep -Fq '@acceptance_lab_root path /admin/lab' "$production_caddy_file" \
   || fail 'production caddy must own the acceptance root redirect'
 grep -Fq '@acceptance_lab path /admin/lab /admin/lab/*' "$production_caddy_file" \
   || fail 'production caddy must proxy only the acceptance prefix'
-grep -Fq '{$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181}' "$production_caddy_file" \
+grep -Fq '{$ACCEPTANCE_LAB_UPSTREAM:172.18.0.1:8181}' "$production_caddy_file" \
   || fail 'production caddy must proxy acceptance through the loopback upstream'
 grep -Fq 'remote_ip 173.245.48.0/20' "$production_caddy_file" \
   || fail 'production caddy must trust Cloudflare source ranges for acceptance'

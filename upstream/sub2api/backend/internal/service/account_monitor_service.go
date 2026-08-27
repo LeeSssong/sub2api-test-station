@@ -741,11 +741,14 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 		}
 		groupWindows := map[int64]AccountMonitorWindowAggregate{}
 		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
+		groupWindowReadError := false
 		if hasGroupWindowProvider && len(members) > 0 {
 			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
 				if loaded != nil {
 					groupWindows = loaded
 				}
+			} else {
+				groupWindowReadError = true
 			}
 		}
 		groupProbes := probes
@@ -765,14 +768,15 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			if !ok {
 				continue
 			}
-			window, hasGroupWindow := groupWindows[account.ID]
+			window := groupWindows[account.ID]
 			probe := AccountMonitorAggregate{}
 			historicalProbe := AccountMonitorAggregate{}
-			if hasGroupWindow {
-				probe = groupProbes[account.ID]
-				historicalProbe = groupHistoricalProbes[account.ID]
-			}
+			probe = groupProbes[account.ID]
+			historicalProbe = groupHistoricalProbes[account.ID]
 			evidence := accountMonitorWindowEvidence(window, probe, latest[account.ID], settings, now)
+			if groupWindowReadError {
+				evidence = accountMonitorUnknownQualityEvidence("read_error")
+			}
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
 			// The embedded base row carries the full-site projection. Clear its
 			// ranking fields before applying this group's evidence so a valid
@@ -1601,7 +1605,7 @@ func accountMonitorScoreBreakdown(
 	weights AccountMonitorScoreWeights,
 	evidence AccountMonitorQualityEvidence,
 ) (AccountMonitorScoreBreakdown, *float64) {
-	if groupMultiplier <= 0 || evidence.Source == "stale" {
+	if groupMultiplier <= 0 || !evidence.Known {
 		return AccountMonitorScoreBreakdown{}, nil
 	}
 	clamp01 := func(value float64) float64 {
@@ -1796,74 +1800,19 @@ func accountMonitorWindowEvidence(
 	settings AccountMonitorSettings,
 	now time.Time,
 ) AccountMonitorQualityEvidence {
-	realSamples := window.RequestCount
-	if realSamples < 0 {
-		realSamples = 0
-	}
-	realSuccesses := window.SuccessCount
-	if realSuccesses < 0 {
-		realSuccesses = 0
-	}
-	if realSuccesses > realSamples {
-		realSuccesses = realSamples
-	}
-	probeSamples := probe.SampleCount
-	if probeSamples < 0 {
-		probeSamples = 0
-	}
-	probeSuccesses := probe.SuccessSampleCount
-	if probeSuccesses < 0 {
-		probeSuccesses = 0
-	}
-	if probeSuccesses > probeSamples {
-		probeSuccesses = probeSamples
-	}
-	sampleCount := int(realSamples) + probeSamples
-	successSampleCount := int(realSuccesses) + probeSuccesses
-	observedAt := accountMonitorProbeObservedAt(probe, latest)
-	if window.LastObservedAt != nil && (observedAt.IsZero() || window.LastObservedAt.After(observedAt)) {
-		observedAt = window.LastObservedAt.UTC()
-	}
-	if probeSamples == 0 || sampleCount == 0 {
-		return AccountMonitorQualityEvidence{Source: "stale", ObservedAt: observedAt}
-	}
-	source := "monitor_probe"
-	if realSamples > 0 && probeSamples > 0 {
-		source = "hybrid"
-	}
-	evidence := AccountMonitorQualityEvidence{
-		Source: source, SampleCount: sampleCount, SuccessSampleCount: successSampleCount,
-		TTFTSampleCount: window.TTFTSampleCount, LatencySampleCount: window.LatencySampleCount,
-		SuccessRate: float64(successSampleCount) / float64(sampleCount), ObservedAt: observedAt,
-	}
-	if evidence.TTFTSampleCount == 0 {
-		evidence.TTFTSampleCount = probe.TTFTSampleCount
-		evidence.TTFTP50MS = probe.TTFTP50MS
-	} else {
-		evidence.TTFTP50MS = window.TTFTP50MS
-	}
-	if evidence.LatencySampleCount == 0 {
-		evidence.LatencySampleCount = probe.LatencySampleCount
-		evidence.LatencyP95MS = probe.LatencyP95MS
-	} else {
-		evidence.LatencyP95MS = window.LatencyP95MS
-	}
-	if observedAt.IsZero() || now.Sub(observedAt) > time.Duration(settings.IntervalSeconds*2)*time.Second {
-		evidence.Source = "stale"
-	}
-	return evidence
+	return fuseAccountMonitorQualityEvidence(window, probe, latest, settings, now)
 }
 
 func accountMonitorHistoricalEvidence(aggregate AccountMonitorAggregate) AccountMonitorQualityEvidence {
 	if aggregate.SampleCount <= 0 || aggregate.SuccessSampleCount <= 0 {
-		return AccountMonitorQualityEvidence{Source: "historical_final"}
+		return AccountMonitorQualityEvidence{Source: "historical_final", Freshness: accountMonitorQualityFreshnessUnknown}
 	}
 	observedAt := time.Time{}
 	if aggregate.LastCheckedAt != nil {
 		observedAt = aggregate.LastCheckedAt.UTC()
 	}
 	return AccountMonitorQualityEvidence{
-		Source: "historical_final", SampleCount: aggregate.SampleCount,
+		Source: "historical_final", Known: true, Freshness: accountMonitorQualityFreshnessFresh, SampleCount: aggregate.SampleCount,
 		SuccessSampleCount: aggregate.SuccessSampleCount, TTFTSampleCount: aggregate.TTFTSampleCount,
 		LatencySampleCount: aggregate.LatencySampleCount, SuccessRate: aggregate.SuccessRate,
 		TTFTP50MS: aggregate.TTFTP50MS, LatencyP95MS: aggregate.LatencyP95MS, ObservedAt: observedAt,
@@ -1875,22 +1824,14 @@ func accountMonitorWindowScoreProjection(
 	currentScoreStatus string,
 	evidence AccountMonitorQualityEvidence,
 ) (AccountMonitorQualityEvidence, string, bool) {
-	if evidence.SampleCount <= 0 || evidence.SuccessSampleCount <= 0 {
+	if !evidence.Known || evidence.SampleCount <= 0 || evidence.SuccessSampleCount <= 0 {
 		return evidence, accountMonitorScoreIneligible, false
 	}
 	if currentScoreStatus == accountMonitorScoreEligible || currentScoreStatus == accountMonitorScoreCapped {
-		if evidence.Source == "stale" {
-			// Preserve the existing retained-score contract for a stale probe
-			// window while keeping fresh hybrid evidence explicitly labeled.
-			evidence.Source = "monitor_probe"
-		}
 		return evidence, currentScoreStatus, true
 	}
 	if !account.IsSchedulable() {
 		return evidence, accountMonitorScoreIneligible, false
-	}
-	if evidence.Source == "stale" {
-		evidence.Source = "monitor_probe"
 	}
 	return evidence, accountMonitorScoreEligible, true
 }

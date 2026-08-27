@@ -245,6 +245,7 @@ type openAIAccountRuntimeStat struct {
 	errorRateEWMABits atomic.Uint64
 	ttftEWMABits      atomic.Uint64
 	sampleCount       atomic.Int64
+	lastReportAt      atomic.Int64
 	qualityMu         sync.Mutex
 	qualityState      openAIQualityGateState
 }
@@ -302,6 +303,7 @@ func (s *openAIAccountRuntimeStats) reportForGroup(groupID, accountID int64, suc
 	const alpha = 0.2
 	stat := s.loadOrCreateForGroup(groupID, accountID)
 	stat.sampleCount.Add(1)
+	stat.lastReportAt.Store(time.Now().UTC().UnixNano())
 
 	errorSample := 1.0
 	if success {
@@ -381,6 +383,25 @@ func (s *openAIAccountRuntimeStats) qualityGateEvidence(groupID, accountID int64
 		ErrorRate:   errorRate,
 		TTFTMs:      ttft,
 		HasTTFT:     hasTTFT,
+		Fused: func() *AccountMonitorQualityEvidence {
+			observedAt := time.Unix(0, stat.lastReportAt.Load()).UTC()
+			known := stat.sampleCount.Load() > 0 && !observedAt.IsZero()
+			evidence := AccountMonitorQualityEvidence{
+				Source: accountMonitorQualitySourceReal, Known: known,
+				Freshness:          accountMonitorQualityFreshnessFresh,
+				RealRequestSamples: int(stat.sampleCount.Load()), RealRequestWeight: 1,
+				SampleCount: int(stat.sampleCount.Load()), SuccessRate: 1 - errorRate,
+				ObservedAt: observedAt,
+			}
+			if !known {
+				evidence = accountMonitorUnknownQualityEvidence("missing")
+			}
+			if hasTTFT {
+				evidence.TTFTSampleCount = 1
+				evidence.TTFTP50MS = &ttft
+			}
+			return &evidence
+		}(),
 	}, true
 }
 

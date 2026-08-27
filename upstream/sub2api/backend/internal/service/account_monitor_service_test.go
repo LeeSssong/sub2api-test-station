@@ -2537,6 +2537,90 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	}
 }
 
+func TestFuseAccountMonitorQualityEvidenceUsesExplicitSourceWeightsAndUnknownSemantics(t *testing.T) {
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	settings := AccountMonitorSettings{IntervalSeconds: 300}
+	probeAt := now.Add(-time.Minute)
+	staleAt := now.Add(-20 * time.Minute)
+
+	tests := []struct {
+		name        string
+		real        AccountMonitorWindowAggregate
+		probe       AccountMonitorAggregate
+		wantSource  string
+		wantFresh   string
+		wantSamples int
+		wantRealWt  float64
+		wantProbeWt float64
+		wantKnown   bool
+		wantReason  string
+	}{
+		{
+			name:       "real only",
+			real:       AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 4, LastObservedAt: &probeAt},
+			wantSource: "real_request", wantFresh: "fresh", wantSamples: 5, wantRealWt: 1, wantKnown: true,
+		},
+		{
+			name:       "probe only",
+			probe:      AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 3, LastCheckedAt: &probeAt},
+			wantSource: "monitor_probe", wantFresh: "fresh", wantSamples: 4, wantProbeWt: 1, wantKnown: true,
+		},
+		{
+			name:       "real dominates after threshold",
+			real:       AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 5, LastObservedAt: &probeAt},
+			probe:      AccountMonitorAggregate{SampleCount: 20, SuccessSampleCount: 0, LastCheckedAt: &probeAt},
+			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 25, wantRealWt: .75, wantProbeWt: .25, wantKnown: true,
+		},
+		{
+			name:       "probe supplements sparse real traffic",
+			real:       AccountMonitorWindowAggregate{RequestCount: 1, SuccessCount: 1, LastObservedAt: &probeAt},
+			probe:      AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 0, LastCheckedAt: &probeAt},
+			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 5, wantRealWt: .5, wantProbeWt: .5, wantKnown: true,
+		},
+		{
+			name:       "stale evidence is unknown",
+			real:       AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 5, LastObservedAt: &staleAt},
+			wantSource: "unknown", wantFresh: "stale", wantSamples: 0, wantKnown: false, wantReason: "stale",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fuseAccountMonitorQualityEvidence(tt.real, tt.probe, AccountMonitorLatest{}, settings, now)
+			if got.Source != tt.wantSource || got.Freshness != tt.wantFresh || got.SampleCount != tt.wantSamples || got.Known != tt.wantKnown || got.UnknownReason != tt.wantReason {
+				t.Fatalf("evidence = %#v", got)
+			}
+			if got.RealRequestWeight != tt.wantRealWt || got.ProbeWeight != tt.wantProbeWt {
+				t.Fatalf("weights = %v/%v, want %v/%v", got.RealRequestWeight, got.ProbeWeight, tt.wantRealWt, tt.wantProbeWt)
+			}
+		})
+	}
+}
+
+func TestAccountMonitorQualityEvidenceReadErrorIsUnknown(t *testing.T) {
+	evidence := accountMonitorUnknownQualityEvidence("read_error")
+	if evidence.Known || evidence.Source != "unknown" || evidence.Freshness != "unknown" || evidence.UnknownReason != "read_error" {
+		t.Fatalf("read error evidence = %#v", evidence)
+	}
+}
+
+func TestAccountMonitorQualityEvidenceDoesNotIntroduceModelDimension(t *testing.T) {
+	evidence := fuseAccountMonitorQualityEvidence(
+		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 3},
+		AccountMonitorAggregate{},
+		AccountMonitorLatest{},
+		AccountMonitorSettings{IntervalSeconds: 300},
+		time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC),
+	)
+	body, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "model_id") || strings.Contains(string(body), "model") {
+		t.Fatalf("quality evidence unexpectedly has model dimension: %s", body)
+	}
+}
+
 func TestAccountMonitorWindowStateIgnoresRealRequestsAndUsesProbeTime(t *testing.T) {
 	now := time.Now().UTC()
 	observedAt := now.Add(-5 * time.Minute)

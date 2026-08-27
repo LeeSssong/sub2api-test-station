@@ -125,6 +125,9 @@ func (s *accountMonitorRepoStub) ListGroupWindowAggregates(_ context.Context, gr
 		return nil, nil
 	}
 	if s.groupWindowAggregates == nil {
+		if s.windowAggregates == nil {
+			return map[int64]AccountMonitorWindowAggregate{}, nil
+		}
 		return s.windowAggregates, nil
 	}
 	return s.groupWindowAggregates[groupID], nil
@@ -2573,7 +2576,7 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	}
 }
 
-func TestFuseAccountMonitorQualityEvidenceUsesExplicitSourceWeightsAndUnknownSemantics(t *testing.T) {
+func TestFuseAccountMonitorQualityEvidenceUsesSampleProportionalWeightsAndUnknownSemantics(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	settings := AccountMonitorSettings{IntervalSeconds: 300}
 	probeAt := now.Add(-time.Minute)
@@ -2588,30 +2591,31 @@ func TestFuseAccountMonitorQualityEvidenceUsesExplicitSourceWeightsAndUnknownSem
 		wantSamples int
 		wantRealWt  float64
 		wantProbeWt float64
+		wantRate    float64
 		wantKnown   bool
 		wantReason  string
 	}{
 		{
 			name:       "real only",
 			real:       AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 4, LastObservedAt: &probeAt},
-			wantSource: "real_request", wantFresh: "fresh", wantSamples: 5, wantRealWt: 1, wantKnown: true,
+			wantSource: "real_request", wantFresh: "fresh", wantSamples: 5, wantRealWt: 1, wantRate: .8, wantKnown: true,
 		},
 		{
 			name:       "probe only",
 			probe:      AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 3, LastCheckedAt: &probeAt},
-			wantSource: "monitor_probe", wantFresh: "fresh", wantSamples: 4, wantProbeWt: 1, wantKnown: true,
+			wantSource: "monitor_probe", wantFresh: "fresh", wantSamples: 4, wantProbeWt: 1, wantRate: .75, wantKnown: true,
 		},
 		{
 			name:       "real dominates after threshold",
 			real:       AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 5, LastObservedAt: &probeAt},
 			probe:      AccountMonitorAggregate{SampleCount: 20, SuccessSampleCount: 0, LastCheckedAt: &probeAt},
-			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 25, wantRealWt: .75, wantProbeWt: .25, wantKnown: true,
+			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 25, wantRealWt: .2, wantProbeWt: .8, wantRate: .2, wantKnown: true,
 		},
 		{
 			name:       "probe supplements sparse real traffic",
 			real:       AccountMonitorWindowAggregate{RequestCount: 1, SuccessCount: 1, LastObservedAt: &probeAt},
 			probe:      AccountMonitorAggregate{SampleCount: 4, SuccessSampleCount: 0, LastCheckedAt: &probeAt},
-			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 5, wantRealWt: .5, wantProbeWt: .5, wantKnown: true,
+			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 5, wantRealWt: .2, wantProbeWt: .8, wantRate: .2, wantKnown: true,
 		},
 		{
 			name:       "stale evidence is unknown",
@@ -2628,6 +2632,9 @@ func TestFuseAccountMonitorQualityEvidenceUsesExplicitSourceWeightsAndUnknownSem
 			}
 			if got.RealRequestWeight != tt.wantRealWt || got.ProbeWeight != tt.wantProbeWt {
 				t.Fatalf("weights = %v/%v, want %v/%v", got.RealRequestWeight, got.ProbeWeight, tt.wantRealWt, tt.wantProbeWt)
+			}
+			if got.SuccessRate != tt.wantRate {
+				t.Fatalf("success rate = %v, want %v", got.SuccessRate, tt.wantRate)
 			}
 		})
 	}

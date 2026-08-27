@@ -10,8 +10,6 @@ const (
 	accountMonitorQualitySourceProbe      = "monitor_probe"
 	accountMonitorQualitySourceHybrid     = "hybrid"
 	accountMonitorQualitySourceUnknown    = "unknown"
-	accountMonitorQualityRealWeight       = 0.75
-	accountMonitorQualityProbeWeight      = 0.25
 )
 
 // fuseAccountMonitorQualityEvidence keeps persisted request aggregates and
@@ -34,7 +32,10 @@ func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
-	realFresh := realSamples > 0 && isAccountMonitorEvidenceFresh(realAt, now, ttl)
+	// Legacy window aggregate adapters do not always carry MAX(created_at).
+	// Their rows are still scoped to the requested current window, but the
+	// absence of a timestamp must not be exposed as an invented observation.
+	realFresh := realSamples > 0 && (realAt.IsZero() || isAccountMonitorEvidenceFresh(realAt, now, ttl))
 	probeFresh := probeSamples > 0 && isAccountMonitorEvidenceFresh(probeAt, now, ttl)
 	if !realFresh && !probeFresh {
 		reason := "missing"
@@ -58,23 +59,16 @@ func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe
 	switch {
 	case realFresh && probeFresh:
 		evidence.Source = accountMonitorQualitySourceHybrid
-		if realSamples >= AccountMonitorGroupEvidenceMinSamples {
-			evidence.RealRequestWeight = accountMonitorQualityRealWeight
-			evidence.ProbeWeight = accountMonitorQualityProbeWeight
-		} else {
-			evidence.RealRequestWeight = 0.5
-			evidence.ProbeWeight = 0.5
-		}
 	case realFresh:
 		evidence.Source = accountMonitorQualitySourceReal
-		evidence.RealRequestWeight = 1
 	case probeFresh:
 		evidence.Source = accountMonitorQualitySourceProbe
-		evidence.ProbeWeight = 1
 	}
-	realRate := float64(realSuccesses) / float64(maxInt64(realSamples, 1))
-	probeRate := float64(probeSuccesses) / float64(maxNonZeroInt(probeSamples, 1))
-	evidence.SuccessRate = evidence.RealRequestWeight*realRate + evidence.ProbeWeight*probeRate
+	if evidence.SampleCount > 0 {
+		evidence.RealRequestWeight = float64(evidence.RealRequestSamples) / float64(evidence.SampleCount)
+		evidence.ProbeWeight = float64(evidence.ProbeSamples) / float64(evidence.SampleCount)
+		evidence.SuccessRate = float64(evidence.SuccessSampleCount) / float64(evidence.SampleCount)
+	}
 	if realFresh && real.TTFTSampleCount > 0 && real.TTFTP50MS != nil {
 		evidence.TTFTSampleCount = real.TTFTSampleCount
 		evidence.TTFTP50MS = real.TTFTP50MS

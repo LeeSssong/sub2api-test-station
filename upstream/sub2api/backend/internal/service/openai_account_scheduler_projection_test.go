@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,6 +94,44 @@ func TestOpenAIAccountSchedulerProjectionAppliesGrokFreeQuotaSoftGateAndMarksMod
 
 	require.NoError(t, err)
 	require.Equal(t, "unknown", projection.ModelQuotaParity)
+	candidate := projectionCandidateByID(projection.Candidates, free.ID)
+	require.False(t, candidate.Eligible)
+	require.Equal(t, AccountMonitorReasonNotEligible, candidate.PrimaryReasonCode)
+}
+
+type projectionUsageLogRepoStub struct {
+	UsageLogRepository
+}
+
+func (*projectionUsageLogRepoStub) GetAccountWindowStats(context.Context, int64, time.Time) (*usagestats.AccountStats, error) {
+	return &usagestats.AccountStats{}, nil
+}
+
+func TestOpenAIGatewayServiceProjectionReusesLiveSchedulerGrokFreeQuotaCache(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+	now := time.Now().UTC()
+	free := projectionTestAccount(104)
+	free.Platform = PlatformGrok
+	free.Type = AccountTypeOAuth
+	free.Credentials = map[string]any{"subscription_tier": "free"}
+	service := &OpenAIGatewayService{
+		cfg:              projectionGrokFreeQuotaTestConfig(),
+		usageLogRepo:     &projectionUsageLogRepoStub{},
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+	liveScheduler, ok := service.getOpenAIAccountScheduler(context.Background()).(*defaultOpenAIAccountScheduler)
+	require.True(t, ok)
+	liveScheduler.grokFreeQuotaGateCache.Store(free.ID, grokFreeQuotaGateCacheEntry{
+		tokens: 480_000, checkedAt: now, known: true,
+	})
+
+	projection, err := service.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformGrok, SnapshotAt: now, Accounts: []*Account{free},
+		LoadMap: map[int64]*AccountLoadInfo{free.ID: {AccountID: free.ID}},
+	})
+
+	require.NoError(t, err)
 	candidate := projectionCandidateByID(projection.Candidates, free.ID)
 	require.False(t, candidate.Eligible)
 	require.Equal(t, AccountMonitorReasonNotEligible, candidate.PrimaryReasonCode)
@@ -349,6 +388,114 @@ func TestOpenAIAccountSchedulerProjection_DoesNotLabelMatchingQualityOrderAsStra
 	require.NoError(t, err)
 	require.Equal(t, []int64{93, 94}, projectionAccountIDs(projection.Candidates))
 	require.NotEqual(t, AccountMonitorReasonStrategy, projection.Candidates[0].PrimaryReasonCode)
+}
+
+func TestOpenAIAccountSchedulerProjection_ReadOnlyModelCooldownKeepsHalfOpenPendingButIgnoresStaleEntry(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	model := "gpt-5.4-mini"
+	pending := projectionTestAccount(105)
+	stale := projectionTestAccount(106)
+	state := newOpenAIAccountModelTransientState(16)
+	state.entries[openAIAccountModelKey{AccountID: pending.ID, Model: model}] = openAIAccountModelTransientEntry{
+		lastFailure: now.Add(-time.Minute), blockUntil: now.Add(-time.Second), lastTouched: now.Add(-time.Minute),
+	}
+	state.entries[openAIAccountModelKey{AccountID: stale.ID, Model: model}] = openAIAccountModelTransientEntry{
+		lastFailure: now.Add(-openAIModelTransientStreakTTL - time.Minute), blockUntil: now.Add(-time.Second), lastTouched: now.Add(-openAIModelTransientStreakTTL - time.Minute),
+	}
+	scheduler.service.openaiModelTransient = state
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequestedModel: model, SnapshotAt: now,
+		Accounts: []*Account{pending, stale},
+		LoadMap: map[int64]*AccountLoadInfo{
+			pending.ID: {AccountID: pending.ID},
+			stale.ID:   {AccountID: stale.ID},
+		},
+	})
+
+	require.NoError(t, err)
+	require.False(t, projectionCandidateByID(projection.Candidates, pending.ID).Eligible)
+	require.Equal(t, AccountMonitorReasonCooldown, projectionCandidateByID(projection.Candidates, pending.ID).PrimaryReasonCode)
+	require.True(t, projectionCandidateByID(projection.Candidates, stale.ID).Eligible)
+	require.Len(t, state.entries, 2, "projection must not acquire a half-open lease or mutate transient state")
+}
+
+func TestOpenAIAccountSchedulerProjection_ReadsSharedHealthCooldownWithoutHealthWrites(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	account := projectionTestAccount(107)
+	store := newOpenAISharedHealthStoreStub()
+	key, err := NewOpenAISharedHealthKey(account.ID, "gpt-5.4-mini")
+	require.NoError(t, err)
+	store.snapshots[sharedHealthStubKey(key)] = OpenAISharedHealthSnapshot{
+		SchemaVersion: 1, Key: key, State: OpenAISharedHealthStateCooldown,
+		CooldownUntil: now.Add(time.Minute), ObservedAt: now,
+	}
+	scheduler.service.SetOpenAISharedHealthStore(store)
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequestedModel: key.CanonicalModel, SnapshotAt: now,
+		Accounts: []*Account{account}, LoadMap: map[int64]*AccountLoadInfo{account.ID: {AccountID: account.ID}},
+	})
+
+	require.NoError(t, err)
+	candidate := projectionCandidateByID(projection.Candidates, account.ID)
+	require.False(t, candidate.Eligible)
+	require.Equal(t, AccountMonitorReasonCooldown, candidate.PrimaryReasonCode)
+	require.Zero(t, store.recordCalls)
+	require.Zero(t, store.completeCalls)
+	require.False(t, store.leaseHeld)
+}
+
+func TestOpenAIAccountSchedulerProjection_PrioritizesChatGPTSubscriptionsWhenRuntimeEnabled(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true", "", "true")
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	regular := projectionTestAccount(108)
+	subscription := projectionTestAccount(109)
+	subscription.Type = AccountTypeOAuth
+	subscription.Credentials = map[string]any{"plan_type": "plus"}
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4-mini", SnapshotAt: now,
+		Accounts: []*Account{regular, subscription},
+		LoadMap: map[int64]*AccountLoadInfo{
+			regular.ID:      {AccountID: regular.ID},
+			subscription.ID: {AccountID: subscription.ID},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{subscription.ID, regular.ID}, projectionAccountIDs(projection.Candidates))
+}
+
+func TestOpenAIAccountSchedulerProjection_DoesNotCallEligibilityRemovalAStrategyMismatch(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	eligible := projectionTestAccount(110)
+	excluded := projectionTestAccount(111)
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4-mini", SnapshotAt: now,
+		Accounts: []*Account{eligible, excluded}, QualityOrder: []int64{eligible.ID, excluded.ID},
+		ExcludedIDs: map[int64]struct{}{excluded.ID: {}},
+		LoadMap: map[int64]*AccountLoadInfo{
+			eligible.ID: {AccountID: eligible.ID},
+			excluded.ID: {AccountID: excluded.ID},
+		},
+	})
+
+	require.NoError(t, err)
+	candidate := projectionCandidateByID(projection.Candidates, eligible.ID)
+	require.True(t, candidate.Eligible)
+	require.NotEqual(t, AccountMonitorReasonStrategy, candidate.PrimaryReasonCode)
+}
+
+func TestOpenAIAccountSchedulerProjection_LabelsEqualCustomBusinessPrioritiesAsBalanced(t *testing.T) {
+	require.Equal(t, "体验均衡", schedulerProjectionPolicyLabel(OpenAISchedulerGroupPolicy{
+		Priority: OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 1, Latency: 1},
+	}, true))
 }
 
 type projectionFailingSettingRepo struct {

@@ -23,6 +23,7 @@ type OpenAIAccountSchedulerProjectionRequest struct {
 	RequireCompact          bool
 	RequirePrivacySet       bool
 	UseUpstreamTokenCost    bool
+	SubscriptionPriority    bool
 	ExcludedIDs             map[int64]struct{}
 	QualityOrder            []int64
 	SnapshotAt              time.Time
@@ -57,13 +58,14 @@ type OpenAIAccountSchedulerProjectionProvider interface {
 }
 
 type openAIAccountSchedulerPolicyResolution struct {
-	weights         GatewayOpenAIWSSchedulerScoreWeightsView
-	fairness        OpenAISchedulerFairnessSettings
-	topK            int
-	policy          OpenAISchedulerGroupPolicy
-	configured      bool
-	qualityWeights  GatewayOpenAIWSSchedulerScoreWeightsView
-	qualityFairness OpenAISchedulerFairnessSettings
+	weights                     GatewayOpenAIWSSchedulerScoreWeightsView
+	fairness                    OpenAISchedulerFairnessSettings
+	topK                        int
+	policy                      OpenAISchedulerGroupPolicy
+	configured                  bool
+	qualityWeights              GatewayOpenAIWSSchedulerScoreWeightsView
+	qualityFairness             OpenAISchedulerFairnessSettings
+	subscriptionPriorityEnabled bool
 }
 
 func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicy(ctx context.Context, groupID int64) openAIAccountSchedulerPolicyResolution {
@@ -142,13 +144,14 @@ func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicyForPr
 		}
 	}
 	return openAIAccountSchedulerPolicyResolution{
-		weights:         weights,
-		fairness:        fairness,
-		topK:            topK,
-		policy:          policy,
-		configured:      configured,
-		qualityWeights:  qualityWeights,
-		qualityFairness: qualityFairness,
+		weights:                     weights,
+		fairness:                    fairness,
+		topK:                        topK,
+		policy:                      policy,
+		configured:                  configured,
+		qualityWeights:              qualityWeights,
+		qualityFairness:             qualityFairness,
+		subscriptionPriorityEnabled: runtime.subscriptionPriorityEnabled,
 	}, nil
 }
 
@@ -232,6 +235,8 @@ func schedulerProjectionPolicyLabel(policy OpenAISchedulerGroupPolicy, configure
 	if policy.Priority != (OpenAISchedulerBusinessPriority{}) {
 		priority := policy.Priority
 		switch {
+		case priority.Profit == priority.TTFT && priority.Profit == priority.Latency:
+			return "体验均衡"
 		case priority.Profit <= priority.TTFT && priority.Profit <= priority.Latency:
 			return "利润优先"
 		case priority.TTFT <= priority.Latency:
@@ -270,6 +275,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	if err != nil {
 		return nil, fmt.Errorf("resolve OpenAI scheduler projection policy: %w", err)
 	}
+	req.SubscriptionPriority = policy.subscriptionPriorityEnabled
 	projection := &OpenAIAccountSchedulerProjection{
 		SnapshotAt:       now,
 		PolicyKey:        schedulerProjectionPolicyKey(policy.configured),
@@ -295,11 +301,19 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 		RequiredImageCapability: req.RequiredImageCapability,
 		RequireCompact:          req.RequireCompact,
 		UseUpstreamTokenCost:    req.UseUpstreamTokenCost,
+		SubscriptionPriority:    req.SubscriptionPriority,
 		ExcludedIDs:             req.ExcludedIDs,
 	}
 
 	eligible := make([]*Account, 0, len(req.Accounts))
 	ineligible := make([]OpenAIAccountSchedulerProjectionCandidate, 0, len(req.Accounts))
+	sharedHealthCtx := ctx
+	cancelSharedHealthReads := func() {}
+	sharedHealthReads := 0
+	if s != nil && s.service != nil {
+		sharedHealthCtx, cancelSharedHealthReads = s.service.openAISharedHealthSelectionContext(ctx)
+	}
+	defer cancelSharedHealthReads()
 	for _, account := range req.Accounts {
 		candidate := OpenAIAccountSchedulerProjectionCandidate{}
 		if account == nil {
@@ -319,7 +333,16 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 		case req.RequirePrivacySet && !account.IsPrivacySet():
 			reason = "privacy_not_set"
 		default:
-			if compatible, compatibilityReason := s.isAccountRequestProjectionCompatibleReason(ctx, account, scheduleReq, now); !compatible {
+			if s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlockedAtReadOnly(account, now) {
+				reason = "runtime_blocked"
+				break
+			}
+			allowSharedRead := false
+			if s != nil && s.service != nil && s.service.hasOpenAISharedHealthStore() && sharedHealthReads < openAISharedHealthReadLimit {
+				allowSharedRead = true
+				sharedHealthReads++
+			}
+			if compatible, compatibilityReason := s.isAccountRequestProjectionCompatibleReason(sharedHealthCtx, account, scheduleReq, now, allowSharedRead); !compatible {
 				reason = compatibilityReason
 			} else if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 				reason = "transport_incompatible"
@@ -364,11 +387,21 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	}
 
 	if len(eligible) > 0 {
-		plan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, eligible, req.LoadMap, now, &policy, false)
-		ranked := append([]openAIAccountCandidateScore(nil), plan.preTopKCandidates...)
-		sort.SliceStable(ranked, func(i, j int) bool {
-			return isOpenAIAccountCandidateBetter(ranked[i], ranked[j])
-		})
+		rankPool := func(pool []*Account) []openAIAccountCandidateScore {
+			plan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, pool, req.LoadMap, now, &policy, false)
+			ranked := append([]openAIAccountCandidateScore(nil), plan.preTopKCandidates...)
+			sort.SliceStable(ranked, func(i, j int) bool {
+				return isOpenAIAccountCandidateBetter(ranked[i], ranked[j])
+			})
+			return ranked
+		}
+		ranked := rankPool(eligible)
+		if scheduleReq.SubscriptionPriority {
+			subscriptionAccounts, regularAccounts := partitionOpenAIChatGPTSubscriptionAccounts(eligible)
+			if len(subscriptionAccounts) > 0 {
+				ranked = append(rankPool(subscriptionAccounts), rankPool(regularAccounts)...)
+			}
+		}
 		strategyOrderDiffers := schedulerProjectionOrderDiffersFromQualityOrder(ranked, req.QualityOrder)
 		for index, rankedCandidate := range ranked {
 			rank := index + 1
@@ -397,7 +430,11 @@ func (s *OpenAIGatewayService) Project(ctx context.Context, req OpenAIAccountSch
 	if s == nil {
 		return (&defaultOpenAIAccountScheduler{}).Project(ctx, req)
 	}
-	return (&defaultOpenAIAccountScheduler{service: s, stats: s.openaiAccountStats}).Project(ctx, req)
+	scheduler := s.getOrCreateOpenAIAccountScheduler()
+	if scheduler == nil {
+		return nil, fmt.Errorf("OpenAI scheduler projection unavailable")
+	}
+	return scheduler.Project(ctx, req)
 }
 
 func hasOpenAIAccountID(ids map[int64]struct{}, accountID int64) bool {
@@ -409,22 +446,49 @@ func schedulerProjectionOrderDiffersFromQualityOrder(ranked []openAIAccountCandi
 	if len(qualityOrder) == 0 {
 		return false
 	}
-	if len(ranked) != len(qualityOrder) {
-		return true
+	rankedIDs := make(map[int64]struct{}, len(ranked))
+	for _, candidate := range ranked {
+		if candidate.account != nil {
+			rankedIDs[candidate.account.ID] = struct{}{}
+		}
 	}
-	for i := range ranked {
-		if ranked[i].account == nil || ranked[i].account.ID != qualityOrder[i] {
+	qualityIntersection := make([]int64, 0, len(qualityOrder))
+	seenQuality := make(map[int64]struct{}, len(qualityOrder))
+	for _, accountID := range qualityOrder {
+		if _, ranked := rankedIDs[accountID]; !ranked {
+			continue
+		}
+		if _, seen := seenQuality[accountID]; seen {
+			continue
+		}
+		seenQuality[accountID] = struct{}{}
+		qualityIntersection = append(qualityIntersection, accountID)
+	}
+	rankedIntersection := make([]int64, 0, len(qualityIntersection))
+	for _, candidate := range ranked {
+		if candidate.account == nil {
+			continue
+		}
+		if _, included := seenQuality[candidate.account.ID]; included {
+			rankedIntersection = append(rankedIntersection, candidate.account.ID)
+		}
+	}
+	if len(rankedIntersection) != len(qualityIntersection) {
+		return false
+	}
+	for i := range rankedIntersection {
+		if rankedIntersection[i] != qualityIntersection[i] {
 			return true
 		}
 	}
 	return false
 }
 
-func (s *defaultOpenAIAccountScheduler) isAccountRequestProjectionCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, now time.Time) (bool, string) {
+func (s *defaultOpenAIAccountScheduler) isAccountRequestProjectionCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, now time.Time, allowSharedRead bool) (bool, string) {
 	if account == nil {
 		return false, "account_nil"
 	}
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedAtReadOnly(account, req.RequestedModel, now) {
+	if s != nil && s.service != nil && s.service.isOpenAIAccountModelRuntimeBlockedAtReadOnlyContext(ctx, account, req.RequestedModel, now, allowSharedRead) {
 		return false, "runtime_blocked"
 	}
 	if s != nil && s.service != nil && s.service.isOpenAIProxyStreamQuarantinedAtReadOnly(ctx, account, now) {

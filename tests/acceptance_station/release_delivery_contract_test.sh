@@ -53,6 +53,7 @@ ACCEPTANCE_PAYMENT_PROVIDER=stripe
 ACCEPTANCE_UPSTREAM_PROVIDER=openai
 ACCEPTANCE_NOTIFICATION_TRANSPORT=webhook
 ACCEPTANCE_REAL_FLOW_ACK=I_UNDERSTAND_REAL_CHARGES
+ACCEPTANCE_TOTP_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 EOF
   chmod 600 "$env_file"
 }
@@ -86,6 +87,11 @@ rm -f "$env_file.bak"
 assert_refusal 'ACCEPTANCE_DEPLOY_ROOT must be a canonical acceptance-only path'
 
 write_env
+sed -i.bak 's/^ACCEPTANCE_TOTP_ENCRYPTION_KEY=.*/ACCEPTANCE_TOTP_ENCRYPTION_KEY=000000000000000000000000000000000000000000000000/' "$env_file"
+rm -f "$env_file.bak"
+assert_refusal 'ACCEPTANCE_TOTP_ENCRYPTION_KEY must be 64 hexadecimal characters'
+
+write_env
 assert_refusal 'RELEASE_BUILD_CONTEXT must equal canonical upstream/sub2api' \
   RELEASE_BUILD_CONTEXT=/tmp/not-the-upstream-context
 
@@ -114,6 +120,7 @@ for needle in \
   'mock flow is forbidden' \
   'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top' \
   'ACCEPTANCE_LOOPBACK_PORT is invalid' \
+  'ACCEPTANCE_TOTP_ENCRYPTION_KEY must be 64 hexadecimal characters' \
   '--build-arg VITE_APP_BASE_PATH=/admin/lab/' \
   '--build-arg VITE_API_BASE_URL=/admin/lab/api/v1' \
   '--build-arg VITE_AUTH_STORAGE_PREFIX=admin_lab_' \
@@ -145,6 +152,8 @@ grep -Fq 'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top' "$executor" \
   || fail 'executor must bind acceptance to the main domain path'
 grep -Fq 'ACCEPTANCE_LOOPBACK_PORT is invalid' "$executor" \
   || fail 'executor must validate the loopback listener port'
+grep -Fq 'ACCEPTANCE_TOTP_ENCRYPTION_KEY must be 64 hexadecimal characters' "$executor" \
+  || fail 'executor must validate the TOTP encryption key'
 grep -Fq 'http://127.0.0.1:$loopback_port/admin/lab/health' "$executor" \
   || fail 'executor must probe the prefixed loopback health route'
 ! grep -En 'release-sub2api-blue-green|deploy-sub2api-blue-green|release-admin-lab' "${targets[@]}" \

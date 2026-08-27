@@ -116,12 +116,15 @@ loopback_port=${ACCEPTANCE_LOOPBACK_PORT:-}
 payment_provider=${ACCEPTANCE_PAYMENT_PROVIDER:-}
 upstream_provider=${ACCEPTANCE_UPSTREAM_PROVIDER:-}
 notification_transport=${ACCEPTANCE_NOTIFICATION_TRANSPORT:-}
+totp_encryption_key=${ACCEPTANCE_TOTP_ENCRYPTION_KEY:-}
 [[ "$project_name" == sub2api-acceptance ]] || fail 'acceptance project identity is invalid'
 [[ "$network_name" == sub2api-acceptance-network ]] || fail 'acceptance network identity is invalid'
 [[ "$env_deploy_root" == "$deploy_root" ]] || fail 'acceptance deploy root does not match staged env'
 [[ "$site_address" == api.xingqiaolab.top ]] || fail 'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top'
 [[ "$loopback_port" =~ ^[1-9][0-9]{3,4}$ && "$loopback_port" -le 65535 && "$loopback_port" -ne 443 ]] \
   || fail 'ACCEPTANCE_LOOPBACK_PORT is invalid'
+[[ "$totp_encryption_key" =~ ^[A-Fa-f0-9]{64}$ ]] \
+  || fail 'ACCEPTANCE_TOTP_ENCRYPTION_KEY must be 64 hexadecimal characters'
 case "$site_address:$deploy_root:$project_name:$network_name" in
   *shop.xingqiaolab.top*|*/opt/sub2api/production*|*sub2api_default*|*':sub2api:'*)
     fail 'production identity is forbidden'

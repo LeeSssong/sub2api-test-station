@@ -78,6 +78,10 @@ esac
 [[ "$deploy_root" != *$'\n'* && "$deploy_root" != *$'\r'* && "$deploy_root" != *'..'* ]] \
   || fail 'ACCEPTANCE_DEPLOY_ROOT must be a canonical acceptance-only path'
 
+totp_encryption_key=${ACCEPTANCE_TOTP_ENCRYPTION_KEY:-}
+[[ "$totp_encryption_key" =~ ^[A-Fa-f0-9]{64}$ ]] \
+  || fail 'ACCEPTANCE_TOTP_ENCRYPTION_KEY must be 64 hexadecimal characters'
+
 payment_provider=${ACCEPTANCE_PAYMENT_PROVIDER:-}
 upstream_provider=${ACCEPTANCE_UPSTREAM_PROVIDER:-}
 notification_transport=${ACCEPTANCE_NOTIFICATION_TRANSPORT:-}

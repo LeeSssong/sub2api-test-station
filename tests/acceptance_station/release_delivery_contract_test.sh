@@ -19,6 +19,8 @@ grep -Fq '本地直接验证 -> 部署验收站 -> 管理员真实验收 -> 人�
   || fail 'acceptance runbook is missing serial promotion boundary'
 grep -Fq '不自动晋级' "$runbook" || fail 'acceptance runbook is missing no-auto-promotion boundary'
 grep -Fq '/admin/lab/' "$runbook" || fail 'acceptance runbook is missing admin lab retirement boundary'
+grep -Fq 'https://api.xingqiaolab.top/admin/lab/' "$runbook" \
+  || fail 'acceptance runbook is missing the shared-domain lab address'
 grep -Fq '仅保留脱敏失败证据' "$runbook" || fail 'acceptance runbook is missing failed-staging retention boundary'
 grep -Fq 'RELEASE_WORKTREE=/path/to/previous-verified-worktree' "$runbook" \
   || fail 'acceptance runbook is missing executable manual rollback path'
@@ -42,10 +44,11 @@ git -C "$fixture" commit -qm fixture
 env_file="$scratch/acceptance.env"
 write_env() {
   cat >"$env_file" <<'EOF'
-ACCEPTANCE_SITE_ADDRESS=acceptance.example.invalid
+ACCEPTANCE_SITE_ADDRESS=api.xingqiaolab.top
 ACCEPTANCE_DEPLOY_ROOT=/opt/sub2api/acceptance-contract
 ACCEPTANCE_PROJECT_NAME=sub2api-acceptance
 ACCEPTANCE_NETWORK_NAME=sub2api-acceptance-network
+ACCEPTANCE_LOOPBACK_PORT=8181
 ACCEPTANCE_PAYMENT_PROVIDER=stripe
 ACCEPTANCE_UPSTREAM_PROVIDER=openai
 ACCEPTANCE_NOTIFICATION_TRANSPORT=webhook
@@ -109,6 +112,11 @@ for needle in \
   'RELEASE_BUILD_CONTEXT must equal canonical upstream/sub2api' \
   'production identity is forbidden' \
   'mock flow is forbidden' \
+  'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top' \
+  'ACCEPTANCE_LOOPBACK_PORT is invalid' \
+  '--build-arg VITE_APP_BASE_PATH=/admin/lab/' \
+  '--build-arg VITE_API_BASE_URL=/admin/lab/api/v1' \
+  '--build-arg VITE_AUTH_STORAGE_PREFIX=admin_lab_' \
   'docker buildx build --platform linux/amd64 --load' \
   'docker save' \
   'sha256_file' \
@@ -118,7 +126,7 @@ for needle in \
   'scp' \
   'ssh' \
   'sudo -n bash -s'; do
-  grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"
+  grep -Fq -- "$needle" "$controller" || fail "release controller missing contract: $needle"
 done
 
 targets=("$controller" "$executor")
@@ -133,6 +141,12 @@ grep -Fq 'health' "$executor" || fail 'executor missing health checks'
 grep -Fq 'mktemp' "$executor" || fail 'executor missing isolated extraction'
 grep -Fq 'docker load' "$executor" || fail 'executor missing image load'
 grep -Fq 'downtime_required' "$executor" || fail 'executor missing result contract'
+grep -Fq 'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top' "$executor" \
+  || fail 'executor must bind acceptance to the main domain path'
+grep -Fq 'ACCEPTANCE_LOOPBACK_PORT is invalid' "$executor" \
+  || fail 'executor must validate the loopback listener port'
+grep -Fq 'http://127.0.0.1:$loopback_port/admin/lab/health' "$executor" \
+  || fail 'executor must probe the prefixed loopback health route'
 ! grep -En 'release-sub2api-blue-green|deploy-sub2api-blue-green|release-admin-lab' "${targets[@]}" \
   || fail 'acceptance release chain must not invoke a production or lab release script'
 

@@ -127,9 +127,8 @@ services:
   acceptance-caddy:
     image: ${ACCEPTANCE_CADDY_IMAGE:?ACCEPTANCE_CADDY_IMAGE is required}
     restart: unless-stopped
-    environment:
-      ACCEPTANCE_SITE_ADDRESS: ${ACCEPTANCE_SITE_ADDRESS:?ACCEPTANCE_SITE_ADDRESS is required}
-    ports: ["80:80", "443:443"]
+    ports:
+      - "${ACCEPTANCE_LOOPBACK_BIND:-0.0.0.0}:${ACCEPTANCE_LOOPBACK_PORT:?ACCEPTANCE_LOOPBACK_PORT is required}:80"
     volumes:
       - ./Caddyfile.acceptance:/etc/caddy/Caddyfile:ro
       - sub2api-acceptance-caddy-data:/data
@@ -138,7 +137,7 @@ services:
     depends_on:
       acceptance-api: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-check-certificate --header=\"Host: $$ACCEPTANCE_SITE_ADDRESS\" -q -T 5 -O /dev/null https://127.0.0.1/health"]
+      test: ["CMD-SHELL", "wget -q -T 5 -O /dev/null http://127.0.0.1/admin/lab/health"]
       interval: 30s
       timeout: 10s
       retries: 3

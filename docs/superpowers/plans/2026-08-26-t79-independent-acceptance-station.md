@@ -13,7 +13,8 @@
 ## Global Constraints
 
 - Project name is exactly `sub2api-acceptance`; network is exactly `sub2api-acceptance-network`.
-- No service, env default, deploy path, domain, Caddy route, Docker network, volume or credential may reuse production identifiers.
+- The public entry is `https://api.xingqiaolab.top/admin/lab/`; production Caddy is only the outer path/TLS proxy, while the acceptance Caddy binds a dedicated `ACCEPTANCE_LOOPBACK_PORT` edge listener restricted by host firewall.
+- No service, env default, deploy path, Docker network, volume or credential may reuse production identifiers; `/admin/accounts` remains the native production admin page.
 - Deployment is serial and single-instance: no blue-green, no ephemeral environments, no auto-promotion.
 - Acceptance must use real flow declarations and must reject `mock`, `mock-upstream` and `lab-outbox`.
 - Bootstrap must set `backend_mode_enabled=true` and `registration_enabled=false` only in the acceptance database.
@@ -58,9 +59,9 @@ Expected: fail because `infra/compose.acceptance.yaml` does not exist.
 
 - [ ] **Step 3: Implement the minimal independent topology**
 
-Create Compose services `acceptance-api`, `acceptance-worker`, `acceptance-detector`, `acceptance-postgres`, `acceptance-redis`, `acceptance-caddy`, and profile-only `acceptance-bootstrap`. Wire API/worker to `acceptance-postgres`, `acceptance-redis`, and `acceptance-detector`; publish only Caddy `80:80`/`443:443`; use named volumes and the internal network. Make bootstrap execute the idempotent native settings upsert for `backend_mode_enabled=true` and `registration_enabled=false`.
+Create Compose services `acceptance-api`, `acceptance-worker`, `acceptance-detector`, `acceptance-postgres`, `acceptance-redis`, `acceptance-caddy`, and profile-only `acceptance-bootstrap`. Wire API/worker to `acceptance-postgres`, `acceptance-redis`, and `acceptance-detector`; publish only Caddy on `${ACCEPTANCE_LOOPBACK_BIND:-0.0.0.0}:${ACCEPTANCE_LOOPBACK_PORT}:80`, with host firewall restriction; use named volumes and the internal network. Make bootstrap execute the idempotent native settings upsert for `backend_mode_enabled=true` and `registration_enabled=false`.
 
-Use a minimal independent Caddyfile with a 15-minute upstream response timeout and no `/admin/lab/` route. Add only example values to `.env.acceptance.example`, including non-production domain/root/project/network, intentionally invalid example secrets, real-flow declaration values, and `ACCEPTANCE_REAL_FLOW_ACK=I_UNDERSTAND_REAL_CHARGES`.
+Use a minimal loopback HTTP Caddyfile with a 15-minute upstream response timeout and `handle_path /admin/lab/*`; production Caddy routes this prefix to the loopback port. Add only example values to `.env.acceptance.example`, including `api.xingqiaolab.top`, loopback port/root/project/network, intentionally invalid example secrets, real-flow declaration values, and `ACCEPTANCE_REAL_FLOW_ACK=I_UNDERSTAND_REAL_CHARGES`.
 
 - [ ] **Step 4: Run the contract to verify GREEN**
 
@@ -181,7 +182,7 @@ docker compose --project-name sub2api-acceptance --env-file "$deploy_root/.env" 
   -f "$deploy_root/compose.acceptance.yaml" --profile bootstrap run --rm acceptance-bootstrap
 ```
 
-Probe `https://$ACCEPTANCE_SITE_ADDRESS/health` and `/auth/login`, verify six long-running services exist and are healthy, and emit only redacted JSON success data.
+Probe `http://127.0.0.1:$loopback_port/admin/lab/health` and `/admin/lab/auth/login`, verify six long-running services exist and are healthy, and emit only redacted JSON success data.
 
 - [ ] **Step 4: Run contracts to verify GREEN**
 

@@ -112,15 +112,18 @@ site_address=${ACCEPTANCE_SITE_ADDRESS:-}
 project_name=${ACCEPTANCE_PROJECT_NAME:-}
 network_name=${ACCEPTANCE_NETWORK_NAME:-}
 env_deploy_root=${ACCEPTANCE_DEPLOY_ROOT:-}
+loopback_port=${ACCEPTANCE_LOOPBACK_PORT:-}
 payment_provider=${ACCEPTANCE_PAYMENT_PROVIDER:-}
 upstream_provider=${ACCEPTANCE_UPSTREAM_PROVIDER:-}
 notification_transport=${ACCEPTANCE_NOTIFICATION_TRANSPORT:-}
 [[ "$project_name" == sub2api-acceptance ]] || fail 'acceptance project identity is invalid'
 [[ "$network_name" == sub2api-acceptance-network ]] || fail 'acceptance network identity is invalid'
 [[ "$env_deploy_root" == "$deploy_root" ]] || fail 'acceptance deploy root does not match staged env'
-[[ "$site_address" =~ ^[A-Za-z0-9.-]+$ ]] || fail 'acceptance site address is invalid'
+[[ "$site_address" == api.xingqiaolab.top ]] || fail 'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top'
+[[ "$loopback_port" =~ ^[1-9][0-9]{3,4}$ && "$loopback_port" -le 65535 && "$loopback_port" -ne 443 ]] \
+  || fail 'ACCEPTANCE_LOOPBACK_PORT is invalid'
 case "$site_address:$deploy_root:$project_name:$network_name" in
-  *api.xingqiaolab.top*|*shop.xingqiaolab.top*|*/opt/sub2api/production*|*sub2api_default*|*':sub2api:'*)
+  *shop.xingqiaolab.top*|*/opt/sub2api/production*|*sub2api_default*|*':sub2api:'*)
     fail 'production identity is forbidden'
     ;;
 esac
@@ -131,7 +134,7 @@ esac
 
 grep -Fq 'name: sub2api-acceptance' "$compose_source" || fail 'staged compose is not an acceptance topology'
 grep -Fq 'sub2api-acceptance-network' "$compose_source" || fail 'staged compose network is invalid'
-if grep -En 'sub2api_default|sub2api-blue|sub2api-green|/admin/lab/|mock-upstream|lab-outbox' "$compose_source" "$caddy_source"; then
+if grep -En 'sub2api_default|sub2api-blue|sub2api-green|mock-upstream|lab-outbox' "$compose_source" "$caddy_source"; then
   fail 'staged topology contains a forbidden production or lab identity'
 fi
 
@@ -218,10 +221,8 @@ for service in acceptance-api acceptance-worker acceptance-detector acceptance-p
     || fail "service is not healthy: $service"
 done
 
-curl --fail --silent --show-error --resolve "$site_address:443:127.0.0.1" \
-  "https://$site_address/health" >/dev/null
-curl --fail --silent --show-error --resolve "$site_address:443:127.0.0.1" \
-  "https://$site_address/auth/login" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:$loopback_port/admin/lab/health" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:$loopback_port/admin/lab/auth/login" >/dev/null
 
 deployment_started=false
 printf '{"result":"succeeded","downtime_required":false,"source_commit":"%s","source_tree":"%s","image_sha256":"%s","services":6}\n' \

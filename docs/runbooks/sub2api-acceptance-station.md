@@ -1,6 +1,6 @@
 # Sub2API 独立准生产验收站运行手册
 
-本验收站是一个长期存在、可真实商用的独立 Sub2API 实例。它只允许管理员登录，默认不对公网开放；站点、数据、凭据和运行资源均与主站隔离。部署成功只表示服务已启动，不表示功能验收通过，也不会自动部署主站。
+本验收站是一个长期存在、可真实商用的独立 Sub2API 实例。它只允许管理员登录，默认不对公网开放；站点、数据、凭据和运行资源均与主站隔离。对外入口复用主站域名下的 https://api.xingqiaolab.top/admin/lab/ 路径，由生产 Caddy 仅转发到同宿主的专用 acceptance edge 端口；/admin/accounts 继续由主站原生页面处理。部署成功只表示服务已启动，不表示功能验收通过，也不会自动部署主站。
 
 ## 运行边界
 
@@ -16,11 +16,11 @@
 
 由 operator 在验收宿主准备以下互不复用生产的值：
 
-- 独立域名和 DNS 记录；域名不得使用主站域名，例如 api.xingqiaolab.top 或 shop.xingqiaolab.top。当前 Caddy 配置使用自动 HTTPS，网络策略必须允许证书签发与续期所需流量。
-- 独立验收宿主（不与主站复用 Docker daemon、80/443 端口、运行目录或 SSH 发布账户）；宿主部署目录必须位于 /opt/sub2api/acceptance-*。
+- 主站域名路径入口 https://api.xingqiaolab.top/admin/lab/；不新增域名、不新增公网 TLS listener。生产 Caddy 只负责共享 TLS 和路径反代，并通过 `ACCEPTANCE_LAB_ALLOWED_IPS`（默认仅 `127.0.0.1/32`）拒绝未列入的来源；验收 Caddy 只监听同宿主的专用 acceptance edge 端口（示例 8181），该端口由宿主防火墙仅允许生产 Caddy/管理员来源访问。
+- 独立验收运行目录（不与主站复用 Docker project/network、数据库、Redis、对象存储、凭据或数据卷）；宿主部署目录必须位于 /opt/sub2api/acceptance-*。生产 Caddy 与验收 Caddy 仅共享这一条受限 HTTP 入口，不共享验收内部网络或数据。
 - 独立 SSH 用户、私钥和 known_hosts；宿主已允许该用户使用 sudo -n bash -s。
 - 独立支付商户/回调配置、上游账号与 API key、通知通道；这些凭据只写入验收站 env 或后台，不提交 Git。
-- 宿主防火墙仅允许管理人员来源以及 Caddy 自动 HTTPS 所需的证书验证来源访问 80/443，SSH 只允许管理来源；PostgreSQL、Redis、detector、API 和 worker 不发布宿主端口。DNS/防火墙限制是网络边界，不能由 backend_mode_enabled 替代。
+- 宿主防火墙仅允许管理人员来源访问主站 443，并仅允许生产 Caddy 容器/管理员来源访问 acceptance edge 端口 8181；SSH 只允许管理来源；PostgreSQL、Redis、detector、API 和 worker 不发布宿主端口。DNS/防火墙限制是网络边界，不能由 backend_mode_enabled 替代。
 - Docker Engine、Compose v2、curl、ssh、scp 和 sudo。宿主部署目录必须位于 /opt/sub2api/acceptance-*。
 
 复制模板到仓库外的受保护路径，替换所有示例值，并确认文件是普通文件且权限为 0600：
@@ -46,7 +46,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 ## 部署后检查
 
-发布控制器返回 result=succeeded 只代表宿主部署和基础健康检查完成。管理员仍需在独立域名执行：
+发布控制器返回 result=succeeded 只代表宿主部署和基础健康检查完成。管理员仍需在主站路径入口执行：
 
 1. 访问 /health 和 /auth/login，确认 HTTPS、登录入口和站点标识正确；确认注册入口关闭。
 2. 使用验收站独立管理员登录后台，确认 backend_mode_enabled=true、registration_enabled=false；非管理员 token 访问受保护用户路由应被原生后端拒绝。
@@ -58,8 +58,8 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
     docker compose --project-name sub2api-acceptance \
       --env-file /opt/sub2api/acceptance-example/.env \
       -f /opt/sub2api/acceptance-example/compose.acceptance.yaml ps
-    curl --fail --silent --show-error https://<验收域名>/health
-    curl --fail --silent --show-error https://<验收域名>/auth/login
+    curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/health
+    curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/auth/login
 
 ## 管理员真实验收清单
 

@@ -16,6 +16,8 @@ grep -Fq 'registration_enabled' "$executor" || fail 'executor must verify regist
 grep -Fq 'backend_mode_enabled' "$executor" || fail 'executor must verify backend mode'
 grep -Fq '! -L "$deploy_root"' "$executor" || fail 'executor must reject symlink deploy roots'
 grep -Fq '/opt/sub2api' "$executor" || fail 'executor must validate acceptance parent path'
+grep -Fq 'ACCEPTANCE_LOOPBACK_PORT' "$executor" || fail 'executor must validate the acceptance loopback port'
+grep -Fq '/admin/lab/auth/login' "$executor" || fail 'executor must probe the prefixed login route'
 rollback_line=$(grep -n '^rollback()' "$executor" | cut -d: -f1)
 trap_line=$(grep -n '^trap cleanup EXIT' "$executor" | cut -d: -f1)
 first_install_line=$(grep -n 'install -d -m 700 -o root -g root "$deploy_root"' "$executor" | cut -d: -f1)

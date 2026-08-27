@@ -60,15 +60,19 @@ site_address=${ACCEPTANCE_SITE_ADDRESS:-}
 deploy_root=${ACCEPTANCE_DEPLOY_ROOT:-}
 project_name=${ACCEPTANCE_PROJECT_NAME:-}
 network_name=${ACCEPTANCE_NETWORK_NAME:-}
+loopback_port=${ACCEPTANCE_LOOPBACK_PORT:-}
 case "$site_address:$deploy_root:$project_name:$network_name" in
-  *api.xingqiaolab.top*|*shop.xingqiaolab.top*|*/opt/sub2api/production*|*sub2api_default*|*':sub2api:'*)
+  *shop.xingqiaolab.top*|*/opt/sub2api/production*|*sub2api_default*|*':sub2api:'*)
     fail 'production identity is forbidden'
     ;;
 esac
 [[ -n "$site_address" && -n "$deploy_root" && -n "$project_name" && -n "$network_name" ]] \
   || fail 'acceptance identity is incomplete'
+[[ "$site_address" == api.xingqiaolab.top ]] || fail 'ACCEPTANCE_SITE_ADDRESS must be api.xingqiaolab.top'
 [[ "$project_name" == sub2api-acceptance ]] || fail 'ACCEPTANCE_PROJECT_NAME must be sub2api-acceptance'
 [[ "$network_name" == sub2api-acceptance-network ]] || fail 'ACCEPTANCE_NETWORK_NAME must be sub2api-acceptance-network'
+[[ "$loopback_port" =~ ^[1-9][0-9]{3,4}$ && "$loopback_port" -le 65535 && "$loopback_port" -ne 443 ]] \
+  || fail 'ACCEPTANCE_LOOPBACK_PORT is invalid'
 [[ "$deploy_root" =~ ^/opt/sub2api/acceptance-[A-Za-z0-9._-]+$ ]] \
   || fail 'ACCEPTANCE_DEPLOY_ROOT must be a canonical acceptance-only path'
 [[ "$deploy_root" != *$'\n'* && "$deploy_root" != *$'\r'* && "$deploy_root" != *'..'* ]] \
@@ -146,7 +150,11 @@ bundle="$tmp_root/bundle"
 mkdir -m 700 "$bundle"
 
 # Build one immutable candidate for the acceptance station.
-docker buildx build --platform linux/amd64 --load -t "$image_ref" "$build_context"
+docker buildx build --platform linux/amd64 --load \
+  --build-arg VITE_APP_BASE_PATH=/admin/lab/ \
+  --build-arg VITE_API_BASE_URL=/admin/lab/api/v1 \
+  --build-arg VITE_AUTH_STORAGE_PREFIX=admin_lab_ \
+  -t "$image_ref" "$build_context"
 docker save -o "$archive" "$image_ref"
 archive_sha=$(sha256_file "$archive") || fail 'image archive checksum failed'
 [[ "$archive_sha" =~ ^[a-f0-9]{64}$ ]] || fail 'image archive checksum is invalid'

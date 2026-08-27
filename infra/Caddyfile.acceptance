@@ -6,12 +6,16 @@
   }
 }
 
-{$ACCEPTANCE_SITE_ADDRESS} {
+:80 {
   encode zstd gzip
 
-  reverse_proxy acceptance-api:8080 {
-    transport http {
-      response_header_timeout 15m
+  handle_path /admin/lab/* {
+    reverse_proxy acceptance-api:8080 {
+      transport http {
+        response_header_timeout 15m
+      }
     }
   }
+
+  respond 404
 }

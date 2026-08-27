@@ -51,13 +51,13 @@ grep -Fq 'ARG VITE_AUTH_STORAGE_PREFIX=' upstream/sub2api/Dockerfile \
 
 grep -Fq '@acceptance_lab_root path /admin/lab' "$production_caddy_file" \
   || fail 'production caddy must own the acceptance root redirect'
-grep -Fq '@acceptance_lab path /admin/lab/*' "$production_caddy_file" \
+grep -Fq '@acceptance_lab path /admin/lab /admin/lab/*' "$production_caddy_file" \
   || fail 'production caddy must proxy only the acceptance prefix'
 grep -Fq '{$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181}' "$production_caddy_file" \
   || fail 'production caddy must proxy acceptance through the loopback upstream'
-grep -Fq 'remote_ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1/32}' "$production_caddy_file" \
+grep -Fq 'not client_ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1/32}' "$production_caddy_file" \
   || fail 'production caddy must default-deny acceptance sources'
-grep -Fq 'respond 403' "$production_caddy_file" \
+grep -Fq 'respond @acceptance_lab_denied 403' "$production_caddy_file" \
   || fail 'production caddy must reject non-allowlisted acceptance sources'
 if rg -n 'admin-lab-gateway' "$production_caddy_file"; then
   fail 'production caddy must not route to the retired mock gateway'

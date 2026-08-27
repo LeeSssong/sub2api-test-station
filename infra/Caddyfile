@@ -216,26 +216,20 @@
 
 
 	# The acceptance station is a separate Compose project reached only through
-	# the host loopback port. Keep this before the production fallback so the
-	# native /admin/accounts page remains handled by the production upstream.
-	@acceptance_lab_root path /admin/lab
-	handle @acceptance_lab_root {
-		@acceptance_lab_root_allowed remote_ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1/32}
-		handle @acceptance_lab_root_allowed {
-			redir /admin/lab/ 308
-		}
-		respond 403
-	}
+	# the host edge port. Keep this before the production fallback so the native
+	# /admin/accounts page remains handled by the production upstream. The route
+	# is explicit so the source allowlist is checked before redirect/proxy.
+	@acceptance_lab path /admin/lab /admin/lab/*
+	route @acceptance_lab {
+		@acceptance_lab_denied not client_ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1/32}
+		respond @acceptance_lab_denied 403
 
-	@acceptance_lab path /admin/lab/*
-	handle @acceptance_lab {
-		@acceptance_lab_allowed remote_ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1/32}
-		handle @acceptance_lab_allowed {
-			reverse_proxy {$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181} {
-				header_up X-Forwarded-Proto {http.request.proto}
-			}
+		@acceptance_lab_root path /admin/lab
+		redir @acceptance_lab_root /admin/lab/ 308
+
+		reverse_proxy {$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181} {
+			header_up X-Forwarded-Proto {http.request.proto}
 		}
-		respond 403
 	}
 
 	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {

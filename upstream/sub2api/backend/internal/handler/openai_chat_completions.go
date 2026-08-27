@@ -238,23 +238,20 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		shape := service.OpenAIAdmissionRequestShapeFromContext(c.Request.Context())
 		if reqStream && shape != service.OpenAIAdmissionShapeUnknown {
-			key, keyErr := service.NewOpenAISharedHealthKey(account.ID, canonicalSchedulingModel)
-			if keyErr == nil {
-				admissionRelease, admission := h.gatewayService.AcquireOpenAIAdmission(key, shape)
-				if !admission.Allowed {
-					if accountReleaseFunc != nil {
-						accountReleaseFunc()
-					}
-					failedAccountIDs[account.ID] = struct{}{}
-					reqLog.Info("openai.admission_rejected", zap.Int64("account_id", account.ID), zap.String("reason", admission.Reason))
-					continue
+			admissionRelease, admission := h.gatewayService.AcquireOpenAIAdmission(account.ID, shape)
+			if !admission.Allowed {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
 				}
-				priorRelease := accountReleaseFunc
-				accountReleaseFunc = func() {
-					admissionRelease()
-					if priorRelease != nil {
-						priorRelease()
-					}
+				failedAccountIDs[account.ID] = struct{}{}
+				reqLog.Info("openai.admission_rejected", zap.Int64("account_id", account.ID), zap.String("reason", admission.Reason))
+				continue
+			}
+			priorRelease := accountReleaseFunc
+			accountReleaseFunc = func() {
+				admissionRelease()
+				if priorRelease != nil {
+					priorRelease()
 				}
 			}
 		}
@@ -293,6 +290,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		}()
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
+		}
+		if err == nil {
+			h.gatewayService.RecordOpenAISlowSessionGuard(account.ID, result, selection.HalfOpenProbe)
 		}
 		cyberBlockKeyChat := ""
 		if service.GetOpsCyberPolicy(c) != nil {

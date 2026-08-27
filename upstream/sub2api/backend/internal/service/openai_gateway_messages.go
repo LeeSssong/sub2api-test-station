@@ -457,7 +457,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
 		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
@@ -827,6 +827,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 // pattern to send Anthropic ping events during periods of upstream silence,
 // preventing proxy/client timeout disconnections.
 func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
@@ -919,6 +920,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		observer.ObserveOpenAI([]byte(payload), event.Type)
 
 		eventType := strings.TrimSpace(event.Type)
+		semanticOutput := openAIStreamDataStartsVisibleOutput(payload, eventType)
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if responseID == "" {
@@ -1024,6 +1026,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 		if len(events) > 0 && !clientDisconnected {
 			c.Writer.Flush()
+		}
+		if semanticOutput && !clientDisconnected && clientOutputStarted {
+			notifyOpenAIFirstSemanticOutput(ctx)
 		}
 		return isTerminalEvent
 	}

@@ -517,7 +517,7 @@ func TestLoadDefaultOpenAISharedHealthAdmissionConfig(t *testing.T) {
 	require.Equal(t, 90, cfg.Gateway.OpenAISharedHealth.AdmissionLeaseTTLSeconds)
 	require.Equal(t, 25, cfg.Gateway.OpenAISharedHealth.AdmissionRenewSeconds)
 	require.Equal(t, 30000, cfg.Gateway.OpenAISharedHealth.SlowTTFTMS)
-	require.Equal(t, 600, cfg.Gateway.OpenAISharedHealth.SlowQualityCooldownSeconds)
+	require.Equal(t, 600, cfg.Gateway.OpenAISharedHealth.SlowSessionGuardSeconds)
 }
 
 func TestValidateOpenAISharedHealthAdmissionConfig(t *testing.T) {

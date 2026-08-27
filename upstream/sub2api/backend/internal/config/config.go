@@ -1350,7 +1350,7 @@ type GatewayOpenAISharedHealthConfig struct {
 	AdmissionLeaseTTLSeconds        int  `mapstructure:"admission_lease_ttl_seconds"`
 	AdmissionRenewSeconds           int  `mapstructure:"admission_renew_seconds"`
 	SlowTTFTMS                      int  `mapstructure:"slow_ttft_ms"`
-	SlowQualityCooldownSeconds      int  `mapstructure:"slow_quality_cooldown_seconds"`
+	SlowSessionGuardSeconds         int  `mapstructure:"slow_session_guard_seconds"`
 }
 
 func DefaultGatewayOpenAISharedHealthConfig() GatewayOpenAISharedHealthConfig {
@@ -1373,7 +1373,7 @@ func DefaultGatewayOpenAISharedHealthConfig() GatewayOpenAISharedHealthConfig {
 		AdmissionLeaseTTLSeconds:        90,
 		AdmissionRenewSeconds:           25,
 		SlowTTFTMS:                      30000,
-		SlowQualityCooldownSeconds:      600,
+		SlowSessionGuardSeconds:         600,
 	}
 }
 
@@ -1426,8 +1426,8 @@ func (c GatewayOpenAISharedHealthConfig) Validate() error {
 	if c.SlowTTFTMS < 1000 || c.SlowTTFTMS > 120000 {
 		return fmt.Errorf("slow_ttft_ms must be between 1000 and 120000")
 	}
-	if c.SlowQualityCooldownSeconds < 30 || c.SlowQualityCooldownSeconds > 3600 {
-		return fmt.Errorf("slow_quality_cooldown_seconds must be between 30 and 3600")
+	if c.SlowSessionGuardSeconds < 30 || c.SlowSessionGuardSeconds > 3600 {
+		return fmt.Errorf("slow_session_guard_seconds must be between 30 and 3600")
 	}
 	return nil
 }
@@ -2450,7 +2450,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_shared_health.admission_lease_ttl_seconds", sharedHealthDefaults.AdmissionLeaseTTLSeconds)
 	viper.SetDefault("gateway.openai_shared_health.admission_renew_seconds", sharedHealthDefaults.AdmissionRenewSeconds)
 	viper.SetDefault("gateway.openai_shared_health.slow_ttft_ms", sharedHealthDefaults.SlowTTFTMS)
-	viper.SetDefault("gateway.openai_shared_health.slow_quality_cooldown_seconds", sharedHealthDefaults.SlowQualityCooldownSeconds)
+	viper.SetDefault("gateway.openai_shared_health.slow_session_guard_seconds", sharedHealthDefaults.SlowSessionGuardSeconds)
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)

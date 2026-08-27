@@ -8,30 +8,33 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 type openAISharedHealthStoreStub struct {
-	mu               sync.Mutex
-	snapshots        map[string]OpenAISharedHealthSnapshot
-	getErr           error
-	recordErr        error
-	lease            OpenAISharedHalfOpenLease
-	leaseHeld        bool
-	nextFence        int64
-	recordCalls      int
-	completeCalls    int
-	lastEvent        OpenAISharedHealthEvent
-	admissions       map[string]OpenAISharedAdmissionRequest
-	quality          map[string]OpenAISharedRequestQualitySnapshot
-	recordContextErr error
+	mu                sync.Mutex
+	snapshots         map[string]OpenAISharedHealthSnapshot
+	getErr            error
+	recordErr         error
+	lease             OpenAISharedHalfOpenLease
+	leaseHeld         bool
+	nextFence         int64
+	recordCalls       int
+	completeCalls     int
+	lastEvent         OpenAISharedHealthEvent
+	admissions        map[string]OpenAISharedAdmissionRequest
+	slowGuard         map[int64]time.Time
+	recordContextErr  error
+	renewCalls        int
+	admissionDecision *OpenAISharedAdmissionDecision
 }
 
 func newOpenAISharedHealthStoreStub() *openAISharedHealthStoreStub {
 	return &openAISharedHealthStoreStub{
 		snapshots:  make(map[string]OpenAISharedHealthSnapshot),
 		admissions: make(map[string]OpenAISharedAdmissionRequest),
-		quality:    make(map[string]OpenAISharedRequestQualitySnapshot),
+		slowGuard:  make(map[int64]time.Time),
 	}
 }
 
@@ -133,11 +136,7 @@ func (s *openAISharedHealthStoreStub) CompleteHalfOpen(_ context.Context, lease 
 }
 
 func openAIAdmissionStubKey(request OpenAISharedAdmissionRequest) string {
-	return sharedHealthStubKey(request.Key) + ":" + string(request.Shape) + ":" + request.LeaseID
-}
-
-func openAIQualityStubKey(key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape) string {
-	return sharedHealthStubKey(key) + ":" + string(shape)
+	return fmt.Sprintf("%d:%s:%s", request.AccountID, request.Shape, request.LeaseID)
 }
 
 func (s *openAISharedHealthStoreStub) AcquireAdmission(_ context.Context, request OpenAISharedAdmissionRequest) (OpenAISharedAdmissionDecision, error) {
@@ -146,6 +145,9 @@ func (s *openAISharedHealthStoreStub) AcquireAdmission(_ context.Context, reques
 	if s.getErr != nil {
 		return OpenAISharedAdmissionDecision{}, s.getErr
 	}
+	if s.admissionDecision != nil {
+		return *s.admissionDecision, nil
+	}
 	s.admissions[openAIAdmissionStubKey(request)] = request
 	return OpenAISharedAdmissionDecision{Allowed: true, Reason: "acquired", LeaseExpiresAt: request.ObservedAt.Add(90 * time.Second)}, nil
 }
@@ -153,6 +155,7 @@ func (s *openAISharedHealthStoreStub) AcquireAdmission(_ context.Context, reques
 func (s *openAISharedHealthStoreStub) RenewAdmission(_ context.Context, request OpenAISharedAdmissionRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.renewCalls++
 	if s.getErr != nil {
 		return s.getErr
 	}
@@ -172,31 +175,159 @@ func (s *openAISharedHealthStoreStub) ReleaseAdmission(_ context.Context, reques
 	return nil
 }
 
-func (s *openAISharedHealthStoreStub) GetRequestQuality(_ context.Context, key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape) (OpenAISharedRequestQualitySnapshot, error) {
+func (s *openAISharedHealthStoreStub) RecordSlowSessionGuard(_ context.Context, accountID int64, observedAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.getErr != nil {
-		return OpenAISharedRequestQualitySnapshot{Key: key, Shape: shape}, s.getErr
+		return s.getErr
 	}
-	return s.quality[openAIQualityStubKey(key, shape)], nil
+	s.slowGuard[accountID] = observedAt.Add(10 * time.Minute)
+	return nil
 }
 
-func (s *openAISharedHealthStoreStub) RecordRequestQuality(_ context.Context, key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape, ttft time.Duration, observedAt time.Time) (OpenAISharedRequestQualitySnapshot, error) {
+func (s *openAISharedHealthStoreStub) HasSlowSessionGuard(_ context.Context, accountID int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.getErr != nil {
-		return OpenAISharedRequestQualitySnapshot{Key: key, Shape: shape}, s.getErr
+		return false, s.getErr
 	}
-	qualityKey := openAIQualityStubKey(key, shape)
-	snapshot := s.quality[qualityKey]
-	snapshot.Key = key
-	snapshot.Shape = shape
-	snapshot.RealSampleCount++
-	snapshot.LastTTFT = ttft
-	snapshot.EWMATTFT = ttft
-	snapshot.ObservedAt = observedAt
-	s.quality[qualityKey] = snapshot
-	return snapshot, nil
+	return s.slowGuard[accountID].After(time.Now()), nil
+}
+
+func TestOpenAISlowSessionGuardRequiresTrustedCompletedStream(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	svc := &OpenAIGatewayService{}
+	svc.SetOpenAISharedHealthStore(store)
+
+	firstToken := 30001
+	tests := []struct {
+		name          string
+		result        *OpenAIForwardResult
+		halfOpenProbe bool
+		wantGuard     bool
+	}{
+		{
+			name:      "trusted slow completed stream",
+			result:    &OpenAIForwardResult{Stream: true, FirstTokenMs: &firstToken},
+			wantGuard: true,
+		},
+		{
+			name:          "half open probe",
+			result:        &OpenAIForwardResult{Stream: true, FirstTokenMs: &firstToken},
+			halfOpenProbe: true,
+		},
+		{
+			name:   "failed stream",
+			result: &OpenAIForwardResult{Stream: true, FirstTokenMs: &firstToken, OpenAIWSMode: true, UpstreamTerminalEvent: "response.failed"},
+		},
+		{
+			name:   "unknown stream without first output",
+			result: &OpenAIForwardResult{Stream: true},
+		},
+		{
+			name:   "client cancelled stream",
+			result: &OpenAIForwardResult{Stream: true, FirstTokenMs: &firstToken, ClientDisconnect: true},
+		},
+		{
+			name:   "non-stream result",
+			result: &OpenAIForwardResult{FirstTokenMs: &firstToken},
+		},
+		{
+			name: "below slow threshold",
+			result: func() *OpenAIForwardResult {
+				value := 29999
+				return &OpenAIForwardResult{Stream: true, FirstTokenMs: &value}
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store.mu.Lock()
+			store.slowGuard = make(map[int64]time.Time)
+			store.mu.Unlock()
+
+			svc.RecordOpenAISlowSessionGuard(153, tt.result, tt.halfOpenProbe)
+
+			store.mu.Lock()
+			_, got := store.slowGuard[153]
+			store.mu.Unlock()
+			require.Equal(t, tt.wantGuard, got)
+		})
+	}
+}
+
+func TestOpenAIAdmissionRejectDoesNotFailOpen(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	store.admissionDecision = &OpenAISharedAdmissionDecision{Allowed: false, Reason: "slow_session_guard"}
+	svc := &OpenAIGatewayService{}
+	svc.SetOpenAISharedHealthStore(store)
+
+	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
+	require.False(t, decision.Allowed)
+	require.Equal(t, "slow_session_guard", decision.Reason)
+	release()
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Empty(t, store.admissions)
+}
+
+func TestOpenAIAdmissionStoreFailureFailsOpen(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	store.getErr = errors.New("redis unavailable")
+	svc := &OpenAIGatewayService{}
+	svc.SetOpenAISharedHealthStore(store)
+
+	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
+	require.True(t, decision.Allowed)
+	require.Equal(t, "store_degraded", decision.Reason)
+	release()
+}
+
+func TestOpenAIAdmissionFirstSemanticOutputReleasesIdempotently(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	svc := &OpenAIGatewayService{}
+	svc.SetOpenAISharedHealthStore(store)
+
+	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
+	require.True(t, decision.Allowed)
+	ctx := WithOpenAIFirstSemanticOutputCallback(context.Background(), release)
+	notifyOpenAIFirstSemanticOutput(ctx)
+	notifyOpenAIFirstSemanticOutput(ctx)
+	release()
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Empty(t, store.admissions)
+}
+
+func TestOpenAIAdmissionRenewalStopsAfterRelease(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAISharedHealth = DefaultOpenAISharedHealthConfig()
+	cfg.Gateway.OpenAISharedHealth.AdmissionRenewSeconds = 5
+	cfg.Gateway.OpenAISharedHealth.AdmissionLeaseTTLSeconds = 30
+	svc := &OpenAIGatewayService{cfg: cfg}
+	svc.SetOpenAISharedHealthStore(store)
+
+	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
+	require.True(t, decision.Allowed)
+	require.Eventually(t, func() bool {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return store.renewCalls > 0
+	}, 7*time.Second, 100*time.Millisecond)
+
+	release()
+	store.mu.Lock()
+	renewCalls := store.renewCalls
+	store.mu.Unlock()
+	time.Sleep(5500 * time.Millisecond)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Equal(t, renewCalls, store.renewCalls)
+	require.Empty(t, store.admissions)
 }
 
 func TestOpenAIAccountModelTransientSharedCooldownBlocksAnotherService(t *testing.T) {

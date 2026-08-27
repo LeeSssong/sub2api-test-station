@@ -55,7 +55,6 @@ Rebuilt the admin account monitor as dense, full-width explainable account rows.
 - `pnpm build`: PASS, completed in 12.34s after transforming 1,076 modules.
 - `git diff --check`: PASS.
 - Browser-based desktop/mobile visual inspection was not run; markup/class regression coverage was used within the requested time-bounded validation.
-
 ## Release Scope
 
 - No backend, migration, configuration, ledger, queue, deployment record, or unrelated worktree changes.

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 func TestOpenAISchedulerLegacyGroupPolicyKeepsQualityGateDisabled(t *testing.T) {
@@ -19,9 +21,11 @@ func TestOpenAISchedulerLegacyGroupPolicyKeepsQualityGateDisabled(t *testing.T) 
 
 func TestOpenAIQualityGateRuntimeIsolatedByGroup(t *testing.T) {
 	stats := newOpenAIAccountRuntimeStats()
+	scheduler := &defaultOpenAIAccountScheduler{stats: stats}
 	for i := 0; i < 4; i++ {
-		stats.reportForGroup(11, 42, false, nil)
+		scheduler.ReportResultForGroup(11, 42, false, nil)
 	}
+	scheduler.ReportResultForGroup(12, 42, true, nil)
 	policy := defaultOpenAIQualityGatePolicy()
 	policy.Enabled = true
 	policy.MinSamples = 3
@@ -32,9 +36,95 @@ func TestOpenAIQualityGateRuntimeIsolatedByGroup(t *testing.T) {
 	if !evaluateOpenAIQualityGate(policy, bad).Bad {
 		t.Fatal("group 11 evidence should be bad")
 	}
-	if evaluateOpenAIQualityGate(policy, otherGroup).Known {
-		t.Fatal("group 12 must not inherit group 11 runtime evidence")
+	if otherGroup.SampleCount != 1 || otherGroup.ErrorRate != 0 {
+		t.Fatalf("group 12 must retain its own report: %#v", otherGroup)
 	}
+	if evaluateOpenAIQualityGate(policy, otherGroup).Bad {
+		t.Fatal("group 12 must not inherit group 11 bad evidence")
+	}
+}
+
+func TestOpenAIGatewayServiceGroupResultReportingKeepsRuntimeEvidenceIsolated(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+
+	cfg := &config.Config{}
+	settings := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{openAIAdvancedSchedulerSettingKey: "true"}}
+	service := &OpenAIGatewayService{
+		cfg:                cfg,
+		rateLimitService:   &RateLimitService{settingService: NewSettingService(settings, cfg)},
+		openaiAccountStats: newOpenAIAccountRuntimeStats(),
+	}
+	for range 4 {
+		service.ReportOpenAIAccountScheduleResultForGroup(11, 42, "gpt-5.5", false, nil)
+		service.ReportOpenAIAccountScheduleResultForGroup(12, 42, "gpt-5.5", true, nil)
+	}
+
+	group11, ok := service.openaiAccountStats.qualityGateEvidence(11, 42)
+	if !ok || group11.SampleCount != 4 || group11.ErrorRate <= 0.5 {
+		t.Fatalf("group 11 evidence = %#v, ok=%v", group11, ok)
+	}
+	group12, ok := service.openaiAccountStats.qualityGateEvidence(12, 42)
+	if !ok || group12.SampleCount != 4 || group12.ErrorRate >= 0.1 || group12.ErrorRate >= group11.ErrorRate {
+		t.Fatalf("group 12 evidence = %#v, ok=%v", group12, ok)
+	}
+}
+
+func TestOpenAIQualityGateStateAdvancesOncePerReportedObservation(t *testing.T) {
+	stats := newOpenAIAccountRuntimeStats()
+	policy := defaultOpenAIQualityGatePolicy()
+	policy.Enabled = true
+	policy.MinSamples = 3
+	policy.ErrorRateThreshold = 0.5
+	policy.EnterConsecutive = 2
+	policy.RecoverConsecutive = 2
+	for range 6 {
+		stats.reportForGroup(11, 42, false, nil)
+	}
+	now := time.Now().UTC()
+	state, evaluation := stats.qualityGateState(11, 42, policy, now, true)
+	if !evaluation.Known || !evaluation.Bad || state.BadStreak != 1 || state.Blocked {
+		t.Fatalf("first confirmed bad observation = state %#v, evaluation %#v", state, evaluation)
+	}
+
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(time.Second), true)
+	if state.BadStreak != 1 || state.Blocked {
+		t.Fatalf("repeated evaluation advanced unchanged evidence: %#v", state)
+	}
+
+	stats.reportForGroup(11, 42, false, nil)
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(2*time.Second), true)
+	if !state.Blocked || state.BadStreak != 2 {
+		t.Fatalf("second bad observation did not enter gate: %#v", state)
+	}
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(3*time.Second), true)
+	if state.BadStreak != 2 {
+		t.Fatalf("repeated blocked evaluation changed streak: %#v", state)
+	}
+
+	for range 4 {
+		stats.reportForGroup(11, 42, true, nil)
+	}
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(4*time.Second), true)
+	if !state.Blocked || state.GoodStreak != 1 {
+		t.Fatalf("first recovery observation did not advance once: %#v", state)
+	}
+
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(5*time.Second), true)
+	if !state.Blocked || state.GoodStreak != 1 {
+		t.Fatalf("repeated recovery evaluation changed streak: %#v", state)
+	}
+
+	stats.reportForGroup(11, 42, true, nil)
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(6*time.Second), true)
+	if state.Blocked || state.GoodStreak != 0 {
+		t.Fatalf("second good recovery observation did not clear gate: %#v", state)
+	}
+	state, _ = stats.qualityGateState(11, 42, policy, now.Add(10*time.Second), true)
+	if state.Blocked || state.GoodStreak != 0 {
+		t.Fatalf("repeated cleared-state evaluation changed state: %#v", state)
+	}
+
 }
 
 func TestOpenAIQualityGateUsesTheSharedFusedEvidenceProjection(t *testing.T) {

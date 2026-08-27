@@ -83,6 +83,11 @@ func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe
 		evidence.LatencySampleCount = probe.LatencySampleCount
 		evidence.LatencyP95MS = probe.LatencyP95MS
 	}
+	// Probes have no output-token stream, so generation rate remains real-only.
+	if realFresh && real.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(real.OutputRateTokensPerSecond) {
+		evidence.OutputRateTokensPerSecond = real.OutputRateTokensPerSecond
+		evidence.OutputRateSampleCount = real.OutputRateSampleCount
+	}
 	return evidence
 }
 

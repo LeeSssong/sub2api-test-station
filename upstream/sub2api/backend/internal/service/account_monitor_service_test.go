@@ -2539,6 +2539,7 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	probeLatency := 5000.0
 	realTTFT := 120.0
 	realLatency := 800.0
+	realOutputRate := 48.0
 	probe := AccountMonitorAggregate{
 		SampleCount: 4, SuccessSampleCount: 4, SuccessRate: 0.75,
 		TTFTSampleCount: 4, LatencySampleCount: 4, TTFTP50MS: &probeTTFT, LatencyP95MS: &probeLatency,
@@ -2551,6 +2552,7 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 		AccountMonitorWindowAggregate{
 			RequestCount: 2, SuccessCount: 2, SuccessRate: 1,
 			TTFTSampleCount: 2, LatencySampleCount: 2, TTFTP50MS: &realTTFT, LatencyP95MS: &realLatency,
+			OutputRateTokensPerSecond: &realOutputRate, OutputRateSampleCount: 2,
 			LastObservedAt: &now,
 		}, probe, latest, settings, now,
 	)
@@ -2560,6 +2562,9 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	if combined.TTFTSampleCount != 2 || combined.TTFTP50MS == nil || *combined.TTFTP50MS != realTTFT || combined.LatencySampleCount != 2 || combined.LatencyP95MS == nil || *combined.LatencyP95MS != realLatency {
 		t.Fatalf("real request latency metrics should take precedence when present: %#v", combined)
 	}
+	if combined.OutputRateTokensPerSecond == nil || *combined.OutputRateTokensPerSecond != realOutputRate || combined.OutputRateSampleCount != 2 {
+		t.Fatalf("real request output rate should take precedence when present: %#v", combined)
+	}
 
 	probeFallback := accountMonitorWindowEvidence(
 		AccountMonitorWindowAggregate{RequestCount: 2, SuccessCount: 2, LastObservedAt: &now}, probe, latest, settings, now,
@@ -2567,12 +2572,94 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	if probeFallback.TTFTSampleCount != probe.TTFTSampleCount || probeFallback.TTFTP50MS == nil || *probeFallback.TTFTP50MS != probeTTFT || probeFallback.LatencySampleCount != probe.LatencySampleCount || probeFallback.LatencyP95MS == nil || *probeFallback.LatencyP95MS != probeLatency {
 		t.Fatalf("probe latency metrics should fill missing real request metrics: %#v", probeFallback)
 	}
+	if probeFallback.OutputRateTokensPerSecond != nil || probeFallback.OutputRateSampleCount != 0 {
+		t.Fatalf("probe-only evidence must not invent an output rate: %#v", probeFallback)
+	}
 
 	realOnly := accountMonitorWindowEvidence(
 		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, AccountMonitorAggregate{}, AccountMonitorLatest{}, settings, now,
 	)
 	if realOnly.Source != "stale" || realOnly.SampleCount != 0 || realOnly.SuccessSampleCount != 0 {
 		t.Fatalf("real request evidence without a fresh probe should remain gated: %#v", realOnly)
+	}
+}
+
+func TestAccountMonitorOutputRateTokensPerSecondUsesOnlyValidGenerationEvidence(t *testing.T) {
+	tests := []struct {
+		name         string
+		outputTokens int64
+		generationMS float64
+		sampleCount  int
+		want         *float64
+	}{
+		{name: "normal", outputTokens: 240, generationMS: 4000, sampleCount: 2, want: floatPtr(60)},
+		{name: "no output tokens", generationMS: 4000, sampleCount: 2},
+		{name: "no valid samples", outputTokens: 240, generationMS: 4000},
+		{name: "nonpositive generation", outputTokens: 240, sampleCount: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AccountMonitorOutputRateTokensPerSecond(tt.outputTokens, tt.generationMS, tt.sampleCount)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("output rate = %v, want nil", *got)
+				}
+				return
+			}
+			if got == nil || *got != *tt.want {
+				t.Fatalf("output rate = %v, want %v", got, *tt.want)
+			}
+		})
+	}
+}
+
+func TestAccountMonitorQualityScorePrefersOutputRateAndFallsBackToLatency(t *testing.T) {
+	weights := AccountMonitorScoreWeights{Cost: 0, Success: 1, TTFT: 1, Latency: 10, TTFTTargetMS: 100, TTFTLimitMS: 1000, LatencyTargetMS: 1000, LatencyLimitMS: 5000}
+	fastRate := 256.0
+	slowRate := 64.0
+	ttft := 100.0
+	latency := 2000.0
+	base := AccountMonitorQualityEvidence{Known: true, SampleCount: 2, SuccessRate: 1, TTFTP50MS: &ttft, LatencyP95MS: &latency}
+	fast := base
+	fast.OutputRateTokensPerSecond = &fastRate
+	fast.OutputRateSampleCount = 2
+	slow := base
+	slow.OutputRateTokensPerSecond = &slowRate
+	slow.OutputRateSampleCount = 2
+
+	fastScore := CalculateAccountMonitorQualityScore(1, 1, weights, fast)
+	slowScore := CalculateAccountMonitorQualityScore(1, 1, weights, slow)
+	legacyScore := CalculateAccountMonitorQualityScore(1, 1, weights, base)
+	if fastScore == nil || slowScore == nil || legacyScore == nil || *fastScore <= *slowScore {
+		t.Fatalf("higher output rate should win: fast=%v slow=%v legacy=%v", fastScore, slowScore, legacyScore)
+	}
+	if *legacyScore != 10 { // success + TTFT + latency compatibility fallback (8).
+		t.Fatalf("legacy latency fallback score = %v, want 10", *legacyScore)
+	}
+}
+
+func TestAccountMonitorQualityEvidenceOutputRateJSONCompatibilityAndExplanationLabel(t *testing.T) {
+	rate := 32.0
+	known := AccountMonitorQualityEvidence{OutputRateTokensPerSecond: &rate, OutputRateSampleCount: 3}
+	body, err := json.Marshal(known)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"output_rate_tokens_per_second":32`) || !strings.Contains(string(body), `"output_rate_sample_count":3`) {
+		t.Fatalf("known output rate JSON = %s", body)
+	}
+	unknown, err := json.Marshal(AccountMonitorQualityEvidence{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(unknown), "output_rate") {
+		t.Fatalf("unknown output rate should remain omitted: %s", unknown)
+	}
+	if got := accountMonitorExperienceLabel(known); got != "生成体验（输出速率）" {
+		t.Fatalf("known experience label = %q", got)
+	}
+	if got := accountMonitorExperienceLabel(AccountMonitorQualityEvidence{LatencyP95MS: &rate}); got != "生成体验（完整响应 P95 兼容回退）" {
+		t.Fatalf("fallback experience label = %q", got)
 	}
 }
 

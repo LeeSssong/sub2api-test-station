@@ -93,6 +93,7 @@ export interface AccountMonitorQualityExplanation {
   sample_count: number
   source: string
   observed_at: string
+  experience_label?: string
 }
 
 export interface AccountMonitorSchedulerExplanation {
@@ -178,6 +179,8 @@ export interface AccountMonitorQualityEvidence {
   success_rate: number
   ttft_p50_ms?: number | null
   latency_p95_ms?: number | null
+  output_rate_tokens_per_second?: number | null
+  output_rate_sample_count?: number
   observed_at?: string | null
 }
 
@@ -225,6 +228,8 @@ export interface AccountMonitorAccount {
   ttft_p50_ms?: number | null
   ttft_p95_ms?: number | null
   latency_p95_ms?: number | null
+  output_rate_tokens_per_second?: number | null
+  output_rate_sample_count?: number
   multiplier: AccountMonitorMultiplier
   request_count: number
   error_count: number

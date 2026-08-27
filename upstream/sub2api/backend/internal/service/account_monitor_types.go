@@ -96,22 +96,24 @@ type AccountMonitorHealthSummary struct {
 }
 
 type AccountMonitorQualityEvidence struct {
-	Source             string    `json:"source"`
-	Known              bool      `json:"known"`
-	Freshness          string    `json:"freshness"`
-	UnknownReason      string    `json:"unknown_reason,omitempty"`
-	RealRequestSamples int       `json:"real_request_sample_count"`
-	ProbeSamples       int       `json:"probe_sample_count"`
-	RealRequestWeight  float64   `json:"real_request_weight"`
-	ProbeWeight        float64   `json:"probe_weight"`
-	SampleCount        int       `json:"sample_count"`
-	SuccessSampleCount int       `json:"success_sample_count"`
-	TTFTSampleCount    int       `json:"ttft_sample_count"`
-	LatencySampleCount int       `json:"latency_sample_count"`
-	SuccessRate        float64   `json:"success_rate"`
-	TTFTP50MS          *float64  `json:"ttft_p50_ms,omitempty"`
-	LatencyP95MS       *float64  `json:"latency_p95_ms,omitempty"`
-	ObservedAt         time.Time `json:"observed_at"`
+	Source                    string    `json:"source"`
+	Known                     bool      `json:"known"`
+	Freshness                 string    `json:"freshness"`
+	UnknownReason             string    `json:"unknown_reason,omitempty"`
+	RealRequestSamples        int       `json:"real_request_sample_count"`
+	ProbeSamples              int       `json:"probe_sample_count"`
+	RealRequestWeight         float64   `json:"real_request_weight"`
+	ProbeWeight               float64   `json:"probe_weight"`
+	SampleCount               int       `json:"sample_count"`
+	SuccessSampleCount        int       `json:"success_sample_count"`
+	TTFTSampleCount           int       `json:"ttft_sample_count"`
+	LatencySampleCount        int       `json:"latency_sample_count"`
+	SuccessRate               float64   `json:"success_rate"`
+	TTFTP50MS                 *float64  `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS              *float64  `json:"latency_p95_ms,omitempty"`
+	OutputRateTokensPerSecond *float64  `json:"output_rate_tokens_per_second,omitempty"`
+	OutputRateSampleCount     int       `json:"output_rate_sample_count,omitempty"`
+	ObservedAt                time.Time `json:"observed_at"`
 }
 
 type AccountMonitorScoreBreakdown struct {
@@ -146,14 +148,15 @@ type AccountMonitorQualityExplanationBreakdown struct {
 }
 
 type AccountMonitorQualityExplanation struct {
-	Score       *float64                                  `json:"score,omitempty"`
-	Rank        *int                                      `json:"rank,omitempty"`
-	RankTotal   int                                       `json:"rank_total,omitempty"`
-	Breakdown   AccountMonitorQualityExplanationBreakdown `json:"breakdown,omitempty"`
-	Window      string                                    `json:"window"`
-	SampleCount int                                       `json:"sample_count"`
-	Source      string                                    `json:"source"`
-	ObservedAt  time.Time                                 `json:"observed_at"`
+	Score           *float64                                  `json:"score,omitempty"`
+	Rank            *int                                      `json:"rank,omitempty"`
+	RankTotal       int                                       `json:"rank_total,omitempty"`
+	Breakdown       AccountMonitorQualityExplanationBreakdown `json:"breakdown,omitempty"`
+	Window          string                                    `json:"window"`
+	SampleCount     int                                       `json:"sample_count"`
+	Source          string                                    `json:"source"`
+	ObservedAt      time.Time                                 `json:"observed_at"`
+	ExperienceLabel string                                    `json:"experience_label,omitempty"`
 }
 
 type AccountMonitorSchedulerExplanation struct {
@@ -220,16 +223,18 @@ type AccountMonitorAggregate struct {
 // AccountMonitorWindowAggregate contains real request evidence from usage_logs.
 // Probe observations are intentionally kept separate from these fields.
 type AccountMonitorWindowAggregate struct {
-	RequestCount       int64
-	SuccessCount       int64
-	ErrorCount         int64
-	BaseCost           float64
-	SuccessRate        float64
-	TTFTSampleCount    int
-	LatencySampleCount int
-	TTFTP50MS          *float64
-	LatencyP95MS       *float64
-	LastObservedAt     *time.Time
+	RequestCount              int64
+	SuccessCount              int64
+	ErrorCount                int64
+	BaseCost                  float64
+	SuccessRate               float64
+	TTFTSampleCount           int
+	LatencySampleCount        int
+	TTFTP50MS                 *float64
+	LatencyP95MS              *float64
+	OutputRateTokensPerSecond *float64
+	OutputRateSampleCount     int
+	LastObservedAt            *time.Time
 }
 
 type AccountMonitorUsageWindow struct {
@@ -392,6 +397,8 @@ type AccountMonitorAccount struct {
 	TTFTP50MS                  *float64                            `json:"ttft_p50_ms,omitempty"`
 	TTFTP95MS                  *float64                            `json:"ttft_p95_ms,omitempty"`
 	LatencyP95MS               *float64                            `json:"latency_p95_ms,omitempty"`
+	OutputRateTokensPerSecond  *float64                            `json:"output_rate_tokens_per_second,omitempty"`
+	OutputRateSampleCount      int                                 `json:"output_rate_sample_count,omitempty"`
 	Multiplier                 AccountMonitorMultiplier            `json:"multiplier"`
 	Balance                    *AccountMonitorBalance              `json:"balance,omitempty"`
 	ProcurementCostCNY         *float64                            `json:"procurement_cost_cny"`

@@ -695,9 +695,28 @@ func TestOpenAIAccountSchedulerProjection_DoesNotCallEligibilityRemovalAStrategy
 	require.NotEqual(t, AccountMonitorReasonStrategy, candidate.PrimaryReasonCode)
 }
 
+func TestOpenAIAccountSchedulerProjectionStrategyDiffIgnoresEligibilityDifferences(t *testing.T) {
+	first := &Account{ID: 501}
+	second := &Account{ID: 502}
+	ranked := []openAIAccountCandidateScore{{account: first}}
+	// The quality order contains an account that the scheduler correctly
+	// excluded. Only compare the common eligible intersection; otherwise the
+	// remaining account would be incorrectly labelled as a policy mismatch.
+	require.False(t, schedulerProjectionOrderDiffersFromQualityOrder(ranked, []int64{second.ID, first.ID}))
+}
+
 func TestOpenAIAccountSchedulerProjection_LabelsEqualCustomBusinessPrioritiesAsBalanced(t *testing.T) {
 	require.Equal(t, "体验均衡", schedulerProjectionPolicyLabel(OpenAISchedulerGroupPolicy{
 		Priority: OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 1, Latency: 1},
+	}, true))
+}
+
+func TestOpenAIAccountSchedulerProjection_LabelsLatencyBusinessPriorityAsGenerationExperience(t *testing.T) {
+	require.Equal(t, "生成体验优先", schedulerProjectionPolicyLabel(OpenAISchedulerGroupPolicy{
+		Priority: OpenAISchedulerBusinessPriority{Profit: 3, TTFT: 2, Latency: 1},
+	}, true))
+	require.Equal(t, "利润优先", schedulerProjectionPolicyLabel(OpenAISchedulerGroupPolicy{
+		Priority: OpenAISchedulerBusinessPriority{Profit: 1, TTFT: 3, Latency: 3},
 	}, true))
 }
 

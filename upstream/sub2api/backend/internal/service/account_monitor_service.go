@@ -651,6 +651,8 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.SuccessRate = evidence.SuccessRate
 		row.TTFTP50MS = evidence.TTFTP50MS
 		row.LatencyP95MS = evidence.LatencyP95MS
+		row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
+		row.OutputRateSampleCount = evidence.OutputRateSampleCount
 		row.CheckedAt = accountMonitorWindowCheckedAt(latest[row.AccountID], evidence)
 		row.ManagementState = accountMonitorManagementState(account, now)
 		projectAccountMonitorProbe(row, probe, latest[row.AccountID], row.Timeline, settings, now, row.ManagementState)
@@ -675,7 +677,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 			row.QualityExplanation = &AccountMonitorQualityExplanation{
 				Score: row.QualityScore, Breakdown: qualityExplanationBreakdown(breakdown, weights),
 				Window: string(row.Range), SampleCount: scoreEvidence.SampleCount,
-				Source: scoreEvidence.Source, ObservedAt: scoreEvidence.ObservedAt,
+				Source: scoreEvidence.Source, ObservedAt: scoreEvidence.ObservedAt, ExperienceLabel: accountMonitorExperienceLabel(scoreEvidence),
 			}
 		}
 	}
@@ -813,6 +815,8 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.SuccessRate = evidence.SuccessRate
 			row.TTFTP50MS = evidence.TTFTP50MS
 			row.LatencyP95MS = evidence.LatencyP95MS
+			row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
+			row.OutputRateSampleCount = evidence.OutputRateSampleCount
 			row.CheckedAt = accountMonitorWindowCheckedAt(latest[account.ID], evidence)
 			row.ManagementState = accountMonitorManagementState(account, now)
 			projectAccountMonitorProbe(&row.AccountMonitorAccount, probe, latest[account.ID], row.Timeline, settings, now, row.ManagementState)
@@ -842,7 +846,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 				row.QualityExplanation = &AccountMonitorQualityExplanation{
 					Score: row.QualityScore, Breakdown: qualityExplanationBreakdown(breakdown, group.ScoreWeights),
 					Window: string(row.Range), SampleCount: scoreEvidence.SampleCount,
-					Source: scoreEvidence.Source, ObservedAt: scoreEvidence.ObservedAt,
+					Source: scoreEvidence.Source, ObservedAt: scoreEvidence.ObservedAt, ExperienceLabel: accountMonitorExperienceLabel(scoreEvidence),
 				}
 			}
 			projected = append(projected, row)
@@ -1102,6 +1106,8 @@ func (s *AccountMonitorService) projectGroupQualityEvidence(
 			row.SuccessRate = evidence.SuccessRate
 			row.TTFTP50MS = evidence.TTFTP50MS
 			row.LatencyP95MS = evidence.LatencyP95MS
+			row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
+			row.OutputRateSampleCount = evidence.OutputRateSampleCount
 			if checkedAt := evidence.ObservedAt; !checkedAt.IsZero() {
 				checkedAt = checkedAt.UTC()
 				row.CheckedAt = &checkedAt
@@ -1421,6 +1427,8 @@ func projectAccountMonitorWindowState(
 	row.LatencySampleCount = evidence.LatencySampleCount
 	row.TTFTP50MS = evidence.TTFTP50MS
 	row.LatencyP95MS = evidence.LatencyP95MS
+	row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
+	row.OutputRateSampleCount = evidence.OutputRateSampleCount
 	// Availability and service state remain probe-driven; this helper only
 	// replaces the quality fields with the hybrid window evidence. The probe
 	// aliases and current-state gate are preserved for compatibility.
@@ -1637,7 +1645,7 @@ func projectLegacyAccountMonitorScore(row *AccountMonitorAccount, account Accoun
 	}
 	breakdown, _ := accountMonitorScoreBreakdown(1, row.Multiplier.Value, normalizeAccountMonitorScoreWeights(DefaultAccountMonitorScoreWeights), evidence)
 	row.ScoreBreakdown = &breakdown
-	row.QualityExplanation = &AccountMonitorQualityExplanation{Score: row.QualityScore, Window: "legacy", SampleCount: evidence.SampleCount, Source: evidence.Source, ObservedAt: evidence.ObservedAt}
+	row.QualityExplanation = &AccountMonitorQualityExplanation{Score: row.QualityScore, Window: "legacy", SampleCount: evidence.SampleCount, Source: evidence.Source, ObservedAt: evidence.ObservedAt, ExperienceLabel: accountMonitorExperienceLabel(evidence)}
 	row.Eligible = true
 	_ = account
 	_ = groups
@@ -1706,10 +1714,60 @@ func accountMonitorScoreBreakdown(
 		Cost:    accountMonitorCostScore(groupMultiplier, accountMultiplier, weights),
 		Success: float64(weights.Success) * clamp01(evidence.SuccessRate),
 		TTFT:    float64(weights.TTFT) * latencyScore(evidence.TTFTP50MS, weights.TTFTTargetMS, weights.TTFTLimitMS),
-		Latency: float64(weights.Latency) * latencyScore(evidence.LatencyP95MS, weights.LatencyTargetMS, weights.LatencyLimitMS),
+		Latency: float64(weights.Latency) * accountMonitorGenerationExperienceScore(evidence, weights, latencyScore),
 	}
 	total := math.Round(breakdown.Cost + breakdown.Success + breakdown.TTFT + breakdown.Latency)
 	return breakdown, &total
+}
+
+const accountMonitorExperienceReferenceOutputTokens = 256
+
+// AccountMonitorOutputRateTokensPerSecond derives a weighted real-request
+// generation rate from usage_logs aggregates. Invalid or incomplete input is
+// unknown, never treated as a fast zero-rate response.
+func AccountMonitorOutputRateTokensPerSecond(outputTokens int64, generationMS float64, sampleCount int) *float64 {
+	if outputTokens <= 0 || generationMS <= 0 || sampleCount <= 0 || math.IsNaN(generationMS) || math.IsInf(generationMS, 0) {
+		return nil
+	}
+	rate := float64(outputTokens) * 1000 / generationMS
+	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return nil
+	}
+	return &rate
+}
+
+func validAccountMonitorOutputRate(rate *float64) bool {
+	return rate != nil && *rate > 0 && !math.IsNaN(*rate) && !math.IsInf(*rate, 0)
+}
+
+func accountMonitorGenerationExperienceScore(
+	evidence AccountMonitorQualityEvidence,
+	weights AccountMonitorScoreWeights,
+	latencyScore func(*float64, int, int) float64,
+) float64 {
+	if evidence.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(evidence.OutputRateTokensPerSecond) && weights.LatencyTargetMS > 0 && weights.LatencyLimitMS > weights.LatencyTargetMS {
+		// The persisted latency thresholds retain their role as the experience
+		// budget, translated through a fixed generic output size rather than a
+		// model-specific rank or a new persisted policy dimension.
+		targetRate := float64(accountMonitorExperienceReferenceOutputTokens*1000) / float64(weights.LatencyTargetMS)
+		limitRate := float64(accountMonitorExperienceReferenceOutputTokens*1000) / float64(weights.LatencyLimitMS)
+		rate := *evidence.OutputRateTokensPerSecond
+		if rate >= targetRate {
+			return 1
+		}
+		if rate <= limitRate {
+			return 0
+		}
+		return (rate - limitRate) / (targetRate - limitRate)
+	}
+	return latencyScore(evidence.LatencyP95MS, weights.LatencyTargetMS, weights.LatencyLimitMS)
+}
+
+func accountMonitorExperienceLabel(evidence AccountMonitorQualityEvidence) string {
+	if evidence.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(evidence.OutputRateTokensPerSecond) {
+		return "生成体验（输出速率）"
+	}
+	return "生成体验（完整响应 P95 兼容回退）"
 }
 
 func accountMonitorQualityEvidenceUsableForScore(evidence AccountMonitorQualityEvidence) bool {
@@ -1717,7 +1775,7 @@ func accountMonitorQualityEvidenceUsableForScore(evidence AccountMonitorQualityE
 		return true
 	}
 	return evidence.Source != "" && evidence.Source != accountMonitorQualitySourceUnknown &&
-		(evidence.SampleCount > 0 || evidence.SuccessRate > 0 || evidence.TTFTP50MS != nil || evidence.LatencyP95MS != nil)
+		(evidence.SampleCount > 0 || evidence.SuccessRate > 0 || evidence.TTFTP50MS != nil || evidence.LatencyP95MS != nil || validAccountMonitorOutputRate(evidence.OutputRateTokensPerSecond))
 }
 
 type accountMonitorWindowCostResult struct {

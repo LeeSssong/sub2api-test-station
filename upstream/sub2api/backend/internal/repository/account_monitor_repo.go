@@ -532,6 +532,7 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 				u.account_id,
 				u.first_token_ms,
 				u.duration_ms,
+				u.output_tokens,
 				u.total_cost,
 				u.created_at,
 				EXISTS (
@@ -567,6 +568,9 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 				FILTER (WHERE first_token_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)
 				FILTER (WHERE duration_ms IS NOT NULL),
+			COUNT(*) FILTER (WHERE NOT has_error AND output_tokens > 0 AND first_token_ms IS NOT NULL AND duration_ms > first_token_ms)::int,
+			COALESCE(SUM(output_tokens) FILTER (WHERE NOT has_error AND output_tokens > 0 AND first_token_ms IS NOT NULL AND duration_ms > first_token_ms), 0)::bigint,
+			COALESCE(SUM(duration_ms - first_token_ms) FILTER (WHERE NOT has_error AND output_tokens > 0 AND first_token_ms IS NOT NULL AND duration_ms > first_token_ms), 0)::double precision,
 			MAX(created_at)
 		FROM window_usage
 		GROUP BY account_id
@@ -579,6 +583,8 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 	for rows.Next() {
 		var accountID int64
 		var aggregate service.AccountMonitorWindowAggregate
+		var outputTokens int64
+		var generationMS float64
 		if err := rows.Scan(
 			&accountID,
 			&aggregate.RequestCount,
@@ -590,10 +596,14 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 			&aggregate.LatencySampleCount,
 			&aggregate.TTFTP50MS,
 			&aggregate.LatencyP95MS,
+			&aggregate.OutputRateSampleCount,
+			&outputTokens,
+			&generationMS,
 			&aggregate.LastObservedAt,
 		); err != nil {
 			return nil, err
 		}
+		aggregate.OutputRateTokensPerSecond = service.AccountMonitorOutputRateTokensPerSecond(outputTokens, generationMS, aggregate.OutputRateSampleCount)
 		result[accountID] = aggregate
 	}
 	if err := rows.Err(); err != nil {
@@ -620,6 +630,7 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				u.account_id,
 				u.first_token_ms,
 				u.duration_ms,
+				u.output_tokens,
 				u.total_cost,
 				u.created_at
 			FROM usage_logs u
@@ -641,6 +652,7 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				u.account_id,
 				u.first_token_ms,
 				u.duration_ms,
+				u.output_tokens,
 				u.total_cost,
 				u.created_at,
 				EXISTS (
@@ -653,7 +665,7 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				) AS has_error
 			FROM group_usage u
 			UNION ALL
-			SELECT e.account_id, NULL, NULL, NULL, e.created_at, TRUE
+			SELECT e.account_id, NULL, NULL, NULL, NULL, e.created_at, TRUE
 			FROM group_errors e
 			WHERE NOT EXISTS (
 				SELECT 1
@@ -680,6 +692,9 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				FILTER (WHERE first_token_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)
 				FILTER (WHERE duration_ms IS NOT NULL),
+			COUNT(*) FILTER (WHERE NOT has_error AND output_tokens > 0 AND first_token_ms IS NOT NULL AND duration_ms > first_token_ms)::int,
+			COALESCE(SUM(output_tokens) FILTER (WHERE NOT has_error AND output_tokens > 0 AND first_token_ms IS NOT NULL AND duration_ms > first_token_ms), 0)::bigint,
+			COALESCE(SUM(duration_ms - first_token_ms) FILTER (WHERE NOT has_error AND output_tokens > 0 AND first_token_ms IS NOT NULL AND duration_ms > first_token_ms), 0)::double precision,
 			MAX(created_at)
 		FROM group_requests
 		GROUP BY account_id
@@ -692,6 +707,8 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 	for rows.Next() {
 		var accountID int64
 		var aggregate service.AccountMonitorWindowAggregate
+		var outputTokens int64
+		var generationMS float64
 		if err := rows.Scan(
 			&accountID,
 			&aggregate.RequestCount,
@@ -703,10 +720,14 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 			&aggregate.LatencySampleCount,
 			&aggregate.TTFTP50MS,
 			&aggregate.LatencyP95MS,
+			&aggregate.OutputRateSampleCount,
+			&outputTokens,
+			&generationMS,
 			&aggregate.LastObservedAt,
 		); err != nil {
 			return nil, err
 		}
+		aggregate.OutputRateTokensPerSecond = service.AccountMonitorOutputRateTokensPerSecond(outputTokens, generationMS, aggregate.OutputRateSampleCount)
 		result[accountID] = aggregate
 	}
 	if err := rows.Err(); err != nil {

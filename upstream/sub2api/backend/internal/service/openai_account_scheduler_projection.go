@@ -169,7 +169,7 @@ func schedulerProjectionPolicyLabel(policy OpenAISchedulerGroupPolicy, configure
 		case priority.TTFT <= priority.Latency:
 			return "首字优先"
 		default:
-			return "完整耗时优先"
+			return "生成体验优先"
 		}
 	}
 	switch policy.Preset {
@@ -365,10 +365,13 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 				Rank:      &rank,
 				Eligible:  true,
 			}
-			if index == 0 && strategyOrderDiffers {
-				candidate.PrimaryReasonCode = AccountMonitorReasonStrategy
-			} else if projection.QualityFallback {
+			// Eligibility fallback is a stronger explanation than a policy/order
+			// difference. A quality-gate fallback can change the visible first row
+			// solely by removing candidates; do not misattribute that to strategy.
+			if projection.QualityFallback {
 				candidate.PrimaryReasonCode = AccountMonitorReasonQualityGate
+			} else if index == 0 && strategyOrderDiffers {
+				candidate.PrimaryReasonCode = AccountMonitorReasonStrategy
 			} else if index > 0 && rankedCandidate.score == ranked[index-1].score {
 				candidate.PrimaryReasonCode = AccountMonitorReasonTieBreak
 			}

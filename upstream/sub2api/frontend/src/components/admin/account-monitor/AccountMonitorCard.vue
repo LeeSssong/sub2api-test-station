@@ -335,7 +335,7 @@ const qualityBreakdownItems = computed<BreakdownItem[]>(() => {
       { key: 'cost', label: '成本', score: formatMetricNumber(breakdown.cost.score), max: formatMetricNumber(breakdown.cost.max) },
       { key: 'success', label: '成功', score: formatMetricNumber(breakdown.success.score), max: formatMetricNumber(breakdown.success.max) },
       { key: 'ttft', label: '首 Token', score: formatMetricNumber(breakdown.ttft.score), max: formatMetricNumber(breakdown.ttft.max) },
-      { key: 'latency', label: '延迟', score: formatMetricNumber(breakdown.latency.score), max: formatMetricNumber(breakdown.latency.max) },
+      { key: 'latency', label: props.account.quality_explanation?.experience_label || '生成体验', score: formatMetricNumber(breakdown.latency.score), max: formatMetricNumber(breakdown.latency.max) },
     ]
   }
   const legacyBreakdown = props.account.score_breakdown
@@ -344,7 +344,7 @@ const qualityBreakdownItems = computed<BreakdownItem[]>(() => {
     { key: 'cost', label: '成本', score: formatMetricNumber(legacyBreakdown.cost), max: '--' },
     { key: 'success', label: '成功', score: formatMetricNumber(legacyBreakdown.success), max: '--' },
     { key: 'ttft', label: '首 Token', score: formatMetricNumber(legacyBreakdown.ttft), max: '--' },
-    { key: 'latency', label: '延迟', score: formatMetricNumber(legacyBreakdown.latency), max: '--' },
+    { key: 'latency', label: props.account.quality_explanation?.experience_label || '生成体验', score: formatMetricNumber(legacyBreakdown.latency), max: '--' },
   ]
 })
 const qualityExplanationSummary = computed(() => {

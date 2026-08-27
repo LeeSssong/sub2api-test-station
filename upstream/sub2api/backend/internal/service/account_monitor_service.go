@@ -94,6 +94,7 @@ type AccountMonitorService struct {
 	accountRepo         AccountMonitorAccountRepository
 	testService         *AccountTestService
 	usage               *AccountUsageService
+	activeProbeUsage    ActiveProbeUsageWindowReader
 	multiplier          accountMonitorMultiplierResolver
 	costPricing         accountMonitorModelPricingReader
 	recommend           accountMonitorRecommendationEvaluator
@@ -106,6 +107,15 @@ type AccountMonitorService struct {
 
 	runStateMu sync.Mutex
 	activeRun  *accountMonitorRun
+}
+
+// SetActiveProbeUsageReader attaches the bounded usage reader used by
+// scheduled probes. A separate narrow interface keeps automatic admission
+// independent from the broader usage service contract.
+func (s *AccountMonitorService) SetActiveProbeUsageReader(reader ActiveProbeUsageWindowReader) {
+	if s != nil {
+		s.activeProbeUsage = reader
+	}
 }
 
 // SetModelDetectionService attaches the optional detector projection and
@@ -2088,6 +2098,13 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			continue
 		}
 		g.Go(func() error {
+			if reader := s.activeProbeUsageReader(); reader != nil {
+				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
+				used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
+				if usageErr != nil || used {
+					return nil
+				}
+			}
 			result := s.probeAccount(gctx, account)
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
@@ -2126,7 +2143,7 @@ func (s *AccountMonitorService) RunOne(
 		s.finishRun(run, completed, runErr)
 	}()
 
-	accounts, err := s.listPool(ctx)
+	accounts, err := s.listActiveAccounts(ctx)
 	if err != nil {
 		runErr = err
 		return AccountMonitorProbeResult{}, err
@@ -2461,6 +2478,20 @@ func (s *AccountMonitorService) loadSettings(ctx context.Context) (AccountMonito
 }
 
 func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error) {
+	accounts, err := s.listActiveAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filtered := accounts[:0]
+	for _, account := range accounts {
+		if account.Schedulable {
+			filtered = append(filtered, account)
+		}
+	}
+	return filtered, nil
+}
+
+func (s *AccountMonitorService) listActiveAccounts(ctx context.Context) ([]Account, error) {
 	accounts, err := s.accountRepo.ListAllWithFilters(ctx, "", "", "", "", 0, "")
 	if err != nil {
 		return nil, fmt.Errorf("list active monitor accounts: %w", err)
@@ -2473,6 +2504,19 @@ func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error)
 	}
 	sort.Slice(filtered, func(i, j int) bool { return filtered[i].ID < filtered[j].ID })
 	return filtered, nil
+}
+
+func (s *AccountMonitorService) activeProbeUsageReader() ActiveProbeUsageWindowReader {
+	if s == nil {
+		return nil
+	}
+	if s.activeProbeUsage != nil {
+		return s.activeProbeUsage
+	}
+	if s.usage != nil {
+		return s.usage
+	}
+	return nil
 }
 
 func (s *AccountMonitorService) probeAccount(ctx context.Context, account Account) AccountMonitorProbeResult {
@@ -2496,7 +2540,7 @@ func (s *AccountMonitorService) probeAccount(ctx context.Context, account Accoun
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	result, err := probeConnection(probeCtx, account.ID, modelID, "hi", AccountTestModeDefault)
+	result, err := probeConnection(probeCtx, account.ID, modelID, accountMonitorProbePrompt(), AccountTestModeDefault)
 	if err != nil {
 		result.Status = "failed"
 		result.ErrorCode = classifyAccountMonitorProbeError(err)

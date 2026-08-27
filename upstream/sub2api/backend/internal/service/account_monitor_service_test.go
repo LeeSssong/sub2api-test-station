@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/stretchr/testify/require"
 )
 
 type accountMonitorAccountRepoStub struct {
@@ -27,6 +28,26 @@ type accountMonitorAccountRepoStub struct {
 	listAllStatus         string
 	listAllCalled         bool
 	listSchedulableCalled bool
+}
+
+type activeProbeUsageStub struct {
+	accountUsed map[int64]bool
+	groupUsed   map[int64]bool
+	err         error
+}
+
+func (s *activeProbeUsageStub) HasAccountUsageInWindow(_ context.Context, accountID int64, _ time.Time, _ time.Time) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.accountUsed != nil && s.accountUsed[accountID], nil
+}
+
+func (s *activeProbeUsageStub) HasGroupUsageInWindow(_ context.Context, groupID int64, _ time.Time, _ time.Time) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	return s.groupUsed != nil && s.groupUsed[groupID], nil
 }
 
 type accountMonitorRepoStub struct {
@@ -986,7 +1007,7 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts) != 3 || accounts[0].ID != 2 || accounts[1].ID != 6 || accounts[2].ID != 9 {
+	if len(accounts) != 2 || accounts[0].ID != 2 || accounts[1].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
 	}
 	if !repo.listAllCalled || repo.listAllStatus != "" {
@@ -995,6 +1016,33 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 	if repo.listSchedulableCalled {
 		t.Fatal("account monitor must not use runtime scheduler eligibility")
 	}
+}
+
+func TestAccountMonitorRunAllSkipsAccountWithCurrentBucketUsage(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{ID: 707, Status: StatusActive, Schedulable: true}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.SetActiveProbeUsageReader(&activeProbeUsageStub{accountUsed: map[int64]bool{707: true}})
+	service.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+		t.Fatal("probe must not be called when current bucket has user usage")
+		return AccountMonitorProbeResult{}, nil
+	}
+	completed, err := service.RunAll(context.Background(), 1)
+	require.NoError(t, err)
+	require.Zero(t, completed)
+	require.Empty(t, monitorRepo.results)
+}
+
+func TestAccountMonitorRunOneKeepsUnschedulableActiveAccount(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{ID: 708, Status: StatusActive, Schedulable: false}}}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+	_, err := service.RunOne(context.Background(), 1, 708)
+	require.NoError(t, err)
+	require.Len(t, monitorRepo.results, 1)
 }
 
 func TestAccountMonitorProjectMonitorV2GroupsUsesSchedulableScopes(t *testing.T) {

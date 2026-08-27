@@ -2,7 +2,7 @@
 
 ## 最新发布更新（2026-08-26）
 
-- **T80 OpenAI 长请求调度准入韧性**：状态 `DESIGNING`。用户基于 2026-08-27 GPT-Pro 账号 `286` 的高 TTFT 事故，已确认优先解决“第一批长请求尚未完成时，同一慢账号仍被连续准入”的风险。根 `main@00a83106075c7ff9901702c3cbbf2ddd44d22ab9` 干净，所有已注册非 `main` worktree、提交、状态及生产证据已盘点，无完成且领先 `main` 的候选需先并入；不抢占 T77 VERIFYING 或其他发布车道。任务将复用原生 OpenAI scheduler、shared-health 和 Redis，不新建平行事实源：跨实例飞行中准入保护、真实请求质量分桶、共享状态失败可观测性和最小调度审计为目标；不改分组、优先级、账务、用户协议、迁移或生产配置。正式规格待独立 worktree 中书面审阅批准，未批准前不实施、推送或部署。
+- **T80 OpenAI 长请求调度准入韧性**：状态 `READY_FOR_ROOT_REVIEW`（根审查通过，等待发布车道）。用户基于 2026-08-27 GPT-Pro 账号 `286` 的高 TTFT 事故，已确认优先解决“第一批长请求尚未完成时，同一慢账号仍被连续准入”的风险。候选 `codex/t80-openai-scheduling-admission-resilience@f7fa349bb`、tree `044f27c6e304c375da3ae92d6c05ba2fc8ff8acd`，基于已刷新根 `main@5cceb1643436bcd3a4a751b932376805c49df44a`，无冲突且 worktree 干净。已交付账号级跨模型/跨分组首输出前 admission lease、slow-session guard、首语义输出释放、失败/取消幂等清理、共享写入 context 隔离和脱敏可观测性；安全层不读取分组名、套餐名、Pro 标签或模型，不新增 account-model quality/config 契约。config/repository/service/handler 直接相关测试、`go build ./cmd/server`、`git diff --check` 已重新通过；无迁移、生产配置或业务数据写入，预期 `downtime_required=false` 待根预检确认。T77 与 T79 仍 `VERIFYING` 并占用整合/部署/验收单车道，T80 仅排队，不得自行合并、推送或部署。交接：`docs/handoffs/2026-08-27-t80-openai-scheduling-admission-resilience.md`。
 
 - **T76 调度与质量排名一致性**：状态 `FROZEN`。用户于 2026-08-27 确认冻结写入，避免与 T80 同时改动 OpenAI 选路链。保留 `codex/t76-scheduler-quality-ranking-consistency@42a0014f05010f852acc67686976e2a0b093d2f5` 与 `/private/tmp/t76-quality-base.ZvXIS1@8714dcaf6b5925c593def27ed591f2bf37064a6f` 作只读证据；未提交内容必须原样保留。该候选的已完成样本质量门控无法覆盖首批长请求未完成期间的批量准入，T80 稳定后才可按根总控指令刷新其监控解释层。
 

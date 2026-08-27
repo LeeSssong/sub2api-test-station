@@ -18,7 +18,7 @@
 
 由 operator 在验收宿主准备以下互不复用生产的值：
 
-- 主站域名路径入口 https://api.xingqiaolab.top/admin/lab/；不新增域名、不新增公网 TLS listener。生产 Caddy 只负责共享 TLS 和路径反代，并同时要求请求来自 Cloudflare 官方网段、`CF-Connecting-IP` 精确匹配 `ACCEPTANCE_LAB_ALLOWED_IPS` 中的管理员 IP（空格分隔的精确地址，不接受 CIDR；默认 `127.0.0.1`，即拒绝公网来源）；验收 Caddy 只监听同宿主的专用 acceptance edge 端口（示例 8181）。
+- 主站域名路径入口 https://api.xingqiaolab.top/admin/lab/；不新增域名、不新增公网 TLS listener。生产 Caddy 只负责共享 TLS 和路径反代，并同时要求请求来自 Cloudflare 官方网段、`CF-Connecting-IP` 经锚定正则精确匹配 `ACCEPTANCE_LAB_ALLOWED_IPS` 中的管理员 IP（使用 `|` 分隔的正则备选值，IPv4 点号必须写成 `\\.`，不接受 CIDR；默认 `127\\.0\\.0\\.1`，即拒绝公网来源）；验收 Caddy 只监听同宿主的专用 acceptance edge 端口（示例 8181）。
 - 独立验收运行目录（不与主站复用 Docker project/network、数据库、Redis、对象存储、凭据或数据卷）；宿主部署目录必须位于 /opt/sub2api/acceptance-*。生产 Caddy 与验收 Caddy 仅共享这一条受限 HTTP 入口，不共享验收内部网络或数据。
 - 独立 SSH 用户、私钥和 known_hosts；宿主已允许该用户使用 sudo -n bash -s。
 - 独立支付商户/回调配置、上游账号与 API key、通知通道；这些凭据只写入验收站 env 或后台，不提交 Git。

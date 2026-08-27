@@ -58,7 +58,7 @@ grep -Fq '{$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181}' "$production_cad
   || fail 'production caddy must proxy acceptance through the loopback upstream'
 grep -Fq 'remote_ip 173.245.48.0/20' "$production_caddy_file" \
   || fail 'production caddy must trust Cloudflare source ranges for acceptance'
-grep -Fq 'header Cf-Connecting-Ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1}' "$production_caddy_file" \
+grep -Fq 'header_regexp Cf-Connecting-Ip ^(?:{$ACCEPTANCE_LAB_ALLOWED_IPS:127\\.0\\.0\\.1})$' "$production_caddy_file" \
   || fail 'production caddy must require the exact acceptance admin IP'
 grep -Fq 'respond 403' "$production_caddy_file" \
   || fail 'production caddy must default-deny acceptance sources'

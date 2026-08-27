@@ -72,6 +72,34 @@ func TestHandleStreamingResponseNotifiesAfterFlushedSemanticSSEFrame(t *testing.
 	require.NotNil(t, result.firstTokenMs)
 }
 
+func TestHandleStreamingResponseGuardDoesNotNotifyWhenSemanticFlushFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Writer = &antigravityFailingWriter{ResponseWriter: c.Writer, failAfter: 0}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"type":"response.output_text.delta","delta":"hello"}` + "\n\n" +
+				`data: {"type":"response.completed","response":{"id":"resp_flush_failure","status":"completed","output":[]}}` + "\n\n",
+		)),
+	}
+	callbackCalls := 0
+	ctx := WithOpenAIFirstSemanticOutputCallback(context.Background(), func() {
+		callbackCalls++
+	})
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{
+		OpenAIFirstOutputTimeoutSeconds: 1,
+	}}}
+
+	_, _ = svc.handleStreamingResponse(ctx, resp, c, &Account{ID: 153, Platform: PlatformOpenAI}, time.Now(), "gpt-5.6-sol", "gpt-5.6-sol")
+
+	require.Zero(t, callbackCalls)
+}
+
 func TestHandleAnthropicStreamingResponseStructuralOnlyCompletionDoesNotArmSlowSessionGuard(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

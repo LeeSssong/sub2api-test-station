@@ -288,6 +288,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		completedProgressEvent := eventStartsClientOutput
 		completedVisibleEvent := eventStartsVisibleOutput
 		shouldFlush := eventShouldFlush || (queueDrained && clientOutputStarted)
+		semanticEventFlushed := false
 		eventInProgress = false
 		if !clientDisconnected {
 			if completedProgressEvent {
@@ -300,10 +301,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				} else {
 					clientOutputStarted = true
 					lastDownstreamWriteAt = time.Now()
+					semanticEventFlushed = true
 				}
 			}
 		}
-		if completedProgressEvent && !firstOutputProgressObserved {
+		if completedProgressEvent && semanticEventFlushed && !firstOutputProgressObserved {
 			firstOutputScanGuard.Store(false)
 			firstOutputProgressObserved = true
 			stopFirstOutputTimer()

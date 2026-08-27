@@ -206,7 +206,7 @@ install -m 600 -o root -g root "$extraction_root/runtime/.env" "$deploy_root/.en
 docker compose --project-name sub2api-acceptance --env-file "$deploy_root/.env" \
   -f "$deploy_root/compose.acceptance.yaml" up -d --wait --no-build
 docker compose --project-name sub2api-acceptance --env-file "$deploy_root/.env" \
-  -f "$deploy_root/compose.acceptance.yaml" --profile bootstrap run --rm acceptance-bootstrap
+  -f "$deploy_root/compose.acceptance.yaml" --profile bootstrap run --rm acceptance-bootstrap >/dev/null
 
 postgres_container=$("${compose_cmd[@]}" ps -q acceptance-postgres)
 [[ -n "$postgres_container" ]] || fail 'acceptance postgres is missing after bootstrap'

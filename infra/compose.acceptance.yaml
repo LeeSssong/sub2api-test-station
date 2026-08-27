@@ -151,18 +151,18 @@ services:
     restart: "no"
     environment:
       POSTGRES_USER: ${ACCEPTANCE_DB_USER:?ACCEPTANCE_DB_USER is required}
-      POSTGRES_PASSWORD: ${ACCEPTANCE_DB_PASSWORD:?ACCEPTANCE_DB_PASSWORD is required}
       POSTGRES_DB: ${ACCEPTANCE_DB_NAME:?ACCEPTANCE_DB_NAME is required}
+      PGPASSWORD: ${ACCEPTANCE_DB_PASSWORD:?ACCEPTANCE_DB_PASSWORD is required}
     networks: [acceptance]
     depends_on:
       acceptance-postgres: {condition: service_healthy}
-    entrypoint: ["sh", "-ec"]
-    command: |
-      export PGPASSWORD="$$POSTGRES_PASSWORD"
-      exec psql --host=acceptance-postgres --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB" --set=ON_ERROR_STOP=1 --command="INSERT INTO settings (key, value) VALUES
-        ('backend_mode_enabled', 'true'),
-        ('registration_enabled', 'false')
-      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();"
+    entrypoint: ["psql"]
+    command:
+      - --host=acceptance-postgres
+      - --username=${ACCEPTANCE_DB_USER:?ACCEPTANCE_DB_USER is required}
+      - --dbname=${ACCEPTANCE_DB_NAME:?ACCEPTANCE_DB_NAME is required}
+      - --set=ON_ERROR_STOP=1
+      - --command=INSERT INTO settings (key, value) VALUES ('backend_mode_enabled', 'true'), ('registration_enabled', 'false') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
     logging: *logging
 
 volumes:

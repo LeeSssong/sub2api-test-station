@@ -1,0 +1,510 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// OpenAIAccountSchedulerProjectionRequest contains the monitor-owned snapshot
+// inputs needed to explain the scheduler's current candidate order. Accounts
+// and LoadMap are read only; Project never fetches a slot or mutates scheduler
+// state.
+type OpenAIAccountSchedulerProjectionRequest struct {
+	GroupID                 int64
+	Platform                string
+	RequestedModel          string
+	RequiredTransport       OpenAIUpstreamTransport
+	RequiredCapability      OpenAIEndpointCapability
+	RequiredImageCapability OpenAIImagesCapability
+	RequireCompact          bool
+	RequirePrivacySet       bool
+	UseUpstreamTokenCost    bool
+	SubscriptionPriority    bool
+	ExcludedIDs             map[int64]struct{}
+	QualityOrder            []int64
+	SnapshotAt              time.Time
+	Accounts                []*Account
+	LoadMap                 map[int64]*AccountLoadInfo
+}
+
+// OpenAIAccountSchedulerProjection is the scheduler-owned, side-effect-free
+// candidate view consumed by account monitoring.
+type OpenAIAccountSchedulerProjection struct {
+	SnapshotAt  time.Time `json:"snapshot_at"`
+	PolicyKey   string    `json:"policy_key"`
+	PolicyLabel string    `json:"policy_label"`
+	// EffectiveWeights remains available to in-process callers but is not part
+	// of the public projection JSON; EffectiveFacts is the readable contract.
+	EffectiveWeights map[string]float64                          `json:"-"`
+	EffectiveFacts   []AccountMonitorSchedulerFact               `json:"effective_facts"`
+	ModelQuotaParity string                                      `json:"model_quota_parity,omitempty"`
+	CandidateCount   int                                         `json:"candidate_count"`
+	QualityFallback  bool                                        `json:"quality_fallback,omitempty"`
+	FallbackReason   AccountMonitorReasonCode                    `json:"fallback_reason,omitempty"`
+	Candidates       []OpenAIAccountSchedulerProjectionCandidate `json:"candidates"`
+}
+
+type OpenAIAccountSchedulerProjectionCandidate struct {
+	AccountID         int64                    `json:"account_id"`
+	Rank              *int                     `json:"rank,omitempty"`
+	Eligible          bool                     `json:"eligible"`
+	PrimaryReasonCode AccountMonitorReasonCode `json:"primary_reason_code,omitempty"`
+}
+
+type OpenAIAccountSchedulerProjectionProvider interface {
+	Project(context.Context, OpenAIAccountSchedulerProjectionRequest) (*OpenAIAccountSchedulerProjection, error)
+}
+
+type openAIAccountSchedulerPolicyResolution struct {
+	weights                     GatewayOpenAIWSSchedulerScoreWeightsView
+	fairness                    OpenAISchedulerFairnessSettings
+	topK                        int
+	policy                      OpenAISchedulerGroupPolicy
+	configured                  bool
+	qualityWeights              GatewayOpenAIWSSchedulerScoreWeightsView
+	qualityFairness             OpenAISchedulerFairnessSettings
+	subscriptionPriorityEnabled bool
+}
+
+func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicy(ctx context.Context, groupID int64) openAIAccountSchedulerPolicyResolution {
+	if s == nil || s.service == nil {
+		return openAIAccountSchedulerPolicyResolution{
+			weights:    (&OpenAIGatewayService{}).openAIWSSchedulerWeights(),
+			fairness:   defaultOpenAISchedulerFairnessSettings(),
+			topK:       7,
+			configured: false,
+		}
+	}
+
+	weights := s.service.openAIWSSchedulerWeightsForRequest(ctx)
+	topK := s.service.openAIWSLBTopKForRequest(ctx)
+	runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
+	fairness := resolveOpenAISchedulerFairnessForGroup(runtime.fairness, groupID)
+	policy, configured := runtime.groupPolicies[groupID]
+	if configured {
+		weights, fairness = applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
+		if policy.Values.TopK > 0 {
+			topK = policy.Values.TopK
+		}
+	}
+	return openAIAccountSchedulerPolicyResolution{
+		weights:    weights,
+		fairness:   fairness,
+		topK:       topK,
+		policy:     policy,
+		configured: configured,
+	}
+}
+
+func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicyForProjection(ctx context.Context, groupID int64) (openAIAccountSchedulerPolicyResolution, error) {
+	if s == nil || s.service == nil {
+		return openAIAccountSchedulerPolicyResolution{
+			weights:         (&OpenAIGatewayService{}).openAIWSSchedulerWeights(),
+			fairness:        defaultOpenAISchedulerFairnessSettings(),
+			topK:            7,
+			configured:      false,
+			qualityWeights:  (&OpenAIGatewayService{}).openAIWSSchedulerWeights(),
+			qualityFairness: defaultOpenAISchedulerFairnessSettings(),
+		}, nil
+	}
+	resolution := s.resolveOpenAIAccountSchedulerPolicy(ctx, groupID)
+	runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
+	resolution.subscriptionPriorityEnabled = runtime.enabled && runtime.subscriptionPriorityEnabled
+	return resolution, nil
+}
+
+func schedulerProjectionEffectiveWeights(weights GatewayOpenAIWSSchedulerScoreWeightsView) map[string]float64 {
+	return map[string]float64{
+		"priority":          weights.Priority,
+		"load":              weights.Load,
+		"queue":             weights.Queue,
+		"error_rate":        weights.ErrorRate,
+		"ttft":              weights.TTFT,
+		"reset":             weights.Reset,
+		"quota_headroom":    weights.QuotaHeadroom,
+		"upstream_cost":     weights.UpstreamCost,
+		"previous_response": weights.Previous,
+		"session_sticky":    weights.SessionSticky,
+	}
+}
+
+func schedulerProjectionEffectiveFacts(weights GatewayOpenAIWSSchedulerScoreWeightsView) []AccountMonitorSchedulerFact {
+	facts := []AccountMonitorSchedulerFact{
+		{Label: "账号优先级权重", Value: strconv.FormatFloat(weights.Priority, 'g', -1, 64)},
+		{Label: "当前负载权重", Value: strconv.FormatFloat(weights.Load, 'g', -1, 64)},
+		{Label: "排队量权重", Value: strconv.FormatFloat(weights.Queue, 'g', -1, 64)},
+		{Label: "错误率权重", Value: strconv.FormatFloat(weights.ErrorRate, 'g', -1, 64)},
+		{Label: "首 Token 权重", Value: strconv.FormatFloat(weights.TTFT, 'g', -1, 64)},
+		{Label: "重置时间权重", Value: strconv.FormatFloat(weights.Reset, 'g', -1, 64)},
+		{Label: "额度余量权重", Value: strconv.FormatFloat(weights.QuotaHeadroom, 'g', -1, 64)},
+		{Label: "上游成本权重", Value: strconv.FormatFloat(weights.UpstreamCost, 'g', -1, 64)},
+		{Label: "上次响应权重", Value: strconv.FormatFloat(weights.Previous, 'g', -1, 64)},
+		{Label: "会话粘性权重", Value: strconv.FormatFloat(weights.SessionSticky, 'g', -1, 64)},
+	}
+	return facts
+}
+
+func schedulerProjectionPolicyKey(configured bool) string {
+	if configured {
+		return "group_policy"
+	}
+	return "global_policy"
+}
+
+func schedulerProjectionPolicyLabel(policy OpenAISchedulerGroupPolicy, configured bool) string {
+	if !configured {
+		return "默认调度策略"
+	}
+	if policy.Priority != (OpenAISchedulerBusinessPriority{}) {
+		priority := policy.Priority
+		switch {
+		case priority.Profit == priority.TTFT && priority.Profit == priority.Latency:
+			return "体验均衡"
+		case priority.Profit <= priority.TTFT && priority.Profit <= priority.Latency:
+			return "利润优先"
+		case priority.TTFT <= priority.Latency:
+			return "首字优先"
+		default:
+			return "生成体验优先"
+		}
+	}
+	switch policy.Preset {
+	case OpenAISchedulerPresetSpecialOffer:
+		return "体验优先"
+	case OpenAISchedulerPresetPro:
+		return "利润优先"
+	case OpenAISchedulerPresetBalanced:
+		return "体验均衡"
+	default:
+		return "当前分组调度策略"
+	}
+}
+
+// Project builds the deterministic order before Top-K random choice. It
+// deliberately accepts the caller's account/load snapshot so monitor reads do
+// not acquire slots, create sticky bindings, or refresh runtime state.
+func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIAccountSchedulerProjectionRequest) (*OpenAIAccountSchedulerProjection, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	now := req.SnapshotAt
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	platform := normalizeOpenAICompatiblePlatform(req.Platform)
+	policy, err := s.resolveOpenAIAccountSchedulerPolicyForProjection(ctx, req.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve OpenAI scheduler projection policy: %w", err)
+	}
+	req.SubscriptionPriority = policy.subscriptionPriorityEnabled
+	projection := &OpenAIAccountSchedulerProjection{
+		SnapshotAt:       now,
+		PolicyKey:        schedulerProjectionPolicyKey(policy.configured),
+		PolicyLabel:      schedulerProjectionPolicyLabel(policy.policy, policy.configured),
+		EffectiveWeights: schedulerProjectionEffectiveWeights(policy.weights),
+		EffectiveFacts:   schedulerProjectionEffectiveFacts(policy.weights),
+	}
+	if platform == PlatformGrok && strings.TrimSpace(req.RequestedModel) == "" {
+		projection.ModelQuotaParity = "unknown"
+	}
+
+	groupID := req.GroupID
+	var groupIDPtr *int64
+	if groupID > 0 {
+		groupIDPtr = &groupID
+	}
+	scheduleReq := OpenAIAccountScheduleRequest{
+		GroupID:                 groupIDPtr,
+		Platform:                platform,
+		RequestedModel:          req.RequestedModel,
+		RequiredTransport:       req.RequiredTransport,
+		RequiredCapability:      req.RequiredCapability,
+		RequiredImageCapability: req.RequiredImageCapability,
+		RequireCompact:          req.RequireCompact,
+		UseUpstreamTokenCost:    req.UseUpstreamTokenCost,
+		SubscriptionPriority:    req.SubscriptionPriority,
+		ExcludedIDs:             req.ExcludedIDs,
+	}
+
+	eligible := make([]*Account, 0, len(req.Accounts))
+	qualityBlocked := make([]*Account, 0, len(req.Accounts))
+	ineligible := make([]OpenAIAccountSchedulerProjectionCandidate, 0, len(req.Accounts))
+	sharedHealthCtx := ctx
+	cancelSharedHealthReads := func() {}
+	sharedHealthReads := 0
+	if s != nil && s.service != nil {
+		sharedHealthCtx, cancelSharedHealthReads = s.service.openAISharedHealthSelectionContext(ctx)
+	}
+	defer cancelSharedHealthReads()
+	for _, account := range req.Accounts {
+		candidate := OpenAIAccountSchedulerProjectionCandidate{}
+		if account == nil {
+			candidate.PrimaryReasonCode = AccountMonitorReasonNotEligible
+			ineligible = append(ineligible, candidate)
+			continue
+		}
+		candidate.AccountID = account.ID
+		reason := ""
+		switch {
+		case req.ExcludedIDs != nil && hasOpenAIAccountID(req.ExcludedIDs, account.ID):
+			reason = "excluded"
+		case !account.IsSchedulableAt(now):
+			reason = "not_schedulable"
+		case account.Platform != platform || !account.IsOpenAICompatible():
+			reason = "platform_mismatch"
+		case req.RequirePrivacySet && !account.IsPrivacySet():
+			reason = "privacy_not_set"
+		default:
+			if s != nil && s.service != nil && s.service.isOpenAIAccountRuntimeBlockedAtReadOnly(account, now) {
+				reason = "runtime_blocked"
+				break
+			}
+			allowSharedRead := false
+			if s != nil && s.service != nil && s.service.hasOpenAISharedHealthStore() && sharedHealthReads < openAISharedHealthReadLimit {
+				allowSharedRead = true
+				sharedHealthReads++
+			}
+			if compatible, compatibilityReason := s.isAccountRequestProjectionCompatibleReason(sharedHealthCtx, account, scheduleReq, now, allowSharedRead); !compatible {
+				reason = compatibilityReason
+			} else if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+				reason = "transport_incompatible"
+			} else if req.RequireCompact && openAICompactSupportTier(account) == 0 {
+				reason = "compact_unsupported"
+			}
+		}
+		if reason != "" {
+			candidate.PrimaryReasonCode = schedulerProjectionReasonCode(account, reason, now)
+			ineligible = append(ineligible, candidate)
+			continue
+		}
+		if gate, enabled := s.qualityGatePolicyForGroup(ctx, req.GroupID); enabled && s.qualityGateBlockedForGroup(ctx, req.GroupID, account.ID, gate, now, false) {
+			qualityBlocked = append(qualityBlocked, account)
+			ineligible = append(ineligible, OpenAIAccountSchedulerProjectionCandidate{
+				AccountID: account.ID, PrimaryReasonCode: AccountMonitorReasonQualityGate,
+			})
+			continue
+		}
+		candidate.Eligible = true
+		eligible = append(eligible, account)
+	}
+	if len(eligible) == 0 && len(qualityBlocked) > 0 {
+		blockedIDs := make(map[int64]struct{}, len(qualityBlocked))
+		for _, account := range qualityBlocked {
+			if account != nil {
+				blockedIDs[account.ID] = struct{}{}
+			}
+		}
+		if fallback, ok := selectOpenAIQualityGateFallback(qualityBlocked, blockedIDs); ok {
+			eligible = []*Account{fallback}
+			remaining := ineligible[:0]
+			for _, candidate := range ineligible {
+				if candidate.AccountID != fallback.ID {
+					remaining = append(remaining, candidate)
+				}
+			}
+			ineligible = remaining
+		}
+		projection.QualityFallback = true
+		projection.FallbackReason = AccountMonitorReasonQualityGate
+	}
+
+	if len(eligible) > 0 {
+		if platform == PlatformGrok {
+			quotaAccounts := make([]Account, 0, len(eligible))
+			for _, account := range eligible {
+				if account != nil {
+					quotaAccounts = append(quotaAccounts, *account)
+				}
+			}
+			quotaFiltered := s.filterGrokFreeQuotaAccountsReadOnly(quotaAccounts)
+			quotaAllowed := make(map[int64]struct{}, len(quotaFiltered))
+			for i := range quotaFiltered {
+				quotaAllowed[quotaFiltered[i].ID] = struct{}{}
+			}
+			filteredEligible := make([]*Account, 0, len(eligible))
+			for _, account := range eligible {
+				if _, allowed := quotaAllowed[account.ID]; allowed {
+					filteredEligible = append(filteredEligible, account)
+					continue
+				}
+				ineligible = append(ineligible, OpenAIAccountSchedulerProjectionCandidate{
+					AccountID: account.ID, PrimaryReasonCode: AccountMonitorReasonNotEligible,
+				})
+			}
+			eligible = filteredEligible
+		}
+	}
+
+	if len(eligible) > 0 {
+		rankPool := func(pool []*Account) []openAIAccountCandidateScore {
+			plan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, pool, req.LoadMap, now, &policy, false)
+			ranked := append([]openAIAccountCandidateScore(nil), plan.preTopKCandidates...)
+			sort.SliceStable(ranked, func(i, j int) bool {
+				return isOpenAIAccountCandidateBetter(ranked[i], ranked[j])
+			})
+			return ranked
+		}
+		ranked := rankPool(eligible)
+		if scheduleReq.SubscriptionPriority {
+			subscriptionAccounts, regularAccounts := partitionOpenAIChatGPTSubscriptionAccounts(eligible)
+			if len(subscriptionAccounts) > 0 {
+				ranked = append(rankPool(subscriptionAccounts), rankPool(regularAccounts)...)
+			}
+		}
+		strategyOrderDiffers := schedulerProjectionOrderDiffersFromQualityOrder(ranked, req.QualityOrder)
+		for index, rankedCandidate := range ranked {
+			rank := index + 1
+			candidate := OpenAIAccountSchedulerProjectionCandidate{
+				AccountID: rankedCandidate.account.ID,
+				Rank:      &rank,
+				Eligible:  true,
+			}
+			// Eligibility fallback is a stronger explanation than a policy/order
+			// difference. A quality-gate fallback can change the visible first row
+			// solely by removing candidates; do not misattribute that to strategy.
+			if projection.QualityFallback {
+				candidate.PrimaryReasonCode = AccountMonitorReasonQualityGate
+			} else if index == 0 && strategyOrderDiffers {
+				candidate.PrimaryReasonCode = AccountMonitorReasonStrategy
+			} else if index > 0 && rankedCandidate.score == ranked[index-1].score {
+				candidate.PrimaryReasonCode = AccountMonitorReasonTieBreak
+			}
+			projection.Candidates = append(projection.Candidates, candidate)
+		}
+	}
+	sort.SliceStable(ineligible, func(i, j int) bool {
+		return ineligible[i].AccountID < ineligible[j].AccountID
+	})
+	projection.Candidates = append(projection.Candidates, ineligible...)
+	projection.CandidateCount = len(projection.Candidates)
+	return projection, nil
+}
+
+func (s *OpenAIGatewayService) Project(ctx context.Context, req OpenAIAccountSchedulerProjectionRequest) (*OpenAIAccountSchedulerProjection, error) {
+	if s == nil {
+		return (&defaultOpenAIAccountScheduler{}).Project(ctx, req)
+	}
+	scheduler := s.getOrCreateOpenAIAccountScheduler()
+	if scheduler == nil {
+		return nil, fmt.Errorf("OpenAI scheduler projection unavailable")
+	}
+	return scheduler.Project(ctx, req)
+}
+
+func hasOpenAIAccountID(ids map[int64]struct{}, accountID int64) bool {
+	_, ok := ids[accountID]
+	return ok
+}
+
+func schedulerProjectionOrderDiffersFromQualityOrder(ranked []openAIAccountCandidateScore, qualityOrder []int64) bool {
+	if len(qualityOrder) == 0 {
+		return false
+	}
+	rankedIDs := make(map[int64]struct{}, len(ranked))
+	for _, candidate := range ranked {
+		if candidate.account != nil {
+			rankedIDs[candidate.account.ID] = struct{}{}
+		}
+	}
+	qualityIntersection := make([]int64, 0, len(qualityOrder))
+	seenQuality := make(map[int64]struct{}, len(qualityOrder))
+	for _, accountID := range qualityOrder {
+		if _, ranked := rankedIDs[accountID]; !ranked {
+			continue
+		}
+		if _, seen := seenQuality[accountID]; seen {
+			continue
+		}
+		seenQuality[accountID] = struct{}{}
+		qualityIntersection = append(qualityIntersection, accountID)
+	}
+	rankedIntersection := make([]int64, 0, len(qualityIntersection))
+	for _, candidate := range ranked {
+		if candidate.account == nil {
+			continue
+		}
+		if _, included := seenQuality[candidate.account.ID]; included {
+			rankedIntersection = append(rankedIntersection, candidate.account.ID)
+		}
+	}
+	if len(rankedIntersection) != len(qualityIntersection) {
+		return false
+	}
+	for i := range rankedIntersection {
+		if rankedIntersection[i] != qualityIntersection[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *defaultOpenAIAccountScheduler) isAccountRequestProjectionCompatibleReason(ctx context.Context, account *Account, req OpenAIAccountScheduleRequest, now time.Time, allowSharedRead bool) (bool, string) {
+	if account == nil {
+		return false, "account_nil"
+	}
+	if s != nil && s.service != nil && s.service.isOpenAIAccountModelRuntimeBlockedAtReadOnlyContext(ctx, account, req.RequestedModel, now, allowSharedRead) {
+		return false, "runtime_blocked"
+	}
+	if s != nil && s.service != nil && s.service.isOpenAIProxyStreamQuarantinedAtReadOnly(ctx, account, now) {
+		return false, "proxy_stream_quarantined"
+	}
+	if paused, decision := shouldAutoPauseOpenAIAccountByQuotaAt(ctx, account, now); paused {
+		reason := "quota_auto_pause"
+		if decision.window != "" {
+			reason += "_" + decision.window
+		}
+		return false, reason
+	}
+	if !parentHealthyForShadow(account, func(id int64) *Account {
+		return s.lookupShadowParentAccount(ctx, id)
+	}) {
+		return false, "shadow_parent_unhealthy"
+	}
+	if req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel) {
+		return false, "model_not_supported"
+	}
+	if req.GroupID != nil && s != nil && s.service != nil &&
+		s.service.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
+		s.service.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
+		return false, "channel_upstream_restricted"
+	}
+	if !accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) {
+		return false, "capability_mismatch"
+	}
+	if vetoed, reason := openAIProfitControlVetoReasonReadOnly(ctx, account); vetoed {
+		return false, reason
+	}
+	return true, ""
+}
+
+func schedulerProjectionReasonCode(account *Account, reason string, now time.Time) AccountMonitorReasonCode {
+	if account != nil && openAIAccountSchedulerCooldownActiveAt(account, now) {
+		return AccountMonitorReasonCooldown
+	}
+	if strings.HasPrefix(reason, "runtime_") || strings.Contains(reason, "cooldown") || strings.Contains(reason, "rate_limit") || strings.Contains(reason, "overload") || strings.Contains(reason, "quarantine") {
+		return AccountMonitorReasonCooldown
+	}
+	return AccountMonitorReasonNotEligible
+}
+
+func openAIAccountSchedulerCooldownActiveAt(account *Account, now time.Time) bool {
+	if account == nil {
+		return false
+	}
+	for _, until := range []*time.Time{
+		account.RateLimitResetAt,
+		account.OverloadUntil,
+		account.TempUnschedulableUntil,
+	} {
+		if until != nil && now.Before(*until) {
+			return true
+		}
+	}
+	return false
+}

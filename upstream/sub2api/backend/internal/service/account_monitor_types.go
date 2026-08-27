@@ -70,6 +70,7 @@ type AccountMonitorGroup struct {
 	ActiveAccountCount      int64                        `json:"active_account_count"`
 	RateLimitedAccountCount int64                        `json:"rate_limited_account_count"`
 	CustomerVisible         bool                         `json:"customer_visible"`
+	RequirePrivacySet       bool                         `json:"require_privacy_set"`
 	NativeOrder             int                          `json:"native_order"`
 	ScoreWeights            AccountMonitorScoreWeights   `json:"score_weights"`
 	OperationalState        string                       `json:"operational_state"`
@@ -95,15 +96,24 @@ type AccountMonitorHealthSummary struct {
 }
 
 type AccountMonitorQualityEvidence struct {
-	Source             string    `json:"source"`
-	SampleCount        int       `json:"sample_count"`
-	SuccessSampleCount int       `json:"success_sample_count"`
-	TTFTSampleCount    int       `json:"ttft_sample_count"`
-	LatencySampleCount int       `json:"latency_sample_count"`
-	SuccessRate        float64   `json:"success_rate"`
-	TTFTP50MS          *float64  `json:"ttft_p50_ms,omitempty"`
-	LatencyP95MS       *float64  `json:"latency_p95_ms,omitempty"`
-	ObservedAt         time.Time `json:"observed_at"`
+	Source                    string    `json:"source"`
+	Known                     bool      `json:"known"`
+	Freshness                 string    `json:"freshness"`
+	UnknownReason             string    `json:"unknown_reason,omitempty"`
+	RealRequestSamples        int       `json:"real_request_sample_count"`
+	ProbeSamples              int       `json:"probe_sample_count"`
+	RealRequestWeight         float64   `json:"real_request_weight"`
+	ProbeWeight               float64   `json:"probe_weight"`
+	SampleCount               int       `json:"sample_count"`
+	SuccessSampleCount        int       `json:"success_sample_count"`
+	TTFTSampleCount           int       `json:"ttft_sample_count"`
+	LatencySampleCount        int       `json:"latency_sample_count"`
+	SuccessRate               float64   `json:"success_rate"`
+	TTFTP50MS                 *float64  `json:"ttft_p50_ms,omitempty"`
+	LatencyP95MS              *float64  `json:"latency_p95_ms,omitempty"`
+	OutputRateTokensPerSecond *float64  `json:"output_rate_tokens_per_second,omitempty"`
+	OutputRateSampleCount     int       `json:"output_rate_sample_count,omitempty"`
+	ObservedAt                time.Time `json:"observed_at"`
 }
 
 type AccountMonitorScoreBreakdown struct {
@@ -111,6 +121,65 @@ type AccountMonitorScoreBreakdown struct {
 	Success float64 `json:"success"`
 	TTFT    float64 `json:"ttft"`
 	Latency float64 `json:"latency"`
+}
+
+type AccountMonitorReasonCode string
+
+const (
+	AccountMonitorReasonStrategy      AccountMonitorReasonCode = "strategy"
+	AccountMonitorReasonQualityGate   AccountMonitorReasonCode = "quality_gate"
+	AccountMonitorReasonRuntimeLoad   AccountMonitorReasonCode = "runtime_load"
+	AccountMonitorReasonCooldown      AccountMonitorReasonCode = "cooldown"
+	AccountMonitorReasonTieBreak      AccountMonitorReasonCode = "tie_break"
+	AccountMonitorReasonDataFreshness AccountMonitorReasonCode = "data_freshness"
+	AccountMonitorReasonNotEligible   AccountMonitorReasonCode = "not_eligible"
+)
+
+type AccountMonitorQualityScoreComponent struct {
+	Score float64 `json:"score"`
+	Max   float64 `json:"max"`
+}
+
+type AccountMonitorQualityExplanationBreakdown struct {
+	Cost    AccountMonitorQualityScoreComponent `json:"cost"`
+	Success AccountMonitorQualityScoreComponent `json:"success"`
+	TTFT    AccountMonitorQualityScoreComponent `json:"ttft"`
+	Latency AccountMonitorQualityScoreComponent `json:"latency"`
+}
+
+type AccountMonitorQualityExplanation struct {
+	Score           *float64                                  `json:"score,omitempty"`
+	Rank            *int                                      `json:"rank,omitempty"`
+	RankTotal       int                                       `json:"rank_total,omitempty"`
+	Breakdown       AccountMonitorQualityExplanationBreakdown `json:"breakdown,omitempty"`
+	Window          string                                    `json:"window"`
+	SampleCount     int                                       `json:"sample_count"`
+	Source          string                                    `json:"source"`
+	ObservedAt      time.Time                                 `json:"observed_at"`
+	ExperienceLabel string                                    `json:"experience_label,omitempty"`
+}
+
+type AccountMonitorSchedulerExplanation struct {
+	Rank           *int   `json:"rank,omitempty"`
+	RankTotal      int    `json:"rank_total,omitempty"`
+	CandidateTotal int    `json:"candidate_total,omitempty"`
+	Eligible       bool   `json:"eligible"`
+	PolicyKey      string `json:"policy_key,omitempty"`
+	PolicyLabel    string `json:"policy_label"`
+	// EffectiveWeights is retained for in-process compatibility. It is not
+	// serialized because its keys are scheduler implementation details.
+	EffectiveWeights   map[string]float64            `json:"-"`
+	EffectiveFacts     []AccountMonitorSchedulerFact `json:"effective_facts,omitempty"`
+	ModelQuotaParity   string                        `json:"model_quota_parity,omitempty"`
+	CandidateScope     string                        `json:"candidate_scope,omitempty"`
+	SnapshotAt         *time.Time                    `json:"snapshot_at,omitempty"`
+	PrimaryReasonCode  AccountMonitorReasonCode      `json:"primary_reason_code,omitempty"`
+	PrimaryReasonLabel string                        `json:"primary_reason_label,omitempty"`
+}
+
+type AccountMonitorSchedulerFact struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 type AccountMonitorGroupAccount struct {
@@ -154,16 +223,18 @@ type AccountMonitorAggregate struct {
 // AccountMonitorWindowAggregate contains real request evidence from usage_logs.
 // Probe observations are intentionally kept separate from these fields.
 type AccountMonitorWindowAggregate struct {
-	RequestCount       int64
-	SuccessCount       int64
-	ErrorCount         int64
-	BaseCost           float64
-	SuccessRate        float64
-	TTFTSampleCount    int
-	LatencySampleCount int
-	TTFTP50MS          *float64
-	LatencyP95MS       *float64
-	LastObservedAt     *time.Time
+	RequestCount              int64
+	SuccessCount              int64
+	ErrorCount                int64
+	BaseCost                  float64
+	SuccessRate               float64
+	TTFTSampleCount           int
+	LatencySampleCount        int
+	TTFTP50MS                 *float64
+	LatencyP95MS              *float64
+	OutputRateTokensPerSecond *float64
+	OutputRateSampleCount     int
+	LastObservedAt            *time.Time
 }
 
 type AccountMonitorUsageWindow struct {
@@ -296,66 +367,75 @@ type AccountMonitorRefreshOptions struct {
 }
 
 type AccountMonitorAccount struct {
-	AccountID                  int64                              `json:"account_id"`
-	Name                       string                             `json:"name"`
-	Platform                   string                             `json:"platform"`
-	AccountType                string                             `json:"account_type"`
-	Status                     string                             `json:"status"`
-	Schedulable                bool                               `json:"schedulable"`
-	Priority                   int                                `json:"priority"`
-	HomepageURL                string                             `json:"homepage_url,omitempty"`
-	GroupIDs                   []int64                            `json:"group_ids"`
-	GroupNames                 []string                           `json:"group_names"`
-	ModelID                    string                             `json:"model_id"`
-	ConnectionProbeModel       string                             `json:"connection_probe_model,omitempty"`
-	ModelDetection             *AccountModelDetectionProjection   `json:"model_detection,omitempty"`
-	LatestStatus               string                             `json:"latest_status"`
-	ErrorCode                  string                             `json:"error_code,omitempty"`
-	ProbeSampleCount           int                                `json:"probe_sample_count"`
-	ProbeSuccessCount          int                                `json:"probe_success_count"`
-	ProbeSuccessRate           float64                            `json:"probe_success_rate"`
-	ProbeTTFTP50MS             *float64                           `json:"probe_ttft_p50_ms,omitempty"`
-	ProbeLatencyP95MS          *float64                           `json:"probe_latency_p95_ms,omitempty"`
-	AvailabilityStatus         string                             `json:"availability_status"`
-	ScoreStatus                string                             `json:"score_status"`
-	SampleCount                int                                `json:"sample_count"`
-	SuccessSampleCount         int                                `json:"success_sample_count"`
-	TTFTSampleCount            int                                `json:"ttft_sample_count"`
-	LatencySampleCount         int                                `json:"latency_sample_count"`
-	SuccessRate                float64                            `json:"success_rate"`
-	TTFTP50MS                  *float64                           `json:"ttft_p50_ms,omitempty"`
-	TTFTP95MS                  *float64                           `json:"ttft_p95_ms,omitempty"`
-	LatencyP95MS               *float64                           `json:"latency_p95_ms,omitempty"`
-	Multiplier                 AccountMonitorMultiplier           `json:"multiplier"`
-	Balance                    *AccountMonitorBalance             `json:"balance,omitempty"`
-	ProcurementCostCNY         *float64                           `json:"procurement_cost_cny"`
-	EstimatedUsableQuotaUSD    *float64                           `json:"estimated_usable_quota_usd"`
-	ProcurementCostEffectiveAt *time.Time                         `json:"procurement_cost_effective_at"`
-	ExpiresAt                  *time.Time                         `json:"expires_at"`
-	RequestCount               int64                              `json:"request_count"`
-	ErrorCount                 int64                              `json:"error_count"`
-	Range                      AccountMonitorRange                `json:"range,omitempty"`
-	BaseCost                   float64                            `json:"base_cost"`
-	EffectiveMultiplier        *float64                           `json:"effective_multiplier,omitempty"`
-	EquivalentSiteMultiplier   *float64                           `json:"equivalent_site_multiplier"`
-	CostMode                   string                             `json:"cost_mode,omitempty"`
-	CostScore                  float64                            `json:"cost_score"`
-	QualityScore               *float64                           `json:"quality_score,omitempty"`
-	ScoreBreakdown             *AccountMonitorScoreBreakdown      `json:"score_breakdown,omitempty"`
-	EvidenceSource             string                             `json:"evidence_source,omitempty"`
-	GroupRank                  *int                               `json:"group_rank,omitempty"`
-	Eligible                   bool                               `json:"eligible"`
-	TodayStats                 *WindowStats                       `json:"today_stats,omitempty"`
-	UsageWindows               []AccountMonitorUsageWindow        `json:"usage_windows,omitempty"`
-	Latest                     *AccountMonitorLatest              `json:"latest,omitempty"`
-	Timeline                   []AccountMonitorTimelinePoint      `json:"timeline"`
-	CheckedAt                  *time.Time                         `json:"checked_at,omitempty"`
-	Stale                      bool                               `json:"stale"`
-	ManagementState            string                             `json:"management_state"`
-	ServiceState               string                             `json:"service_state"`
-	GroupEligibility           string                             `json:"group_eligibility"`
-	MonitorBucket              string                             `json:"monitor_bucket"`
-	GroupRecommendation        *AccountMonitorGroupRecommendation `json:"group_recommendation,omitempty"`
+	AccountID                  int64                               `json:"account_id"`
+	Name                       string                              `json:"name"`
+	Platform                   string                              `json:"platform"`
+	AccountType                string                              `json:"account_type"`
+	Status                     string                              `json:"status"`
+	Schedulable                bool                                `json:"schedulable"`
+	Priority                   int                                 `json:"priority"`
+	HomepageURL                string                              `json:"homepage_url,omitempty"`
+	GroupIDs                   []int64                             `json:"group_ids"`
+	GroupNames                 []string                            `json:"group_names"`
+	ModelID                    string                              `json:"model_id"`
+	ConnectionProbeModel       string                              `json:"connection_probe_model,omitempty"`
+	ModelDetection             *AccountModelDetectionProjection    `json:"model_detection,omitempty"`
+	LatestStatus               string                              `json:"latest_status"`
+	ErrorCode                  string                              `json:"error_code,omitempty"`
+	ProbeSampleCount           int                                 `json:"probe_sample_count"`
+	ProbeSuccessCount          int                                 `json:"probe_success_count"`
+	ProbeSuccessRate           float64                             `json:"probe_success_rate"`
+	ProbeTTFTP50MS             *float64                            `json:"probe_ttft_p50_ms,omitempty"`
+	ProbeLatencyP95MS          *float64                            `json:"probe_latency_p95_ms,omitempty"`
+	AvailabilityStatus         string                              `json:"availability_status"`
+	ScoreStatus                string                              `json:"score_status"`
+	SampleCount                int                                 `json:"sample_count"`
+	SuccessSampleCount         int                                 `json:"success_sample_count"`
+	TTFTSampleCount            int                                 `json:"ttft_sample_count"`
+	LatencySampleCount         int                                 `json:"latency_sample_count"`
+	SuccessRate                float64                             `json:"success_rate"`
+	TTFTP50MS                  *float64                            `json:"ttft_p50_ms,omitempty"`
+	TTFTP95MS                  *float64                            `json:"ttft_p95_ms,omitempty"`
+	LatencyP95MS               *float64                            `json:"latency_p95_ms,omitempty"`
+	OutputRateTokensPerSecond  *float64                            `json:"output_rate_tokens_per_second,omitempty"`
+	OutputRateSampleCount      int                                 `json:"output_rate_sample_count,omitempty"`
+	Multiplier                 AccountMonitorMultiplier            `json:"multiplier"`
+	Balance                    *AccountMonitorBalance              `json:"balance,omitempty"`
+	ProcurementCostCNY         *float64                            `json:"procurement_cost_cny"`
+	EstimatedUsableQuotaUSD    *float64                            `json:"estimated_usable_quota_usd"`
+	ProcurementCostEffectiveAt *time.Time                          `json:"procurement_cost_effective_at"`
+	ExpiresAt                  *time.Time                          `json:"expires_at"`
+	RequestCount               int64                               `json:"request_count"`
+	ErrorCount                 int64                               `json:"error_count"`
+	Range                      AccountMonitorRange                 `json:"range,omitempty"`
+	BaseCost                   float64                             `json:"base_cost"`
+	EffectiveMultiplier        *float64                            `json:"effective_multiplier,omitempty"`
+	EquivalentSiteMultiplier   *float64                            `json:"equivalent_site_multiplier"`
+	CostMode                   string                              `json:"cost_mode,omitempty"`
+	CostScore                  float64                             `json:"cost_score"`
+	QualityScore               *float64                            `json:"quality_score,omitempty"`
+	ScoreBreakdown             *AccountMonitorScoreBreakdown       `json:"score_breakdown,omitempty"`
+	EvidenceSource             string                              `json:"evidence_source,omitempty"`
+	GroupRank                  *int                                `json:"group_rank,omitempty"`
+	QualityRank                *int                                `json:"quality_rank,omitempty"`
+	QualityRankTotal           int                                 `json:"quality_rank_total,omitempty"`
+	SchedulerRank              *int                                `json:"scheduler_rank,omitempty"`
+	SchedulerRankTotal         int                                 `json:"scheduler_rank_total,omitempty"`
+	QualityExplanation         *AccountMonitorQualityExplanation   `json:"quality_explanation,omitempty"`
+	SchedulerExplanation       *AccountMonitorSchedulerExplanation `json:"scheduler_explanation,omitempty"`
+	SchedulerUnavailable       bool                                `json:"scheduler_unavailable,omitempty"`
+	Eligible                   bool                                `json:"eligible"`
+	TodayStats                 *WindowStats                        `json:"today_stats,omitempty"`
+	UsageWindows               []AccountMonitorUsageWindow         `json:"usage_windows,omitempty"`
+	Latest                     *AccountMonitorLatest               `json:"latest,omitempty"`
+	Timeline                   []AccountMonitorTimelinePoint       `json:"timeline"`
+	CheckedAt                  *time.Time                          `json:"checked_at,omitempty"`
+	Stale                      bool                                `json:"stale"`
+	ManagementState            string                              `json:"management_state"`
+	ServiceState               string                              `json:"service_state"`
+	GroupEligibility           string                              `json:"group_eligibility"`
+	MonitorBucket              string                              `json:"monitor_bucket"`
+	GroupRecommendation        *AccountMonitorGroupRecommendation  `json:"group_recommendation,omitempty"`
 }
 
 type AccountMonitorProjection struct {
@@ -397,6 +477,12 @@ type AccountMonitorRepository interface {
 // rolled out.
 type AccountMonitorGroupAggregateRepository interface {
 	ListGroupAggregates(ctx context.Context, groupID int64, accountIDs []int64, since time.Time) (map[int64]AccountMonitorAggregate, error)
+}
+
+// AccountMonitorGroupWindowAggregateRepository is optional so legacy monitor
+// repositories can continue serving the global window projection.
+type AccountMonitorGroupWindowAggregateRepository interface {
+	ListGroupWindowAggregates(ctx context.Context, groupID int64, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)
 }
 
 // AccountMonitorCombinedAggregateRepository provides percentiles calculated

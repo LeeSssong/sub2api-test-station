@@ -182,6 +182,16 @@ func (c *openAIProxyStreamCircuit) isBlocked(proxyID int64, now time.Time) bool 
 	return true
 }
 
+func (c *openAIProxyStreamCircuit) isBlockedReadOnly(proxyID int64, now time.Time) bool {
+	if c == nil || c.settings.disabled || proxyID <= 0 {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[proxyID]
+	return ok && !entry.blockedUntil.IsZero() && now.Before(entry.blockedUntil)
+}
+
 // activeBlockCount reports how many proxies are currently quarantined. It
 // gates the fail-open retry: a "no available accounts" selection result only
 // warrants a second, quarantine-blind pass when the circuit is actually
@@ -284,6 +294,10 @@ func openAIProxyStreamQuarantineBypassed(ctx context.Context) bool {
 }
 
 func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantined(ctx context.Context, account *Account) bool {
+	return s.isOpenAIProxyStreamQuarantinedAt(ctx, account, time.Now())
+}
+
+func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantinedAt(ctx context.Context, account *Account, now time.Time) bool {
 	proxyID, ok := openAIProxyStreamCircuitProxyID(account)
 	if !ok {
 		return false
@@ -292,7 +306,16 @@ func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantined(ctx context.Contex
 		return false
 	}
 	circuit := s.getOpenAIProxyStreamCircuit()
-	return circuit != nil && circuit.isBlocked(proxyID, time.Now())
+	return circuit != nil && circuit.isBlocked(proxyID, now)
+}
+
+func (s *OpenAIGatewayService) isOpenAIProxyStreamQuarantinedAtReadOnly(ctx context.Context, account *Account, now time.Time) bool {
+	proxyID, ok := openAIProxyStreamCircuitProxyID(account)
+	if !ok || openAIProxyStreamQuarantineBypassed(ctx) || s == nil {
+		return false
+	}
+	circuit := s.getOpenAIProxyStreamCircuit()
+	return circuit != nil && circuit.isBlockedReadOnly(proxyID, now)
 }
 
 // logOpenAIProxyStreamQuarantineFailOpen emits a rate-limited warning when a

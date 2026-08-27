@@ -442,6 +442,10 @@ func grokQuotaSnapshotStaleForPause(snapshot *xai.QuotaSnapshot, now time.Time) 
 }
 
 func shouldAutoPauseOpenAIAccountByQuota(ctx context.Context, account *Account) (bool, openAIQuotaAutoPauseDecision) {
+	return shouldAutoPauseOpenAIAccountByQuotaAt(ctx, account, time.Now())
+}
+
+func shouldAutoPauseOpenAIAccountByQuotaAt(ctx context.Context, account *Account, now time.Time) (bool, openAIQuotaAutoPauseDecision) {
 	if account == nil || !account.IsOpenAI() {
 		return false, openAIQuotaAutoPauseDecision{}
 	}
@@ -453,7 +457,6 @@ func shouldAutoPauseOpenAIAccountByQuota(ctx context.Context, account *Account) 
 	disabled5h := resolveAccountExtraBool(account.Extra, "auto_pause_5h_disabled")
 	disabled7d := resolveAccountExtraBool(account.Extra, "auto_pause_7d_disabled")
 	threshold5h, threshold7d := resolveOpenAIQuotaAutoPauseThresholds(ctx, account)
-	now := time.Now()
 	if !disabled5h && threshold5h > 0 {
 		if utilization, ok := resolveOpenAIQuotaUtilization(account.Extra, "5h", now); ok && utilization >= threshold5h {
 			return true, openAIQuotaAutoPauseDecision{window: "5h", threshold: threshold5h, utilization: utilization}
@@ -910,7 +913,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 		if rateCmp := rateOrder.compare(a, b); rateCmp != 0 {
 			return rateCmp < 0
 		}
-		return s.isBetterAccount(a, b)
+		return s.isBetterAccountForGroup(a, b, groupID)
 	})
 	return eligible[0], compactBlocked, filterStats
 }
@@ -921,12 +924,18 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 // isBetterAccount checks if candidate is better than current.
 // Rules: higher priority (lower value) wins; same priority: never used > least recently used.
 func (s *OpenAIGatewayService) isBetterAccount(candidate, current *Account) bool {
+	return s.isBetterAccountForGroup(candidate, current, nil)
+}
+
+func (s *OpenAIGatewayService) isBetterAccountForGroup(candidate, current *Account, groupID *int64) bool {
 	// 优先级更高（数值更小）
 	// Higher priority (lower value)
-	if candidate.Priority < current.Priority {
+	candidatePriority := accountSchedulingPriorityForGroup(candidate, groupID)
+	currentPriority := accountSchedulingPriorityForGroup(current, groupID)
+	if candidatePriority < currentPriority {
 		return true
 	}
-	if candidate.Priority > current.Priority {
+	if candidatePriority > currentPriority {
 		return false
 	}
 
@@ -1132,10 +1141,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				loadInfo = &AccountLoadInfo{AccountID: acc.ID}
 			}
 			if loadInfo.LoadRate < 100 {
-				available = append(available, accountWithLoad{
-					account:  acc,
-					loadInfo: loadInfo,
-				})
+				available = append(available, newAccountWithLoad(acc, loadInfo, groupID))
 			}
 		}
 
@@ -1145,8 +1151,8 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 		sort.SliceStable(available, func(i, j int) bool {
 			a, b := available[i], available[j]
-			if a.account.Priority != b.account.Priority {
-				return a.account.Priority < b.account.Priority
+			if aPriority, bPriority := accountWithLoadPriority(a), accountWithLoadPriority(b); aPriority != bPriority {
+				return aPriority < bPriority
 			}
 			if a.loadInfo.LoadRate != b.loadInfo.LoadRate {
 				return a.loadInfo.LoadRate < b.loadInfo.LoadRate
@@ -1218,7 +1224,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
 	if err != nil {
 		ordered := append([]*Account(nil), candidates...)
-		sortAccountsByPriorityAndLastUsed(ordered, false)
+		sortAccountsByPriorityAndLastUsedForGroup(ordered, groupID, false)
 		if rateOrder.enabled {
 			sort.SliceStable(ordered, func(i, j int) bool {
 				return rateOrder.compare(ordered[i], ordered[j]) < 0
@@ -1268,7 +1274,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
-	sortAccountsByPriorityAndLastUsed(candidates, false)
+	sortAccountsByPriorityAndLastUsedForGroup(candidates, groupID, false)
 	if rateOrder.enabled {
 		sort.SliceStable(candidates, func(i, j int) bool {
 			return rateOrder.compare(candidates[i], candidates[j]) < 0

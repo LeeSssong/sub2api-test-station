@@ -112,6 +112,16 @@ func (s *defaultOpenAIAccountScheduler) filterGrokFreeQuotaAccounts(ctx context.
 	return filterGrokFreeQuotaAccountsCore(ctx, s.service.cfg, s.service.usageLogRepo, &s.grokFreeQuotaGateCache, accounts)
 }
 
+// filterGrokFreeQuotaAccountsReadOnly applies only known, fresh quota gate
+// entries. Projection callers must not turn a cache miss into a background
+// refresh or a cache write.
+func (s *defaultOpenAIAccountScheduler) filterGrokFreeQuotaAccountsReadOnly(accounts []Account) []Account {
+	if s == nil || s.service == nil {
+		return accounts
+	}
+	return filterGrokFreeQuotaAccountsReadOnlyCore(s.service.cfg, &s.grokFreeQuotaGateCache, accounts)
+}
+
 // filterGrokFreeQuotaAccountsForGateway applies the same soft gate on Gateway
 // scheduling (e.g. /v1/web_search) so free accounts near local 95%/1M are not
 // still selected for native search while Responses soft-gates them out.
@@ -131,17 +141,35 @@ var openaiGrokFreeQuotaGateCache sync.Map
 var freeQuotaRefreshInFlight sync.Map // *sync.Map -> *sync.Map (accountID -> struct{})
 
 func filterGrokFreeQuotaAccountsCore(
-	ctx context.Context,
+	_ context.Context,
 	cfg *config.Config,
 	usageLogRepo UsageLogRepository,
 	cache *sync.Map,
 	accounts []Account,
 ) []Account {
+	return filterGrokFreeQuotaAccountsWithRefresh(cfg, usageLogRepo, cache, accounts, true)
+}
+
+func filterGrokFreeQuotaAccountsReadOnlyCore(
+	cfg *config.Config,
+	cache *sync.Map,
+	accounts []Account,
+) []Account {
+	return filterGrokFreeQuotaAccountsWithRefresh(cfg, nil, cache, accounts, false)
+}
+
+func filterGrokFreeQuotaAccountsWithRefresh(
+	cfg *config.Config,
+	usageLogRepo UsageLogRepository,
+	cache *sync.Map,
+	accounts []Account,
+	refreshOnMiss bool,
+) []Account {
 	if cache == nil {
 		return accounts
 	}
 	settings, enabled := resolveGrokFreeQuotaGateSettings(cfg)
-	if !enabled || len(accounts) == 0 || usageLogRepo == nil {
+	if !enabled || len(accounts) == 0 || (refreshOnMiss && usageLogRepo == nil) {
 		return accounts
 	}
 	now := time.Now().UTC()
@@ -175,7 +203,7 @@ func filterGrokFreeQuotaAccountsCore(
 		}
 	}
 
-	if len(missingIDs) > 0 {
+	if refreshOnMiss && len(missingIDs) > 0 {
 		scheduleGrokFreeQuotaStatsRefresh(usageLogRepo, cache, settings, missingIDs)
 	}
 

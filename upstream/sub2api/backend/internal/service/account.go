@@ -182,10 +182,15 @@ func (a *Account) EffectiveLoadFactor() int {
 }
 
 func (a *Account) IsSchedulable() bool {
+	return a.IsSchedulableAt(time.Now())
+}
+
+// IsSchedulableAt applies the same account-level scheduling gates as
+// IsSchedulable against a caller-owned snapshot time.
+func (a *Account) IsSchedulableAt(now time.Time) bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false
 	}
-	now := time.Now()
 	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !now.Before(*a.ExpiresAt) {
 		return false
 	}

@@ -1054,7 +1054,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						streamStarted = true
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+						h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(reqModel), false, nil)
 					}
 					// Pool-mode retries honor the account's configured status codes and
 					// limit. A hard auth classification must not override an explicit
@@ -1165,7 +1165,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					continue
 				}
 				if retryDecision.Failover {
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, canonicalSchedulingModel, false, nil)
+					h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, canonicalSchedulingModel, false, nil)
 					failedAccountIDs[account.ID] = struct{}{}
 					forcedRetryAccountID = 0
 					attemptCachePreservationMode = retryDecision.CachePreservationMode
@@ -1185,7 +1185,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					}
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, canonicalSchedulingModel, false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, canonicalSchedulingModel, false, nil)
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
@@ -1217,12 +1217,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 				h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(c.Request.Context(), account.ID, result.ResponseHeaders)
 			}
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 			if openAIForwardSucceededForScheduling(result) && !selection.HalfOpenProbe {
 				recordOpenAIAttemptSharedSuccess(attemptCtx, h.gatewayService, account, canonicalSchedulingModel, channelMapping.ChannelID, attemptMetadata.AttemptID, requestPlatform, result)
 			}
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), nil)
 		}
 
 		// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
@@ -1841,7 +1841,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
+						h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
 					}
 					// See Responses: an explicit pool retry rule may cover hard auth
 					// status codes, but it never permits replay after output or side effects.
@@ -1942,7 +1942,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					continue
 				}
 				if retryDecision.Failover {
-					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, canonicalSchedulingModel, false, nil)
+					h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, canonicalSchedulingModel, false, nil)
 					failedAccountIDs[account.ID] = struct{}{}
 					forcedRetryAccountID = 0
 					attemptCachePreservationMode = retryDecision.CachePreservationMode
@@ -1962,7 +1962,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					}
 					continue
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, canonicalSchedulingModel, false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, canonicalSchedulingModel, false, nil)
 				wroteFallback := false
 				if info, ok := service.OpenAIStreamRecoveryDetails(err); ok && info.OutputStarted {
 					wroteFallback = writeAnthropicStreamRecoverySSE(c, err)
@@ -1986,9 +1986,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			streamFailoverPending = nil
 		}
 		if result != nil {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(currentRoutingModel), true, result.FirstTokenMs)
 		} else {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(currentRoutingModel), true, nil)
 		}
 		if !selection.HalfOpenProbe {
 			recordOpenAIAttemptSharedSuccess(attemptCtx, h.gatewayService, account, canonicalSchedulingModel, channelMappingMsg.ChannelID, attemptMetadata.AttemptID, requestPlatform, result)
@@ -2597,7 +2597,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		if failoverErr.ShouldReportAccountScheduleFailure() {
-			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(reqModel), false, nil)
 		}
 		releaseAccountSlot()
 		if !failoverErr.ShouldRetryNextAccount() {
@@ -2945,7 +2945,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if scheduleModel == "" {
 					scheduleModel = turnRequestedModel
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, scheduleModel, openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
@@ -3026,7 +3026,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			if shouldReportOpenAIWSProxyAccountFailure(err) {
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForGroup(derefGroupID(apiKey.GroupID), account.ID, account.GetMappedModel(reqModel), false, nil)
 			}
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			proxyFailedFields := []zap.Field{

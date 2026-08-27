@@ -81,8 +81,48 @@ type forceCacheBillingKeyType struct{}
 
 // accountWithLoad 账号与负载信息的组合，用于负载感知调度
 type accountWithLoad struct {
-	account  *Account
-	loadInfo *AccountLoadInfo
+	account     *Account
+	loadInfo    *AccountLoadInfo
+	priority    int
+	prioritySet bool
+}
+
+func newAccountWithLoad(account *Account, loadInfo *AccountLoadInfo, groupID *int64) accountWithLoad {
+	return accountWithLoad{
+		account:     account,
+		loadInfo:    loadInfo,
+		priority:    accountSchedulingPriorityForGroup(account, groupID),
+		prioritySet: true,
+	}
+}
+
+func accountWithLoadPriority(candidate accountWithLoad) int {
+	if candidate.prioritySet {
+		return candidate.priority
+	}
+	return accountSchedulingPriorityForGroup(candidate.account, nil)
+}
+
+// accountSchedulingPriorityForGroup returns the priority captured for one
+// group-scoped scheduling snapshot, falling back to Account.Priority when the
+// account has no matching group row.
+func accountSchedulingPriorityForGroup(account *Account, groupID *int64) int {
+	priority, _ := accountSchedulingPriorityForGroupWithPresence(account, groupID)
+	return priority
+}
+
+func accountSchedulingPriorityForGroupWithPresence(account *Account, groupID *int64) (int, bool) {
+	if account == nil {
+		return 0, false
+	}
+	if groupID != nil && *groupID > 0 {
+		for _, accountGroup := range account.AccountGroups {
+			if accountGroup.GroupID == *groupID {
+				return accountGroup.Priority, true
+			}
+		}
+	}
+	return account.Priority, false
 }
 
 var ForceCacheBillingContextKey = forceCacheBillingKeyType{}

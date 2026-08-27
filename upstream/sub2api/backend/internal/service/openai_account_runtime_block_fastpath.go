@@ -227,6 +227,10 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 }
 
 func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) bool {
+	return s.isOpenAIAccountRuntimeBlockedAt(account, time.Now())
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedAt(account *Account, now time.Time) bool {
 	if s == nil || !isOpenAIAccount(account) {
 		return false
 	}
@@ -243,12 +247,24 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlocked(account *Account) b
 		s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 		return false
 	}
-	if time.Now().Before(cooldownUntil) {
+	if now.Before(cooldownUntil) {
 		return true
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
 	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	return false
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedAtReadOnly(account *Account, now time.Time) bool {
+	if s == nil || !isOpenAIAccount(account) {
+		return false
+	}
+	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	if !ok {
+		return false
+	}
+	cooldownUntil, ok := value.(time.Time)
+	return ok && !cooldownUntil.IsZero() && now.Before(cooldownUntil)
 }
 
 func (s *OpenAIGatewayService) getOpenAIAccountModelTransientState() *openAIAccountModelTransientState {
@@ -337,6 +353,33 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedWithLease(acc
 		return true
 	}
 	return !lease.matches(account, requestedModel) && s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedAtReadOnly(account *Account, requestedModel string, now time.Time) bool {
+	if s == nil {
+		return false
+	}
+	return s.isOpenAIAccountRuntimeBlockedAtReadOnly(account, now) || s.isOpenAIAccountModelRuntimeBlockedAtReadOnly(account, requestedModel, now)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtReadOnly(account *Account, requestedModel string, now time.Time) bool {
+	return s.isOpenAIAccountModelRuntimeBlockedAtReadOnlyContext(context.Background(), account, requestedModel, now, false)
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountModelRuntimeBlockedAtReadOnlyContext(ctx context.Context, account *Account, requestedModel string, now time.Time, allowSharedRead bool) bool {
+	if s == nil || account == nil {
+		return false
+	}
+	canonicalModel := canonicalOpenAIAccountSchedulingModel(account, requestedModel)
+	if state := s.getOpenAIAccountModelTransientState(); state != nil && state.isBlockedReadOnly(account.ID, openAIAccountModelTransientModel(canonicalModel), now) {
+		return true
+	}
+	key, err := NewOpenAISharedHealthKey(account.ID, canonicalModel)
+	if err != nil {
+		return false
+	}
+	snapshot, known, _ := s.readOpenAISharedHealthSnapshot(ctx, key, now, allowSharedRead)
+	return known && openAISharedHealthSnapshotBlocks(snapshot)
 }
 
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {

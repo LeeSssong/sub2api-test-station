@@ -198,7 +198,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	accountModelDetectionAccountReader := service.ProvideAccountModelDetectionAccountReader(accountRepository)
 	accountModelDetectionSidecar := service.ProvideAccountModelDetectionSidecar()
 	accountModelDetectionService := service.ProvideAccountModelDetectionService(accountModelDetectionRepository, accountModelDetectionAccountReader, accountModelDetectionSidecar)
-	accountMonitorService := service.ProvideAccountMonitorService(accountMonitorRepository, accountMonitorAccountRepository, accountRepository, accountTestService, accountUsageService, billingService, upstreamBillingProbeService, accountModelDetectionService)
+	accountMonitorService := service.ProvideAccountMonitorService(accountMonitorRepository, accountMonitorAccountRepository, accountRepository, accountTestService, accountUsageService, billingService, upstreamBillingProbeService, accountModelDetectionService, openAIGatewayService, concurrencyService)
 	channelMonitorV2Repository := repository.NewChannelMonitorV2Repository(db)
 	monitorV2Service := service.ProvideMonitorV2Service(groupRepository, apiKeyService, channelMonitorV2Repository, accountMonitorService, settingService)
 	monitorV2Handler := handler.ProvideMonitorV2Handler(monitorV2Service)

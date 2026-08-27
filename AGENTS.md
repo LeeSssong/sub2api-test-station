@@ -1,17 +1,18 @@
 # Project collaboration constraints
 
 - 本轮原生 Sub 小步发布计划的所有根线程、派生线程和审查线程，开始任何工作前必须完整阅读 `docs/project/native-sub-incremental-delivery-constraints.md` 与 `docs/project/native-sub-task-package-queue.md`；两份文件是本轮任务边界、线程交接、串行合并和部署停机门禁的共同事实源。
+- 所有线程在涉及验收站登录、日志、运维、发布或主站部署前，必须完整阅读 `docs/project/acceptance-station-global-constraints.md`。该文件是验收站固定入口/宿主身份、敏感凭据读取方式、验收站发布命令，以及主站仅允许“测试站验收通过，部署主站”或“快速部署到主站”两种明确授权路径、主站成功后同 commit 立即同步验收站的共同事实源。密码、token、私钥和支付/上游/通知凭据只能从本机 0600 受保护文件读取，不得写入仓库或聊天。
 
 - 自 2026-08-16 用户最新指令起，计划内任务以“功能实现完成 + 直接相关功能测试通过”为完成门槛；不再强制逐任务独立复审、scoped re-review 或全分支终审，也不为形式扩大验证。仍可用 fresh implementer 隔离写入；只有发现真实功能失败、范围冲突或高风险问题时才追加针对性复核。
 - Continue through approved plan tasks without repeated approval prompts unless execution is genuinely blocked, the plan conflicts with itself, or a new decision would materially change the approved scope.
-- 自 2026-08-17 用户最新全局指令起，发布预检明确返回 `downtime_required=false` 时，唯一发布总控无需再次请求部署授权，直接继续既有本地/宿主蓝绿发布和线上验证；只有返回 `downtime_required=true` 时，才必须在任何停服、迁移、重启或切换前暂停并取得用户明确授权。
+- 只有先满足 `docs/project/acceptance-station-global-constraints.md` 定义的两种主站明确授权之一后，发布预检返回 `downtime_required=false` 才表示无需再次请求同一次部署授权，可继续既有本地/宿主蓝绿发布和线上验证；`downtime_required=false` 本身绝不构成主站发布授权。返回 `downtime_required=true` 时，仍必须在任何停服、迁移、重启或切换前暂停并取得用户明确授权。
 - Explicit instructions in the current user request override these defaults.
 - Sub2API release preparation and production deployment must not use GitHub
   Actions. Keep release discovery, qualification, publishing, staging, source
   advancement, and blue-green promotion in the reviewed local/host script
   chain; do not add scheduled or manually dispatched release workflows under
   `.github/workflows/`.
-- 官方 Sub2API 更新是最高优先级插队任务。官方更新只要求把最新稳定版合入当前定制树、人工解决全部冲突并通过既有本地/宿主发布链使其生效；不运行功能测试、回归测试、类型检查、构建验证或上线专项验收。发布链为原子切换而内置的候选构建、迁移/停机保护和运行就绪检查不属于额外测试或验收，不得绕过，也不得改用 GitHub Actions。
+- 官方 Sub2API 更新是最高优先级插队任务。官方更新只要求把最新稳定版合入当前定制树、人工解决全部冲突并通过既有本地/宿主发布链使其生效；主站发布仍必须先满足验收站全局约束定义的两种用户明确授权之一。不运行功能测试、回归测试、类型检查、构建验证或上线专项验收。发布链为原子切换而内置的候选构建、迁移/停机保护和运行就绪检查不属于额外测试或验收，不得绕过，也不得改用 GitHub Actions。
 
 ## 唯一发布总控与并发边界（强制）
 

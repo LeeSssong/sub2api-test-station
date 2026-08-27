@@ -2,7 +2,7 @@
 
 ## Status
 
-`REFRESH_REQUIRED`. Functional candidate `f400bfc02ab0a0b0386a7414140beade682437fb` is based on an older root snapshot; current root `main` is `5cceb1643436bcd3a4a751b932376805c49df44a`. Refresh this worktree from the current clean `main`, resolve only T80 conflicts, and rerun the direct commands below before requesting root review. Do not merge, push, deploy, or modify root project records from this worktree.
+`READY_FOR_ROOT_REVIEW`. Candidate `b82277680` is refreshed from root `main@5cceb1643436bcd3a4a751b932376805c49df44a` with no T80 conflicts. Direct validation after refresh passed. Root review must use this candidate tree; do not merge, push, deploy, or modify root project records from this worktree.
 
 ## Scope Delivered
 
@@ -24,7 +24,7 @@
 
 ## Direct Validation
 
-The following commands passed on August 27, 2026 in `upstream/sub2api/backend` on candidate `f400bfc02` after the final flush-failure fix and the policy-independence regression test. Root must rerun them after refreshing this candidate onto current `main`:
+The following commands passed on August 27, 2026 in `upstream/sub2api/backend` on refreshed candidate `b82277680` after the final flush-failure fix and the policy-independence regression test:
 
 ```bash
 go test ./internal/config -run 'OpenAISharedHealth|OpenAIAdmission' -count=1
@@ -62,4 +62,4 @@ The broader handler regex `OpenAI.*(Admission|FirstOutput|ChatCompletions|Respon
 - Redis errors intentionally fail open, so safety protection degrades while the shared store is unavailable.
 - T80 covers eligible HTTP text streams only; WebSocket and non-streaming paths retain current behavior.
 - Group-level quality attribution and the explanation that remaining ranking differences come from group policy stay deferred to frozen T76 after T80 is stable.
-- This candidate has not yet been refreshed onto current `main`; no merge, push, deployment, or production verification has occurred from this worktree.
+- Candidate status is ready for root review. No merge to root `main`, push, deployment, or production verification has occurred from this worktree.

@@ -50,7 +50,7 @@
 - Produces `OpenAIAdmissionRequestShape`, account-only `OpenAISharedAdmissionRequest`, `OpenAISharedAdmissionDecision`, and account-only slow-session guard methods exactly as specified.
 - Produces global config fields `AdmissionEnabled`, `LongRequestBodyThresholdBytes`, `MaxPreFirstOutputNormal`, `MaxPreFirstOutputLong`, `StalledBeforeFirstOutputSeconds`, `AdmissionLeaseTTLSeconds`, `AdmissionRenewSeconds`, `SlowTTFTMS`, and `SlowSessionGuardSeconds`.
 
-- [ ] **Step 1: Write failing config and request-shape tests**
+- [x] **Step 1: Write failing config and request-shape tests**
 
 ```go
 func TestLoadDefaultOpenAISharedHealthAdmissionConfig(t *testing.T) {
@@ -67,13 +67,13 @@ func TestClassifyOpenAIAdmissionRequestShape(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the focused tests and verify they fail**
+- [x] **Step 2: Run the focused tests and verify they fail**
 
 Run: `go test ./internal/config ./internal/service -run 'TestLoadDefaultOpenAISharedHealthAdmissionConfig|TestClassifyOpenAIAdmissionRequestShape' -count=1`
 
 Expected: FAIL because admission fields and classifier do not exist.
 
-- [ ] **Step 3: Add the strict defaults, validation, and contracts**
+- [x] **Step 3: Add the strict defaults, validation, and contracts**
 
 ```go
 type OpenAIAdmissionRequestShape string
@@ -93,13 +93,13 @@ func ClassifyOpenAIAdmissionRequestShape(bodyBytes, threshold int) OpenAIAdmissi
 
 Validate ranges from the specification and require renewal to be at least 5 seconds and below lease TTL.
 
-- [ ] **Step 4: Run focused tests and format**
+- [x] **Step 4: Run focused tests and format**
 
 Run: `gofmt -w internal/config/config.go internal/config/config_test.go internal/service/openai_shared_health.go internal/service/openai_account_scheduler_shared_health_test.go && go test ./internal/config ./internal/service -run 'TestLoadDefaultOpenAISharedHealthAdmissionConfig|TestClassifyOpenAIAdmissionRequestShape' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the contracts**
+- [x] **Step 5: Commit the contracts**
 
 ```bash
 git add upstream/sub2api/backend/internal/config/config.go upstream/sub2api/backend/internal/config/config_test.go upstream/sub2api/backend/internal/service/openai_shared_health.go upstream/sub2api/backend/internal/service/openai_account_scheduler_shared_health_test.go
@@ -117,7 +117,7 @@ git commit -m "feat: define OpenAI admission resilience contracts"
 - Extends `OpenAISharedHealthStore` with account-only `AcquireAdmission`, `RenewAdmission`, `ReleaseAdmission`, `RecordSlowSessionGuard`, and `HasSlowSessionGuard`.
 - `OpenAISharedAdmissionRequest` contains only `AccountID`, `LeaseID`, `Shape`, and `ObservedAt`; it has no `OpenAISharedHealthKey`, canonical model, group, or request-body field.
 
-- [ ] **Step 1: Write failing miniredis tests**
+- [x] **Step 1: Write failing miniredis tests**
 
 ```go
 func TestOpenAISharedHealthAdmissionLongBlocksAcrossModelsAndGroups(t *testing.T) {
@@ -133,23 +133,23 @@ func TestOpenAISharedHealthAdmissionLongBlocksAcrossModelsAndGroups(t *testing.T
 
 Also cover concurrent long acquisition (one winner), normal capacity two, stalled rejection, lease-owner-only release, renewal, expiry cleanup, account-only slow-session guard, and an interface assertion that the store does not implement `GetRequestQuality` or `RecordRequestQuality`. Use separate handler requests with different requested models and group IDs to prove the same account lease blocks both.
 
-- [ ] **Step 2: Run repository tests and verify they fail**
+- [x] **Step 2: Run repository tests and verify they fail**
 
 Run: `go test ./internal/repository -run 'TestOpenAISharedHealthAdmission|TestOpenAISharedHealthSlowSession|TestOpenAISharedHealthStoreHasNoQualityAPI' -count=1`
 
 Expected: FAIL because the new store methods and Lua scripts do not exist.
 
-- [ ] **Step 3: Add Redis Lua scripts and decoding helpers**
+- [x] **Step 3: Add Redis Lua scripts and decoding helpers**
 
 Use a hash admission key namespace under the existing versioned prefix whose name contains account ID only. In one Lua call, remove expired leases, count shape entries, reject a stale entry older than configured duration, reject any normal/long request while a long entry exists, enforce shape capacity, and add only the hash-safe lease identifier with `PEXPIRE` TTL. Implement renew/release as conditional scripts matching the lease ID. Add a separate account-only slow-session guard key with TTL. Remove all quality types, quality methods, quality scripts, quality maps, and account-model admission key derivation.
 
-- [ ] **Step 4: Run repository tests and format**
+- [x] **Step 4: Run repository tests and format**
 
 Run: `gofmt -w internal/repository/openai_shared_health.go internal/repository/openai_shared_health_test.go internal/service/openai_shared_health.go && go test ./internal/repository -run 'TestOpenAISharedHealthAdmission|TestOpenAISharedHealthSlowSession|TestOpenAISharedHealthStoreHasNoQualityAPI' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the Redis store**
+- [x] **Step 5: Commit the Redis store**
 
 ```bash
 git add upstream/sub2api/backend/internal/repository/openai_shared_health.go upstream/sub2api/backend/internal/repository/openai_shared_health_test.go upstream/sub2api/backend/internal/service/openai_shared_health.go
@@ -167,7 +167,7 @@ git commit -m "feat: add Redis-backed OpenAI admission leases"
 - Produces `openAISharedHealthWriteContext()`, which always starts from `context.Background()` and applies the configured Redis timeout.
 - Existing reads continue to use `openAISharedHealthSelectionContext(parent)` and therefore retain caller cancellation.
 
-- [ ] **Step 1: Write failing cancellation and event tests**
+- [x] **Step 1: Write failing cancellation and event tests**
 
 ```go
 func TestOpenAISharedHealthWriteContextIgnoresCanceledRequest(t *testing.T) {
@@ -182,23 +182,23 @@ func TestOpenAISharedHealthWriteContextIgnoresCanceledRequest(t *testing.T) {
 
 Use a store stub to assert `RecordAttempt`, admission release, and slow-session guard writes receive a live bounded context. Assert a canceled read context still prevents `GetAccountModel` remote selection. Assert emitted degraded events include `operation` and approved `error_kind` values but not error text, model text, credentials, or request content.
 
-- [ ] **Step 2: Run service tests and verify they fail**
+- [x] **Step 2: Run service tests and verify they fail**
 
 Run: `go test ./internal/service -run 'TestOpenAISharedHealthWriteContext|TestOpenAISharedHealth.*Degraded' -count=1`
 
 Expected: FAIL because mutation contexts inherit cancellation or events lack required fields.
 
-- [ ] **Step 3: Route every mutation through the write context**
+- [x] **Step 3: Route every mutation through the write context**
 
 Use the helper for record attempts, half-open completion, admission acquire/renew/release, and slow-session guard writes. Classify errors into `context_canceled`, `deadline_exceeded`, `redis_unavailable`, or `script_error`; attach only operation, classification, account hash, and result fields to the existing ledger/logger.
 
-- [ ] **Step 4: Run service tests and format**
+- [x] **Step 4: Run service tests and format**
 
 Run: `gofmt -w internal/service/openai_shared_health.go internal/service/openai_resilience_observability.go internal/service/openai_account_scheduler_shared_health_test.go && go test ./internal/service -run 'TestOpenAISharedHealthWriteContext|TestOpenAISharedHealth.*Degraded' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit write reliability changes**
+- [x] **Step 5: Commit write reliability changes**
 
 ```bash
 git add upstream/sub2api/backend/internal/service/openai_shared_health.go upstream/sub2api/backend/internal/service/openai_resilience_observability.go upstream/sub2api/backend/internal/service/openai_account_scheduler_shared_health_test.go
@@ -217,7 +217,7 @@ git commit -m "fix: isolate OpenAI shared-health write contexts"
 - Scheduling context carries `OpenAIAdmissionRequestShape` only for eligible HTTP streams.
 - The handler's existing account-slot release closure is composed once with the selection release and admission lease release; every terminal path invokes that composed closure at most once.
 
-- [ ] **Step 1: Write failing scheduler tests**
+- [x] **Step 1: Write failing scheduler tests**
 
 ```go
 func TestHTTPFailoverReselectsAfterAdmissionReject(t *testing.T) {
@@ -231,23 +231,23 @@ func TestHTTPFailoverReselectsAfterAdmissionReject(t *testing.T) {
 
 Cover: releasing the just-acquired local slot on rejection, excluding the rejected account before reselect, all candidates rejected using the existing no-account behavior, Redis error selecting normally with `store_degraded`, a lease acquired in one group/model rejecting the same account in another group/model, a slow-session guard rejecting all groups/models, and existing profit-first/group policy code being unable to bypass the safety filter.
 
-- [ ] **Step 2: Run focused scheduler tests and verify they fail**
+- [x] **Step 2: Run focused scheduler tests and verify they fail**
 
 Run: `go test ./internal/handler -run 'TestHTTPFailoverReselectsAfterAdmissionReject|TestOpenAIAdmission.*' -count=1`
 
 Expected: FAIL because the handler's existing select/slot loop has no admission retry/release composition.
 
-- [ ] **Step 3: Apply admission only after the existing final selection and slot acquisition**
+- [x] **Step 3: Apply admission only after the existing final selection and slot acquisition**
 
 Construct a hashed lease ID from the existing service owner plus a monotonic sequence. In the handler, after `acquireResponsesAccountSlot` succeeds, acquire admission. On rejection call that newly acquired slot/result release immediately, append the account ID to the existing exclusion set, add bounded decision fields, and restart the current handler failover loop. On store error record degradation and retain the selected account. Start a 25-second renewal only while the pre-output lease remains active; stop it and release idempotently through the composed account release closure.
 
-- [ ] **Step 4: Run scheduler tests and format**
+- [x] **Step 4: Run scheduler tests and format**
 
 Run: `gofmt -w internal/handler/openai_chat_completions.go internal/handler/openai_gateway_handler.go internal/service/openai_resilience_observability.go internal/handler/openai_gateway_handler_test.go && go test ./internal/handler -run 'TestHTTPFailoverReselectsAfterAdmissionReject|TestOpenAIAdmission.*' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit scheduler integration**
+- [x] **Step 5: Commit scheduler integration**
 
 ```bash
 git add upstream/sub2api/backend/internal/handler/openai_chat_completions.go upstream/sub2api/backend/internal/handler/openai_gateway_handler.go upstream/sub2api/backend/internal/service/openai_resilience_observability.go upstream/sub2api/backend/internal/handler/openai_gateway_handler_test.go
@@ -268,7 +268,7 @@ git commit -m "feat: enforce OpenAI pre-output admission"
 - `WithOpenAIAdmissionRequestShape(ctx, shape)` and `OpenAIAdmissionRequestShapeFromContext(ctx)` do not expose body data.
 - Existing first-semantic-output callback receives an idempotent release closure. Only a trusted real completed stream with first output and TTFT at or above the global threshold may write the account-only slow-session guard.
 
-- [ ] **Step 1: Write failing handler/stream tests**
+- [x] **Step 1: Write failing handler/stream tests**
 
 ```go
 func TestOpenAIHTTPStreamReleasesAdmissionAtFirstSemanticOutput(t *testing.T) {
@@ -281,23 +281,23 @@ func TestOpenAIHTTPStreamReleasesAdmissionAtFirstSemanticOutput(t *testing.T) {
 
 Cover raw-byte boundary classification after body validation, no lease context for images/count-tokens/non-streaming endpoints, failure/cancel cleanup before first output, and only trusted real completed streams with first output triggering the account-only slow-session guard. Probes, failures, unknown shapes, and no-first-output cancellations must not trigger it.
 
-- [ ] **Step 2: Run focused handler/service tests and verify they fail**
+- [x] **Step 2: Run focused handler/service tests and verify they fail**
 
 Run: `go test ./internal/handler ./internal/service -run 'TestOpenAIHTTPStreamReleasesAdmissionAtFirstSemanticOutput|TestOpenAIAdmissionRequestShape|TestOpenAI.*RequestQuality' -count=1`
 
 Expected: FAIL because request shape and first-output hook are not wired.
 
-- [ ] **Step 3: Wire raw body size, stream callbacks, and slow-session guard writes**
+- [x] **Step 3: Wire raw body size, stream callbacks, and slow-session guard writes**
 
 Attach shape only when the accepted OpenAI text request is streaming. Leave endpoint/transport behavior untouched otherwise. When the existing stream parser identifies its first semantic output, invoke the selected result's release closure. At successful real streaming completion with first output and TTFT at/above `SlowTTFTMS`, write the account-only slow-session guard through the shared write path; terminal defer still invokes the same closure for every error/cancel/panic path. Do not consult model or group policy during this safety decision.
 
-- [ ] **Step 4: Run focused tests and format**
+- [x] **Step 4: Run focused tests and format**
 
 Run: `gofmt -w internal/handler/openai_gateway_handler.go internal/handler/openai_chat_completions.go internal/service/openai_gateway_response_handling.go internal/service/openai_gateway_chat_completions.go internal/service/openai_gateway_chat_completions_raw.go internal/handler/openai_chat_completions_test.go && go test ./internal/handler ./internal/service -run 'TestOpenAIHTTPStreamReleasesAdmissionAtFirstSemanticOutput|TestOpenAIAdmissionRequestShape|TestOpenAI.*RequestQuality' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the HTTP stream integration**
+- [x] **Step 5: Commit the HTTP stream integration**
 
 ```bash
 git add upstream/sub2api/backend/internal/handler/openai_gateway_handler.go upstream/sub2api/backend/internal/handler/openai_chat_completions.go upstream/sub2api/backend/internal/service/openai_gateway_response_handling.go upstream/sub2api/backend/internal/service/openai_gateway_chat_completions.go upstream/sub2api/backend/internal/service/openai_gateway_chat_completions_raw.go upstream/sub2api/backend/internal/handler/openai_chat_completions_test.go
@@ -308,9 +308,9 @@ git commit -m "feat: release OpenAI admission at first output"
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-27-t80-openai-scheduling-admission-resilience.md` (checklist completion only)
-- Create: `docs/superpowers/handoffs/2026-08-27-t80-openai-scheduling-admission-resilience.md`
+- Create: `docs/handoffs/2026-08-27-t80-openai-scheduling-admission-resilience.md`
 
-- [ ] **Step 1: Run direct test suites**
+- [x] **Step 1: Run direct test suites**
 
 Run:
 
@@ -319,27 +319,27 @@ cd upstream/sub2api/backend
 go test ./internal/config -run 'OpenAISharedHealth|OpenAIAdmission' -count=1
 go test ./internal/repository -run 'OpenAISharedHealth' -count=1
 go test ./internal/service -run 'OpenAI.*(Admission|SharedHealth|FirstOutput|SlowSession)' -count=1
-go test ./internal/handler -run 'OpenAI.*(Admission|FirstOutput|ChatCompletions)' -count=1
+go test ./internal/handler -run 'TestOpenAIStreamingHandlersWireAccountOnlyAdmissionBeforeFirstSemanticOutput|TestOpenAIForwardSucceededForScheduling' -count=1
 go test ./internal/service -run '^$' -count=1
 go build ./cmd/server
 ```
 
 Expected: all commands pass.
 
-- [ ] **Step 2: Run repository hygiene checks**
+- [x] **Step 2: Run repository hygiene checks**
 
 Run: `gofmt -w $(git diff --name-only -- '*.go') && git diff --check && git status --short`
 
 Expected: no whitespace errors and only intended T80 files changed.
 
-- [ ] **Step 3: Write a root handoff**
+- [x] **Step 3: Write a root handoff**
 
 Include base `main` SHA, candidate SHA, changed files, commands/results, no migration/config production edit, expected `downtime_required=false` pending root precheck, rollback `admission_enabled=false` then previous verified blue-green image, and residual risks: capacity reduction from global thresholds, Redis fail-open, HTTP-stream-only coverage, and deferred group-level quality explanation refresh in T76.
 
-- [ ] **Step 4: Commit plan checklist and handoff**
+- [x] **Step 4: Commit plan checklist and handoff**
 
 ```bash
-git add docs/superpowers/plans/2026-08-27-t80-openai-scheduling-admission-resilience.md docs/superpowers/handoffs/2026-08-27-t80-openai-scheduling-admission-resilience.md
+git add docs/superpowers/plans/2026-08-27-t80-openai-scheduling-admission-resilience.md docs/handoffs/2026-08-27-t80-openai-scheduling-admission-resilience.md
 git commit -m "docs: hand off T80 scheduler admission resilience"
 ```
 

@@ -56,6 +56,106 @@ func TestOpenAIAccountSchedulerProjection_UsesGroupPolicyOrderWithoutChangingQua
 	require.Empty(t, *releasedIDs)
 }
 
+func TestOpenAIAccountSchedulingPriorityForGroupUsesMatchingGroupRow(t *testing.T) {
+	account := projectionTestAccount(301)
+	account.Priority = 8
+	account.AccountGroups = []AccountGroup{
+		{AccountID: account.ID, GroupID: 77, Priority: 2},
+		{AccountID: account.ID, GroupID: 88, Priority: 6},
+	}
+
+	group77 := int64(77)
+	group88 := int64(88)
+	missingGroup := int64(99)
+	require.Equal(t, 2, openAIAccountSchedulingPriorityForGroup(account, &group77))
+	require.Equal(t, 6, openAIAccountSchedulingPriorityForGroup(account, &group88))
+	require.Equal(t, 8, openAIAccountSchedulingPriorityForGroup(account, &missingGroup))
+	require.Equal(t, 8, openAIAccountSchedulingPriorityForGroup(account, nil))
+}
+
+func TestOpenAIAccountSchedulerProjectionAndLivePlanUseGroupPriorityOverGlobalPriority(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.cfg.Gateway.OpenAIWS.SchedulerScoreWeights = config.GatewayOpenAIWSSchedulerScoreWeights{Priority: 1}
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	groupID := int64(77)
+	groupPriorityFirst := projectionTestAccount(302)
+	groupPriorityFirst.Priority = 9
+	groupPriorityFirst.AccountGroups = []AccountGroup{{AccountID: groupPriorityFirst.ID, GroupID: groupID, Priority: 1}}
+	globalPriorityFirst := projectionTestAccount(303)
+	globalPriorityFirst.Priority = 1
+	globalPriorityFirst.AccountGroups = []AccountGroup{{AccountID: globalPriorityFirst.ID, GroupID: groupID, Priority: 9}}
+	accounts := []*Account{groupPriorityFirst, globalPriorityFirst}
+	loadMap := map[int64]*AccountLoadInfo{
+		groupPriorityFirst.ID:  {AccountID: groupPriorityFirst.ID},
+		globalPriorityFirst.ID: {AccountID: globalPriorityFirst.ID},
+	}
+	req := OpenAIAccountScheduleRequest{GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4-mini"}
+	policy := scheduler.resolveOpenAIAccountSchedulerPolicy(context.Background(), groupID)
+	livePlan := scheduler.buildOpenAIAccountLoadPlanAtWithPolicy(context.Background(), req, accounts, loadMap, now, &policy, false)
+	liveRanked := selectTopKOpenAICandidates(livePlan.preTopKCandidates, len(accounts))
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4-mini", SnapshotAt: now,
+		Accounts: accounts, LoadMap: loadMap,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{groupPriorityFirst.ID, globalPriorityFirst.ID}, projectionAccountIDs(projection.Candidates))
+	require.Equal(t, []int64{groupPriorityFirst.ID, globalPriorityFirst.ID}, candidateIDs(liveRanked))
+}
+
+func TestOpenAIAccountSchedulerProjectionKeepsGroupPriorityFromSnapshotAccount(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	groupID := int64(77)
+	cachedAccount := projectionTestAccount(304)
+	cachedAccount.Priority = 9
+	cachedAccount.AccountGroups = []AccountGroup{{AccountID: cachedAccount.ID, GroupID: groupID, Priority: 2}}
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4-mini", SnapshotAt: now,
+		Accounts: []*Account{cachedAccount}, LoadMap: map[int64]*AccountLoadInfo{cachedAccount.ID: {AccountID: cachedAccount.ID}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, projectionCandidatePriorityForTest(scheduler, groupID, cachedAccount, now))
+	require.Equal(t, []int64{cachedAccount.ID}, projectionAccountIDs(projection.Candidates))
+}
+
+func TestOpenAIAccountSchedulerProjectionAndLivePlanShareEffectivePriorityComparator(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.cfg.Gateway.OpenAIWS.SchedulerScoreWeights = config.GatewayOpenAIWSSchedulerScoreWeights{Priority: 1}
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	groupID := int64(77)
+	first := projectionTestAccount(305)
+	first.Priority = 3
+	first.AccountGroups = []AccountGroup{{AccountID: first.ID, GroupID: groupID, Priority: 4}}
+	second := projectionTestAccount(306)
+	second.Priority = 4
+	second.AccountGroups = []AccountGroup{{AccountID: second.ID, GroupID: groupID, Priority: 2}}
+	accounts := []*Account{first, second}
+	loadMap := map[int64]*AccountLoadInfo{first.ID: {AccountID: first.ID}, second.ID: {AccountID: second.ID}}
+	policy := scheduler.resolveOpenAIAccountSchedulerPolicy(context.Background(), groupID)
+	livePlan := scheduler.buildOpenAIAccountLoadPlanAtWithPolicy(context.Background(), OpenAIAccountScheduleRequest{GroupID: &groupID, Platform: PlatformOpenAI}, accounts, loadMap, now, &policy, false)
+	liveRanked := selectTopKOpenAICandidates(livePlan.preTopKCandidates, len(accounts))
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{GroupID: groupID, Platform: PlatformOpenAI, SnapshotAt: now, Accounts: accounts, LoadMap: loadMap})
+	require.NoError(t, err)
+	require.Equal(t, candidateIDs(liveRanked), projectionAccountIDs(projection.Candidates))
+}
+
+func candidateIDs(candidates []openAIAccountCandidateScore) []int64 {
+	ids := make([]int64, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.account != nil {
+			ids = append(ids, candidate.account.ID)
+		}
+	}
+	return ids
+}
+
+func projectionCandidatePriorityForTest(scheduler *defaultOpenAIAccountScheduler, groupID int64, account *Account, now time.Time) int {
+	plan := scheduler.buildOpenAIAccountLoadPlanAtWithPolicy(context.Background(), OpenAIAccountScheduleRequest{GroupID: &groupID, Platform: PlatformOpenAI}, []*Account{account}, map[int64]*AccountLoadInfo{account.ID: {AccountID: account.ID}}, now, nil, false)
+	return plan.preTopKCandidates[0].priority
+}
+
 func TestOpenAIAccountSchedulerProjectionAppliesGroupPrivacyEligibility(t *testing.T) {
 	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)

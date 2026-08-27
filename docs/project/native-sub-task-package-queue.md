@@ -2,6 +2,10 @@
 
 ## 最新发布更新（2026-08-26）
 
+- **T80 OpenAI 长请求调度准入韧性**：状态 `DESIGNING`。用户基于 2026-08-27 GPT-Pro 账号 `286` 的高 TTFT 事故，已确认优先解决“第一批长请求尚未完成时，同一慢账号仍被连续准入”的风险。根 `main@00a83106075c7ff9901702c3cbbf2ddd44d22ab9` 干净，所有已注册非 `main` worktree、提交、状态及生产证据已盘点，无完成且领先 `main` 的候选需先并入；不抢占 T77 VERIFYING 或其他发布车道。任务将复用原生 OpenAI scheduler、shared-health 和 Redis，不新建平行事实源：跨实例飞行中准入保护、真实请求质量分桶、共享状态失败可观测性和最小调度审计为目标；不改分组、优先级、账务、用户协议、迁移或生产配置。正式规格待独立 worktree 中书面审阅批准，未批准前不实施、推送或部署。
+
+- **T76 调度与质量排名一致性**：状态 `FROZEN`。用户于 2026-08-27 确认冻结写入，避免与 T80 同时改动 OpenAI 选路链。保留 `codex/t76-scheduler-quality-ranking-consistency@42a0014f05010f852acc67686976e2a0b093d2f5` 与 `/private/tmp/t76-quality-base.ZvXIS1@8714dcaf6b5925c593def27ed591f2bf37064a6f` 作只读证据；未提交内容必须原样保留。该候选的已完成样本质量门控无法覆盖首批长请求未完成期间的批量准入，T80 稳定后才可按根总控指令刷新其监控解释层。
+
 - **T79 独立准生产验收站**：状态 `READY_FOR_ROOT_REVIEW`。基线 `main@cc3819024`，候选工作区 `.worktrees/t79-independent-acceptance-station`、分支 `codex/t79-independent-acceptance-station`，提交 `f5f11bd10`（含 `f56e43209`），已推送 `origin/codex/t79-independent-acceptance-station`。按用户已确认的产品边界，测试站是可独立商用的完整实例，不对外开放，只允许独立管理员登录；对外复用主站 `https://api.xingqiaolab.top/admin/lab/` 路径，内部 Compose、网络、数据库、Redis、对象存储、运行目录、账户/会话和凭据独立，`/admin/accounts` 继续走主站原生页面。流程固定为本地直接验证 -> 人工部署验收站 -> 管理员真实验收（真实充值/消费/支付/上游）-> 人工合入 `main` -> 人工部署主站；串行单实例，不做蓝绿槽、临时环境、自动晋级或扩展门禁。专项契约、Compose 解析、脚本语法和 Caddy 配置验证均通过。真实部署仍阻塞于未提供验收站专用 SSH 身份/known_hosts、管理员来源 ACL，以及独立支付、上游、通知凭据；不得复制生产凭据或把占位值冒充真实配置。
 
 - **T78 管理员余额语义澄清**：状态 `DONE`。根 `main@0ea5820f29ee15a9c02871fc57976bc79d512e56` 已推送并经无停机蓝绿链发布；将管理员余额弹窗的“当前余额”明确为“当前可消费额度”，将原“现金”明确为“可退款现金余额”，并分别显示付费/赠送额度，避免把退款校验字段误解为可消费金额。前端定向 Vitest（3 项）、typecheck、production build 与 diff-check 通过；无迁移、无配置变更、无生产账务写入。宿主记录 `/var/lib/sub2api/release-records/20260826T165339Z-production-3138884.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；公网 `/healthz`、`/readyz`、`/health` 均为 HTTP 200。回滚为恢复上一个已验证蓝绿镜像。

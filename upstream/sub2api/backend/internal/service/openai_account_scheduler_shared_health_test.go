@@ -22,10 +22,16 @@ type openAISharedHealthStoreStub struct {
 	recordCalls   int
 	completeCalls int
 	lastEvent     OpenAISharedHealthEvent
+	admissions    map[string]OpenAISharedAdmissionRequest
+	quality       map[string]OpenAISharedRequestQualitySnapshot
 }
 
 func newOpenAISharedHealthStoreStub() *openAISharedHealthStoreStub {
-	return &openAISharedHealthStoreStub{snapshots: make(map[string]OpenAISharedHealthSnapshot)}
+	return &openAISharedHealthStoreStub{
+		snapshots:  make(map[string]OpenAISharedHealthSnapshot),
+		admissions: make(map[string]OpenAISharedAdmissionRequest),
+		quality:    make(map[string]OpenAISharedRequestQualitySnapshot),
+	}
 }
 
 func TestClassifyOpenAIAdmissionRequestShape(t *testing.T) {
@@ -122,6 +128,73 @@ func (s *openAISharedHealthStoreStub) CompleteHalfOpen(_ context.Context, lease 
 	}
 	s.snapshots[key] = snapshot
 	return nil
+}
+
+func openAIAdmissionStubKey(request OpenAISharedAdmissionRequest) string {
+	return sharedHealthStubKey(request.Key) + ":" + string(request.Shape) + ":" + request.LeaseID
+}
+
+func openAIQualityStubKey(key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape) string {
+	return sharedHealthStubKey(key) + ":" + string(shape)
+}
+
+func (s *openAISharedHealthStoreStub) AcquireAdmission(_ context.Context, request OpenAISharedAdmissionRequest) (OpenAISharedAdmissionDecision, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return OpenAISharedAdmissionDecision{}, s.getErr
+	}
+	s.admissions[openAIAdmissionStubKey(request)] = request
+	return OpenAISharedAdmissionDecision{Allowed: true, Reason: "acquired", LeaseExpiresAt: request.ObservedAt.Add(90 * time.Second)}, nil
+}
+
+func (s *openAISharedHealthStoreStub) RenewAdmission(_ context.Context, request OpenAISharedAdmissionRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return s.getErr
+	}
+	if _, ok := s.admissions[openAIAdmissionStubKey(request)]; !ok {
+		return ErrOpenAISharedHealthLeaseLost
+	}
+	return nil
+}
+
+func (s *openAISharedHealthStoreStub) ReleaseAdmission(_ context.Context, request OpenAISharedAdmissionRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return s.getErr
+	}
+	delete(s.admissions, openAIAdmissionStubKey(request))
+	return nil
+}
+
+func (s *openAISharedHealthStoreStub) GetRequestQuality(_ context.Context, key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape) (OpenAISharedRequestQualitySnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return OpenAISharedRequestQualitySnapshot{Key: key, Shape: shape}, s.getErr
+	}
+	return s.quality[openAIQualityStubKey(key, shape)], nil
+}
+
+func (s *openAISharedHealthStoreStub) RecordRequestQuality(_ context.Context, key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape, ttft time.Duration, observedAt time.Time) (OpenAISharedRequestQualitySnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.getErr != nil {
+		return OpenAISharedRequestQualitySnapshot{Key: key, Shape: shape}, s.getErr
+	}
+	qualityKey := openAIQualityStubKey(key, shape)
+	snapshot := s.quality[qualityKey]
+	snapshot.Key = key
+	snapshot.Shape = shape
+	snapshot.RealSampleCount++
+	snapshot.LastTTFT = ttft
+	snapshot.EWMATTFT = ttft
+	snapshot.ObservedAt = observedAt
+	s.quality[qualityKey] = snapshot
+	return snapshot, nil
 }
 
 func TestOpenAIAccountModelTransientSharedCooldownBlocksAnotherService(t *testing.T) {

@@ -236,6 +236,11 @@ type OpenAISharedHealthStore interface {
 	RecordAttempt(ctx context.Context, event OpenAISharedHealthEvent) (OpenAISharedHealthSnapshot, error)
 	AcquireHalfOpen(ctx context.Context, key OpenAISharedHealthKey, owner string, ttl time.Duration) (OpenAISharedHalfOpenLease, bool, error)
 	CompleteHalfOpen(ctx context.Context, lease OpenAISharedHalfOpenLease, success bool, observedAt time.Time) error
+	AcquireAdmission(ctx context.Context, request OpenAISharedAdmissionRequest) (OpenAISharedAdmissionDecision, error)
+	RenewAdmission(ctx context.Context, request OpenAISharedAdmissionRequest) error
+	ReleaseAdmission(ctx context.Context, request OpenAISharedAdmissionRequest) error
+	GetRequestQuality(ctx context.Context, key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape) (OpenAISharedRequestQualitySnapshot, error)
+	RecordRequestQuality(ctx context.Context, key OpenAISharedHealthKey, shape OpenAIAdmissionRequestShape, ttft time.Duration, observedAt time.Time) (OpenAISharedRequestQualitySnapshot, error)
 }
 
 type OpenAISharedHealthMode string

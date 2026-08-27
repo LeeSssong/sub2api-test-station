@@ -165,3 +165,79 @@ func TestOpenAISharedHealthPropagatesCanceledContext(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled) || strings.Contains(err.Error(), context.Canceled.Error()))
 }
+
+type openAIAdmissionStore interface {
+	AcquireAdmission(context.Context, service.OpenAISharedAdmissionRequest) (service.OpenAISharedAdmissionDecision, error)
+	RenewAdmission(context.Context, service.OpenAISharedAdmissionRequest) error
+	ReleaseAdmission(context.Context, service.OpenAISharedAdmissionRequest) error
+	GetRequestQuality(context.Context, service.OpenAISharedHealthKey, service.OpenAIAdmissionRequestShape) (service.OpenAISharedRequestQualitySnapshot, error)
+	RecordRequestQuality(context.Context, service.OpenAISharedHealthKey, service.OpenAIAdmissionRequestShape, time.Duration, time.Time) (service.OpenAISharedRequestQualitySnapshot, error)
+}
+
+func requireOpenAIAdmissionStore(t *testing.T, store service.OpenAISharedHealthStore) openAIAdmissionStore {
+	t.Helper()
+	admissionStore, ok := store.(openAIAdmissionStore)
+	require.True(t, ok, "OpenAI shared health store must support admission leases and request quality")
+	return admissionStore
+}
+
+func TestOpenAISharedHealthAdmissionLongBlocksNormalAndReleaseIsLeaseScoped(t *testing.T) {
+	store, rdb, _ := newOpenAISharedHealthUnitStore(t)
+	admissionStore := requireOpenAIAdmissionStore(t, store)
+	ctx := context.Background()
+	key := mustOpenAISharedHealthKey(t)
+	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+
+	long := service.OpenAISharedAdmissionRequest{Key: key, LeaseID: "safe-lease-a", Shape: service.OpenAIAdmissionShapeLong, ObservedAt: now}
+	decision, err := admissionStore.AcquireAdmission(ctx, long)
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.Equal(t, 1, decision.ActiveLong)
+
+	normal := service.OpenAISharedAdmissionRequest{Key: key, LeaseID: "safe-lease-b", Shape: service.OpenAIAdmissionShapeNormal, ObservedAt: now.Add(time.Second)}
+	decision, err = admissionStore.AcquireAdmission(ctx, normal)
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.Equal(t, "long_pre_first_output", decision.Reason)
+
+	wrongLease := long
+	wrongLease.LeaseID = "safe-lease-c"
+	require.NoError(t, admissionStore.ReleaseAdmission(ctx, wrongLease))
+	decision, err = admissionStore.AcquireAdmission(ctx, normal)
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+
+	require.NoError(t, admissionStore.ReleaseAdmission(ctx, long))
+	decision, err = admissionStore.AcquireAdmission(ctx, normal)
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.Equal(t, 1, decision.ActiveNormal)
+
+	keys, err := rdb.Keys(ctx, openAISharedHealthKeyPrefix+"admission:*").Result()
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.NotContains(t, keys[0], "safe-lease")
+}
+
+func TestOpenAISharedHealthRequestQualityCooldownIsShapeScoped(t *testing.T) {
+	store, _, _ := newOpenAISharedHealthUnitStore(t)
+	admissionStore := requireOpenAIAdmissionStore(t, store)
+	ctx := context.Background()
+	key := mustOpenAISharedHealthKey(t)
+	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+
+	long, err := admissionStore.RecordRequestQuality(ctx, key, service.OpenAIAdmissionShapeLong, 30*time.Second, now)
+	require.NoError(t, err)
+	require.Equal(t, 1, long.RealSampleCount)
+	require.Equal(t, 30*time.Second, long.LastTTFT)
+	require.Equal(t, now.Add(10*time.Minute), long.CooldownUntil)
+
+	normal, err := admissionStore.GetRequestQuality(ctx, key, service.OpenAIAdmissionShapeNormal)
+	require.NoError(t, err)
+	require.Zero(t, normal.RealSampleCount)
+	require.Zero(t, normal.CooldownUntil)
+
+	long, err = admissionStore.RecordRequestQuality(ctx, key, service.OpenAIAdmissionShapeLong, time.Second, now.Add(time.Second))
+	require.NoError(t, err)
+	require.Zero(t, long.CooldownUntil)
+}

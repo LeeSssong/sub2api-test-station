@@ -107,17 +107,22 @@ func accountWithLoadPriority(candidate accountWithLoad) int {
 // group-scoped scheduling snapshot, falling back to Account.Priority when the
 // account has no matching group row.
 func accountSchedulingPriorityForGroup(account *Account, groupID *int64) int {
+	priority, _ := accountSchedulingPriorityForGroupWithPresence(account, groupID)
+	return priority
+}
+
+func accountSchedulingPriorityForGroupWithPresence(account *Account, groupID *int64) (int, bool) {
 	if account == nil {
-		return 0
+		return 0, false
 	}
 	if groupID != nil && *groupID > 0 {
 		for _, accountGroup := range account.AccountGroups {
 			if accountGroup.GroupID == *groupID {
-				return accountGroup.Priority
+				return accountGroup.Priority, true
 			}
 		}
 	}
-	return account.Priority
+	return account.Priority, false
 }
 
 var ForceCacheBillingContextKey = forceCacheBillingKeyType{}

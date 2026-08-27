@@ -1392,6 +1392,8 @@ func normalizeOpenAISchedulerGroupPoliciesForRead(policies map[int64]OpenAISched
 			override := normalizeOpenAISchedulerFairnessOverridesForRead(map[int64]OpenAISchedulerFairnessOverride{id: *policy.Fairness})[id]
 			policy.Fairness = &override
 		}
+		policy.QualityGate = normalizeOpenAISchedulerQualityGateForRead(policy.QualityGate)
+		policy.SessionEscape = normalizeOpenAISchedulerSessionEscapeForRead(policy.SessionEscape)
 		legacy := normalizeOpenAISchedulerFairnessOverridesForRead(map[int64]OpenAISchedulerFairnessOverride{id: policy.LegacyFairness})[id]
 		policy.LegacyFairness = legacy
 		if policy.Values.TopK != 0 || policy.Values.Priority != 0 || policy.Values.CandidatePoolMode != "" {
@@ -1653,6 +1655,12 @@ func normalizeOpenAISchedulerGroupPoliciesWithPresets(policies map[int64]OpenAIS
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy references unknown group")
 			}
 		}
+		if policy.QualityGate != nil && !validateOpenAISchedulerQualityGatePolicy(*policy.QualityGate) {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy quality gate is invalid")
+		}
+		if policy.SessionEscape != nil && !validateOpenAISchedulerSessionEscapePolicy(*policy.SessionEscape) {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy session escape is invalid")
+		}
 		if policy.Priority != (OpenAISchedulerBusinessPriority{}) {
 			business, err := parseOpenAISchedulerBusinessPolicy(policy)
 			if err != nil {
@@ -1782,6 +1790,12 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 			if _, ok := knownGroups[id]; !ok {
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy references unknown group")
 			}
+		}
+		if policy.QualityGate != nil && !validateOpenAISchedulerQualityGatePolicy(*policy.QualityGate) {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy quality gate is invalid")
+		}
+		if policy.SessionEscape != nil && !validateOpenAISchedulerSessionEscapePolicy(*policy.SessionEscape) {
+			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy session escape is invalid")
 		}
 		if policy.Mode == "" {
 			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride

@@ -43,6 +43,8 @@ type OpenAIAccountSchedulerProjection struct {
 	EffectiveFacts   []AccountMonitorSchedulerFact               `json:"effective_facts"`
 	ModelQuotaParity string                                      `json:"model_quota_parity,omitempty"`
 	CandidateCount   int                                         `json:"candidate_count"`
+	QualityFallback  bool                                        `json:"quality_fallback,omitempty"`
+	FallbackReason   AccountMonitorReasonCode                    `json:"fallback_reason,omitempty"`
 	Candidates       []OpenAIAccountSchedulerProjectionCandidate `json:"candidates"`
 }
 
@@ -231,6 +233,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	}
 
 	eligible := make([]*Account, 0, len(req.Accounts))
+	qualityBlocked := make([]*Account, 0, len(req.Accounts))
 	ineligible := make([]OpenAIAccountSchedulerProjectionCandidate, 0, len(req.Accounts))
 	sharedHealthCtx := ctx
 	cancelSharedHealthReads := func() {}
@@ -280,8 +283,35 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 			ineligible = append(ineligible, candidate)
 			continue
 		}
+		if gate, enabled := s.qualityGatePolicyForGroup(ctx, req.GroupID); enabled && s.qualityGateBlockedForGroup(ctx, req.GroupID, account.ID, gate, now, false) {
+			qualityBlocked = append(qualityBlocked, account)
+			ineligible = append(ineligible, OpenAIAccountSchedulerProjectionCandidate{
+				AccountID: account.ID, PrimaryReasonCode: AccountMonitorReasonQualityGate,
+			})
+			continue
+		}
 		candidate.Eligible = true
 		eligible = append(eligible, account)
+	}
+	if len(eligible) == 0 && len(qualityBlocked) > 0 {
+		blockedIDs := make(map[int64]struct{}, len(qualityBlocked))
+		for _, account := range qualityBlocked {
+			if account != nil {
+				blockedIDs[account.ID] = struct{}{}
+			}
+		}
+		if fallback, ok := selectOpenAIQualityGateFallback(qualityBlocked, blockedIDs); ok {
+			eligible = []*Account{fallback}
+			remaining := ineligible[:0]
+			for _, candidate := range ineligible {
+				if candidate.AccountID != fallback.ID {
+					remaining = append(remaining, candidate)
+				}
+			}
+			ineligible = remaining
+		}
+		projection.QualityFallback = true
+		projection.FallbackReason = AccountMonitorReasonQualityGate
 	}
 
 	if len(eligible) > 0 {
@@ -337,6 +367,8 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 			}
 			if index == 0 && strategyOrderDiffers {
 				candidate.PrimaryReasonCode = AccountMonitorReasonStrategy
+			} else if projection.QualityFallback {
+				candidate.PrimaryReasonCode = AccountMonitorReasonQualityGate
 			} else if index > 0 && rankedCandidate.score == ranked[index-1].score {
 				candidate.PrimaryReasonCode = AccountMonitorReasonTieBreak
 			}

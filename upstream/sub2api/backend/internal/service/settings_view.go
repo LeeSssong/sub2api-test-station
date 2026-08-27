@@ -60,6 +60,30 @@ type OpenAISchedulerOperations struct {
 	SessionContinuity string `json:"session_continuity"`
 }
 
+// OpenAISchedulerQualityGatePolicy controls the generic, group-scoped short
+// window gate. A nil policy preserves legacy scheduler behavior.
+type OpenAISchedulerQualityGatePolicy struct {
+	Enabled            bool    `json:"enabled,omitempty"`
+	MinSamples         int     `json:"min_samples,omitempty"`
+	ErrorRateThreshold float64 `json:"error_rate_threshold,omitempty"`
+	TTFTThresholdMs    int     `json:"ttft_threshold_ms,omitempty"`
+	EnterConsecutive   int     `json:"enter_consecutive,omitempty"`
+	RecoverConsecutive int     `json:"recover_consecutive,omitempty"`
+	CooldownSeconds    int     `json:"cooldown_seconds,omitempty"`
+}
+
+// OpenAISchedulerSessionEscapePolicy reuses the same evidence/state seam for
+// temporarily bypassing a bad sticky choice without deleting its binding.
+type OpenAISchedulerSessionEscapePolicy struct {
+	Enabled            bool    `json:"enabled,omitempty"`
+	MinSamples         int     `json:"min_samples,omitempty"`
+	ErrorRateThreshold float64 `json:"error_rate_threshold,omitempty"`
+	TTFTThresholdMs    int     `json:"ttft_threshold_ms,omitempty"`
+	EnterConsecutive   int     `json:"enter_consecutive,omitempty"`
+	RecoverConsecutive int     `json:"recover_consecutive,omitempty"`
+	TTLSeconds         int     `json:"ttl_seconds,omitempty"`
+}
+
 type OpenAISchedulerBusinessGroupPolicy struct {
 	Priority         OpenAISchedulerBusinessPriority `json:"priority"`
 	Operations       OpenAISchedulerOperations       `json:"operations"`
@@ -185,17 +209,19 @@ type OpenAISchedulerCustomPreset struct {
 }
 
 type OpenAISchedulerGroupPolicy struct {
-	Mode             OpenAISchedulerGroupPolicyMode   `json:"mode,omitempty"`
-	Preset           OpenAISchedulerPreset            `json:"preset,omitempty"`
-	PresetID         string                           `json:"preset_id,omitempty"`
-	Priority         OpenAISchedulerBusinessPriority  `json:"priority,omitempty"`
-	Operations       OpenAISchedulerOperations        `json:"operations,omitempty"`
-	CompiledSnapshot OpenAISchedulerPolicyValues      `json:"compiled_snapshot,omitempty"`
-	TopK             *int                             `json:"top_k,omitempty"`
-	WeightOverrides  map[string]float64               `json:"weight_overrides,omitempty"`
-	Fairness         *OpenAISchedulerFairnessOverride `json:"fairness,omitempty"`
-	Values           OpenAISchedulerPolicyValues      `json:"-"`
-	LegacyFairness   OpenAISchedulerFairnessOverride  `json:"-"`
+	Mode             OpenAISchedulerGroupPolicyMode      `json:"mode,omitempty"`
+	Preset           OpenAISchedulerPreset               `json:"preset,omitempty"`
+	PresetID         string                              `json:"preset_id,omitempty"`
+	Priority         OpenAISchedulerBusinessPriority     `json:"priority,omitempty"`
+	Operations       OpenAISchedulerOperations           `json:"operations,omitempty"`
+	CompiledSnapshot OpenAISchedulerPolicyValues         `json:"compiled_snapshot,omitempty"`
+	TopK             *int                                `json:"top_k,omitempty"`
+	WeightOverrides  map[string]float64                  `json:"weight_overrides,omitempty"`
+	Fairness         *OpenAISchedulerFairnessOverride    `json:"fairness,omitempty"`
+	QualityGate      *OpenAISchedulerQualityGatePolicy   `json:"quality_gate,omitempty"`
+	SessionEscape    *OpenAISchedulerSessionEscapePolicy `json:"session_escape,omitempty"`
+	Values           OpenAISchedulerPolicyValues         `json:"-"`
+	LegacyFairness   OpenAISchedulerFairnessOverride     `json:"-"`
 }
 
 func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {

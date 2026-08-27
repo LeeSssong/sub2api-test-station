@@ -41,6 +41,11 @@ const user = {
 describe('UserBalanceModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    createQuotaLedgerEntry.mockResolvedValue({
+      ledger_entry_id: 1,
+      idempotent: false,
+      summary: {},
+    })
     getUserQuotaSummary.mockResolvedValue({
       cash_balance_cny: '21.00000000',
       paid_quota_balance_usd: '21.00000000',
@@ -69,6 +74,26 @@ describe('UserBalanceModal', () => {
 
     expect(showError).toHaveBeenCalledWith('quota wallet persistence failed')
     expect(showError).not.toHaveBeenCalledWith('common.error')
+  })
+
+  it('submits a recharge containing only gifted quota', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: true, user, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    const inputs = wrapper.findAll('input[type="number"]')
+    await inputs[0].setValue('0')
+    await inputs[1].setValue('5')
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
+
+    expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, {
+      record_type: 'recharge',
+      amount_cny: 0,
+      gift_quota_usd: 5,
+      note: '',
+    })
   })
 
   it('shows refreshed quota summary rather than the stale users-list balance', async () => {

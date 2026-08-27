@@ -215,60 +215,21 @@
 	respond @sub2api_restart_mutation `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED","message":"Docker 部署仅支持受控 Compose 更新，请使用运维发布流程"}` 409
 
 
-	# T53 admin lab isolated path
-	# T53 admin lab: keep this block before the production fallback proxy.
-	@admin_lab_root path /admin/lab /admin/lab/
-	redir @admin_lab_root /admin/lab/login 302
+	# The acceptance station is a separate Compose project reached only through
+	# the host edge port. Keep this before the production fallback so the native
+	# /admin/accounts page remains handled by the production upstream. The route
+	# is explicit so the source allowlist is checked before redirect/proxy.
+	@acceptance_lab path /admin/lab /admin/lab/*
+	route @acceptance_lab {
+		@acceptance_lab_denied not client_ip {$ACCEPTANCE_LAB_ALLOWED_IPS:127.0.0.1/32}
+		respond @acceptance_lab_denied 403
 
-	@admin_lab_assets path /admin/lab/assets/* /admin/lab/logo.svg
-	handle @admin_lab_assets {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088
-	}
+		@acceptance_lab_root path /admin/lab
+		redir @acceptance_lab_root /admin/lab/ 308
 
-	@admin_lab_api path /admin/lab/api/*
-	handle @admin_lab_api {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088 {
-	    header_up -Cookie
-	    header_up Authorization {http.request.header.Authorization}
-	    header_up X-Admin-Lab-Only 1
-	  }
-	}
-
-	@admin_lab_ws path /admin/lab/ws/*
-	handle @admin_lab_ws {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088 {
-	    header_up -Cookie
-	    header_up Authorization {http.request.header.Authorization}
-	    header_up X-Admin-Lab-Only 1
-	  }
-	}
-
-	@admin_lab_login path /admin/lab/login
-	handle @admin_lab_login {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088
-	}
-
-	@admin_lab_no_session {
-	  path /admin/lab/*
-	  not path /admin/lab/login /admin/lab/assets/* /admin/lab/logo.svg /admin/lab/api/* /admin/lab/ws/*
-	  not header Cookie *sub2api_lab_session=*
-	}
-	redir @admin_lab_no_session /admin/lab/login 302
-
-	@admin_lab_app path /admin/lab/*
-	handle @admin_lab_app {
-	  forward_auth admin-lab-gateway:8088 {
-	    uri /api/v1/auth/lab-session
-	    header_up X-Admin-Lab-Only 1
-	  }
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088 {
-	    header_up -Cookie
-	  }
+		reverse_proxy {$ACCEPTANCE_LAB_UPSTREAM:host.docker.internal:8181} {
+			header_up X-Forwarded-Proto {http.request.proto}
+		}
 	}
 
 	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {

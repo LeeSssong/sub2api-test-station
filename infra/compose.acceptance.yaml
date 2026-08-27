@@ -1,0 +1,184 @@
+name: sub2api-acceptance
+
+x-acceptance-environment: &acceptance-environment
+  AUTO_SETUP: "true"
+  SERVER_HOST: 0.0.0.0
+  SERVER_PORT: "8080"
+  SERVER_MODE: release
+  RUN_MODE: standard
+  SERVER_PROCESS_ROLE: api
+  DATABASE_HOST: acceptance-postgres
+  DATABASE_PORT: "5432"
+  DATABASE_USER: ${ACCEPTANCE_DB_USER:?ACCEPTANCE_DB_USER is required}
+  DATABASE_PASSWORD: ${ACCEPTANCE_DB_PASSWORD:?ACCEPTANCE_DB_PASSWORD is required}
+  DATABASE_DBNAME: ${ACCEPTANCE_DB_NAME:?ACCEPTANCE_DB_NAME is required}
+  DATABASE_SSLMODE: disable
+  REDIS_HOST: acceptance-redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${ACCEPTANCE_REDIS_PASSWORD:?ACCEPTANCE_REDIS_PASSWORD is required}
+  REDIS_DB: "0"
+  ADMIN_EMAIL: ${ACCEPTANCE_ADMIN_EMAIL:?ACCEPTANCE_ADMIN_EMAIL is required}
+  ADMIN_PASSWORD: ${ACCEPTANCE_ADMIN_PASSWORD:?ACCEPTANCE_ADMIN_PASSWORD is required}
+  JWT_SECRET: ${ACCEPTANCE_JWT_SECRET:?ACCEPTANCE_JWT_SECRET is required}
+  TOTP_ENCRYPTION_KEY: ${ACCEPTANCE_TOTP_ENCRYPTION_KEY:?ACCEPTANCE_TOTP_ENCRYPTION_KEY is required}
+  SUB2API_MODEL_DETECTOR_URL: http://acceptance-detector:8090
+  SUB2API_MODEL_DETECTOR_TOKEN: ${ACCEPTANCE_DETECTOR_TOKEN:?ACCEPTANCE_DETECTOR_TOKEN is required}
+  TZ: ${ACCEPTANCE_TIMEZONE:-Asia/Shanghai}
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "20m", max-file: "5"}
+
+services:
+  acceptance-api:
+    image: ${ACCEPTANCE_IMAGE:?ACCEPTANCE_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      <<: *acceptance-environment
+      SERVER_PROCESS_ROLE: api
+    volumes:
+      - sub2api-acceptance-data:/app/data
+    networks: [acceptance, egress]
+    depends_on:
+      acceptance-postgres: {condition: service_healthy}
+      acceptance-redis: {condition: service_healthy}
+      acceptance-detector: {condition: service_healthy}
+    healthcheck: &sub2api-healthcheck
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    logging: *logging
+
+  acceptance-worker:
+    image: ${ACCEPTANCE_IMAGE:?ACCEPTANCE_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      <<: *acceptance-environment
+      SERVER_PROCESS_ROLE: worker
+    volumes:
+      - sub2api-acceptance-data:/app/data
+    networks: [acceptance, egress]
+    depends_on:
+      acceptance-postgres: {condition: service_healthy}
+      acceptance-redis: {condition: service_healthy}
+      acceptance-detector: {condition: service_healthy}
+    healthcheck: *sub2api-healthcheck
+    logging: *logging
+
+  acceptance-detector:
+    image: ${ACCEPTANCE_IMAGE:?ACCEPTANCE_IMAGE is required}
+    restart: unless-stopped
+    command: ["/app/model-detector"]
+    environment:
+      MODEL_DETECTOR_LISTEN_ADDRESS: ":8090"
+      MODEL_DETECTOR_MODELS: ${ACCEPTANCE_DETECTOR_MODELS:-gpt-5.6-terra,gpt-5.6-sol,gpt-5.4}
+      MODEL_DETECTOR_VERSION: ${ACCEPTANCE_DETECTOR_VERSION:-4.1.1}
+      SUB2API_MODEL_DETECTOR_TOKEN: ${ACCEPTANCE_DETECTOR_TOKEN:?ACCEPTANCE_DETECTOR_TOKEN is required}
+    networks: [acceptance, egress]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
+    logging: *logging
+
+  acceptance-postgres:
+    image: ${ACCEPTANCE_POSTGRES_IMAGE:?ACCEPTANCE_POSTGRES_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_USER: ${ACCEPTANCE_DB_USER:?ACCEPTANCE_DB_USER is required}
+      POSTGRES_PASSWORD: ${ACCEPTANCE_DB_PASSWORD:?ACCEPTANCE_DB_PASSWORD is required}
+      POSTGRES_DB: ${ACCEPTANCE_DB_NAME:?ACCEPTANCE_DB_NAME is required}
+      TZ: ${ACCEPTANCE_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - sub2api-acceptance-postgres:/var/lib/postgresql/data
+    networks: [acceptance]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *logging
+
+  acceptance-redis:
+    image: ${ACCEPTANCE_REDIS_IMAGE:?ACCEPTANCE_REDIS_IMAGE is required}
+    restart: unless-stopped
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --appendfsync everysec --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${ACCEPTANCE_REDIS_PASSWORD:?ACCEPTANCE_REDIS_PASSWORD is required}
+      REDISCLI_AUTH: ${ACCEPTANCE_REDIS_PASSWORD:?ACCEPTANCE_REDIS_PASSWORD is required}
+      TZ: ${ACCEPTANCE_TIMEZONE:-Asia/Shanghai}
+    volumes:
+      - sub2api-acceptance-redis:/data
+    networks: [acceptance]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+
+  acceptance-caddy:
+    image: ${ACCEPTANCE_CADDY_IMAGE:?ACCEPTANCE_CADDY_IMAGE is required}
+    restart: unless-stopped
+    ports:
+      - "${ACCEPTANCE_LOOPBACK_BIND:-0.0.0.0}:${ACCEPTANCE_LOOPBACK_PORT:?ACCEPTANCE_LOOPBACK_PORT is required}:80"
+    volumes:
+      - ./Caddyfile.acceptance:/etc/caddy/Caddyfile:ro
+      - sub2api-acceptance-caddy-data:/data
+      - sub2api-acceptance-caddy-config:/config
+    networks: [acceptance, egress]
+    depends_on:
+      acceptance-api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 5 -O /dev/null http://127.0.0.1/admin/lab/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+
+  acceptance-bootstrap:
+    profiles: ["bootstrap"]
+    image: ${ACCEPTANCE_POSTGRES_IMAGE:?ACCEPTANCE_POSTGRES_IMAGE is required}
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${ACCEPTANCE_DB_USER:?ACCEPTANCE_DB_USER is required}
+      POSTGRES_PASSWORD: ${ACCEPTANCE_DB_PASSWORD:?ACCEPTANCE_DB_PASSWORD is required}
+      POSTGRES_DB: ${ACCEPTANCE_DB_NAME:?ACCEPTANCE_DB_NAME is required}
+    networks: [acceptance]
+    depends_on:
+      acceptance-postgres: {condition: service_healthy}
+    entrypoint: ["sh", "-ec"]
+    command: |
+      export PGPASSWORD="$$POSTGRES_PASSWORD"
+      exec psql --host=acceptance-postgres --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB" --set=ON_ERROR_STOP=1 --command="INSERT INTO settings (key, value) VALUES
+        ('backend_mode_enabled', 'true'),
+        ('registration_enabled', 'false')
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();"
+    logging: *logging
+
+volumes:
+  sub2api-acceptance-data:
+    name: sub2api-acceptance-data
+  sub2api-acceptance-postgres:
+    name: sub2api-acceptance-postgres
+  sub2api-acceptance-redis:
+    name: sub2api-acceptance-redis
+  sub2api-acceptance-caddy-data:
+    name: sub2api-acceptance-caddy-data
+  sub2api-acceptance-caddy-config:
+    name: sub2api-acceptance-caddy-config
+
+networks:
+  acceptance:
+    name: sub2api-acceptance-network
+    internal: true
+  egress:
+    name: sub2api-acceptance-egress-network

@@ -2,8 +2,8 @@
 
 - 状态：`READY_FOR_ROOT_REVIEW`
 - 原始基线：`main@c70f11193`
-- 刷新后根 `main`：`main@6cd484850`
-- 候选提交：当前分支 `HEAD`（最终 SHA 以根总控读取为准）
+- 刷新后根 `main`：`main@031b58e4c`
+- 候选提交：`b6e85e5ab9fb5c3f631391f376ed4473d742e72a`
 - 候选 worktree：`.worktrees/t69-account-monitor-evidence-fallback`
 - 候选分支：`codex/t69-account-monitor-evidence-fallback`
 - 尚未合并、推送、部署或线上验收；候选未执行任何生产动作
@@ -28,22 +28,24 @@
 - `upstream/sub2api/backend/internal/service/account_monitor_service_test.go`
 - 本交接文档
 
-## 直接相关验证
+## 直接相关验证（2026-08-27 刷新后复核）
 
 已重新执行并通过：
 
 ```bash
 go test ./internal/service -run 'TestAccountMonitor' -count=1
 go test ./internal/repository -run 'TestAccountMonitor' -count=1
+go test ./internal/handler -run 'Test.*AccountMonitor|TestAccountMonitor' -count=1
 go build ./cmd/server
+gofmt -w internal/service/account_monitor_service.go internal/service/account_monitor_service_test.go
 git diff --check
 ```
 
-通过证据：service 与 repository 测试均返回 `ok`；`go build ./cmd/server` 退出码为 0；`git diff --check` 无输出。
+通过证据：service 与 repository 测试均返回 `ok`；handler 定向命令返回 `ok`（当前包无匹配测试，显示 `[no tests to run]`）；`go build ./cmd/server` 退出码为 0；gofmt 后工作区无代码变化；`git diff --check` 无输出。
 
 ## 发布、回滚与剩余风险
 
-- 候选已刷新到 `main@6cd484850`；根总控合并前仍需确认目标 `main` 未漂移，并确认候选差异仅包含本任务范围代码/测试与本交接文档。当前根已包含 T67 原生扣费候选代码；本次发布需以合并后完整 `main` 的直接门禁和发布证据为准。
+- 候选已刷新到 `main@031b58e4c`；根总控合并前仍需确认目标 `main` 未漂移，并确认候选差异仅包含本任务范围代码/测试与本交接文档。当前根已包含 T80/T81 组合候选；本次发布需以合并后完整 `main` 的直接门禁和发布证据为准。
 - 推送、发布预检、蓝绿部署和线上账号监控专项验收只能从合并后已验证的 `main` 执行；本候选不自行合并、推送或部署。
 - 发布预检若返回 `downtime_required=false`，按既有无停机发布链继续；若为 `true`，在停机动作前暂停等待授权。
 - 线上专项验收需确认：账号 #131 当前仍显示 `evidence_insufficient` 且详情可见最近一次最终 `normal`；账号 #266/#276 在 `schedulable=false` 时可显示历史评分但不进入调度；真实调用-only、probe-only 与 hybrid 样本来源及排名门控符合约定。

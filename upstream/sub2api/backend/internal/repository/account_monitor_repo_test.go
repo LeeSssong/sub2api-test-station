@@ -263,6 +263,35 @@ func TestAccountMonitorRepositoryListsLatestProbeModel(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRepositoryListGroupAggregatesPropagatesGroupID(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	groupRepo, ok := repo.(service.AccountMonitorGroupAggregateRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement group aggregates")
+	}
+	checkedAt := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`(?s)WITH group_usage AS.*u\.group_id = \$1.*ops_error_logs.*e\.group_id = \$1.*`).
+		WithArgs(int64(42), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "sample_count", "success_count", "error_count", "success_rate", "success_sample_count", "ttft_sample_count", "latency_sample_count", "ttft_p50_ms", "ttft_p95_ms", "latency_p50_ms", "latency_p95_ms", "last_checked_at"}).
+			AddRow(int64(7), 3, 3, 0, 1.0, 3, 3, 3, 80.0, 90.0, 200.0, 220.0, checkedAt))
+
+	aggregates, err := groupRepo.ListGroupAggregates(context.Background(), 42, []int64{7}, checkedAt.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aggregates[7].SampleCount != 3 || aggregates[7].SuccessRate != 1 {
+		t.Fatalf("group aggregate = %#v", aggregates[7])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

@@ -273,6 +273,42 @@ func TestAccountMonitorServiceGlobalScoreWeightsDefaultAndErrors(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorListRestoresLegacyQualityScoreProjection(t *testing.T) {
+	now := time.Now().UTC()
+	rate := 1.0
+	repo := &accountMonitorRepoStub{
+		settings:      AccountMonitorSettings{IntervalSeconds: 300},
+		globalWeights: DefaultAccountMonitorScoreWeights,
+		aggregates: map[int64]AccountMonitorAggregate{
+			7: {SampleCount: 6, SuccessCount: 6, SuccessSampleCount: 6, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		latest: map[int64]AccountMonitorLatest{7: {Status: "success", CheckedAt: now}},
+		groups: []AccountMonitorGroup{{ID: 42, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights}},
+	}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{{ID: 7, Status: StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42}}}}, nil, nil, accountMonitorConfirmedMultiplier(rate))
+
+	page, err := svc.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Accounts) != 1 || page.Accounts[0].QualityScore == nil || !page.Accounts[0].Eligible {
+		t.Fatalf("legacy account projection did not restore score: %#v", page.Accounts)
+	}
+	if len(page.Groups) != 1 || len(page.Groups[0].Accounts) != 1 || !page.Groups[0].Accounts[0].Evidence.Known {
+		t.Fatalf("legacy group evidence lost Known state: %#v", page.Groups)
+	}
+}
+
+func TestAccountMonitorListHonorsCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 300}}
+	_, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil).List(ctx)
+	if err == nil {
+		t.Fatal("List should return the caller context error")
+	}
+}
+
 func TestAccountMonitorServiceUpdatesGlobalScoreWeightsWithoutThresholdPersistence(t *testing.T) {
 	repo := &accountMonitorRepoStub{}
 	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
@@ -583,7 +619,7 @@ func TestAccountMonitorListWindowDoesNotUseAccountScopedEvidenceWhenGroupWindowP
 		t.Fatal(err)
 	}
 	row := findAccountMonitorGroupAccount(t, page.Groups[0].Accounts, account.ID)
-	if row.Evidence.SampleCount != 0 || row.Evidence.Source != "stale" || row.QualityScore != nil || row.QualityRank != nil {
+	if row.Evidence.SampleCount != 0 || row.Evidence.Source != "unknown" || row.QualityScore != nil || row.QualityRank != nil {
 		t.Fatalf("group row used account-scoped evidence after nil group-window projection: %#v", row)
 	}
 }
@@ -1660,7 +1696,7 @@ func TestAccountMonitorScoreThresholdsRejectInvalidRanges(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) {
+func TestAccountMonitorGroupQualityEvidenceStaysGroupScopedAndMarksStale(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
 	group := &Group{ID: 7, Name: "public", RateMultiplier: 1.0}
@@ -1678,8 +1714,8 @@ func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) 
 		t.Fatal(err)
 	}
 	row := page.Groups[0].Accounts[0]
-	if row.Evidence.Source != "global_fallback" || row.Evidence.SampleCount != 4 || !row.Eligible {
-		t.Fatalf("fallback evidence = %#v", row)
+	if row.Evidence.Source != "stale" || row.Evidence.SampleCount != 1 || row.Evidence.Known || row.QualityScore != nil {
+		t.Fatalf("group evidence = %#v", row)
 	}
 
 	stale := now.Add(-20 * time.Minute)
@@ -1694,7 +1730,7 @@ func TestAccountMonitorGroupQualityEvidenceFallsBackAndMarksStale(t *testing.T) 
 	}
 }
 
-func TestAccountMonitorGroupQualityEvidenceErrorForcesGlobalFallback(t *testing.T) {
+func TestAccountMonitorGroupQualityEvidenceErrorStaysUnknown(t *testing.T) {
 	now := time.Now().UTC()
 	rate := 0.02
 	account := Account{ID: 53, Name: "group-error", Status: StatusActive, Schedulable: true,
@@ -1711,8 +1747,8 @@ func TestAccountMonitorGroupQualityEvidenceErrorForcesGlobalFallback(t *testing.
 		t.Fatal(err)
 	}
 	evidence := page.Groups[0].Accounts[0].Evidence
-	if evidence.Source != "global_fallback" {
-		t.Fatalf("evidence source = %q, want global_fallback", evidence.Source)
+	if evidence.Source != "unknown" || evidence.Known || evidence.SampleCount != 0 {
+		t.Fatalf("evidence = %#v, want unknown group-isolated evidence", evidence)
 	}
 }
 
@@ -2700,8 +2736,8 @@ func TestAccountMonitorWindowEvidenceWithoutProbesIsStale(t *testing.T) {
 		AccountMonitorSettings{IntervalSeconds: 300},
 		now,
 	)
-	if evidence.Source != "stale" || evidence.SuccessSampleCount != 0 {
-		t.Fatalf("missing probe aggregate evidence = %#v, want stale", evidence)
+	if evidence.Source != "unknown" || evidence.SuccessSampleCount != 0 {
+		t.Fatalf("missing probe aggregate evidence = %#v, want unknown", evidence)
 	}
 	if evidence.ObservedAt.IsZero() || !evidence.ObservedAt.Equal(latestCheckedAt) {
 		t.Fatalf("probe fallback observed_at = %s, want latest probe time %s", evidence.ObservedAt, latestCheckedAt)

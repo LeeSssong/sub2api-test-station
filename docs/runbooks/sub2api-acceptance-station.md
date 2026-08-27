@@ -2,7 +2,7 @@
 
 > 本手册受 [`docs/project/acceptance-station-global-constraints.md`](../project/acceptance-station-global-constraints.md)、`AGENTS.md` 与原生小步发布全局约束共同约束；若入口、操作或授权语义不一致，以全局约束为准。
 
-本验收站是一个长期存在、可真实商用的独立 Sub2API 实例。它只允许管理员登录，默认不对公网开放；站点、数据、凭据和运行资源均与主站隔离。对外入口复用主站域名下的 https://api.xingqiaolab.top/admin/lab/ 路径，由生产 Caddy 仅转发到同宿主的专用 acceptance edge 端口；/admin/accounts 继续由主站原生页面处理。部署成功只表示服务已启动，不表示功能验收通过，也不会自动部署主站。
+本验收站是一个长期存在、可真实商用的独立 Sub2API 实例。它对公网提供登录入口，但仅允许独立管理员登录；站点、数据、凭据和运行资源均与主站隔离。对外入口复用主站域名下的 https://api.xingqiaolab.top/admin/lab/ 路径，由生产 Caddy 仅转发到同宿主的专用 acceptance edge 端口；/admin/accounts 继续由主站原生页面处理。部署成功只表示服务已启动，不表示功能验收通过，也不会自动部署主站。
 
 ## 运行边界
 

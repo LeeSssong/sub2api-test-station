@@ -12,7 +12,7 @@
 
 - **T80 OpenAI 长请求调度准入韧性**：状态 `READY_FOR_ROOT_REVIEW`（已纳入上方组合部署包）。用户基于 2026-08-27 GPT-Pro 账号 `286` 的高 TTFT 事故，已确认优先解决“第一批长请求尚未完成时，同一慢账号仍被连续准入”的风险。实现复用原生 OpenAI scheduler/shared-health/Redis：账号级跨模型/跨分组首输出前 admission lease、slow-session guard、首语义输出释放、失败/取消幂等清理、共享写入 context 隔离和脱敏可观测性；组合根主线上的 config/repository/service/handler 直接测试、`go build ./cmd/server`、gofmt 和 `git diff --check` 均通过。无迁移、生产配置或业务数据写入；T77/T79 的 VERIFYING 只读验收结论不被伪装成代码变更。
 
-- **T76 调度与质量排名一致性**：状态 `READY_FOR_ROOT_REVIEW`（已按用户指令解冻并刷新完成）。候选 `codex/t76-scheduler-quality-ranking-consistency@009010bf5ece6e9fd4e7545be431a9d51606e2f6` 基于 `main@031b58e4c`；原有提交和 dirty diff 均保留，恢复证据见 `/private/tmp/t76-unfreeze-20260827/v1-worktree.diff`。已修复 live Grok quota cache、过期 model cooldown/`isBlocked`、shared-health veto、subscription-priority 分区、资格差异原因误归因和 `1/1/1` 体验均衡标签，并通过 projection/account-monitor service/repository/handler 聚焦测试、`go build ./cmd/server`、前端 110 项测试、`pnpm typecheck`、`pnpm build`、gofmt、diff-check。尚未合并、推送、部署或线上验收；由于触及与 T80 相同的 OpenAI 选路链，仍按串行发布顺序处理。
+- **T76 调度与质量排名一致性**：状态 `VERIFYING`。候选已合入并推送为 `main@1eed79a547a4276127beace8024869dbf0137255`，验收站部署成功；已修复 live Grok quota cache、过期 model cooldown/`isBlocked`、shared-health veto、subscription-priority 分区、资格差异原因误归因和 `1/1/1` 体验均衡标签。Go service/repository/handler 聚焦测试、`go build ./cmd/server`、前端 110 项测试、`pnpm typecheck`、`pnpm build`、gofmt、diff-check 均通过。验收站线上专项功能仍待管理员人工验收，主站未部署。
 
 - **T79 独立准生产验收站**：状态 `VERIFYING`。基线 `main@cc3819024`，候选工作区 `.worktrees/t79-independent-acceptance-station`、分支 `codex/t79-independent-acceptance-station`，提交 `f5f11bd10`（含 `f56e43209`）；根线程补齐并推送 `main@00a831060`（含验收入口 ACL/正则和宿主网关默认修复）。验收站 Compose `sub2api-acceptance` 已独立部署并保持 6 服务 healthy，宿主目录 `/opt/sub2api/acceptance-live`，边缘 `172.18.0.1:8181`；数据库只读核对 `users=1`（唯一验收管理员）、`accounts=0`、`usage_logs=0`，未携带主站业务数据。对外仅复用主站 `https://api.xingqiaolab.top/admin/lab/` 路径，生产 Caddy 已通过 Cloudflare 官方网段 + `CF-Connecting-IP` 锚定正则白名单；`/admin/lab`→308、`/admin/lab/` 与 `/admin/lab/login`→200 且资源为 `/admin/lab/assets/...`，源站直连伪造头→403，`/admin/accounts` 继续走主站原生页面。主站 `/healthz`、`/readyz`、`/health` 均 200；旧 `sub2api-admin-lab-*` mock 容器已停止，旧数据卷保留未删除。流程固定为本地直接验证 -> 人工部署验收站 -> 管理员真实验收（真实充值/消费/支付/上游）-> 人工合入 `main` -> 人工部署主站；串行单实例，不做蓝绿槽、临时环境、自动晋级或扩展门禁。尚未完成管理员真实支付/消费/上游/通知功能验收，因此保持 `VERIFYING`，不得标记 `DONE`；不得复制生产凭据或把占位值冒充真实配置。
 
@@ -49,7 +49,13 @@
 
 ## 当前待根审任务（2026-08-25，T69）
 
-- **T69 账号监控证据与评分回退**：状态 `READY_FOR_ROOT_REVIEW`（已按用户指令解冻并刷新完成）。候选 `codex/t69-account-monitor-evidence-fallback@c48775ffbaff3ba3b4cbd0e7365711297ef3f91e` 已基于 `main@031b58e4c` 刷新并通过 service/repository/handler 聚焦测试、`go build ./cmd/server`、gofmt、`git diff --check`；尚未合并、推送、部署或线上验收，无迁移、配置变化或生产写入。交接：`.worktrees/t69-account-monitor-evidence-fallback/docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
+- **T69 账号监控证据与评分回退**：状态 `VERIFYING`。候选已合入并推送为 `main@1b6c6e1d5f73eb0df58c02d1738bbd631b0527a9`，随后验收站部署成功；service/repository/handler 聚焦测试、`go build ./cmd/server`、gofmt、`git diff --check` 均通过。当前最终验收站版本为 `main@1eed79a54`，包含 T69；主站未部署，线上专项功能仍待管理员人工验收。交接：`.worktrees/t69-account-monitor-evidence-fallback/docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
+
+## 验收站部署记录（2026-08-27）
+
+- T69 首次验收站发布：`main@1b6c6e1d5f73eb0df58c02d1738bbd631b0527a9`，脚本返回 `succeeded`。
+- T76 最终验收站发布：`main@1eed79a547a4276127beace8024869dbf0137255`，tree `ede8d8e49baf2609447944925761e9cf79d50e6c`，镜像归档 SHA-256 `230dbb772381f4d40eda33d40d6857b8a8d2cd3a9afc0de614d439531852ebb0`，脚本返回 `succeeded`。
+- `/admin/lab/health` 返回 `{"status":"ok"}`，登录页 HTTP 200，验收 API、worker、detector、PostgreSQL、Redis、Caddy 均 healthy。主站未部署。
 
 ## 已完成任务（2026-08-25，T68）
 

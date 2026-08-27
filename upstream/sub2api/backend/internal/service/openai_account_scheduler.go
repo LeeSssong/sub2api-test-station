@@ -250,6 +250,8 @@ type openAIAccountRuntimeStat struct {
 	qualityState      openAIQualityGateState
 }
 
+const openAIAccountRuntimeEvidenceTTL = 2 * AccountMonitorDefaultIntervalSeconds * time.Second
+
 func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
 	return &openAIAccountRuntimeStats{}
 }
@@ -356,16 +358,14 @@ func (s *openAIAccountRuntimeStats) snapshotForGroup(groupID, accountID int64) (
 }
 
 func (s *openAIAccountRuntimeStats) loadForGroup(groupID, accountID int64) (any, bool) {
-	value, ok := s.accounts.Load(openAIAccountRuntimeKey{groupID: groupID, accountID: accountID})
-	if ok || groupID == 0 {
-		return value, ok
-	}
-	// Preserve callers that predate group-aware reporting until their next
-	// request carries group context. A real group sample always wins.
-	return s.accounts.Load(openAIAccountRuntimeKey{groupID: 0, accountID: accountID})
+	return s.accounts.Load(openAIAccountRuntimeKey{groupID: groupID, accountID: accountID})
 }
 
 func (s *openAIAccountRuntimeStats) qualityGateEvidence(groupID, accountID int64) (openAIQualityGateEvidence, bool) {
+	return s.qualityGateEvidenceAt(groupID, accountID, time.Now().UTC(), openAIAccountRuntimeEvidenceTTL)
+}
+
+func (s *openAIAccountRuntimeStats) qualityGateEvidenceAt(groupID, accountID int64, now time.Time, ttl time.Duration) (openAIQualityGateEvidence, bool) {
 	if s == nil || accountID <= 0 {
 		return openAIQualityGateEvidence{ReadError: true}, false
 	}
@@ -378,35 +378,50 @@ func (s *openAIAccountRuntimeStats) qualityGateEvidence(groupID, accountID int64
 		return openAIQualityGateEvidence{ReadError: true}, false
 	}
 	errorRate, ttft, hasTTFT := s.snapshotForGroup(groupID, accountID)
+	successCount := int64(math.Round(float64(stat.sampleCount.Load()) * (1 - errorRate)))
+	if successCount < 0 {
+		successCount = 0
+	}
+	observedAt := time.Unix(0, stat.lastReportAt.Load()).UTC()
+	fused := fuseAccountMonitorQualityEvidence(
+		AccountMonitorWindowAggregate{
+			RequestCount: stat.sampleCount.Load(),
+			SuccessCount: successCount,
+			SuccessRate:  1 - errorRate,
+			TTFTSampleCount: func() int {
+				if hasTTFT {
+					return int(stat.sampleCount.Load())
+				}
+				return 0
+			}(),
+			TTFTP50MS: func() *float64 {
+				if hasTTFT {
+					value := ttft
+					return &value
+				}
+				return nil
+			}(),
+			LastObservedAt: &observedAt,
+		},
+		AccountMonitorAggregate{},
+		AccountMonitorLatest{},
+		AccountMonitorSettings{IntervalSeconds: AccountMonitorDefaultIntervalSeconds},
+		now,
+	)
+	if ttl > 0 && fused.Freshness == accountMonitorQualityFreshnessFresh && !isAccountMonitorEvidenceFresh(observedAt, now.UTC(), ttl) {
+		fused = accountMonitorUnknownQualityEvidenceWithFreshness("stale", true)
+	}
 	return openAIQualityGateEvidence{
 		SampleCount: int(stat.sampleCount.Load()),
 		ErrorRate:   errorRate,
 		TTFTMs:      ttft,
 		HasTTFT:     hasTTFT,
-		Fused: func() *AccountMonitorQualityEvidence {
-			observedAt := time.Unix(0, stat.lastReportAt.Load()).UTC()
-			known := stat.sampleCount.Load() > 0 && !observedAt.IsZero()
-			evidence := AccountMonitorQualityEvidence{
-				Source: accountMonitorQualitySourceReal, Known: known,
-				Freshness:          accountMonitorQualityFreshnessFresh,
-				RealRequestSamples: int(stat.sampleCount.Load()), RealRequestWeight: 1,
-				SampleCount: int(stat.sampleCount.Load()), SuccessRate: 1 - errorRate,
-				ObservedAt: observedAt,
-			}
-			if !known {
-				evidence = accountMonitorUnknownQualityEvidence("missing")
-			}
-			if hasTTFT {
-				evidence.TTFTSampleCount = 1
-				evidence.TTFTP50MS = &ttft
-			}
-			return &evidence
-		}(),
+		Fused:       &fused,
 	}, true
 }
 
 func (s *openAIAccountRuntimeStats) qualityGateState(groupID, accountID int64, policy OpenAISchedulerQualityGatePolicy, now time.Time, advance bool) (openAIQualityGateState, openAIQualityGateEvaluation) {
-	evidence, ok := s.qualityGateEvidence(groupID, accountID)
+	evidence, ok := s.qualityGateEvidenceAt(groupID, accountID, now.UTC(), openAIAccountRuntimeEvidenceTTL)
 	if !ok {
 		return openAIQualityGateState{}, evaluateOpenAIQualityGate(policy, openAIQualityGateEvidence{ReadError: true})
 	}

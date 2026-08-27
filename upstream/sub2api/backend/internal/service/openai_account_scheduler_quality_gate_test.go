@@ -60,11 +60,30 @@ func TestOpenAIQualityGateUsesTheSharedFusedEvidenceProjection(t *testing.T) {
 func TestOpenAIQualityGateLegacyGroupNeutralReportRemainsIsolatedCompatibilityPath(t *testing.T) {
 	stats := newOpenAIAccountRuntimeStats()
 	stats.report(42, true, nil)
-	if _, ok := stats.qualityGateEvidence(11, 42); !ok {
-		t.Fatal("legacy group-neutral runtime report should remain readable")
+	if _, ok := stats.qualityGateEvidence(0, 42); !ok {
+		t.Fatal("legacy group-neutral runtime report should remain readable for group-neutral callers")
 	}
-	if _, ok := stats.qualityGateEvidence(12, 42); !ok {
-		t.Fatal("legacy group-neutral fallback should remain compatible")
+	if _, ok := stats.qualityGateEvidence(11, 42); ok {
+		t.Fatal("concrete group must not inherit group-neutral runtime evidence")
+	}
+}
+
+func TestOpenAIQualityGateRuntimeEvidenceExpiresFromLastObservation(t *testing.T) {
+	stats := newOpenAIAccountRuntimeStats()
+	stats.reportForGroup(11, 42, false, nil)
+	stat := stats.loadOrCreateForGroup(11, 42)
+	stat.lastReportAt.Store(time.Now().Add(-20 * time.Minute).UnixNano())
+	policy := defaultOpenAIQualityGatePolicy()
+	policy.Enabled = true
+	policy.MinSamples = 1
+	policy.EnterConsecutive = 1
+
+	evidence, ok := stats.qualityGateEvidence(11, 42)
+	if !ok {
+		t.Fatal("runtime evidence should be readable")
+	}
+	if evaluation := evaluateOpenAIQualityGate(policy, evidence); evaluation.Known || evaluation.Bad {
+		t.Fatalf("stale runtime evidence must be unknown and fail open: evidence=%#v evaluation=%#v", evidence, evaluation)
 	}
 }
 

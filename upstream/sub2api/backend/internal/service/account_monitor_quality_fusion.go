@@ -23,7 +23,11 @@ func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe
 	realSamples := clampNonNegativeInt64(real.RequestCount)
 	probeSamples := clampNonNegativeInt(probe.SampleCount)
 	realSuccesses := clampCount(real.SuccessCount, realSamples)
-	probeSuccesses := clampCount(int64(probe.SuccessSampleCount), int64(probeSamples))
+	probeSuccessCount := probe.SuccessSampleCount
+	if probeSuccessCount == 0 && probe.SuccessCount > 0 {
+		probeSuccessCount = probe.SuccessCount
+	}
+	probeSuccesses := clampCount(int64(probeSuccessCount), int64(probeSamples))
 	realAt := accountMonitorWindowObservedAt(real)
 	probeAt := accountMonitorProbeObservedAt(probe, latest)
 	ttl := time.Duration(settings.IntervalSeconds*2) * time.Second

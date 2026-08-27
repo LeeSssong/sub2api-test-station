@@ -1,4 +1,5 @@
 import importlib.util
+import inspect
 import pathlib
 import unittest
 
@@ -52,6 +53,9 @@ class V411AdapterTests(unittest.TestCase):
     def test_rejects_unauthorized_requests(self):
         self.assertFalse(MODULE.authorized("wrong", "expected"))
         self.assertTrue(MODULE.authorized("expected", "expected"))
+
+    def test_limits_detector_session_to_one_worker(self):
+        self.assertIn('config["workers"] = 1', inspect.getsource(MODULE.run_v411))
 
 
 if __name__ == "__main__":

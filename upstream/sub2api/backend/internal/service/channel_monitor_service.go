@@ -79,7 +79,8 @@ type ChannelMonitorService struct {
 	groupReader ChannelMonitorGroupReader
 	// settings is optional; when nil, RunCheck fails closed for active probes
 	// (mode defaults to v2 / retired) so tests without settings never hit upstream.
-	settings channelMonitorRuntimeReader
+	settings               channelMonitorRuntimeReader
+	activeProbeUsageReader ActiveProbeUsageWindowReader
 	// scheduler 由 wire 通过 SetScheduler 注入；CRUD 后调用对应钩子即时同步任务。
 	// 测试或未注入场景下保持 nil，所有钩子调用变为 no-op。
 	scheduler MonitorScheduler
@@ -114,6 +115,14 @@ func (s *ChannelMonitorService) SetRuntimeReader(r channelMonitorRuntimeReader) 
 		return
 	}
 	s.settings = r
+}
+
+// SetActiveProbeUsageReader injects the bounded usage reader used only by the
+// scheduled active-probe path. Manual checks remain unaffected.
+func (s *ChannelMonitorService) SetActiveProbeUsageReader(r ActiveProbeUsageWindowReader) {
+	if s != nil {
+		s.activeProbeUsageReader = r
+	}
 }
 
 func (s *ChannelMonitorService) probeRuntime(ctx context.Context) ChannelMonitorRuntime {
@@ -516,6 +525,50 @@ func (s *ChannelMonitorService) RunCheck(ctx context.Context, id int64) ([]*Chec
 	results := s.runChecksConcurrent(ctx, m)
 	s.persistCheckResults(ctx, m, results)
 	return results, nil
+}
+
+// ErrChannelMonitorProbeSkipped indicates a scheduled probe was deliberately
+// suppressed by admission policy. It is not persisted as a history result.
+var ErrChannelMonitorProbeSkipped = errors.New("channel monitor scheduled probe skipped")
+
+// RunScheduledCheck performs at most one model check for an automatic tick.
+// It fails closed when group usage cannot be established or the monitor has no
+// group association, and never invokes the manual retry helper.
+func (s *ChannelMonitorService) RunScheduledCheck(ctx context.Context, id int64) ([]*CheckResult, error) {
+	rt := s.probeRuntime(ctx)
+	if !rt.Enabled {
+		return nil, ErrChannelMonitorDisabled
+	}
+	if !rt.ActiveProbesAllowed() {
+		return nil, ErrChannelMonitorActiveProbesRetired
+	}
+	m, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if m.APIKeyDecryptFailed {
+		return nil, ErrChannelMonitorAPIKeyDecryptFailed
+	}
+	if m.GroupID == nil || *m.GroupID <= 0 || s.activeProbeUsageReader == nil {
+		return nil, ErrChannelMonitorProbeSkipped
+	}
+	start, end := currentActiveProbeBucket(s.currentTime())
+	used, err := s.activeProbeUsageReader.HasGroupUsageInWindow(ctx, *m.GroupID, start, end)
+	if err != nil || used {
+		return nil, ErrChannelMonitorProbeSkipped
+	}
+	models := append([]string{m.PrimaryModel}, m.ExtraModels...)
+	if len(models) == 0 || strings.TrimSpace(models[0]) == "" {
+		return nil, ErrChannelMonitorProbeSkipped
+	}
+	idx := int((m.ID + start.Unix()/300) % int64(len(models)))
+	model := models[idx]
+	opts := &CheckOptions{APIMode: m.APIMode, ExtraHeaders: m.ExtraHeaders, BodyOverrideMode: m.BodyOverrideMode, BodyOverride: m.BodyOverride}
+	// Scheduled admission permits one upstream request only; unlike the manual
+	// path it deliberately omits the extra endpoint ping.
+	result := runCheckForModel(ctx, m.Provider, m.Endpoint, m.APIKey, model, opts)
+	s.persistCheckResults(ctx, m, []*CheckResult{result})
+	return []*CheckResult{result}, nil
 }
 
 // persistCheckResults 写入本次检测的历史记录并更新 last_checked_at。

@@ -99,7 +99,7 @@ def run_v411(request: dict[str, Any]) -> dict[str, Any]:
         from gpt56_vnext.presets import get_preset
 
         config = get_preset("single", profile)
-        config["workers"] = min(int(config.get("workers") or 1), 4)
+        config["workers"] = 1
         with tempfile.TemporaryDirectory(prefix="sub2api-v411-") as directory:
             session = DetectorSession(base_url=base_url, claimed_model=declared_model, request_model=request_model, api_key=api_key, config=config, directory=directory, retention_enabled=False)
             try:

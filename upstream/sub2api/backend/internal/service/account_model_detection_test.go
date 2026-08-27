@@ -214,7 +214,7 @@ func TestCatalogFailureIsCachedForFiveMinutes(t *testing.T) {
 	}
 }
 
-func TestRunDueSlotsIncludesDisabledAndUnschedulableAPIKeyAccounts(t *testing.T) {
+func TestRunDueSlotsSkipsDisabledAndUnschedulableAPIKeyAccounts(t *testing.T) {
 	accounts := []Account{
 		{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusDisabled, Schedulable: false, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}},
 		{ID: 8, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}},
@@ -222,14 +222,15 @@ func TestRunDueSlotsIncludesDisabledAndUnschedulableAPIKeyAccounts(t *testing.T)
 	}
 	repo := &detectionRepoStub{}
 	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{accounts: accounts}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
-	svc.now = func() time.Time { return time.Date(2026, 8, 17, 10, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
+	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	svc.now = func() time.Time { return time.Date(2026, 8, 17, 12, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
 
 	queued, err := svc.RunDueSlots(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queued != 2 {
-		t.Fatalf("queued = %d, want both API Key accounts regardless of status/schedulable", queued)
+	if queued != 1 {
+		t.Fatalf("queued = %d, want only active schedulable API Key account", queued)
 	}
 }
 
@@ -319,9 +320,9 @@ func TestDueSlotOnlyFiresWithinThirtyMinutes(t *testing.T) {
 		at   string
 		want string
 	}{
-		{name: "exact", at: "2026-08-17T10:00:00+08:00", want: "2026-08-17T10:00"},
-		{name: "late", at: "2026-08-17T10:29:59+08:00", want: "2026-08-17T10:00"},
-		{name: "too late", at: "2026-08-17T10:30:01+08:00", want: ""},
+		{name: "exact", at: "2026-08-17T12:00:00+08:00", want: "2026-08-17T12:00"},
+		{name: "late", at: "2026-08-17T12:29:59+08:00", want: "2026-08-17T12:00"},
+		{name: "too late", at: "2026-08-17T12:30:01+08:00", want: ""},
 		{name: "between slots", at: "2026-08-17T10:45:00+08:00", want: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -440,6 +441,7 @@ type executionDetectionRepoStub struct {
 	mu          sync.Mutex
 	runs        map[string]AccountModelDetectionRun
 	completions map[string]executionDetectionCompletion
+	enqueues    int
 }
 
 func (s *executionDetectionRepoStub) LoadSettings(context.Context, int64) (AccountModelDetectionSettings, error) {
@@ -449,6 +451,9 @@ func (s *executionDetectionRepoStub) SaveSettings(context.Context, AccountModelD
 	return nil
 }
 func (s *executionDetectionRepoStub) Enqueue(context.Context, AccountModelDetectionRun) (AccountModelDetectionRun, bool, error) {
+	s.mu.Lock()
+	s.enqueues++
+	s.mu.Unlock()
 	return AccountModelDetectionRun{}, false, errors.New("not used")
 }
 func (s *executionDetectionRepoStub) Claim(_ context.Context, runID string) (*AccountModelDetectionRun, error) {
@@ -481,6 +486,12 @@ func (s *executionDetectionRepoStub) completion(runID string) executionDetection
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.completions[runID]
+}
+
+func (s *executionDetectionRepoStub) enqueueCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.enqueues
 }
 
 type blockingDetectionSidecar struct {

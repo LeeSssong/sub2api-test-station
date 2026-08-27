@@ -98,15 +98,16 @@ func TestShouldEscalateDetectionUsesTieredReasons(t *testing.T) {
 	}
 }
 
-func TestRunDueSlotsQueuesMediumMonitorRuns(t *testing.T) {
-	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
+func TestRunDueSlotsQueuesLowMonitorRuns(t *testing.T) {
+	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
 	repo := &detectionRepoStub{}
 	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{accounts: []Account{account}}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
-	svc.now = func() time.Time { return time.Date(2026, 8, 17, 10, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
+	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	svc.now = func() time.Time { return time.Date(2026, 8, 17, 12, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
 	if _, err := svc.RunDueSlots(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(repo.runs) != 1 || repo.runs[0].Profile != AccountModelDetectionProfileMedium || repo.runs[0].Mode != AccountModelDetectionModeMonitor || repo.runs[0].PlannedRequests != 49 {
+	if len(repo.runs) != 1 || repo.runs[0].Profile != AccountModelDetectionProfileLow || repo.runs[0].Mode != AccountModelDetectionModeMonitor || repo.runs[0].PlannedRequests != 19 {
 		t.Fatalf("runs=%#v", repo.runs)
 	}
 }

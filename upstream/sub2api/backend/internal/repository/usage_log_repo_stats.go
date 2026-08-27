@@ -47,6 +47,53 @@ const (
 	`
 )
 
+const (
+	activeProbeAccountUsageExistsQuery = `SELECT EXISTS(
+		SELECT 1 FROM usage_logs
+		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
+	)`
+	activeProbeGroupUsageExistsQuery = `SELECT EXISTS(
+		SELECT 1 FROM usage_logs
+		WHERE group_id = $1 AND created_at >= $2 AND created_at < $3
+	)`
+)
+
+func (r *usageLogRepository) hasUsageInWindow(ctx context.Context, query string, id int64, from, until time.Time) (bool, error) {
+	if r.sql == nil {
+		return false, errors.New("active probe usage reader requires SQL executor")
+	}
+	if id <= 0 {
+		return false, errors.New("usage window id must be positive")
+	}
+	if !until.After(from) {
+		return false, errors.New("usage window end must be after start")
+	}
+	rows, err := r.sql.QueryContext(ctx, query, id, from, until)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, errors.New("usage window query returned no rows")
+	}
+	var exists bool
+	if err := rows.Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, rows.Err()
+}
+
+func (r *usageLogRepository) HasAccountUsageInWindow(ctx context.Context, accountID int64, from, until time.Time) (bool, error) {
+	return r.hasUsageInWindow(ctx, activeProbeAccountUsageExistsQuery, accountID, from, until)
+}
+
+func (r *usageLogRepository) HasGroupUsageInWindow(ctx context.Context, groupID int64, from, until time.Time) (bool, error) {
+	return r.hasUsageInWindow(ctx, activeProbeGroupUsageExistsQuery, groupID, from, until)
+}
+
 // ReadAccountFinancialUsage reads the native usage-log aggregate and its
 // identity metadata from one repeatable-read snapshot. It deliberately does
 // not consult historical financial state outside the native usage ledger.

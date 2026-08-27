@@ -314,6 +314,27 @@ type AccountUsageService struct {
 	agentIdentityWS         agentIdentityWSConnectionInvalidator
 }
 
+// HasAccountUsageInWindow forwards the bounded usage query used by automatic
+// active probes. It intentionally relies on a narrow optional repository
+// interface so existing UsageLogRepository test doubles remain compatible.
+func (s *AccountUsageService) HasAccountUsageInWindow(ctx context.Context, accountID int64, from, until time.Time) (bool, error) {
+	reader, ok := s.usageLogRepo.(ActiveProbeUsageWindowReader)
+	if !ok {
+		return false, fmt.Errorf("active probe usage reader unavailable")
+	}
+	return reader.HasAccountUsageInWindow(ctx, accountID, from, until)
+}
+
+// HasGroupUsageInWindow forwards the bounded group usage query used by
+// automatic channel probes.
+func (s *AccountUsageService) HasGroupUsageInWindow(ctx context.Context, groupID int64, from, until time.Time) (bool, error) {
+	reader, ok := s.usageLogRepo.(ActiveProbeUsageWindowReader)
+	if !ok {
+		return false, fmt.Errorf("active probe usage reader unavailable")
+	}
+	return reader.HasGroupUsageInWindow(ctx, groupID, from, until)
+}
+
 // NewAccountUsageService 创建AccountUsageService实例
 func NewAccountUsageService(
 	accountRepo AccountRepository,

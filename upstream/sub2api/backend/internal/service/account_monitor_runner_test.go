@@ -35,10 +35,11 @@ func TestAccountMonitorRunnerDetectionLoopRunsImmediatelyAndStopsWithRunner(t *t
 	accountModelDetectionScheduleInterval = 5 * time.Millisecond
 	defer func() { accountModelDetectionScheduleInterval = previousInterval }()
 
-	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
+	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}, Extra: map[string]any{}}
 	repo := &detectionRepoStub{}
 	detector := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{account: &account}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
-	detector.now = func() time.Time { return time.Date(2026, 8, 17, 10, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
+	detector.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	detector.now = func() time.Time { return time.Date(2026, 8, 17, 12, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
 	runner := NewAccountMonitorRunner(nil)
 	runner.detector = detector
 	runner.wg.Add(1)

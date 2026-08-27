@@ -28,6 +28,10 @@ func (s *stubMonitorSvc) ListEnabledMonitors(_ context.Context) ([]*ChannelMonit
 }
 
 func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult, error) {
+	return s.RunScheduledCheck(ctx, id)
+}
+
+func (s *stubMonitorSvc) RunScheduledCheck(ctx context.Context, id int64) ([]*CheckResult, error) {
 	s.runCount.Add(1)
 	if s.runCalled != nil {
 		select {

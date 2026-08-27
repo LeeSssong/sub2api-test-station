@@ -11,7 +11,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
+
+// accountMonitorProbePrompt returns a short, non-sensitive prompt with a
+// per-request nonce so scheduled probes do not repeatedly send identical
+// content upstream.
+func accountMonitorProbePrompt() string {
+	return "ping " + uuid.NewString()
+}
 
 type accountMonitorProbeObserverKey struct{}
 

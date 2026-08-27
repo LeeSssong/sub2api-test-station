@@ -2,7 +2,7 @@
 
 ## 解冻登记（2026-08-27）
 
-- 用户已明确要求解冻 T76 及所有未部署任务。盘点结论：T69、T76 为尚未部署的代码候选；T80+T81 已部署到独立验收站但尚未发布主站。T69/T76 进入 `REFRESH_REQUIRED`，必须从当前干净 `main@e84e244c861a2e7d821406b8dee9a30b12b0290d` 刷新后继续；T76 的原有提交和未提交内容不得丢弃。T80+T81 保持 `VERIFYING`，等待真实管理员验收与主站授权。T71、T77、T79 已有部署，仅待验收，不列入未部署代码候选；T74 的旧 READY 条目与已发布 DONE 证据待后续去重。串行顺序：T80+T81 主站授权车道 → T69 刷新/发布 → T76 在 T80 稳定后刷新/发布。主站仍只接受“测试站验收通过，部署主站”或“快速部署到主站”。
+- 用户已明确要求解冻 T76 及所有未部署任务。盘点结论：T69、T76 为尚未部署的代码候选；T80+T81 已部署到独立验收站但尚未发布主站。T69 已从 `main@031b58e4c` 刷新并完成直接验证，候选提交 `c48775ffb`，进入 `READY_FOR_ROOT_REVIEW`；T76 已从同一基线刷新并完成六项审查修复，候选提交 `009010bf5`，进入 `READY_FOR_ROOT_REVIEW`。T76 原有提交和未提交内容均已保留，恢复 diff SHA-256 为 `5e8ffd98f7e6ab69443036f7de104c6f7febcc16ec56544439b9881f52d18dbd`。T80+T81 保持 `VERIFYING`，等待真实管理员验收与主站授权。T71、T77、T79 已有部署，仅待验收，不列入未部署代码候选；T74 的旧 READY 条目与已发布 DONE 证据待后续去重。串行顺序：T80+T81 主站授权车道 → T69 刷新/发布 → T76 在 T80 稳定后刷新/发布。主站仍只接受“测试站验收通过，部署主站”或“快速部署到主站”。
 
 ## 组合部署包（2026-08-27）
 
@@ -12,7 +12,7 @@
 
 - **T80 OpenAI 长请求调度准入韧性**：状态 `READY_FOR_ROOT_REVIEW`（已纳入上方组合部署包）。用户基于 2026-08-27 GPT-Pro 账号 `286` 的高 TTFT 事故，已确认优先解决“第一批长请求尚未完成时，同一慢账号仍被连续准入”的风险。实现复用原生 OpenAI scheduler/shared-health/Redis：账号级跨模型/跨分组首输出前 admission lease、slow-session guard、首语义输出释放、失败/取消幂等清理、共享写入 context 隔离和脱敏可观测性；组合根主线上的 config/repository/service/handler 直接测试、`go build ./cmd/server`、gofmt 和 `git diff --check` 均通过。无迁移、生产配置或业务数据写入；T77/T79 的 VERIFYING 只读验收结论不被伪装成代码变更。
 
-- **T76 调度与质量排名一致性**：状态 `REFRESH_REQUIRED`（已按用户指令解冻）。原候选 `codex/t76-scheduler-quality-ranking-consistency` 及 v2 worktree 的提交和未提交内容均保留，先完成原始差异备份，再从当前干净 `main@e84e244c861a2e7d821406b8dee9a30b12b0290d` 刷新；由于触及与 T80 相同的 OpenAI 选路链，必须在 T80+T81 主站车道稳定后继续。T76 原有质量门控不能覆盖首批长请求未完成期间的批量准入，刷新后仍需按规格重新验证监控解释层与调度投影一致性。
+- **T76 调度与质量排名一致性**：状态 `READY_FOR_ROOT_REVIEW`（已按用户指令解冻并刷新完成）。候选 `codex/t76-scheduler-quality-ranking-consistency@009010bf5ece6e9fd4e7545be431a9d51606e2f6` 基于 `main@031b58e4c`；原有提交和 dirty diff 均保留，恢复证据见 `/private/tmp/t76-unfreeze-20260827/v1-worktree.diff`。已修复 live Grok quota cache、过期 model cooldown/`isBlocked`、shared-health veto、subscription-priority 分区、资格差异原因误归因和 `1/1/1` 体验均衡标签，并通过 projection/account-monitor service/repository/handler 聚焦测试、`go build ./cmd/server`、前端 110 项测试、`pnpm typecheck`、`pnpm build`、gofmt、diff-check。尚未合并、推送、部署或线上验收；由于触及与 T80 相同的 OpenAI 选路链，仍按串行发布顺序处理。
 
 - **T79 独立准生产验收站**：状态 `VERIFYING`。基线 `main@cc3819024`，候选工作区 `.worktrees/t79-independent-acceptance-station`、分支 `codex/t79-independent-acceptance-station`，提交 `f5f11bd10`（含 `f56e43209`）；根线程补齐并推送 `main@00a831060`（含验收入口 ACL/正则和宿主网关默认修复）。验收站 Compose `sub2api-acceptance` 已独立部署并保持 6 服务 healthy，宿主目录 `/opt/sub2api/acceptance-live`，边缘 `172.18.0.1:8181`；数据库只读核对 `users=1`（唯一验收管理员）、`accounts=0`、`usage_logs=0`，未携带主站业务数据。对外仅复用主站 `https://api.xingqiaolab.top/admin/lab/` 路径，生产 Caddy 已通过 Cloudflare 官方网段 + `CF-Connecting-IP` 锚定正则白名单；`/admin/lab`→308、`/admin/lab/` 与 `/admin/lab/login`→200 且资源为 `/admin/lab/assets/...`，源站直连伪造头→403，`/admin/accounts` 继续走主站原生页面。主站 `/healthz`、`/readyz`、`/health` 均 200；旧 `sub2api-admin-lab-*` mock 容器已停止，旧数据卷保留未删除。流程固定为本地直接验证 -> 人工部署验收站 -> 管理员真实验收（真实充值/消费/支付/上游）-> 人工合入 `main` -> 人工部署主站；串行单实例，不做蓝绿槽、临时环境、自动晋级或扩展门禁。尚未完成管理员真实支付/消费/上游/通知功能验收，因此保持 `VERIFYING`，不得标记 `DONE`；不得复制生产凭据或把占位值冒充真实配置。
 
@@ -49,7 +49,7 @@
 
 ## 当前待根审任务（2026-08-25，T69）
 
-- **T69 账号监控证据与评分回退**：状态 `REFRESH_REQUIRED`（已按用户指令解冻）。候选 `codex/t69-account-monitor-evidence-fallback@861113395` 已完成直接相关 service/repository/admin 测试、`go build ./cmd/server` 与 `git diff --check`，但基线落后当前组合 `main`，必须先刷新到 `main@e84e244c861a2e7d821406b8dee9a30b12b0290d` 后重新执行专项验证。此前并发产生的本地合并提交 `474ddb2af` 继续作为可逆恢复证据，不进入发布源。无数据库迁移、配置变化或生产业务数据写入。交接：`.worktrees/t69-account-monitor-evidence-fallback/docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
+- **T69 账号监控证据与评分回退**：状态 `READY_FOR_ROOT_REVIEW`（已按用户指令解冻并刷新完成）。候选 `codex/t69-account-monitor-evidence-fallback@c48775ffbaff3ba3b4cbd0e7365711297ef3f91e` 已基于 `main@031b58e4c` 刷新并通过 service/repository/handler 聚焦测试、`go build ./cmd/server`、gofmt、`git diff --check`；尚未合并、推送、部署或线上验收，无迁移、配置变化或生产写入。交接：`.worktrees/t69-account-monitor-evidence-fallback/docs/handoffs/2026-08-25-t69-account-monitor-evidence-fallback-handoff.md`。
 
 ## 已完成任务（2026-08-25，T68）
 

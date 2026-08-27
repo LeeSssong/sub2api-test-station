@@ -457,7 +457,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		result, handleErr = s.handleAnthropicStreamingResponse(ctx, resp, c, account, originalModel, billingModel, upstreamModel, startTime)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
 		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
@@ -827,6 +827,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 // pattern to send Anthropic ping events during periods of upstream silence,
 // preventing proxy/client timeout disconnections.
 func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
@@ -843,7 +844,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	var usage OpenAIUsage
 	responseID := ""
 	var firstTokenMs *int
-	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
 	var streamFailoverErr error
@@ -899,11 +899,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 	// processDataLine handles a single "data: ..." SSE line from upstream.
 	processDataLine := func(payload string) bool {
-		if firstChunk {
-			firstChunk = false
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
-		}
 		if countSearch {
 			searchCount += countGrokNativeSearchCallsInSSEDataDedup([]byte(payload), streamSearchSeen)
 		}
@@ -919,6 +914,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		observer.ObserveOpenAI([]byte(payload), event.Type)
 
 		eventType := strings.TrimSpace(event.Type)
+		semanticOutput := openAIStreamDataStartsVisibleOutput(payload, eventType)
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if responseID == "" {
@@ -1024,6 +1020,11 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 		if len(events) > 0 && !clientDisconnected {
 			c.Writer.Flush()
+		}
+		if semanticOutput && !clientDisconnected && clientOutputStarted && firstTokenMs == nil {
+			ms := int(time.Since(startTime).Milliseconds())
+			firstTokenMs = &ms
+			notifyOpenAIFirstSemanticOutput(ctx)
 		}
 		return isTerminalEvent
 	}

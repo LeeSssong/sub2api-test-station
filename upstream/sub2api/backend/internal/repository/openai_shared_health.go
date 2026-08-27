@@ -161,10 +161,83 @@ redis.call("PEXPIRE", KEYS[2], ttl_ms)
 return 1
 `)
 
+var openAISharedHealthAcquireAdmissionScript = redis.NewScript(`
+local now_ms = tonumber(ARGV[1])
+local ttl_ms = tonumber(ARGV[2])
+local stalled_ms = tonumber(ARGV[3])
+local max_normal = tonumber(ARGV[4])
+local max_long = tonumber(ARGV[5])
+local requested_shape = ARGV[6]
+local member = ARGV[7]
+
+if redis.call("EXISTS", KEYS[2]) == 1 then
+  return {0, "slow_session_guard", 0, 0, 0, 0}
+end
+
+local normal = 0
+local long = 0
+local stalled = 0
+local entries = redis.call("HGETALL", KEYS[1])
+for index = 1, #entries, 2 do
+  local entry_member = entries[index]
+  local shape, issued_ms, expires_ms = string.match(entries[index + 1], "^([^|]+)|(%d+)|(%d+)$")
+  issued_ms = tonumber(issued_ms)
+  expires_ms = tonumber(expires_ms)
+  if not shape or not issued_ms or not expires_ms or expires_ms <= now_ms then
+    redis.call("HDEL", KEYS[1], entry_member)
+  else
+    if shape == "normal" then normal = normal + 1 end
+    if shape == "long" then long = long + 1 end
+    if now_ms - issued_ms >= stalled_ms then stalled = 1 end
+  end
+end
+
+if stalled == 1 then
+  return {0, "stalled_pre_first_output", normal, long, 1, 0}
+end
+if long > 0 then
+  return {0, "long_pre_first_output", normal, long, 0, 0}
+end
+if requested_shape == "normal" and normal >= max_normal then
+  return {0, "normal_pre_first_output_capacity", normal, long, 0, 0}
+end
+if requested_shape == "long" and long >= max_long then
+  return {0, "long_pre_first_output_capacity", normal, long, 0, 0}
+end
+
+local expires_ms = now_ms + ttl_ms
+redis.call("HSET", KEYS[1], member, requested_shape .. "|" .. now_ms .. "|" .. expires_ms)
+redis.call("PEXPIRE", KEYS[1], ttl_ms)
+if requested_shape == "normal" then normal = normal + 1 end
+if requested_shape == "long" then long = long + 1 end
+return {1, "acquired", normal, long, 0, expires_ms}
+`)
+
+var openAISharedHealthRenewAdmissionScript = redis.NewScript(`
+local current = redis.call("HGET", KEYS[1], ARGV[1])
+if not current then return 0 end
+local shape, issued_ms = string.match(current, "^([^|]+)|(%d+)|%d+$")
+if not shape or shape ~= ARGV[2] or not issued_ms then return 0 end
+redis.call("HSET", KEYS[1], ARGV[1], shape .. "|" .. issued_ms .. "|" .. ARGV[3])
+redis.call("PEXPIRE", KEYS[1], ARGV[4])
+return 1
+`)
+
+var openAISharedHealthReleaseAdmissionScript = redis.NewScript(`
+redis.call("HDEL", KEYS[1], ARGV[1])
+return 1
+`)
+
+var openAISharedHealthRecordSlowSessionGuardScript = redis.NewScript(`
+redis.call("SET", KEYS[1], ARGV[1], "PX", ARGV[2])
+return 1
+`)
+
 type openAISharedHealthStore struct {
-	rdb     *redis.Client
-	timeout time.Duration
-	now     func() time.Time
+	rdb             *redis.Client
+	timeout         time.Duration
+	now             func() time.Time
+	admissionConfig config.GatewayOpenAISharedHealthConfig
 }
 
 func NewOpenAISharedHealthStore(rdb *redis.Client) service.OpenAISharedHealthStore {
@@ -172,10 +245,14 @@ func NewOpenAISharedHealthStore(rdb *redis.Client) service.OpenAISharedHealthSto
 }
 
 func newOpenAISharedHealthStore(rdb *redis.Client, timeout time.Duration) *openAISharedHealthStore {
+	return newOpenAISharedHealthStoreWithConfig(rdb, timeout, config.DefaultGatewayOpenAISharedHealthConfig())
+}
+
+func newOpenAISharedHealthStoreWithConfig(rdb *redis.Client, timeout time.Duration, admissionConfig config.GatewayOpenAISharedHealthConfig) *openAISharedHealthStore {
 	if timeout <= 0 {
 		timeout = openAISharedHealthDefaultTimeout
 	}
-	return &openAISharedHealthStore{rdb: rdb, timeout: timeout, now: time.Now}
+	return &openAISharedHealthStore{rdb: rdb, timeout: timeout, now: time.Now, admissionConfig: admissionConfig}
 }
 
 func ProvideOpenAISharedHealthStore(rdb *redis.Client, cfg *config.Config) service.OpenAISharedHealthStore {
@@ -183,7 +260,11 @@ func ProvideOpenAISharedHealthStore(rdb *redis.Client, cfg *config.Config) servi
 	if cfg != nil && cfg.Gateway.OpenAISharedHealth.RedisTimeoutMS > 0 {
 		timeout = time.Duration(cfg.Gateway.OpenAISharedHealth.RedisTimeoutMS) * time.Millisecond
 	}
-	return newOpenAISharedHealthStore(rdb, timeout)
+	admissionConfig := config.DefaultGatewayOpenAISharedHealthConfig()
+	if cfg != nil {
+		admissionConfig = cfg.Gateway.OpenAISharedHealth
+	}
+	return newOpenAISharedHealthStoreWithConfig(rdb, timeout, admissionConfig)
 }
 
 func (s *openAISharedHealthStore) GetAccountModel(ctx context.Context, key service.OpenAISharedHealthKey) (service.OpenAISharedHealthSnapshot, error) {
@@ -329,6 +410,141 @@ func (s *openAISharedHealthStore) CompleteHalfOpen(ctx context.Context, lease se
 	return nil
 }
 
+func (s *openAISharedHealthStore) AcquireAdmission(ctx context.Context, request service.OpenAISharedAdmissionRequest) (service.OpenAISharedAdmissionDecision, error) {
+	if s == nil || s.rdb == nil {
+		return service.OpenAISharedAdmissionDecision{}, errors.New("OpenAI shared health Redis client is unavailable")
+	}
+	if err := validateOpenAISharedAdmissionRequest(request); err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	observedAt := request.ObservedAt.UTC()
+	if observedAt.IsZero() {
+		observedAt = s.now().UTC()
+	}
+	leaseTTL := time.Duration(s.admissionConfig.AdmissionLeaseTTLSeconds) * time.Second
+	stalledAfter := time.Duration(s.admissionConfig.StalledBeforeFirstOutputSeconds) * time.Second
+	member := openAISharedHealthHash(request.LeaseID)
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+	values, err := openAISharedHealthAcquireAdmissionScript.Run(ctx, s.rdb, []string{
+		openAISharedHealthAdmissionKey(request.AccountID),
+		openAISharedHealthSlowSessionGuardKey(request.AccountID),
+	},
+		observedAt.UnixMilli(),
+		leaseTTL.Milliseconds(),
+		stalledAfter.Milliseconds(),
+		s.admissionConfig.MaxPreFirstOutputNormal,
+		s.admissionConfig.MaxPreFirstOutputLong,
+		string(request.Shape),
+		member,
+	).Slice()
+	if err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	if len(values) != 6 {
+		return service.OpenAISharedAdmissionDecision{}, fmt.Errorf("unexpected OpenAI shared health admission response")
+	}
+	allowed, err := redisInteger(values[0])
+	if err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	normal, err := redisInteger(values[2])
+	if err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	long, err := redisInteger(values[3])
+	if err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	stalled, err := redisInteger(values[4])
+	if err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	expiresMS, err := redisInteger(values[5])
+	if err != nil {
+		return service.OpenAISharedAdmissionDecision{}, err
+	}
+	return service.OpenAISharedAdmissionDecision{
+		Allowed:        allowed == 1,
+		Reason:         redisString(values[1]),
+		ActiveNormal:   int(normal),
+		ActiveLong:     int(long),
+		Stalled:        stalled == 1,
+		LeaseExpiresAt: unixMilliTime(expiresMS),
+	}, nil
+}
+
+func (s *openAISharedHealthStore) RenewAdmission(ctx context.Context, request service.OpenAISharedAdmissionRequest) error {
+	if s == nil || s.rdb == nil {
+		return errors.New("OpenAI shared health Redis client is unavailable")
+	}
+	if err := validateOpenAISharedAdmissionRequest(request); err != nil {
+		return err
+	}
+	observedAt := request.ObservedAt.UTC()
+	if observedAt.IsZero() {
+		observedAt = s.now().UTC()
+	}
+	leaseTTL := time.Duration(s.admissionConfig.AdmissionLeaseTTLSeconds) * time.Second
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+	result, err := openAISharedHealthRenewAdmissionScript.Run(ctx, s.rdb, []string{openAISharedHealthAdmissionKey(request.AccountID)},
+		openAISharedHealthHash(request.LeaseID), string(request.Shape), observedAt.Add(leaseTTL).UnixMilli(), leaseTTL.Milliseconds(),
+	).Int64()
+	if err != nil {
+		return err
+	}
+	if result == 0 {
+		return service.ErrOpenAISharedHealthLeaseLost
+	}
+	return nil
+}
+
+func (s *openAISharedHealthStore) ReleaseAdmission(ctx context.Context, request service.OpenAISharedAdmissionRequest) error {
+	if s == nil || s.rdb == nil {
+		return errors.New("OpenAI shared health Redis client is unavailable")
+	}
+	if err := validateOpenAISharedAdmissionRequest(request); err != nil {
+		return err
+	}
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+	_, err := openAISharedHealthReleaseAdmissionScript.Run(ctx, s.rdb, []string{openAISharedHealthAdmissionKey(request.AccountID)}, openAISharedHealthHash(request.LeaseID)).Result()
+	return err
+}
+
+func (s *openAISharedHealthStore) RecordSlowSessionGuard(ctx context.Context, accountID int64, observedAt time.Time) error {
+	if s == nil || s.rdb == nil {
+		return errors.New("OpenAI shared health Redis client is unavailable")
+	}
+	if accountID <= 0 {
+		return errors.New("OpenAI shared slow-session guard account id must be positive")
+	}
+	if observedAt.IsZero() {
+		observedAt = s.now().UTC()
+	} else {
+		observedAt = observedAt.UTC()
+	}
+	ttl := time.Duration(s.admissionConfig.SlowSessionGuardSeconds) * time.Second
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+	_, err := openAISharedHealthRecordSlowSessionGuardScript.Run(ctx, s.rdb, []string{openAISharedHealthSlowSessionGuardKey(accountID)}, observedAt.UnixMilli(), ttl.Milliseconds()).Result()
+	return err
+}
+
+func (s *openAISharedHealthStore) HasSlowSessionGuard(ctx context.Context, accountID int64) (bool, error) {
+	if s == nil || s.rdb == nil {
+		return false, errors.New("OpenAI shared health Redis client is unavailable")
+	}
+	if accountID <= 0 {
+		return false, errors.New("OpenAI shared slow-session guard account id must be positive")
+	}
+	ctx, cancel := s.withTimeout(ctx)
+	defer cancel()
+	exists, err := s.rdb.Exists(ctx, openAISharedHealthSlowSessionGuardKey(accountID)).Result()
+	return exists == 1, err
+}
+
 func (s *openAISharedHealthStore) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -378,6 +594,14 @@ func openAISharedHealthLeaseKey(key service.OpenAISharedHealthKey) string {
 	return fmt.Sprintf("%slease:%d:%s", openAISharedHealthKeyPrefix, key.AccountID, key.HashedSuffix())
 }
 
+func openAISharedHealthAdmissionKey(accountID int64) string {
+	return fmt.Sprintf("%sadmission:%d", openAISharedHealthKeyPrefix, accountID)
+}
+
+func openAISharedHealthSlowSessionGuardKey(accountID int64) string {
+	return fmt.Sprintf("%sslow-session:%d", openAISharedHealthKeyPrefix, accountID)
+}
+
 func openAISharedHealthEventKey(eventID string) string {
 	return openAISharedHealthKeyPrefix + "event:" + openAISharedHealthHash(eventID)
 }
@@ -420,4 +644,35 @@ func redisInteger(value any) (int64, error) {
 	default:
 		return 0, fmt.Errorf("unexpected Redis integer type %T", value)
 	}
+}
+
+func redisString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	default:
+		return ""
+	}
+}
+
+func unixMilliTime(value int64) time.Time {
+	if value <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(value).UTC()
+}
+
+func validateOpenAISharedAdmissionRequest(request service.OpenAISharedAdmissionRequest) error {
+	if request.AccountID <= 0 {
+		return errors.New("OpenAI shared admission account id must be positive")
+	}
+	if request.Shape != service.OpenAIAdmissionShapeNormal && request.Shape != service.OpenAIAdmissionShapeLong {
+		return errors.New("OpenAI shared request shape must be normal or long")
+	}
+	if strings.TrimSpace(request.LeaseID) == "" {
+		return errors.New("OpenAI shared admission lease id is required")
+	}
+	return nil
 }

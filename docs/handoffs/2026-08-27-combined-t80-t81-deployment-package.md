@@ -5,8 +5,8 @@
 ## 候选身份
 
 - 根分支：`main`
-- 候选提交：`c06c5263a22db3f4ecd74abd25fe46c64d30cff0`
-- 候选树：`3f62ac8c8901f733cbfedd074f9a6d5ea9424cd2`
+- 候选提交：`6d82f68d0cd0f550c7850ae85921091a1bd89b7a`
+- 候选树：`707157892cf49978ffcf2a9605e9c2e0dec617c7`
 - 工作区：`/Users/gongtengxinwen/Documents/sub2api搭建`
 - 工作区状态：合并后干净；未推送、未部署
 

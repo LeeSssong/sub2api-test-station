@@ -1332,30 +1332,48 @@ type GatewayOpenAISchedulerConfig struct {
 }
 
 type GatewayOpenAISharedHealthConfig struct {
-	Enabled              bool `mapstructure:"enabled"`
-	RedisTimeoutMS       int  `mapstructure:"redis_timeout_ms"`
-	StaleAfterSeconds    int  `mapstructure:"stale_after_seconds"`
-	MaxAttempts          int  `mapstructure:"max_attempts"`
-	MaxAccountSwitches   int  `mapstructure:"max_account_switches"`
-	MaxFailureDomains    int  `mapstructure:"max_failure_domains"`
-	TotalRetryBudgetMS   int  `mapstructure:"total_retry_budget_ms"`
-	BackoffInitialMS     int  `mapstructure:"backoff_initial_ms"`
-	BackoffMaxMS         int  `mapstructure:"backoff_max_ms"`
-	HalfOpenLeaseSeconds int  `mapstructure:"half_open_lease_seconds"`
+	Enabled                         bool `mapstructure:"enabled"`
+	RedisTimeoutMS                  int  `mapstructure:"redis_timeout_ms"`
+	StaleAfterSeconds               int  `mapstructure:"stale_after_seconds"`
+	MaxAttempts                     int  `mapstructure:"max_attempts"`
+	MaxAccountSwitches              int  `mapstructure:"max_account_switches"`
+	MaxFailureDomains               int  `mapstructure:"max_failure_domains"`
+	TotalRetryBudgetMS              int  `mapstructure:"total_retry_budget_ms"`
+	BackoffInitialMS                int  `mapstructure:"backoff_initial_ms"`
+	BackoffMaxMS                    int  `mapstructure:"backoff_max_ms"`
+	HalfOpenLeaseSeconds            int  `mapstructure:"half_open_lease_seconds"`
+	AdmissionEnabled                bool `mapstructure:"admission_enabled"`
+	LongRequestBodyThresholdBytes   int  `mapstructure:"long_request_body_threshold_bytes"`
+	MaxPreFirstOutputNormal         int  `mapstructure:"max_pre_first_output_normal"`
+	MaxPreFirstOutputLong           int  `mapstructure:"max_pre_first_output_long"`
+	StalledBeforeFirstOutputSeconds int  `mapstructure:"stalled_before_first_output_seconds"`
+	AdmissionLeaseTTLSeconds        int  `mapstructure:"admission_lease_ttl_seconds"`
+	AdmissionRenewSeconds           int  `mapstructure:"admission_renew_seconds"`
+	SlowTTFTMS                      int  `mapstructure:"slow_ttft_ms"`
+	SlowSessionGuardSeconds         int  `mapstructure:"slow_session_guard_seconds"`
 }
 
 func DefaultGatewayOpenAISharedHealthConfig() GatewayOpenAISharedHealthConfig {
 	return GatewayOpenAISharedHealthConfig{
-		Enabled:              true,
-		RedisTimeoutMS:       75,
-		StaleAfterSeconds:    30,
-		MaxAttempts:          4,
-		MaxAccountSwitches:   3,
-		MaxFailureDomains:    2,
-		TotalRetryBudgetMS:   5000,
-		BackoffInitialMS:     120,
-		BackoffMaxMS:         2000,
-		HalfOpenLeaseSeconds: 15,
+		Enabled:                         true,
+		RedisTimeoutMS:                  75,
+		StaleAfterSeconds:               30,
+		MaxAttempts:                     4,
+		MaxAccountSwitches:              3,
+		MaxFailureDomains:               2,
+		TotalRetryBudgetMS:              5000,
+		BackoffInitialMS:                120,
+		BackoffMaxMS:                    2000,
+		HalfOpenLeaseSeconds:            15,
+		AdmissionEnabled:                true,
+		LongRequestBodyThresholdBytes:   65536,
+		MaxPreFirstOutputNormal:         2,
+		MaxPreFirstOutputLong:           1,
+		StalledBeforeFirstOutputSeconds: 30,
+		AdmissionLeaseTTLSeconds:        90,
+		AdmissionRenewSeconds:           25,
+		SlowTTFTMS:                      30000,
+		SlowSessionGuardSeconds:         600,
 	}
 }
 
@@ -1386,6 +1404,30 @@ func (c GatewayOpenAISharedHealthConfig) Validate() error {
 	}
 	if c.HalfOpenLeaseSeconds <= 0 || c.HalfOpenLeaseSeconds > 15 {
 		return fmt.Errorf("half_open_lease_seconds must be between 1 and 15")
+	}
+	if c.LongRequestBodyThresholdBytes < 4*1024 || c.LongRequestBodyThresholdBytes > 4*1024*1024 {
+		return fmt.Errorf("long_request_body_threshold_bytes must be between 4096 and 4194304")
+	}
+	if c.MaxPreFirstOutputNormal < 1 || c.MaxPreFirstOutputNormal > 8 {
+		return fmt.Errorf("max_pre_first_output_normal must be between 1 and 8")
+	}
+	if c.MaxPreFirstOutputLong < 1 || c.MaxPreFirstOutputLong > 4 {
+		return fmt.Errorf("max_pre_first_output_long must be between 1 and 4")
+	}
+	if c.StalledBeforeFirstOutputSeconds < 5 || c.StalledBeforeFirstOutputSeconds > 120 {
+		return fmt.Errorf("stalled_before_first_output_seconds must be between 5 and 120")
+	}
+	if c.AdmissionLeaseTTLSeconds < 30 || c.AdmissionLeaseTTLSeconds > 300 {
+		return fmt.Errorf("admission_lease_ttl_seconds must be between 30 and 300")
+	}
+	if c.AdmissionRenewSeconds < 5 || c.AdmissionRenewSeconds >= c.AdmissionLeaseTTLSeconds {
+		return fmt.Errorf("admission_renew_seconds must be at least 5 and lower than admission_lease_ttl_seconds")
+	}
+	if c.SlowTTFTMS < 1000 || c.SlowTTFTMS > 120000 {
+		return fmt.Errorf("slow_ttft_ms must be between 1000 and 120000")
+	}
+	if c.SlowSessionGuardSeconds < 30 || c.SlowSessionGuardSeconds > 3600 {
+		return fmt.Errorf("slow_session_guard_seconds must be between 30 and 3600")
 	}
 	return nil
 }
@@ -2400,6 +2442,15 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_shared_health.backoff_initial_ms", sharedHealthDefaults.BackoffInitialMS)
 	viper.SetDefault("gateway.openai_shared_health.backoff_max_ms", sharedHealthDefaults.BackoffMaxMS)
 	viper.SetDefault("gateway.openai_shared_health.half_open_lease_seconds", sharedHealthDefaults.HalfOpenLeaseSeconds)
+	viper.SetDefault("gateway.openai_shared_health.admission_enabled", sharedHealthDefaults.AdmissionEnabled)
+	viper.SetDefault("gateway.openai_shared_health.long_request_body_threshold_bytes", sharedHealthDefaults.LongRequestBodyThresholdBytes)
+	viper.SetDefault("gateway.openai_shared_health.max_pre_first_output_normal", sharedHealthDefaults.MaxPreFirstOutputNormal)
+	viper.SetDefault("gateway.openai_shared_health.max_pre_first_output_long", sharedHealthDefaults.MaxPreFirstOutputLong)
+	viper.SetDefault("gateway.openai_shared_health.stalled_before_first_output_seconds", sharedHealthDefaults.StalledBeforeFirstOutputSeconds)
+	viper.SetDefault("gateway.openai_shared_health.admission_lease_ttl_seconds", sharedHealthDefaults.AdmissionLeaseTTLSeconds)
+	viper.SetDefault("gateway.openai_shared_health.admission_renew_seconds", sharedHealthDefaults.AdmissionRenewSeconds)
+	viper.SetDefault("gateway.openai_shared_health.slow_ttft_ms", sharedHealthDefaults.SlowTTFTMS)
+	viper.SetDefault("gateway.openai_shared_health.slow_session_guard_seconds", sharedHealthDefaults.SlowSessionGuardSeconds)
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)

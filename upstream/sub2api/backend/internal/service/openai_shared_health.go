@@ -10,6 +10,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,40 @@ func DefaultOpenAISharedHealthConfig() OpenAISharedHealthConfig {
 type OpenAISharedHealthKey struct {
 	AccountID      int64
 	CanonicalModel string
+}
+
+type OpenAIAdmissionRequestShape string
+
+const (
+	OpenAIAdmissionShapeUnknown OpenAIAdmissionRequestShape = "unknown"
+	OpenAIAdmissionShapeNormal  OpenAIAdmissionRequestShape = "normal"
+	OpenAIAdmissionShapeLong    OpenAIAdmissionRequestShape = "long"
+)
+
+func ClassifyOpenAIAdmissionRequestShape(bodyBytes, thresholdBytes int) OpenAIAdmissionRequestShape {
+	if bodyBytes < 0 || thresholdBytes <= 0 {
+		return OpenAIAdmissionShapeUnknown
+	}
+	if bodyBytes > thresholdBytes {
+		return OpenAIAdmissionShapeLong
+	}
+	return OpenAIAdmissionShapeNormal
+}
+
+type OpenAISharedAdmissionRequest struct {
+	AccountID  int64
+	LeaseID    string
+	Shape      OpenAIAdmissionRequestShape
+	ObservedAt time.Time
+}
+
+type OpenAISharedAdmissionDecision struct {
+	Allowed        bool
+	Reason         string
+	ActiveNormal   int
+	ActiveLong     int
+	Stalled        bool
+	LeaseExpiresAt time.Time
 }
 
 func NewOpenAISharedHealthKey(accountID int64, model string) (OpenAISharedHealthKey, error) {
@@ -192,6 +227,11 @@ type OpenAISharedHealthStore interface {
 	RecordAttempt(ctx context.Context, event OpenAISharedHealthEvent) (OpenAISharedHealthSnapshot, error)
 	AcquireHalfOpen(ctx context.Context, key OpenAISharedHealthKey, owner string, ttl time.Duration) (OpenAISharedHalfOpenLease, bool, error)
 	CompleteHalfOpen(ctx context.Context, lease OpenAISharedHalfOpenLease, success bool, observedAt time.Time) error
+	AcquireAdmission(ctx context.Context, request OpenAISharedAdmissionRequest) (OpenAISharedAdmissionDecision, error)
+	RenewAdmission(ctx context.Context, request OpenAISharedAdmissionRequest) error
+	ReleaseAdmission(ctx context.Context, request OpenAISharedAdmissionRequest) error
+	RecordSlowSessionGuard(ctx context.Context, accountID int64, observedAt time.Time) error
+	HasSlowSessionGuard(ctx context.Context, accountID int64) (bool, error)
 }
 
 type OpenAISharedHealthMode string
@@ -205,6 +245,8 @@ const (
 var openAISharedHealthOwnerSequence atomic.Uint64
 
 type openAISharedHealthReadTrackerContextKey struct{}
+type openAIAdmissionRequestShapeContextKey struct{}
+type openAIFirstSemanticOutputCallbackContextKey struct{}
 
 // OpenAISharedHealthReadTracker records that a logical request could no longer
 // rely on either Redis or a fresh local projection. Callers use this signal to
@@ -220,6 +262,37 @@ func WithOpenAISharedHealthReadTracking(ctx context.Context) (context.Context, *
 	}
 	tracker := &OpenAISharedHealthReadTracker{}
 	return context.WithValue(ctx, openAISharedHealthReadTrackerContextKey{}, tracker), tracker
+}
+
+func WithOpenAIAdmissionRequestShape(ctx context.Context, shape OpenAIAdmissionRequestShape) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIAdmissionRequestShapeContextKey{}, shape)
+}
+
+func OpenAIAdmissionRequestShapeFromContext(ctx context.Context) OpenAIAdmissionRequestShape {
+	if ctx == nil {
+		return OpenAIAdmissionShapeUnknown
+	}
+	shape, _ := ctx.Value(openAIAdmissionRequestShapeContextKey{}).(OpenAIAdmissionRequestShape)
+	return shape
+}
+
+func WithOpenAIFirstSemanticOutputCallback(ctx context.Context, callback func()) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIFirstSemanticOutputCallbackContextKey{}, callback)
+}
+
+func notifyOpenAIFirstSemanticOutput(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	if callback, ok := ctx.Value(openAIFirstSemanticOutputCallbackContextKey{}).(func()); ok && callback != nil {
+		callback()
+	}
 }
 
 func (t *OpenAISharedHealthReadTracker) MarkDegraded() {
@@ -361,6 +434,127 @@ func (s *OpenAIGatewayService) openAISharedHealthSelectionContext(parent context
 	return context.WithTimeout(parent, timeout)
 }
 
+func (s *OpenAIGatewayService) openAISharedHealthWriteContext() (context.Context, context.CancelFunc) {
+	timeout := time.Duration(s.openAISharedHealthConfig().RedisTimeoutMS) * time.Millisecond
+	if timeout <= 0 || timeout > 100*time.Millisecond {
+		timeout = time.Duration(DefaultOpenAISharedHealthConfig().RedisTimeoutMS) * time.Millisecond
+	}
+	return context.WithTimeout(context.Background(), timeout)
+}
+
+func openAISharedHealthErrorKind(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "context_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case err == nil:
+		return ""
+	case strings.Contains(strings.ToLower(err.Error()), "redis") || strings.Contains(strings.ToLower(err.Error()), "connection"):
+		return "redis_unavailable"
+	default:
+		return "script_error"
+	}
+}
+
+func logOpenAISharedHealthMutationFailure(operation string, accountID int64, err error) {
+	slog.Warn("openai.shared_health.store_degraded",
+		"operation", operation,
+		"error_kind", openAISharedHealthErrorKind(err),
+		"account_id", accountID,
+	)
+}
+
+func (s *OpenAIGatewayService) AcquireOpenAIAdmission(accountID int64, shape OpenAIAdmissionRequestShape) (func(), OpenAISharedAdmissionDecision) {
+	cfg := s.openAISharedHealthConfig()
+	if s == nil || !cfg.Enabled || !cfg.AdmissionEnabled || (shape != OpenAIAdmissionShapeNormal && shape != OpenAIAdmissionShapeLong) {
+		return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "disabled"}
+	}
+	s.sharedHealthSnapshotMu.Lock()
+	store, owner := s.sharedHealthStore, s.sharedHealthOwner
+	s.sharedHealthSnapshotMu.Unlock()
+	if store == nil {
+		return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "store_unavailable"}
+	}
+	leaseID := openAISharedHealthLeaseID(fmt.Sprintf("%s:%d", owner, openAISharedHealthOwnerSequence.Add(1)))
+	request := OpenAISharedAdmissionRequest{AccountID: accountID, LeaseID: leaseID, Shape: shape, ObservedAt: time.Now().UTC()}
+	writeCtx, cancel := s.openAISharedHealthWriteContext()
+	decision, err := store.AcquireAdmission(writeCtx, request)
+	cancel()
+	if err != nil {
+		logOpenAISharedHealthMutationFailure("acquire_admission", accountID, err)
+		return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "store_degraded"}
+	}
+	if !decision.Allowed {
+		return func() {}, decision
+	}
+	var once atomic.Bool
+	var stopOnce sync.Once
+	stopRenewal := make(chan struct{})
+	renewEvery := time.Duration(cfg.AdmissionRenewSeconds) * time.Second
+	if renewEvery <= 0 || renewEvery >= time.Duration(cfg.AdmissionLeaseTTLSeconds)*time.Second {
+		renewEvery = 25 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(renewEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := s.openAISharedHealthWriteContext()
+				err := store.RenewAdmission(ctx, request)
+				cancel()
+				if err != nil {
+					logOpenAISharedHealthMutationFailure("renew_admission", accountID, err)
+				}
+			case <-stopRenewal:
+				return
+			}
+		}
+	}()
+	release := func() {
+		if !once.CompareAndSwap(false, true) {
+			return
+		}
+		stopOnce.Do(func() { close(stopRenewal) })
+		ctx, cancel := s.openAISharedHealthWriteContext()
+		defer cancel()
+		if err := store.ReleaseAdmission(ctx, request); err != nil {
+			logOpenAISharedHealthMutationFailure("release_admission", accountID, err)
+		}
+	}
+	return release, decision
+}
+
+// RecordOpenAISlowSessionGuard records only a trusted, real completed stream.
+// The account-only guard is deliberately independent from group and model so a
+// slow account cannot be refilled through another scheduler path.
+func (s *OpenAIGatewayService) RecordOpenAISlowSessionGuard(accountID int64, result *OpenAIForwardResult, halfOpenProbe bool) {
+	if s == nil || accountID <= 0 || halfOpenProbe || result == nil || !result.Stream || result.ClientDisconnect || !result.SucceededForScheduling() || result.FirstTokenMs == nil {
+		return
+	}
+	cfg := s.openAISharedHealthConfig()
+	if !cfg.Enabled || cfg.SlowTTFTMS <= 0 || *result.FirstTokenMs < cfg.SlowTTFTMS {
+		return
+	}
+	s.sharedHealthSnapshotMu.Lock()
+	store := s.sharedHealthStore
+	s.sharedHealthSnapshotMu.Unlock()
+	if store == nil {
+		return
+	}
+	ctx, cancel := s.openAISharedHealthWriteContext()
+	defer cancel()
+	if err := store.RecordSlowSessionGuard(ctx, accountID, time.Now().UTC()); err != nil {
+		logOpenAISharedHealthMutationFailure("record_slow_session_guard", accountID, err)
+	}
+}
+
+func openAISharedHealthLeaseID(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:16])
+}
+
 func openAISharedHealthCacheKey(key OpenAISharedHealthKey) string {
 	return strconv.FormatInt(key.AccountID, 10) + ":" + key.HashedSuffix()
 }
@@ -484,11 +678,11 @@ func (s *OpenAIGatewayService) recordOpenAISharedHealthFailure(ctx context.Conte
 		ID: eventID, Key: key, Domains: domains, StatusCode: event.StatusCode,
 		ErrorType: event.ErrorType, TTFT: event.TTFT, ObservedAt: now, CooldownUntil: local.BlockUntil,
 	}
-	writeCtx, cancel := s.openAISharedHealthSelectionContext(ctx)
+	writeCtx, cancel := s.openAISharedHealthWriteContext()
 	defer cancel()
 	snapshot, err := store.RecordAttempt(writeCtx, sharedEvent)
 	if err != nil {
-		slog.Warn("openai.shared_health.record_failed", "account_id", event.AccountID, "model_hash", key.HashedSuffix(), "failure", "shared_health_store_unavailable")
+		logOpenAISharedHealthMutationFailure("record_attempt", key.AccountID, err)
 		return OpenAISharedHealthSnapshot{}, false
 	}
 	s.sharedHealthSnapshotMu.Lock()
@@ -517,13 +711,13 @@ func (s *OpenAIGatewayService) recordOpenAISharedHealthSuccess(ctx context.Conte
 		sum := sha256.Sum256([]byte(fmt.Sprintf("success|%d|%s|%d", event.AccountID, key.CanonicalModel, now.UnixNano())))
 		eventID = hex.EncodeToString(sum[:16])
 	}
-	writeCtx, cancel := s.openAISharedHealthSelectionContext(ctx)
+	writeCtx, cancel := s.openAISharedHealthWriteContext()
 	defer cancel()
 	snapshot, err := store.RecordAttempt(writeCtx, OpenAISharedHealthEvent{
 		ID: eventID, Key: key, Domains: domains, Success: true, TTFT: event.TTFT, ObservedAt: now,
 	})
 	if err != nil {
-		slog.Warn("openai.shared_health.record_success_failed", "account_id", event.AccountID, "model_hash", key.HashedSuffix(), "failure", "shared_health_store_unavailable")
+		logOpenAISharedHealthMutationFailure("record_attempt", key.AccountID, err)
 		return
 	}
 	s.sharedHealthSnapshotMu.Lock()
@@ -542,7 +736,7 @@ func (s *OpenAIGatewayService) acquireOpenAISharedHalfOpenLease(ctx context.Cont
 	if ttl <= 0 || ttl > 15*time.Second {
 		ttl = 15 * time.Second
 	}
-	leaseCtx, cancel := s.openAISharedHealthSelectionContext(ctx)
+	leaseCtx, cancel := s.openAISharedHealthWriteContext()
 	defer cancel()
 	return store.AcquireHalfOpen(leaseCtx, key, owner, ttl)
 }
@@ -572,9 +766,9 @@ func (s *OpenAIGatewayService) completeOpenAISharedHalfOpenLease(ctx context.Con
 	if store == nil {
 		return
 	}
-	completeCtx, cancel := s.openAISharedHealthSelectionContext(ctx)
+	completeCtx, cancel := s.openAISharedHealthWriteContext()
 	defer cancel()
 	if err := store.CompleteHalfOpen(completeCtx, lease, success, now); err != nil {
-		slog.Warn("openai.shared_health.half_open_complete_failed", "account_id", lease.Key.AccountID, "model_hash", lease.Key.HashedSuffix(), "failure", "shared_health_store_unavailable")
+		logOpenAISharedHealthMutationFailure("complete_half_open", lease.Key.AccountID, err)
 	}
 }

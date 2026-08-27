@@ -165,3 +165,93 @@ func TestOpenAISharedHealthPropagatesCanceledContext(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled) || strings.Contains(err.Error(), context.Canceled.Error()))
 }
+
+type openAIAdmissionStore interface {
+	AcquireAdmission(context.Context, service.OpenAISharedAdmissionRequest) (service.OpenAISharedAdmissionDecision, error)
+	RenewAdmission(context.Context, service.OpenAISharedAdmissionRequest) error
+	ReleaseAdmission(context.Context, service.OpenAISharedAdmissionRequest) error
+	RecordSlowSessionGuard(context.Context, int64, time.Time) error
+	HasSlowSessionGuard(context.Context, int64) (bool, error)
+}
+
+func requireOpenAIAdmissionStore(t *testing.T, store service.OpenAISharedHealthStore) openAIAdmissionStore {
+	t.Helper()
+	admissionStore, ok := store.(openAIAdmissionStore)
+	require.True(t, ok, "OpenAI shared health store must support admission leases and request quality")
+	return admissionStore
+}
+
+func TestOpenAISharedHealthStoreHasNoSharedQualityAPI(t *testing.T) {
+	store, _, _ := newOpenAISharedHealthUnitStore(t)
+	_, hasGetQuality := store.(interface {
+		GetRequestQuality(context.Context, service.OpenAISharedHealthKey, service.OpenAIAdmissionRequestShape) (any, error)
+	})
+	_, hasRecordQuality := store.(interface {
+		RecordRequestQuality(context.Context, service.OpenAISharedHealthKey, service.OpenAIAdmissionRequestShape, time.Duration, time.Time) (any, error)
+	})
+	require.False(t, hasGetQuality)
+	require.False(t, hasRecordQuality)
+}
+
+func TestOpenAISharedHealthAdmissionLongBlocksAcrossModelsAndGroupsAndReleaseIsLeaseScoped(t *testing.T) {
+	store, rdb, _ := newOpenAISharedHealthUnitStore(t)
+	admissionStore := requireOpenAIAdmissionStore(t, store)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+
+	long := service.OpenAISharedAdmissionRequest{AccountID: 153, LeaseID: "safe-lease-a", Shape: service.OpenAIAdmissionShapeLong, ObservedAt: now}
+	decision, err := admissionStore.AcquireAdmission(ctx, long)
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.Equal(t, 1, decision.ActiveLong)
+
+	// These represent different requested models and groups. Neither identifier
+	// is accepted by the account-only admission contract, so the shared lease
+	// must still reject the second request for account 153.
+	normal := service.OpenAISharedAdmissionRequest{AccountID: 153, LeaseID: "safe-lease-b", Shape: service.OpenAIAdmissionShapeNormal, ObservedAt: now.Add(time.Second)}
+	decision, err = admissionStore.AcquireAdmission(ctx, normal)
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.Equal(t, "long_pre_first_output", decision.Reason)
+
+	wrongLease := long
+	wrongLease.LeaseID = "safe-lease-c"
+	require.NoError(t, admissionStore.ReleaseAdmission(ctx, wrongLease))
+	decision, err = admissionStore.AcquireAdmission(ctx, normal)
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+
+	require.NoError(t, admissionStore.ReleaseAdmission(ctx, long))
+	decision, err = admissionStore.AcquireAdmission(ctx, normal)
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.Equal(t, 1, decision.ActiveNormal)
+
+	keys, err := rdb.Keys(ctx, openAISharedHealthKeyPrefix+"admission:*").Result()
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.NotContains(t, keys[0], "safe-lease")
+	require.Equal(t, openAISharedHealthAdmissionKey(153), keys[0])
+}
+
+func TestOpenAISharedHealthSlowSessionGuardIsAccountOnly(t *testing.T) {
+	store, _, _ := newOpenAISharedHealthUnitStore(t)
+	admissionStore := requireOpenAIAdmissionStore(t, store)
+	ctx := context.Background()
+	now := time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
+
+	require.NoError(t, admissionStore.RecordSlowSessionGuard(ctx, 153, now))
+	guarded, err := admissionStore.HasSlowSessionGuard(ctx, 153)
+	require.NoError(t, err)
+	require.True(t, guarded)
+	guarded, err = admissionStore.HasSlowSessionGuard(ctx, 154)
+	require.NoError(t, err)
+	require.False(t, guarded)
+
+	decision, err := admissionStore.AcquireAdmission(ctx, service.OpenAISharedAdmissionRequest{
+		AccountID: 153, LeaseID: "safe-lease-guarded", Shape: service.OpenAIAdmissionShapeNormal, ObservedAt: now,
+	})
+	require.NoError(t, err)
+	require.False(t, decision.Allowed)
+	require.Equal(t, "slow_session_guard", decision.Reason)
+}

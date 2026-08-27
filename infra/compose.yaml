@@ -76,11 +76,11 @@ services:
       MODEL_DETECTOR_VERSION: ${MODEL_DETECTOR_VERSION:-4.1.1}
       SUB2API_MODEL_DETECTOR_TOKEN: ${SUB2API_MODEL_DETECTOR_TOKEN:?required}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8090/healthz"]
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 300s
     logging: *logging
 
   sub2api-blue:
@@ -285,6 +285,8 @@ services:
       SITE_ADDRESS: ${SITE_ADDRESS:?required}
       CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.30.0.3/32}
       SUB2API_ACTIVE_UPSTREAM: ${SUB2API_ACTIVE_UPSTREAM:?SUB2API_ACTIVE_UPSTREAM is required}
+      ACCEPTANCE_LAB_UPSTREAM: ${ACCEPTANCE_LAB_UPSTREAM:-172.18.0.1:8181}
+      ACCEPTANCE_LAB_ALLOWED_IPS: ${ACCEPTANCE_LAB_ALLOWED_IPS:-127\\.0\\.0\\.1}
     command:
       - /bin/sh
       - -ec
@@ -313,6 +315,8 @@ services:
       - /run/sub2api-updater:/run/sub2api-updater:ro
       - caddy_data:/data
       - caddy_config:/config
+    extra_hosts:
+      - host.docker.internal:host-gateway
     networks:
       default: {}
       tls_front:

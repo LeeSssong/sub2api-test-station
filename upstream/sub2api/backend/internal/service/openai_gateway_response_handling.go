@@ -288,6 +288,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		completedProgressEvent := eventStartsClientOutput
 		completedVisibleEvent := eventStartsVisibleOutput
 		shouldFlush := eventShouldFlush || (queueDrained && clientOutputStarted)
+		semanticEventFlushed := false
 		eventInProgress = false
 		if !clientDisconnected {
 			if completedProgressEvent {
@@ -300,13 +301,15 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				} else {
 					clientOutputStarted = true
 					lastDownstreamWriteAt = time.Now()
+					semanticEventFlushed = true
 				}
 			}
 		}
-		if completedProgressEvent && !firstOutputProgressObserved {
+		if completedProgressEvent && semanticEventFlushed && !firstOutputProgressObserved {
 			firstOutputScanGuard.Store(false)
 			firstOutputProgressObserved = true
 			stopFirstOutputTimer()
+			notifyOpenAIFirstSemanticOutput(ctx)
 		}
 		if completedVisibleEvent && firstTokenMs == nil {
 			ms := int(time.Since(startTime).Milliseconds())
@@ -587,9 +590,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			startsClientOutput := forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
+			eventStartsVisibleOutput = eventStartsVisibleOutput || startsVisibleOutput
 			if guardFirstOutput {
 				eventStartsClientOutput = eventStartsClientOutput || startsClientOutput
-				eventStartsVisibleOutput = eventStartsVisibleOutput || startsVisibleOutput
 			}
 			if startsClientOutput && !openAIStreamEventTypeIsTerminal(eventType) {
 				responsesSemanticOutputSeen = true
@@ -624,12 +627,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				}
 			}
 
-			// Record first token time
-			if !guardFirstOutput && firstTokenMs == nil && startsVisibleOutput {
-				ms := int(time.Since(startTime).Milliseconds())
-				firstTokenMs = &ms
-				stopFirstOutputTimer()
-			}
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return
 		}
@@ -670,6 +667,16 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 				}
 			}
+		}
+		if !guardFirstOutput && line == "" {
+			semanticEventFlushed := shouldFlush && !clientDisconnected && clientOutputStarted && eventStartsVisibleOutput
+			if semanticEventFlushed && firstTokenMs == nil {
+				ms := int(time.Since(startTime).Milliseconds())
+				firstTokenMs = &ms
+				stopFirstOutputTimer()
+				notifyOpenAIFirstSemanticOutput(ctx)
+			}
+			eventStartsVisibleOutput = false
 		}
 	}
 

@@ -216,7 +216,7 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	var result *OpenAIForwardResult
 	var forwardErr error
 	if clientStream {
-		result, forwardErr = s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
+		result, forwardErr = s.streamRawChatCompletions(ctx, c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
 	} else {
 		result, forwardErr = s.bufferRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
@@ -246,6 +246,7 @@ func (s *OpenAIGatewayService) rawChatCompletionsURL(account *Account) (string, 
 // 网关会对上游强制打开 include_usage 以保证计费完整，并原样向下游透传 usage，
 // 让级联代理或下游计费系统也能拿到完整用量。
 func (s *OpenAIGatewayService) streamRawChatCompletions(
+	ctx context.Context,
 	c *gin.Context,
 	resp *http.Response,
 	account *Account,
@@ -308,6 +309,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	for scanner.Scan() {
 		line := scanner.Text()
 		refusalDetector.ObserveSSELine(line)
+		semanticOutput := false
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			if trimmedPayload != "[DONE]" {
@@ -323,10 +325,14 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					elapsed := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &elapsed
 				}
+				semanticOutput = !usageOnlyChunk && chatChunkPayloadStartsSemanticOutput(trimmedPayload)
 			}
 		}
 
 		writeLine(line)
+		if semanticOutput && !clientDisconnected && clientOutputStarted {
+			notifyOpenAIFirstSemanticOutput(ctx)
+		}
 		if line == "" {
 			if !clientDisconnected && clientOutputStarted {
 				c.Writer.Flush()
@@ -383,6 +389,19 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
 	}, nil
+}
+
+func chatChunkPayloadStartsSemanticOutput(payload string) bool {
+	if !gjson.Valid(payload) {
+		return false
+	}
+	for _, choice := range gjson.Get(payload, "choices").Array() {
+		delta := choice.Get("delta")
+		if delta.Get("content").String() != "" || delta.Get("reasoning_content").String() != "" || delta.Get("tool_calls.#").Int() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ensureOpenAIChatStreamUsage 确保 raw Chat Completions 流式请求会让上游返回 usage。

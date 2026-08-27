@@ -190,7 +190,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	var result *ForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleCCStreamingFromAnthropic(resp, c, originalModel, mappedModel, reasoningEffort, startTime, includeUsage)
+		result, handleErr = s.handleCCStreamingFromAnthropic(ctx, resp, c, originalModel, mappedModel, reasoningEffort, startTime, includeUsage)
 	} else {
 		result, handleErr = s.handleCCBufferedFromAnthropic(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
 	}
@@ -352,6 +352,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 // handleCCStreamingFromAnthropic reads Anthropic SSE events, converts each
 // to Responses events, then to Chat Completions chunks, and writes them.
 func (s *GatewayService) handleCCStreamingFromAnthropic(
+	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
 	originalModel string,
@@ -434,6 +435,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 		// Chain: Anthropic event → Responses events → CC chunks
 		responsesEvents := apicompat.AnthropicEventToResponsesEvents(event, anthState)
+		semanticOutput := anthropicStreamEventStartsSemanticOutput(event)
 		for _, resEvt := range responsesEvents {
 			ccChunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
 			for _, chunk := range ccChunks {
@@ -443,6 +445,9 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 			}
 		}
 		c.Writer.Flush()
+		if semanticOutput {
+			notifyOpenAIFirstSemanticOutput(ctx)
+		}
 		return false
 	}
 
@@ -498,6 +503,13 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	c.Writer.Flush()
 
 	return resultWithUsage(), nil
+}
+
+func anthropicStreamEventStartsSemanticOutput(event *apicompat.AnthropicStreamEvent) bool {
+	if event == nil || event.Type != "content_block_delta" || event.Delta == nil {
+		return false
+	}
+	return event.Delta.Text != "" || event.Delta.PartialJSON != "" || event.Delta.Thinking != ""
 }
 
 // writeGatewayCCError writes an error in OpenAI Chat Completions format for

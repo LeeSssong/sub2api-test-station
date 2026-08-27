@@ -428,7 +428,17 @@ JSON
     [[ "$scenario" != worker_health_failure && "$scenario" != worker_health_timeout && "$scenario" != worker_rollback_failure ]] || { printf 'unhealthy\n'; exit 0; }
     printf 'healthy\n'
     ;;
-	'inspect detector-id --format {{.State.Health.Status}}') printf 'healthy\n' ;;
+	'inspect detector-id --format {{.State.Health.Status}}')
+    if [[ "$scenario" == detector_unhealthy_then_healthy ]]; then
+      count_file="${FAKE_EVENT_LOG}.detector-health-count"
+      count=0
+      [[ -f "$count_file" ]] && count=$(cat "$count_file")
+      count=$((count + 1))
+      printf '%s\n' "$count" >"$count_file"
+      [[ "$count" -lt 2 ]] && { printf 'unhealthy\n'; exit 0; }
+    fi
+    printf 'healthy\n'
+    ;;
 	'inspect green-id --format {{.State.Health.Status}}')
 		if [[ "$scenario" == candidate_starting_then_healthy ]]; then
 			count_file="${FAKE_EVENT_LOG}.candidate-health-count"
@@ -521,6 +531,8 @@ run_executor() {
     WORKER_HEALTH_POLL_SECONDS=1 \
     CANDIDATE_HEALTH_TIMEOUT_SECONDS=2 \
     CANDIDATE_HEALTH_POLL_SECONDS=1 \
+    DETECTOR_HEALTH_TIMEOUT_SECONDS=2 \
+    DETECTOR_HEALTH_POLL_SECONDS=1 \
     COMPOSE_PROJECT_NAME=sub2api \
     RELEASE_STAGING_ROOT="${PRELOADED_STAGING_ROOT:-}" \
     "$@" bash "$EXECUTOR" \
@@ -539,6 +551,14 @@ test_final_review_rehearsal_isolation() {
 }
 
 test_final_review_candidate_readiness() {
+	setup_case detector_unhealthy_then_healthy
+	write_meminfo
+	run_executor FAKE_SCENARIO=detector_unhealthy_then_healthy >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+		|| fail "detector recovery within its wait window should succeed: $(cat "$CASE_DIR/stderr")"
+	[[ "$(grep -c 'inspect detector-id --format {{.State.Health.Status}}' "$EVENT_LOG" || true)" -ge 2 ]] \
+		|| fail 'detector unhealthy state was not polled until recovery'
+	grep -q '^sleep 1$' "$EVENT_LOG" || fail 'detector recovery did not wait before retrying'
+
 	setup_case candidate_starting_then_healthy
 	write_meminfo
 	run_executor FAKE_SCENARIO=candidate_starting_then_healthy >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \

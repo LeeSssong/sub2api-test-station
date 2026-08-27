@@ -1,0 +1,21 @@
+{
+  servers {
+    timeouts {
+      read_body 15m
+    }
+  }
+}
+
+:80 {
+  encode zstd gzip
+
+  handle_path /admin/lab/* {
+    reverse_proxy acceptance-api:8080 {
+      transport http {
+        response_header_timeout 15m
+      }
+    }
+  }
+
+  respond 404
+}

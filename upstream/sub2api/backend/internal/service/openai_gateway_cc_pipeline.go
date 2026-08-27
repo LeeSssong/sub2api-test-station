@@ -247,6 +247,7 @@ type ccStreamScanState struct {
 // emit 回调做各自的协议转换与写出。读错误按既有约定过滤 context 取消类噪声后
 // 记入 Warn 日志。
 func (s *OpenAIGatewayService) scanCCStream(
+	ctx context.Context,
 	resp *http.Response,
 	logPrefix string,
 	requestID string,
@@ -283,11 +284,15 @@ func (s *OpenAIGatewayService) scanCCStream(
 			)
 			continue
 		}
-		if st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk) {
+		firstSemanticOutput := st.FirstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) && chatChunkStartsResponsesOutput(&chunk)
+		if firstSemanticOutput {
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
 		}
 		emit(&chunk)
+		if firstSemanticOutput {
+			notifyOpenAIFirstSemanticOutput(ctx)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {

@@ -215,60 +215,27 @@
 	respond @sub2api_restart_mutation `{"code":"DOCKER_DEPLOYMENT_UPDATE_REQUIRED","message":"Docker 部署仅支持受控 Compose 更新，请使用运维发布流程"}` 409
 
 
-	# T53 admin lab isolated path
-	# T53 admin lab: keep this block before the production fallback proxy.
-	@admin_lab_root path /admin/lab /admin/lab/
-	redir @admin_lab_root /admin/lab/login 302
+	# The acceptance station is a separate Compose project reached only through
+	# the host edge port. Keep this before the production fallback so the native
+	# /admin/accounts page remains handled by the production upstream. The route
+	# accepts a request only when it arrives from Cloudflare and its declared
+	# client address equals the one administrator IP explicitly allowlisted.
+	# This rejects direct-origin header spoofing as well as non-admin traffic.
+	@acceptance_lab path /admin/lab /admin/lab/*
+	route @acceptance_lab {
+		@acceptance_lab_allowed {
+			remote_ip 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+			header_regexp Cf-Connecting-Ip ^(?:{$ACCEPTANCE_LAB_ALLOWED_IPS:127\\.0\\.0\\.1})$
+		}
+		handle @acceptance_lab_allowed {
+			@acceptance_lab_root path /admin/lab
+			redir @acceptance_lab_root /admin/lab/ 308
 
-	@admin_lab_assets path /admin/lab/assets/* /admin/lab/logo.svg
-	handle @admin_lab_assets {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088
-	}
-
-	@admin_lab_api path /admin/lab/api/*
-	handle @admin_lab_api {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088 {
-	    header_up -Cookie
-	    header_up Authorization {http.request.header.Authorization}
-	    header_up X-Admin-Lab-Only 1
-	  }
-	}
-
-	@admin_lab_ws path /admin/lab/ws/*
-	handle @admin_lab_ws {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088 {
-	    header_up -Cookie
-	    header_up Authorization {http.request.header.Authorization}
-	    header_up X-Admin-Lab-Only 1
-	  }
-	}
-
-	@admin_lab_login path /admin/lab/login
-	handle @admin_lab_login {
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088
-	}
-
-	@admin_lab_no_session {
-	  path /admin/lab/*
-	  not path /admin/lab/login /admin/lab/assets/* /admin/lab/logo.svg /admin/lab/api/* /admin/lab/ws/*
-	  not header Cookie *sub2api_lab_session=*
-	}
-	redir @admin_lab_no_session /admin/lab/login 302
-
-	@admin_lab_app path /admin/lab/*
-	handle @admin_lab_app {
-	  forward_auth admin-lab-gateway:8088 {
-	    uri /api/v1/auth/lab-session
-	    header_up X-Admin-Lab-Only 1
-	  }
-	  uri strip_prefix /admin/lab
-	  reverse_proxy admin-lab-gateway:8088 {
-	    header_up -Cookie
-	  }
+			reverse_proxy {$ACCEPTANCE_LAB_UPSTREAM:172.18.0.1:8181} {
+				header_up X-Forwarded-Proto {http.request.proto}
+			}
+		}
+		respond 403
 	}
 
 	reverse_proxy {$SUB2API_ACTIVE_UPSTREAM:sub2api-blue:8080} {

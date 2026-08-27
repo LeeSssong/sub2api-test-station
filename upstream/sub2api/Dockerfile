@@ -25,6 +25,9 @@ ARG GPT56_V411_RELEASE_SHA256=70c0c2f092e66cd219f2384e08872e5bedb4559e427c2e320d
 FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
 ARG NPM_CONFIG_REGISTRY
 ARG FRONTEND_NODE_MAX_OLD_SPACE_SIZE=3072
+ARG VITE_APP_BASE_PATH=/
+ARG VITE_API_BASE_URL=/api/v1
+ARG VITE_AUTH_STORAGE_PREFIX=
 
 WORKDIR /app/frontend
 ENV NODE_OPTIONS=--max-old-space-size=${FRONTEND_NODE_MAX_OLD_SPACE_SIZE}
@@ -45,7 +48,10 @@ RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/stor
 # Copy only that subtree to keep the build dependency minimal.
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
-RUN pnpm run build
+RUN VITE_APP_BASE_PATH="${VITE_APP_BASE_PATH}" \
+    VITE_API_BASE_URL="${VITE_API_BASE_URL}" \
+    VITE_AUTH_STORAGE_PREFIX="${VITE_AUTH_STORAGE_PREFIX}" \
+    pnpm run build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder

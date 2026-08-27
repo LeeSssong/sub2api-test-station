@@ -8,7 +8,7 @@
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
         <div class="relative flex gap-2">
-          <div class="relative flex-1"><div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500">¥</div><input v-model.number="form.amount" type="number" step="any" min="0" required class="input pl-8" /></div>
+          <div class="relative flex-1"><div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500">¥</div><input v-model.number="form.amount" type="number" step="any" min="0" :required="operation === 'subtract'" class="input pl-8" /></div>
           <button v-if="operation === 'subtract'" type="button" @click="fillAllBalance" class="btn btn-secondary whitespace-nowrap">{{ t('admin.users.withdrawAll') }}</button>
         </div>
       </div>
@@ -23,7 +23,7 @@
     <template #footer>
       <div class="flex justify-end gap-3">
         <button @click="$emit('close')" class="btn btn-secondary">{{ t('common.cancel') }}</button>
-        <button type="submit" form="balance-form" :disabled="submitting || !form.amount" class="btn" :class="operation === 'add' ? 'bg-emerald-600 text-white' : 'btn-danger'">{{ submitting ? t('common.saving') : t('common.confirm') }}</button>
+        <button type="submit" form="balance-form" :disabled="submitting || !hasValidMutation()" class="btn" :class="operation === 'add' ? 'bg-emerald-600 text-white' : 'btn-danger'">{{ submitting ? t('common.saving') : t('common.confirm') }}</button>
       </div>
     </template>
   </BaseDialog>
@@ -72,9 +72,12 @@ const calculateNewBalance = () => {
   // 避免浮点数精度问题导致的 -0.00 显示
   return Math.abs(result) < 1e-10 ? 0 : result
 }
+const hasValidMutation = () => props.operation === 'add'
+  ? form.amount > 0 || form.giftQuota > 0
+  : form.amount > 0
 const handleBalanceSubmit = async () => {
   if (!props.user) return
-  if (!form.amount || form.amount <= 0) {
+  if (!hasValidMutation()) {
     appStore.showError(t('admin.users.amountRequired'))
     return
   }

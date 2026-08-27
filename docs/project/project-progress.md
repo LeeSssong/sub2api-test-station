@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**测试服入口 ACL 紧急撤销（2026-08-27）：** 状态：进行中（DEPLOYING）。用户明确授权“快速部署到主站”，原因是测试服 `/admin/lab/` 被主站 Caddy 的 `ACCEPTANCE_LAB_ALLOWED_IPS` 默认值误拦为 403；用户要求取消网络层白名单，仅保留验收应用管理员登录/TOTP。当前基线 `main@3b8c0e81dc32bcb8b5b255b558a371b77b44a873`，保留其既有 T82 登记提交；本次仅修改主站 Caddy acceptance 路由、Compose 环境声明、验收契约测试和对应运维说明。无数据库、业务容器、凭据或 GitHub Actions 变更；预期 `downtime_required=false`，发布成功后立即以同一 commit 核对验收站版本与入口健康。
+
 **T82 调度健康状态与故障转移闭环（2026-08-27）：** 状态：进行中（DESIGNING）。范围：在不把账号永久置为不可用的前提下，补齐 OpenAI 调度质量状态机、余额/401 探活恢复、502/503 安全重试与跨账号切换、高 TTFT/耗时熔断、滞回恢复和调度可观测性。当前工作区：根 `main@cbe0e5f8b` 盘点完成，待创建独立候选 worktree；不执行主站写入或部署。完成门槛：功能实现完成、直接相关测试通过、验收站验证并按全局授权流程发布。
 
 **T76-v2 主站发布与双站一致性核对（2026-08-27）：** 用户已确认验收完成并授权全部部署。根 `main@f0848b17a7d6861a96c837f7a26234a080e313b6`、tree `ae58cf1e4cc8b5de3cd2ea1f7723b5732f97ac61` 已通过既有预加载蓝绿链发布主站；宿主记录 `20260827T165956Z-production-1731025.json` 返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`，API/worker/model-detector/PostgreSQL/Redis/Caddy/relay-ops 均健康，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。主站发布成功后已完成验收站同 commit/tree 对账，验收站六服务均 healthy，`/admin/lab/health` 返回 `{"status":"ok"}`、登录页 HTTP 200。两站 source commit/tree 完全一致；应用 `/app/sub2api` 二进制因构建时间注入不同而哈希不同，`/app/model-detector` 与资源文件哈希一致，不构成代码差异。T69/T76/T80/T81 随该版本完成部署并进入已验证生效状态；主站与验收站均无待同步代码。

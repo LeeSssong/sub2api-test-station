@@ -2393,6 +2393,9 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerSettingRepo() SettingRepos
 }
 
 func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx context.Context) openAIAdvancedSchedulerRuntimeSettings {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cached, ok := openAIAdvancedSchedulerSettingCache.Load().(*cachedOpenAIAdvancedSchedulerSetting); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return openAIAdvancedSchedulerRuntimeSettings{
@@ -2436,7 +2439,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 		fairness := defaultOpenAISchedulerFairnessSettings()
 		groupPolicies := map[int64]OpenAISchedulerGroupPolicy{}
 		if repo := s.openAIAdvancedSchedulerSettingRepo(); repo != nil {
-			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
+			dbCtx, cancel := context.WithTimeout(ctx, openAIAdvancedSchedulerSettingDBTimeout)
 			defer cancel()
 
 			if values, err := repo.GetMultiple(dbCtx, openAIAdvancedSchedulerRuntimeSettingKeys()); err == nil {
@@ -2471,6 +2474,21 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 			}
 		}
 
+		settings := openAIAdvancedSchedulerRuntimeSettings{
+			lowUpstreamRatePriorityEnabled: lowUpstreamRatePriorityEnabled,
+			oauthSchedulingRateMultiplier:  oauthSchedulingRateMultiplier,
+			enabled:                        enabled,
+			stickyWeightedEnabled:          stickyWeightedEnabled,
+			subscriptionPriorityEnabled:    subscriptionPriorityEnabled,
+			lbTopKOverride:                 lbTopKOverride,
+			weightOverrides:                weightOverrides,
+			fairness:                       fairness,
+			groupPolicies:                  groupPolicies,
+		}
+		if ctx.Err() != nil {
+			return settings, nil
+		}
+
 		openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
 			lowUpstreamRatePriorityEnabled: lowUpstreamRatePriorityEnabled,
 			oauthSchedulingRateMultiplier:  oauthSchedulingRateMultiplier,
@@ -2483,17 +2501,7 @@ func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettings(ctx contex
 			groupPolicies:                  cloneOpenAISchedulerGroupPolicies(groupPolicies),
 			expiresAt:                      time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 		})
-		return openAIAdvancedSchedulerRuntimeSettings{
-			lowUpstreamRatePriorityEnabled: lowUpstreamRatePriorityEnabled,
-			oauthSchedulingRateMultiplier:  oauthSchedulingRateMultiplier,
-			enabled:                        enabled,
-			stickyWeightedEnabled:          stickyWeightedEnabled,
-			subscriptionPriorityEnabled:    subscriptionPriorityEnabled,
-			lbTopKOverride:                 lbTopKOverride,
-			weightOverrides:                weightOverrides,
-			fairness:                       fairness,
-			groupPolicies:                  groupPolicies,
-		}, nil
+		return settings, nil
 	})
 
 	settings, _ := result.(openAIAdvancedSchedulerRuntimeSettings)

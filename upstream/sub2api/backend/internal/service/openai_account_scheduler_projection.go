@@ -109,85 +109,10 @@ func (s *defaultOpenAIAccountScheduler) resolveOpenAIAccountSchedulerPolicyForPr
 			qualityFairness: defaultOpenAISchedulerFairnessSettings(),
 		}, nil
 	}
-
-	weights := s.service.openAIWSSchedulerWeights()
-	topK := s.service.openAIWSLBTopK()
-	runtime, err := s.service.openAIAdvancedSchedulerRuntimeSettingsForProjection(ctx)
-	if err != nil {
-		return openAIAccountSchedulerPolicyResolution{}, err
-	}
-	if !runtime.enabled {
-		return openAIAccountSchedulerPolicyResolution{
-			weights:         weights,
-			fairness:        defaultOpenAISchedulerFairnessSettings(),
-			topK:            topK,
-			configured:      false,
-			qualityWeights:  weights,
-			qualityFairness: defaultOpenAISchedulerFairnessSettings(),
-		}, nil
-	}
-	overridden := applyOpenAIAdvancedSchedulerWeightOverrides(weights, runtime.weightOverrides)
-	if overridden.configWeights().IsValid() {
-		weights = overridden
-	}
-	if runtime.lbTopKOverride > 0 {
-		topK = runtime.lbTopKOverride
-	}
-	qualityWeights := weights
-	qualityFairness := resolveOpenAISchedulerFairnessForGroup(runtime.fairness, groupID)
-	fairness := qualityFairness
-	policy, configured := runtime.groupPolicies[groupID]
-	if configured {
-		weights, fairness = applyOpenAISchedulerGroupPolicy(weights, fairness, policy, true)
-		if policy.Values.TopK > 0 {
-			topK = policy.Values.TopK
-		}
-	}
-	return openAIAccountSchedulerPolicyResolution{
-		weights:                     weights,
-		fairness:                    fairness,
-		topK:                        topK,
-		policy:                      policy,
-		configured:                  configured,
-		qualityWeights:              qualityWeights,
-		qualityFairness:             qualityFairness,
-		subscriptionPriorityEnabled: runtime.subscriptionPriorityEnabled,
-	}, nil
-}
-
-func (s *OpenAIGatewayService) openAIAdvancedSchedulerRuntimeSettingsForProjection(ctx context.Context) (openAIAdvancedSchedulerRuntimeSettings, error) {
-	settings := openAIAdvancedSchedulerRuntimeSettings{
-		oauthSchedulingRateMultiplier: defaultOpenAIOAuthSchedulingRateMultiplier,
-		weightOverrides:               map[string]float64{},
-		fairness:                      defaultOpenAISchedulerFairnessSettings(),
-		groupPolicies:                 map[int64]OpenAISchedulerGroupPolicy{},
-	}
-	if s == nil {
-		return settings, nil
-	}
-	repo := s.openAIAdvancedSchedulerSettingRepo()
-	if repo == nil {
-		return settings, nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIAdvancedSchedulerSettingDBTimeout)
-	defer cancel()
-	values, err := repo.GetMultiple(dbCtx, openAIAdvancedSchedulerRuntimeSettingKeys())
-	if err != nil {
-		return openAIAdvancedSchedulerRuntimeSettings{}, err
-	}
-	settings.lowUpstreamRatePriorityEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAILowUpstreamRatePriorityEnabled]), "true")
-	settings.oauthSchedulingRateMultiplier = parseOpenAIOAuthSchedulingRateMultiplier(values[SettingKeyOpenAIOAuthSchedulingRateMultiplier])
-	settings.enabled = strings.EqualFold(strings.TrimSpace(values[openAIAdvancedSchedulerSettingKey]), "true")
-	settings.stickyWeightedEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled]), "true")
-	settings.subscriptionPriorityEnabled = strings.EqualFold(strings.TrimSpace(values[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled]), "true")
-	settings.lbTopKOverride = parsePositiveIntOverride(values[SettingKeyOpenAIAdvancedSchedulerLBTopK])
-	settings.weightOverrides = parseOpenAIAdvancedSchedulerWeightOverrides(values)
-	settings.fairness = parseOpenAISchedulerFairnessRuntimeSettings(values)
-	settings.groupPolicies = normalizeOpenAISchedulerRuntimeGroupPolicies(settings.lbTopKOverride, settings.weightOverrides, settings.fairness, values[SettingKeyOpenAIAdvancedSchedulerGroupOverrides])
-	return settings, nil
+	resolution := s.resolveOpenAIAccountSchedulerPolicy(ctx, groupID)
+	runtime := s.service.openAIAdvancedSchedulerRuntimeSettings(ctx)
+	resolution.subscriptionPriorityEnabled = runtime.enabled && runtime.subscriptionPriorityEnabled
+	return resolution, nil
 }
 
 func schedulerProjectionEffectiveWeights(weights GatewayOpenAIWSSchedulerScoreWeightsView) map[string]float64 {
@@ -367,7 +292,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 					quotaAccounts = append(quotaAccounts, *account)
 				}
 			}
-			quotaFiltered := s.filterGrokFreeQuotaAccounts(ctx, quotaAccounts)
+			quotaFiltered := s.filterGrokFreeQuotaAccountsReadOnly(quotaAccounts)
 			quotaAllowed := make(map[int64]struct{}, len(quotaFiltered))
 			for i := range quotaFiltered {
 				quotaAllowed[quotaFiltered[i].ID] = struct{}{}

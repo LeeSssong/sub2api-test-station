@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -340,7 +341,7 @@ func TestOpenAIAccountSchedulerProjection_DoesNotObserveProfitControl(t *testing
 	require.Equal(t, before, stats.vetoInvalidRate.Load())
 }
 
-func TestOpenAIAccountSchedulerProjection_ReturnsPolicyReadFailure(t *testing.T) {
+func TestOpenAIAccountSchedulerProjectionUsesLiveRuntimeSettingsFallbackOnReadFailure(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
 	repo := &projectionFailingSettingRepo{
@@ -354,7 +355,7 @@ func TestOpenAIAccountSchedulerProjection_ReturnsPolicyReadFailure(t *testing.T)
 	}
 	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
 
-	_, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
 		GroupID:        77,
 		Platform:       PlatformOpenAI,
 		RequestedModel: "gpt-5.4-mini",
@@ -362,8 +363,9 @@ func TestOpenAIAccountSchedulerProjection_ReturnsPolicyReadFailure(t *testing.T)
 		Accounts:       []*Account{projectionTestAccount(92)},
 	})
 
-	require.ErrorIs(t, err, repo.err)
-	require.Nil(t, openAIAdvancedSchedulerSettingCache.Load())
+	require.NoError(t, err)
+	require.Equal(t, "默认调度策略", projection.PolicyLabel)
+	require.NotNil(t, openAIAdvancedSchedulerSettingCache.Load())
 }
 
 func TestOpenAIAccountSchedulerProjection_DoesNotLabelMatchingQualityOrderAsStrategy(t *testing.T) {
@@ -470,6 +472,107 @@ func TestOpenAIAccountSchedulerProjection_PrioritizesChatGPTSubscriptionsWhenRun
 	require.Equal(t, []int64{subscription.ID, regular.ID}, projectionAccountIDs(projection.Candidates))
 }
 
+func TestOpenAIAccountSchedulerProjectionReusesLiveRuntimeSettingsCache(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+
+	repo := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
+		openAIAdvancedSchedulerSettingKey:                            "true",
+		SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled: "false",
+		SettingKeyOpenAIAdvancedSchedulerGroupOverrides:              `{"77":{"priority":{"profit":1,"ttft":1,"latency":1}}}`,
+	}}
+	cfg := &config.Config{}
+	service := &OpenAIGatewayService{
+		cfg:              cfg,
+		rateLimitService: &RateLimitService{settingService: NewSettingService(repo, cfg)},
+	}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+
+	// Prime the same snapshot used by live request scheduling.
+	live := service.openAIAdvancedSchedulerRuntimeSettings(context.Background())
+	require.False(t, live.subscriptionPriorityEnabled)
+
+	repo.values[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled] = "true"
+	repo.values[SettingKeyOpenAIAdvancedSchedulerGroupOverrides] = `{"77":{"priority":{"profit":1,"ttft":3,"latency":3}}}`
+
+	regular := projectionTestAccount(201)
+	subscription := projectionTestAccount(202)
+	subscription.Type = AccountTypeOAuth
+	subscription.Credentials = map[string]any{"plan_type": "plus"}
+	request := OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4-mini", SnapshotAt: now,
+		Accounts: []*Account{regular, subscription},
+		LoadMap: map[int64]*AccountLoadInfo{
+			regular.ID:      {AccountID: regular.ID},
+			subscription.ID: {AccountID: subscription.ID},
+		},
+	}
+
+	projection, err := scheduler.Project(context.Background(), request)
+	require.NoError(t, err)
+	require.Equal(t, "体验均衡", projection.PolicyLabel)
+	require.Equal(t, []int64{regular.ID, subscription.ID}, projectionAccountIDs(projection.Candidates))
+
+	cached, ok := openAIAdvancedSchedulerSettingCache.Load().(*cachedOpenAIAdvancedSchedulerSetting)
+	require.True(t, ok)
+	expired := *cached
+	expired.expiresAt = time.Now().Add(-time.Second).UnixNano()
+	openAIAdvancedSchedulerSettingCache.Store(&expired)
+
+	projection, err = scheduler.Project(context.Background(), request)
+	require.NoError(t, err)
+	require.Equal(t, "利润优先", projection.PolicyLabel)
+	require.Equal(t, []int64{subscription.ID, regular.ID}, projectionAccountIDs(projection.Candidates))
+}
+
+func TestOpenAIAccountSchedulerProjectionGrokQuotaEligibilityDoesNotRefreshCache(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.cfg = projectionGrokFreeQuotaTestConfig()
+	repo := &projectionRefreshObservingUsageLogRepo{refreshStarted: make(chan struct{})}
+	scheduler.service.usageLogRepo = repo
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	free := projectionTestAccount(203)
+	free.Platform = PlatformGrok
+	free.Type = AccountTypeOAuth
+	free.Credentials = map[string]any{"subscription_tier": "free"}
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformGrok, SnapshotAt: now, Accounts: []*Account{free},
+		LoadMap: map[int64]*AccountLoadInfo{free.ID: {AccountID: free.ID}},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "unknown", projection.ModelQuotaParity)
+	require.True(t, projectionCandidateByID(projection.Candidates, free.ID).Eligible)
+	require.Never(t, func() bool {
+		select {
+		case <-repo.refreshStarted:
+			return true
+		default:
+			return false
+		}
+	}, 150*time.Millisecond, 10*time.Millisecond)
+}
+
+func TestOpenAIAdvancedSchedulerRuntimeSettingsPreservesContextCancellation(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
+
+	repo := &projectionContextAwareSettingRepo{openAIAdvancedSchedulerSettingRepoStub: &openAIAdvancedSchedulerSettingRepoStub{}}
+	cfg := &config.Config{}
+	service := &OpenAIGatewayService{
+		cfg:              cfg,
+		rateLimitService: &RateLimitService{settingService: NewSettingService(repo, cfg)},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_ = service.openAIAdvancedSchedulerRuntimeSettings(ctx)
+	require.ErrorIs(t, repo.observedErr, context.Canceled)
+	require.Nil(t, openAIAdvancedSchedulerSettingCache.Load())
+}
+
 func TestOpenAIAccountSchedulerProjection_DoesNotCallEligibilityRemovalAStrategyMismatch(t *testing.T) {
 	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
 	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
@@ -501,6 +604,30 @@ func TestOpenAIAccountSchedulerProjection_LabelsEqualCustomBusinessPrioritiesAsB
 type projectionFailingSettingRepo struct {
 	*openAIAdvancedSchedulerSettingRepoStub
 	err error
+}
+
+type projectionRefreshObservingUsageLogRepo struct {
+	UsageLogRepository
+	refreshStarted chan struct{}
+	once           sync.Once
+}
+
+func (r *projectionRefreshObservingUsageLogRepo) GetAccountWindowStats(context.Context, int64, time.Time) (*usagestats.AccountStats, error) {
+	r.once.Do(func() { close(r.refreshStarted) })
+	return &usagestats.AccountStats{}, nil
+}
+
+type projectionContextAwareSettingRepo struct {
+	*openAIAdvancedSchedulerSettingRepoStub
+	observedErr error
+}
+
+func (r *projectionContextAwareSettingRepo) GetMultiple(ctx context.Context, _ []string) (map[string]string, error) {
+	r.observedErr = ctx.Err()
+	if r.observedErr != nil {
+		return nil, r.observedErr
+	}
+	return map[string]string{}, nil
 }
 
 func (r *projectionFailingSettingRepo) GetMultiple(context.Context, []string) (map[string]string, error) {

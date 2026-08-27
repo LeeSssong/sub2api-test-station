@@ -73,6 +73,10 @@ HTTP Responses、OpenAI-compatible Messages 和 Chat Completions 在调用 `Sele
 
 T80 是所有 OpenAI scheduler 路径共享的安全层。其 Redis key、Lua 判断、阈值、TTL、renew、fail-open、stalled 和 slow-session 语义仅以 `account_id` 为资源边界。分组既有的 `OpenAISchedulerGroupPolicy` 仍仅在安全过滤后决定候选排序、利润与体验取舍；不得增加 admission override，也不得将分组目标转换为安全门槛例外。调度日志必须能说明“安全门槛已统一应用；剩余排序差异来自既有 group policy”，但 T80 不新增分组质量状态或模型维度。
 
+这里的“所有分组”指所有当前接入同一 OpenAI scheduler 的具体分组，而不是把事故样本所在的 Pro 分组写成特殊路径。实现不得读取分组名称、套餐名称或人工约定的分组标签来决定是否启用保护；新增分组、修改分组策略或把同一账号加入多个分组后，仍自动经过同一个账号级安全层。不同分组可以因为自身的利润、首字、完整耗时、成本或公平性设置产生不同的候选顺序，但不能改变账号级准入上限、慢会话保护、租约释放和 Redis 退化语义。
+
+因此，本批次的底层验收不能只复现 Pro 事故：至少要用两个具有不同有效 scheduler policy 的分组验证同一账号的跨分组阻断、重选和释放；再用一个非 Pro 命名的分组验证相同路径。测试应优先使用策略 fixture 或 policy key，不使用 `pro`、`gpt-pro` 或具体分组名称作为生产逻辑条件。
+
 ### 共享准入 lease
 
 新增在 `OpenAISharedHealthStore` 同一 Redis namespace 下的 admission store 能力，不创建第二个 Redis client、第二个控制面或数据库表。键仅由 `account_id` 和固定 schema version 构成；lease ID 是逻辑 attempt ID 的不可逆哈希加随机后缀。Redis 不存储模型、请求体、用户 ID、session、API key 或完整 request ID。
@@ -211,16 +215,18 @@ type OpenAISharedAdmissionDecision struct {
 | 一笔真实流式请求被判为慢会话 | 写入账号级 slow-session guard；重启后的另一实例、其他模型和其他分组仍会跳过该账号。 |
 | 其他分组的轻量 probe 或快速请求成功 | 不解除尚未过期的账号级 guard。 |
 | 不同分组有不同现有 scheduler policy | 安全门槛完全相同且不可绕过；通过安全过滤后的排序差异在解释投影中归因于 existing group policy。 |
+| 新增或改名的普通分组接入同一 OpenAI scheduler | 无需新增代码分支即可获得同样的账号级 admission、slow-session guard、释放和 fail-open 语义。 |
+| 同一账号同时属于两个不同策略分组 | 一个分组产生的未首输出 lease 或 slow-session guard 对另一个分组同样生效；两个分组仍各自保留自己的候选排序策略。 |
 | 成功/失败回调收到已取消 request context | shared health/quality mutation 使用独立 bounded context 成功调用 store；正常 selection read 仍响应取消。 |
 | Redis 不可用 | 请求遵循原有 scheduler 和用户协议；记录不含敏感信息的 store-degraded event。 |
 | admission disabled 或 unknown shape | 无额外 Redis admission 操作，既有调度结果不变。 |
 
 ## 测试策略
 
-- 先写 service RED 测试：long lease 跨模型/跨分组阻止 normal/long、normal 上限、stalled 跨模型/跨分组阻止、first-output release、release 幂等、账号级 slow-session guard、全局安全门槛不能被 group policy 绕过、Redis fail-open。
+- 先写 service RED 测试：long lease 跨模型/跨分组阻止 normal/long、normal 上限、stalled 跨模型/跨分组阻止、first-output release、release 幂等、账号级 slow-session guard、全局安全门槛不能被任一 group policy 绕过、Redis fail-open；至少覆盖两个不同 policy fixture 和一个普通非 Pro 命名 fixture。
 - 先写 repository RED 测试（miniredis）：两个并发 acquire 只有一个胜者、过期清理、renew 延长 TTL、release 只能释放本 lease、脚本不包含原始 request/correlation 值。
 - 为共享健康写 context 添加 RED 测试：取消的 parent context 仍能让 mutation store 观察到可用 bounded context；`GetAccountModel` 在取消 context 下仍返回取消错误。
-- 为 handler/forward 添加 RED 测试：所有 OpenAI scheduler 分组的 HTTP stream 在最终 selection/抢槽后申请账号级 lease、首个 chunk 立即 release、失败和 failover 释放、跨模型/跨分组重选跳过 admission-rejected account；不为 `/count_tokens`、images 或 non-stream 创建 lease，也不出现 Pro、分组名或模型分支。
+- 为 handler/forward 添加 RED 测试：所有 OpenAI scheduler 分组的 HTTP stream 在最终 selection/抢槽后申请账号级 lease、首个 chunk 立即 release、失败和 failover 释放、跨模型/跨分组重选跳过 admission-rejected account；使用通用 group fixture 和静态扫描确认不为 `/count_tokens`、images 或 non-stream 创建 lease，也不出现 Pro、分组名或模型分支。
 - 直接相关验证包括 Go 定向 service/repository/handler 测试、`go test ./internal/service -run '^$'`、`go build ./cmd/server`、`gofmt`、`git diff --check`。不扩大为全仓压力/soak 或无关前端测试。
 - 发布后只做安全的线上专项验证：确认配置有效、结构化 admission 事件可见、Redis 状态可读、健康端点正常；不主动发送长上下文或付费上游探测。自然真实请求出现后再只读核对 lease/quality 事件和分组 TTFT 变化。
 

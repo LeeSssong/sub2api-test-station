@@ -273,6 +273,29 @@ func TestOpenAIAdmissionRejectDoesNotFailOpen(t *testing.T) {
 	require.Empty(t, store.admissions)
 }
 
+func TestOpenAIAdmissionSafetyIsIndependentOfGroupPolicy(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	store.admissionDecision = &OpenAISharedAdmissionDecision{Allowed: false, Reason: "slow_session_guard"}
+	svc := &OpenAIGatewayService{}
+	svc.SetOpenAISharedHealthStore(store)
+
+	policies := []OpenAISchedulerGroupPolicy{
+		{Mode: OpenAISchedulerGroupPolicyModePreset, Preset: OpenAISchedulerPresetPro, Values: openAISchedulerPresetValues(OpenAISchedulerPresetPro)},
+		{Mode: OpenAISchedulerGroupPolicyModePreset, Preset: OpenAISchedulerPresetSpecialOffer, Values: openAISchedulerPresetValues(OpenAISchedulerPresetSpecialOffer)},
+	}
+
+	for _, policy := range policies {
+		t.Run(string(policy.Preset), func(t *testing.T) {
+			// Policy still determines post-filter ranking elsewhere. Admission has no
+			// group or policy input, so it must reject the same guarded account.
+			release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
+			require.False(t, decision.Allowed)
+			require.Equal(t, "slow_session_guard", decision.Reason)
+			release()
+		})
+	}
+}
+
 func TestOpenAIAdmissionStoreFailureFailsOpen(t *testing.T) {
 	store := newOpenAISharedHealthStoreStub()
 	store.getErr = errors.New("redis unavailable")

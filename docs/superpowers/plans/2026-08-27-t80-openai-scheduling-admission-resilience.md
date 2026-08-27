@@ -18,6 +18,8 @@
 - Redis admission and slow-session mutations are Lua atomic and keyed by `account_id` only; long max is 1, normal max is 2, a long blocks both shapes, stalled pre-output is 30 seconds, lease TTL is 90 seconds, renewal is 25 seconds.
 - Delete the previously introduced `OpenAISharedRequestQualitySnapshot`, `GetRequestQuality`, `RecordRequestQuality`, quality maps, and account-model admission paths; T80 must not add a model dimension to safety, quality, or configuration contracts.
 - All OpenAI scheduler groups and models use the same safety threshold. Existing group policies influence only post-filter candidate ordering, profit, and experience tradeoffs; they cannot bypass admission or slow-session guards.
+- The implementation is policy-parametric: no production branch may depend on `Pro`, `GPT-Pro`, a group name, a package label, or a hard-coded group ID. Adding or renaming a group that uses the OpenAI scheduler must require no code change to receive the same account-level protection.
+- Direct tests must cover at least two different scheduler policy fixtures plus one ordinary non-Pro-named group fixture, proving shared account admission/guard behavior and policy-specific post-filter ordering independently.
 - Shared-store failures fail open, log only structured/sanitized fields, and never expose credentials or request bodies.
 - No database migration, API/UI contract change, GitHub Actions, root-ledger edits, push, merge to `main`, deployment, or production access from this worktree.
 - Direct validation is scoped Go tests, `go build ./cmd/server`, `gofmt`, and `git diff --check`; no full-suite, load, or soak run.
@@ -229,7 +231,7 @@ func TestHTTPFailoverReselectsAfterAdmissionReject(t *testing.T) {
 }
 ```
 
-Cover: releasing the just-acquired local slot on rejection, excluding the rejected account before reselect, all candidates rejected using the existing no-account behavior, Redis error selecting normally with `store_degraded`, a lease acquired in one group/model rejecting the same account in another group/model, a slow-session guard rejecting all groups/models, and existing profit-first/group policy code being unable to bypass the safety filter.
+Cover: releasing the just-acquired local slot on rejection, excluding the rejected account before reselect, all candidates rejected using the existing no-account behavior, Redis error selecting normally with `store_degraded`, a lease acquired in one group/model rejecting the same account in another group/model, a slow-session guard rejecting all groups/models, and at least two policy fixtures proving profit-first and experience-first/group policy code cannot bypass the same safety filter. Do not encode the test around the name of the incident group.
 
 - [x] **Step 2: Run focused scheduler tests and verify they fail**
 
@@ -279,7 +281,7 @@ func TestOpenAIHTTPStreamReleasesAdmissionAtFirstSemanticOutput(t *testing.T) {
 }
 ```
 
-Cover raw-byte boundary classification after body validation, no lease context for images/count-tokens/non-streaming endpoints, failure/cancel cleanup before first output, and only trusted real completed streams with first output triggering the account-only slow-session guard. Probes, failures, unknown shapes, and no-first-output cancellations must not trigger it.
+Cover raw-byte boundary classification after body validation, no lease context for images/count-tokens/non-streaming endpoints, failure/cancel cleanup before first output, and only trusted real completed streams with first output triggering the account-only slow-session guard. Probes, failures, unknown shapes, and no-first-output cancellations must not trigger it. Add a source-level guard that rejects Pro/group-name/model-specific safety branches.
 
 - [x] **Step 2: Run focused handler/service tests and verify they fail**
 

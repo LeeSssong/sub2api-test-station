@@ -2,7 +2,7 @@
 
 ## Status
 
-`REFRESH_REQUIRED`. Functional candidate `d466809686ae1a85362f78d2cb19127028677d35` is based on merge-base `b5e5c9efb4dd910b43be3adca808f3b2cdc39232`, while root `main` was `5cceb1643436bcd3a4a751b932376805c49df44a` when this handoff was prepared. Refresh this worktree from the current clean `main`, resolve only T80 conflicts, and rerun the direct commands below before requesting root review. Do not merge, push, deploy, or modify root project records from this worktree.
+`REFRESH_REQUIRED`. Functional candidate `f400bfc02ab0a0b0386a7414140beade682437fb` is based on an older root snapshot; current root `main` is `5cceb1643436bcd3a4a751b932376805c49df44a`. Refresh this worktree from the current clean `main`, resolve only T80 conflicts, and rerun the direct commands below before requesting root review. Do not merge, push, deploy, or modify root project records from this worktree.
 
 ## Scope Delivered
 
@@ -10,6 +10,7 @@
 - Chat Completions, Responses, and Messages acquire admission after scheduler selection and local-slot acquisition. Rejection releases the acquired slot, excludes the account, and reselects in the same handler loop.
 - Admission release is composed with the existing release closure and is triggered after the first semantic output is actually emitted. Chat, Responses, Messages, raw Chat Completions, Anthropic-to-Chat forwarding, and both Chat fallback paths propagate the callback.
 - The CC fallback scanner regression test proves its callback runs after `emit`, not before it.
+- Guarded streaming now releases only after the complete semantic SSE event flush succeeds; a flush failure leaves the admission held for terminal cleanup.
 - Slow-session guard writes require a trusted completed real stream with first output and threshold-exceeding TTFT; probes, failures, unknown/non-stream requests, and no-first-output cancellation do not create it.
 
 ## Changed Areas
@@ -23,7 +24,7 @@
 
 ## Direct Validation
 
-All commands passed on August 27, 2026 in `upstream/sub2api/backend`:
+The following commands passed on August 27, 2026 in `upstream/sub2api/backend` on candidate `f400bfc02` after the final flush-failure fix and the policy-independence regression test. Root must rerun them after refreshing this candidate onto current `main`:
 
 ```bash
 go test ./internal/config -run 'OpenAISharedHealth|OpenAIAdmission' -count=1
@@ -34,6 +35,17 @@ go test ./internal/service -run '^$' -count=1
 go build ./cmd/server
 git diff --check
 ```
+
+Additional direct checks passed:
+
+```bash
+go test ./internal/service -run 'TestOpenAIAdmissionSafetyIsIndependentOfGroupPolicy|TestOpenAIAdmissionRejectDoesNotFailOpen|TestOpenAISlowSessionGuardRequiresTrustedCompletedStream|TestOpenAIAdmissionFirstSemanticOutputReleasesIdempotently|TestHandleStreamingResponseGuardDoesNotNotifyWhenSemanticFlushFails' -count=1
+go build ./cmd/server
+gofmt -w internal/service/openai_account_scheduler_shared_health_test.go internal/service/openai_gateway_response_handling.go internal/service/openai_admission_first_output_wiring_test.go
+git diff --check
+```
+
+The policy regression uses two policy fixtures and verifies that the same guarded account is rejected identically; the admission API receives only `account_id` and request shape. No production safety branch reads a group name, Pro label, or model.
 
 The broader handler regex `OpenAI.*(Admission|FirstOutput|ChatCompletions|Responses|Messages)` has pre-existing failures on both this branch and root `main`: legacy assertions expect English messages while the current shared error mapper returns Chinese messages. Image-permission tests also reach an existing mock scheduling dependency gap. Those tests are outside T80's targeted admission paths and remain unchanged here.
 
@@ -50,3 +62,4 @@ The broader handler regex `OpenAI.*(Admission|FirstOutput|ChatCompletions|Respon
 - Redis errors intentionally fail open, so safety protection degrades while the shared store is unavailable.
 - T80 covers eligible HTTP text streams only; WebSocket and non-streaming paths retain current behavior.
 - Group-level quality attribution and the explanation that remaining ranking differences come from group policy stay deferred to frozen T76 after T80 is stable.
+- This candidate has not yet been refreshed onto current `main`; no merge, push, deployment, or production verification has occurred from this worktree.

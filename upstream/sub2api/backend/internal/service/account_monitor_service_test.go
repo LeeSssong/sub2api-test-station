@@ -3531,6 +3531,7 @@ func TestAccountMonitorRunAllProbesAPIKey401RecoveryAndClearsTempState(t *testin
 		accounts: []Account{{ID: 406, Status: StatusActive, Schedulable: true, Type: AccountTypeAPIKey, TempUnschedulableUntil: &until}},
 	}}
 	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
 	runtimeBlocker := &accountMonitorRuntimeBlockerStub{}
 	svc.SetAccountRuntimeBlocker(runtimeBlocker)
 	calls := 0

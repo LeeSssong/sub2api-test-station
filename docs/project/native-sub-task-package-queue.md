@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T85 Monitor V4 混合真实请求成功率与 P95 口径修正（2026-08-28）：** 状态 `DESIGNING`。用户确认的产品口径为：每个 5 分钟桶真实请求优先；若当前桶进入最后一分钟仍无真实请求，才使用同桶主动探测；真实请求与探测在同桶不混用；空桶不计失败、不进入分母；成功率为所选成功请求数/所选总请求数；TTFT P95 与总耗时 P95 分别从成功所选事件中按各自非空字段计算；不使用窗口外历史回退。实现复用原生 `usage_logs`、`ops_error_logs`、`account_monitor_results` 及 T83 空桶门禁，预计无迁移、无配置变更。规格书待用户审阅批准；当前尚未创建实现 worktree，未改运行时代码、未合并、未推送、未部署。
+
 **T82 调度健康状态与故障转移闭环 + T83 主动探测空桶准入（2026-08-28）：** 状态 `DONE`。根 `main@81df056d560aa50b535169f47c2c6b3c2d11af4d`、tree `0173f738891232e4cdf5744b27e55f4aee77a2ec` 已推送并通过维护蓝绿链发布主站；宿主记录 `/var/lib/sub2api/release-records/20260828T042218Z-production-2548695.json` 返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`。T82 提供余额/401/502/503/高延时的可恢复隔离、探活恢复、半开与滞回、最多两次安全跨账号切换、质量兜底账号和结构化调度观测；T83 使账号/渠道/模型主动探测只在当前 5 分钟真实请求空桶时准入，无 usage reader fail-closed。无迁移；直接相关 Go 测试、server build 和 diff-check 通过，0600 测试/发布证据分别为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-28-main-81df056d5-t82-t83-scheduler-health-active-probe.json`、`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-28-main-81df056d5-t82-t83-production-release.json`。主站 `/healthz`、`/readyz`、`/health` 均 200，随后验收站以相同 commit/tree 同步成功，六服务 healthy，`/admin/lab/health`、`/admin/lab/login` 均 200。
 
 ## 当前实现任务（2026-08-29）

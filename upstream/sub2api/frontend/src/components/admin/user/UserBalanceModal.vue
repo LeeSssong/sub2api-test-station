@@ -3,7 +3,7 @@
     <form v-if="user" id="balance-form" @submit.prevent="handleBalanceSubmit" class="space-y-5">
       <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
-        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentSpendableBalance') }}: {{ summary ? `$${formatBalance(Number(summary.total_quota_balance_usd))}` : '—' }}</p><p v-if="summary" class="text-xs text-gray-400">{{ t('admin.users.refundableCashBalance') }} ¥{{ summary.cash_balance_cny }} · {{ t('admin.users.paidQuota') }} ${{ summary.paid_quota_balance_usd }} · {{ t('admin.users.giftQuota') }} ${{ summary.gift_quota_balance_usd }}</p></div>
+        <div class="flex-1"><p class="font-medium text-gray-900 dark:text-gray-100">{{ user.email }}</p><p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.users.currentSpendableBalance') }}: {{ summary ? `$${formatBalance(Number(summary.total_quota_balance_usd))}` : '—' }}</p><p v-if="summary" class="text-xs text-gray-400">{{ t('admin.users.refundableCashBalance') }} ¥{{ formatBalance(refundableCashBalance) }} · {{ t('admin.users.paidQuota') }} ${{ summary.paid_quota_balance_usd }} · {{ t('admin.users.giftQuota') }} ${{ summary.gift_quota_balance_usd }}</p></div>
       </div>
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
@@ -30,7 +30,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI, type QuotaSummary } from '@/api/admin'
@@ -44,6 +44,11 @@ const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const a
 const submitting = ref(false); const summary = ref<QuotaSummary | null>(null); const form = reactive({ amount: 0, giftQuota: 0, notes: '' })
 watch(() => props.show, (v) => { if(v) { form.amount = 0; form.giftQuota = 0; form.notes = ''; summary.value = null; if (props.user) void loadSummary(props.user.id) } })
 const loadSummary = async (id: number) => { try { summary.value = await adminAPI.users.getUserQuotaSummary(id) } catch { summary.value = null } }
+
+const refundableCashBalance = computed(() => {
+  if (!summary.value) return 0
+  return Math.max(0, Math.min(Number(summary.value.cash_balance_cny), Number(summary.value.paid_quota_balance_usd)))
+})
 
 // 格式化余额：显示完整精度，去除尾部多余的0
 const formatBalance = (value: number) => {
@@ -60,7 +65,7 @@ const formatBalance = (value: number) => {
 // 填入全部余额
 const fillAllBalance = () => {
   if (summary.value) {
-    form.amount = Math.min(Number(summary.value.cash_balance_cny), Number(summary.value.paid_quota_balance_usd))
+    form.amount = refundableCashBalance.value
   }
 }
 

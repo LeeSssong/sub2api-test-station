@@ -124,4 +124,25 @@ describe('UserBalanceModal', () => {
     expect(wrapper.text()).toContain('admin.users.paidQuota')
     expect(wrapper.text()).toContain('admin.users.giftQuota')
   })
+
+  it('shows only the refundable cash that is backed by non-negative paid quota', async () => {
+    getUserQuotaSummary.mockResolvedValue({
+      cash_balance_cny: '50.00000000',
+      paid_quota_balance_usd: '-0.01097834',
+      gift_quota_balance_usd: '0.00000000',
+      total_quota_balance_usd: '-0.01097834',
+    })
+
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'subtract' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('refundableCashBalance')
+    expect(wrapper.text()).toContain('¥0.00')
+    expect(wrapper.text()).not.toContain('¥50.00000000')
+  })
 })

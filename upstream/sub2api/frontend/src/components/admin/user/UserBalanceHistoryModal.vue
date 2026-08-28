@@ -42,7 +42,7 @@
             <template v-else>&nbsp;</template>
           </p>
           <p class="ml-4 flex-shrink-0 text-xs text-gray-500 dark:text-dark-400">
-            {{ t('admin.users.refundableCashBalance') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">{{ quotaSummary ? `¥${Number(quotaSummary.cash_balance_cny).toFixed(2)}` : '—' }}</span>
+            {{ t('admin.users.refundableCashBalance') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">{{ quotaSummary ? `¥${formatBalance(refundableCashBalance)}` : '—' }}</span>
           </p>
         </div>
       </div>
@@ -215,6 +215,11 @@ const quotaLoading = ref(false)
 const quotaTotal = ref(0)
 const quotaPage = ref(1)
 const quotaSummary = ref<QuotaSummary | null>(null)
+
+const refundableCashBalance = computed(() => {
+  if (!quotaSummary.value) return 0
+  return Math.max(0, Math.min(Number(quotaSummary.value.cash_balance_cny), Number(quotaSummary.value.paid_quota_balance_usd)))
+})
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
 

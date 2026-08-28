@@ -50,4 +50,24 @@ describe('UserBalanceHistoryModal', () => {
     expect(wrapper.text()).toContain('$18.8468904')
     expect(wrapper.text()).not.toContain('$0.33')
   })
+
+  it('caps refundable cash at non-negative paid quota', async () => {
+    getUserQuotaSummary.mockResolvedValue({
+      cash_balance_cny: '50.00000000',
+      paid_quota_balance_usd: '-0.01097834',
+      gift_quota_balance_usd: '0.00000000',
+      total_quota_balance_usd: '-0.01097834',
+    })
+
+    const wrapper = shallowMount(UserBalanceHistoryModal, {
+      props: { show: false, user },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('¥0.00')
+    expect(wrapper.text()).not.toContain('¥50.00')
+  })
 })

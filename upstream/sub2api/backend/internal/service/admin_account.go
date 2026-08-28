@@ -411,6 +411,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
+	delete(accountExtra, ActiveProbeEnabledExtraKey)
 	account := &Account{
 		Name:        input.Name,
 		Notes:       normalizeAccountNotes(input.Notes),
@@ -467,6 +468,12 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
 		account.RateMultiplier = input.RateMultiplier
+	}
+	if input.ActiveProbeEnabled != nil {
+		if account.Extra == nil {
+			account.Extra = make(map[string]any)
+		}
+		account.Extra[ActiveProbeEnabledExtraKey] = *input.ActiveProbeEnabled
 	}
 	if input.LoadFactor != nil && *input.LoadFactor > 0 {
 		if *input.LoadFactor > 10000 {
@@ -633,7 +640,19 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
 	requestedProbeEnabledUpdate := input.ProbeEnabled
 	requestedRateSyncEnabledUpdate := input.RateSyncEnabled
+	requestedActiveProbeEnabledUpdate := input.ActiveProbeEnabled
 	if input.Extra != nil {
+		if raw, ok := normalizedExtra[ActiveProbeEnabledExtraKey]; ok {
+			enabled, valid := raw.(bool)
+			if !valid {
+				return nil, infraerrors.BadRequest("INVALID_ACTIVE_PROBE_ENABLED", "active_probe_enabled must be a boolean")
+			}
+			if requestedActiveProbeEnabledUpdate != nil && *requestedActiveProbeEnabledUpdate != enabled {
+				return nil, infraerrors.BadRequest("CONFLICTING_ACTIVE_PROBE_ENABLED", "conflicting active_probe_enabled values")
+			}
+			requestedActiveProbeEnabledUpdate = &enabled
+		}
+		delete(normalizedExtra, ActiveProbeEnabledExtraKey)
 		requestedProbeEnabled, hasRequestedProbeEnabled := normalizedExtra[UpstreamBillingProbeEnabledExtraKey]
 		if hasRequestedProbeEnabled {
 			enabled, ok := requestedProbeEnabled.(bool)
@@ -665,6 +684,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
+			ActiveProbeEnabledExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
@@ -712,11 +732,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if account.Extra == nil && (requestedProbeEnabledUpdate != nil || requestedRateSyncEnabledUpdate != nil) {
 		account.Extra = make(map[string]any)
 	}
+	if account.Extra == nil && requestedActiveProbeEnabledUpdate != nil {
+		account.Extra = make(map[string]any)
+	}
 	if requestedProbeEnabledUpdate != nil {
 		account.Extra[UpstreamBillingProbeEnabledExtraKey] = *requestedProbeEnabledUpdate
 	}
 	if requestedRateSyncEnabledUpdate != nil {
 		account.Extra[UpstreamBillingRateSyncEnabledExtraKey] = *requestedRateSyncEnabledUpdate
+	}
+	if requestedActiveProbeEnabledUpdate != nil {
+		account.Extra[ActiveProbeEnabledExtraKey] = *requestedActiveProbeEnabledUpdate
 	}
 	// 影子代理恒继承母账号(由 propagateProxyToShadows 同步),不接受独立编辑——外审 B/P1;
 	// 否则要等母账号下次改 proxy 才被覆盖,期间影子会出现"有时继承、有时独立"的漂移。
@@ -958,7 +984,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || input.ProbeEnabled != nil || input.ActiveProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1079,6 +1105,13 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		Credentials:  input.Credentials,
 		Extra:        input.Extra,
 		ProbeEnabled: input.ProbeEnabled,
+		ActiveProbeEnabled: input.ActiveProbeEnabled,
+	}
+	if input.ActiveProbeEnabled != nil {
+		if repoUpdates.Extra == nil {
+			repoUpdates.Extra = make(map[string]any)
+		}
+		repoUpdates.Extra[ActiveProbeEnabledExtraKey] = *input.ActiveProbeEnabled
 	}
 	if input.ProbeEnabled != nil {
 		if repoUpdates.Extra == nil {

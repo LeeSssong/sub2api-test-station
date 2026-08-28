@@ -87,6 +87,19 @@ type Account struct {
 	headerOverrideCacheRawSig         uint64
 }
 
+// ActiveProbeEnabledExtraKey controls automatic account connection probes and
+// scheduled model detection. Missing values preserve the historical default of
+// enabled; this key never changes user-request scheduling.
+const ActiveProbeEnabledExtraKey = "active_probe_enabled"
+
+func (a *Account) ActiveProbeEnabled() bool {
+	if a == nil || a.Extra == nil {
+		return true
+	}
+	value, ok := a.Extra[ActiveProbeEnabledExtraKey].(bool)
+	return !ok || value
+}
+
 type OpenAIEndpointCapability string
 
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"

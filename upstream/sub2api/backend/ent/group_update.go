@@ -209,6 +209,20 @@ func (_u *GroupUpdate) SetNillableStatus(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetActiveProbeEnabled sets the "active_probe_enabled" field.
+func (_u *GroupUpdate) SetActiveProbeEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetActiveProbeEnabled(v)
+	return _u
+}
+
+// SetNillableActiveProbeEnabled sets the "active_probe_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableActiveProbeEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetActiveProbeEnabled(*v)
+	}
+	return _u
+}
+
 // SetPlatform sets the "platform" field.
 func (_u *GroupUpdate) SetPlatform(v string) *GroupUpdate {
 	_u.mutation.SetPlatform(v)
@@ -1547,6 +1561,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.ActiveProbeEnabled(); ok {
+		_spec.SetField(group.FieldActiveProbeEnabled, field.TypeBool, value)
+	}
 	if _u.mutation.DuplicateOperationIDCleared() {
 		_spec.ClearField(group.FieldDuplicateOperationID, field.TypeString)
 	}
@@ -2326,6 +2343,20 @@ func (_u *GroupUpdateOne) SetStatus(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableStatus(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetStatus(*v)
+	}
+	return _u
+}
+
+// SetActiveProbeEnabled sets the "active_probe_enabled" field.
+func (_u *GroupUpdateOne) SetActiveProbeEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetActiveProbeEnabled(v)
+	return _u
+}
+
+// SetNillableActiveProbeEnabled sets the "active_probe_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableActiveProbeEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetActiveProbeEnabled(*v)
 	}
 	return _u
 }
@@ -3697,6 +3728,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ActiveProbeEnabled(); ok {
+		_spec.SetField(group.FieldActiveProbeEnabled, field.TypeBool, value)
 	}
 	if _u.mutation.DuplicateOperationIDCleared() {
 		_spec.ClearField(group.FieldDuplicateOperationID, field.TypeString)

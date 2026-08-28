@@ -2779,6 +2779,17 @@
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
+      <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.activeProbe.title') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.activeProbe.hint') }}</p>
+        </div>
+        <Toggle
+          v-model="activeProbeEnabled"
+          data-testid="active-probe-enabled"
+          :aria-label="t('admin.accounts.activeProbe.title')"
+        />
+      </div>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -3773,6 +3784,7 @@ const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
 const upstreamBillingAutoProbeEnabled = ref(true)
 const upstreamBillingRateSyncEnabled = ref(true)
+const activeProbeEnabled = ref(true)
 
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
@@ -4650,6 +4662,11 @@ const withAntigravityConfirmFlag = (payload: CreateAccountRequest): CreateAccoun
   return cloned
 }
 
+const withActiveProbeFlag = (payload: CreateAccountRequest): CreateAccountRequest => ({
+  ...payload,
+  active_probe_enabled: activeProbeEnabled.value
+})
+
 const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<void>): Promise<boolean> => {
   if (!needsMixedChannelCheck(form.platform)) {
     return true
@@ -4683,7 +4700,9 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    const account = await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
+    const account = await adminAPI.accounts.create(
+      withAntigravityConfirmFlag(withActiveProbeFlag(payload))
+    )
     if (
       payload.type === 'apikey' &&
       payload.upstream_billing_probe_enabled === true
@@ -4735,6 +4754,7 @@ const resetForm = () => {
   apiKeyValue.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   upstreamBillingRateSyncEnabled.value = true
+  activeProbeEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -5443,7 +5463,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await adminAPI.accounts.create(withActiveProbeFlag({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -5458,7 +5478,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           group_ids: form.group_ids,
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
-        })
+        }))
         successCount++
       } catch (error: any) {
         failedCount++
@@ -5620,7 +5640,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await adminAPI.accounts.create(withActiveProbeFlag({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -5635,7 +5655,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           group_ids: form.group_ids,
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
-        })
+        }))
         successCount++
       } catch (error: any) {
         failedCount++
@@ -5719,7 +5739,7 @@ const handleOpenAIExchange = async (authCode: string) => {
     }
 
     if (shouldCreateOpenAI) {
-      await adminAPI.accounts.create({
+      await adminAPI.accounts.create(withActiveProbeFlag({
         name: form.name,
         notes: form.notes,
         platform: 'openai',
@@ -5734,7 +5754,7 @@ const handleOpenAIExchange = async (authCode: string) => {
         group_ids: form.group_ids,
         expires_at: form.expires_at,
         auto_pause_on_expired: autoPauseOnExpired.value
-      })
+      }))
       appStore.showSuccess(t('admin.accounts.accountCreated'))
     }
 
@@ -5841,7 +5861,8 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
       extra,
-      update_existing: true
+      update_existing: true,
+      active_probe_enabled: activeProbeEnabled.value
     })
 
     const successCount = result.created + result.updated
@@ -5918,7 +5939,8 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra
+      extra,
+      active_probe_enabled: activeProbeEnabled.value
     })
 
     appStore.showSuccess(t('admin.accounts.messages.accountCreated'))
@@ -6000,7 +6022,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (shouldCreateOpenAI) {
-          await adminAPI.accounts.create({
+          await adminAPI.accounts.create(withActiveProbeFlag({
             name: accountName,
             notes: form.notes,
             platform: 'openai',
@@ -6015,7 +6037,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
             group_ids: form.group_ids,
             expires_at: form.expires_at,
             auto_pause_on_expired: autoPauseOnExpired.value
-          })
+          }))
         }
 
         successCount++
@@ -6099,7 +6121,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
         const accountName = refreshTokens.length > 1 ? `${form.name} #${i + 1}` : form.name
 
         // Note: Antigravity doesn't have buildExtraInfo, so we pass empty extra or rely on credentials
-        const createPayload = withAntigravityConfirmFlag({
+        const createPayload = withAntigravityConfirmFlag(withActiveProbeFlag({
           name: accountName,
           notes: form.notes,
           platform: 'antigravity',
@@ -6114,7 +6136,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           group_ids: form.group_ids,
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
-        })
+        }))
         await adminAPI.accounts.create(createPayload)
         successCount++
       } catch (error: any) {
@@ -6480,7 +6502,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           credentials.temp_unschedulable_rules = tempUnschedPayload
         }
 
-        await adminAPI.accounts.create({
+        await adminAPI.accounts.create(withActiveProbeFlag({
           name: accountName,
           notes: form.notes,
           platform: form.platform,
@@ -6495,7 +6517,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           group_ids: form.group_ids,
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
-        })
+        }))
 
         successCount++
       } catch (error: any) {

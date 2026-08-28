@@ -29,6 +29,9 @@ type Group struct {
 	PeakRateMultiplier float64
 	IsExclusive        bool
 	Status             string
+	// ActiveProbeEnabled controls automatic probes for accounts in this group.
+	// It defaults to true for backward compatibility.
+	ActiveProbeEnabled bool
 	Hydrated           bool // indicates the group was loaded from a trusted repository source
 	// DuplicateOperationID is internal persistence metadata used only to recover
 	// an already committed one-click copy. It must never be mapped to API DTOs.

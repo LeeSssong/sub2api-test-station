@@ -607,6 +607,28 @@
           />
           <p class="input-hint">{{ t("admin.groups.rateMultiplierHint") }}</p>
         </div>
+        <div class="flex items-center justify-between gap-4 border-t pt-4 dark:border-dark-600">
+          <div>
+            <label class="input-label mb-0">{{ t("admin.groups.form.activeProbe") }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.form.activeProbeHint") }}</p>
+          </div>
+          <button
+            type="button"
+            data-testid="create-group-active-probe"
+            @click="createForm.active_probe_enabled = !createForm.active_probe_enabled"
+            :class="[
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              createForm.active_probe_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+            ]"
+          >
+            <span
+              :class="[
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                createForm.active_probe_enabled ? 'translate-x-6' : 'translate-x-1',
+              ]"
+            />
+          </button>
+        </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
           <input
@@ -2330,6 +2352,28 @@
             class="input"
             data-tour="group-form-multiplier"
           />
+        </div>
+        <div class="flex items-center justify-between gap-4 border-t pt-4 dark:border-dark-600">
+          <div>
+            <label class="input-label mb-0">{{ t("admin.groups.form.activeProbe") }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.form.activeProbeHint") }}</p>
+          </div>
+          <button
+            type="button"
+            data-testid="edit-group-active-probe"
+            @click="editForm.active_probe_enabled = !editForm.active_probe_enabled"
+            :class="[
+              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
+              editForm.active_probe_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+            ]"
+          >
+            <span
+              :class="[
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                editForm.active_probe_enabled ? 'translate-x-6' : 'translate-x-1',
+              ]"
+            />
+          </button>
         </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
@@ -5023,6 +5067,7 @@ const createForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  active_probe_enabled: true,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
   daily_limit_usd: null as number | null,
@@ -5383,6 +5428,7 @@ const editForm = reactive({
   description: "",
   platform: "anthropic" as GroupPlatform,
   rate_multiplier: 1.0,
+  active_probe_enabled: true,
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
@@ -5843,6 +5889,7 @@ const closeCreateModal = () => {
   createForm.description = "";
   createForm.platform = "anthropic";
   createForm.rate_multiplier = 1.0;
+  createForm.active_probe_enabled = true;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
   createForm.daily_limit_usd = null;
@@ -6085,6 +6132,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.description = group.description || "";
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
+  editForm.active_probe_enabled = group.active_probe_enabled !== false;
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";

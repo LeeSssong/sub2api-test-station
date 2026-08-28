@@ -411,6 +411,61 @@ func shouldEscalateDetection(recent []AccountModelDetectionRun) (bool, string) {
 	return false, ""
 }
 
+// isSuspiciousDetection returns true only for completed runs carrying an
+// explicit model-conflict signal. Transport failures, detector failures,
+// insufficient evidence, and an unqualified abnormal label are not enough to
+// spend a higher-tier probe budget.
+func isSuspiciousDetection(run AccountModelDetectionRun) bool {
+	if run.FinishedAt == nil || run.Status == AccountModelDetectionStatusFailed {
+		return false
+	}
+	if run.JuiceStatus == "mismatch" || run.FingerprintStatus == "mismatch" || run.FingerprintStatus == "strong_conflict" {
+		return true
+	}
+	return strings.TrimSpace(run.FingerprintCandidate) != "" &&
+		strings.TrimSpace(run.ClaimedModel) != "" &&
+		strings.TrimSpace(run.FingerprintCandidate) != strings.TrimSpace(run.ClaimedModel)
+}
+
+// nextScheduledDetectionProfile derives the profile for the next natural
+// six-hour slot from the most recent completed scheduled monitor run.
+func nextScheduledDetectionProfile(recent []AccountModelDetectionRun) string {
+	for _, run := range recent {
+		if run.FinishedAt == nil {
+			continue
+		}
+		if run.Mode != "" && run.Mode != AccountModelDetectionModeMonitor {
+			continue
+		}
+		if run.TriggerKind != "" && run.TriggerKind != "scheduled" {
+			continue
+		}
+		profile := run.Profile
+		if profile == "" || profile == AccountModelDetectionProfileUnknown {
+			profile = AccountModelDetectionProfileLow
+		}
+		if profile == AccountModelDetectionProfileHigh {
+			if run.Status != AccountModelDetectionStatusFailed {
+				return AccountModelDetectionProfileLow
+			}
+			return AccountModelDetectionProfileHigh
+		}
+		if isSuspiciousDetection(run) {
+			if profile == AccountModelDetectionProfileLow {
+				return AccountModelDetectionProfileMedium
+			}
+			if profile == AccountModelDetectionProfileMedium {
+				return AccountModelDetectionProfileHigh
+			}
+		}
+		if run.Status == AccountModelDetectionStatusNormal {
+			return AccountModelDetectionProfileLow
+		}
+		return profile
+	}
+	return AccountModelDetectionProfileLow
+}
+
 func (s *AccountModelDetectionService) EnqueueEscalationHigh(ctx context.Context, accountID int64, reason string) (AccountModelDetectionRun, bool, error) {
 	if s == nil || s.repo == nil || s.accounts == nil {
 		return AccountModelDetectionRun{}, false, errors.New("account model detection is unavailable")
@@ -474,7 +529,7 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 	completed := 0
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || s.usage == nil {
+		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || !account.ActiveProbeEnabled() || !accountActiveProbeEnabledByGroups(account) || s.usage == nil {
 			continue
 		}
 		bucketStart, bucketEnd := currentActiveProbeBucket(now)
@@ -486,8 +541,16 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 		if err != nil || models.ModelDetectionModel == "" {
 			continue
 		}
+		recent, recentErr := s.repo.ListRecent(ctx, account.ID, 20, "", "", "", "", "", "")
+		if recentErr != nil {
+			continue
+		}
+		profile := nextScheduledDetectionProfile(recent.Items)
 		slotCopy := slot
-		run := newAccountModelDetectionRun(account.ID, models.ModelDetectionModel, AccountModelDetectionProfileLow, AccountModelDetectionModeMonitor, AccountModelDetectionTriggerScheduled)
+		run := newAccountModelDetectionRun(account.ID, models.ModelDetectionModel, profile, AccountModelDetectionModeMonitor, AccountModelDetectionTriggerScheduled)
+		if profile != AccountModelDetectionProfileLow {
+			run.TriggerReason = AccountModelDetectionTriggerSuspicious
+		}
 		run.SlotKey = &slotCopy
 		run.TriggerKind = "scheduled"
 		run.QueuedAt = now.UTC()
@@ -618,6 +681,14 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 	if strings.TrimSpace(apiKey) == "" {
 		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "missing_api_key", "检测前未发现 API Key")
 		return
+	}
+	if run.TriggerKind == "scheduled" && run.Mode == AccountModelDetectionModeMonitor && s.usage != nil {
+		bucketStart, bucketEnd := currentActiveProbeBucket(s.now())
+		used, usageErr := s.usage.HasAccountUsageInWindow(ctx, account.ID, bucketStart, bucketEnd)
+		if usageErr != nil || used {
+			_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusInsufficient, Profile: run.Profile, PlannedRequests: run.PlannedRequests, EvidenceState: AccountModelDetectionEvidenceInsufficient}, "", "当前 5 分钟桶有真实请求，已跳过主动检测")
+			return
+		}
 	}
 	baseURL := account.GetBaseURL()
 	response, err := s.sidecar.Detect(ctx, AccountModelDetectionRequest{RunID: run.ID, DeclaredModel: run.ClaimedModel, RequestModel: run.ModelID, APIKey: apiKey, BaseURL: baseURL, Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason})

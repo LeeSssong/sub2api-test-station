@@ -289,6 +289,10 @@ export default {
         registrationLastAt: 'Last successful update: {value}',
         manualEditMayBeOverwritten: 'This rate was registered from NewAPI request logs; manual changes may be overwritten by the next successful daily refresh.'
       },
+      activeProbe: {
+        title: 'Automatic active probes',
+        hint: 'When enabled, this account may receive automatic connection probes and scheduled model detection. Each probe runs only during an empty 5-minute real-traffic bucket; failures are not retried.'
+      },
       allPrivacyModes: 'All Privacy States',
       privacyUnset: 'Unset',
       privacyTrainingOff: 'Training data sharing disabled',

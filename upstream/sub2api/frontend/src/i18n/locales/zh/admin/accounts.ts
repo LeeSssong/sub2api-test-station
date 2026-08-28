@@ -235,6 +235,10 @@ export default {
         registrationLastAt: '最近成功更新：{value}',
         manualEditMayBeOverwritten: '该倍率由 NewAPI 请求日志自动登记；手动修改会在下一次每日成功刷新时被覆盖。'
       },
+      activeProbe: {
+        title: '自动主动探测',
+        hint: '开启后账号可参与自动连接探测和定时模型检测；仅在当前 5 分钟真实请求为空时执行，探测失败不重试。'
+      },
       allPrivacyModes: '全部Privacy状态',
       privacyUnset: '未设置',
       privacyTrainingOff: '已关闭训练数据共享',

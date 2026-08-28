@@ -2,6 +2,10 @@
 
 **T82 调度健康状态与故障转移闭环 + T83 主动探测空桶准入（2026-08-28）：** 状态 `DONE`。根 `main@81df056d560aa50b535169f47c2c6b3c2d11af4d`、tree `0173f738891232e4cdf5744b27e55f4aee77a2ec` 已推送并通过维护蓝绿链发布主站；宿主记录 `/var/lib/sub2api/release-records/20260828T042218Z-production-2548695.json` 返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`。T82 提供余额/401/502/503/高延时的可恢复隔离、探活恢复、半开与滞回、最多两次安全跨账号切换、质量兜底账号和结构化调度观测；T83 使账号/渠道/模型主动探测只在当前 5 分钟真实请求空桶时准入，无 usage reader fail-closed。无迁移；直接相关 Go 测试、server build 和 diff-check 通过，0600 测试/发布证据分别为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-28-main-81df056d5-t82-t83-scheduler-health-active-probe.json`、`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-28-main-81df056d5-t82-t83-production-release.json`。主站 `/healthz`、`/readyz`、`/health` 均 200，随后验收站以相同 commit/tree 同步成功，六服务 healthy，`/admin/lab/health`、`/admin/lab/login` 均 200。
 
+## 当前实现任务（2026-08-29）
+
+- **T85 Monitor V4 真实请求成功率与探测兜底去重**：状态 `DESIGNING`。目标是只展示真实请求成功率，保持 5 分钟桶真实请求优先，仅在桶最后一分钟无真实请求时以主动探测兜底；每个分组/桶的探测兜底只计一个逻辑请求，同轮跨账号尝试不重复扩大分母，已知余额不足/临时不可调度账号不再重复探测。保留当前真实成功定义、真实失败计入分母、成功请求 TTFT/总耗时 P95 和空桶排除。当前仅进行规格与计划，尚未改运行时代码、推送、部署或生产数据写入。
+
 **T76-v2 主站发布与双站代码对账（2026-08-27）：** 用户确认验收完成。`main@f0848b17a7d6861a96c837f7a26234a080e313b6` 已通过生产蓝绿链发布并验证健康；验收站随后核对同一 source commit/tree，六服务 healthy。两站源码身份一致；仅应用二进制因构建时间注入不同而不字节相同，model-detector 与资源哈希一致。T69/T76/T80/T81 均已部署并验证生效，主站与验收站无需进一步同步。
 
 ## 解冻登记（2026-08-27）

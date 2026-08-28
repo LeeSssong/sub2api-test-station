@@ -3166,6 +3166,7 @@ func TestAccountMonitorServiceRunAllRefreshesDueMultiplierWithoutFailingConnecti
 	}}}
 	multiplier := &accountMonitorMultiplierStub{err: errors.New("measurement failed")}
 	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, multiplier)
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
 
 	completed, err := service.RunAll(context.Background(), 1)
 	if err != nil {
@@ -3215,6 +3216,7 @@ func TestAccountMonitorServiceRunAllBoundsBlockingProbe(t *testing.T) {
 		Platform:    PlatformOpenAI,
 	}}}
 	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
 	service.probeTimeout = 20 * time.Millisecond
 	service.probeConnection = func(
 		ctx context.Context,
@@ -3256,6 +3258,7 @@ func TestAccountMonitorServiceConcurrentRunAllJoinsInFlightRun(t *testing.T) {
 		Platform:    PlatformOpenAI,
 	}}}
 	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var probeCalls int
@@ -3322,6 +3325,7 @@ func TestAccountMonitorServiceJoiningRunAllHonorsCallerCancellation(t *testing.T
 		Platform:    PlatformOpenAI,
 	}}}
 	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	service.probeConnection = func(
@@ -3366,6 +3370,7 @@ func TestAccountMonitorServiceRunOneWaitsForInFlightRunAll(t *testing.T) {
 		Platform:    PlatformOpenAI,
 	}}}
 	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, nil)
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	var probeCalls int
@@ -3488,7 +3493,7 @@ func TestAccountMonitorPausedProbeProjectionScoresRanksAndKeepsNoEvidencePending
 	}
 }
 
-func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *testing.T) {
+func TestAccountMonitorRunAllSkipsUnschedulableAccounts(t *testing.T) {
 	makeService := func(latest AccountMonitorLatest) (*AccountMonitorService, *accountMonitorRepoStub, *int) {
 		repo := &accountMonitorRepoStub{
 			latest:   map[int64]AccountMonitorLatest{405: latest},
@@ -3505,20 +3510,68 @@ func TestAccountMonitorRunAllContinuesClosedSuccessButStopsClosedHTTPError(t *te
 	}
 
 	service, repo, calls := makeService(AccountMonitorLatest{Status: "success", CheckedAt: time.Now().UTC()})
-	if _, err := service.RunAll(context.Background(), 1); err != nil {
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	if completed, err := service.RunAll(context.Background(), 1); err != nil {
 		t.Fatal(err)
+	} else if completed != 0 {
+		t.Fatalf("closed success run completed=%d, want no probe", completed)
 	}
-	if *calls != 1 || len(repo.results) != 1 {
-		t.Fatalf("closed success run = calls %d results %d, want one physical probe", *calls, len(repo.results))
+	if *calls != 0 || len(repo.results) != 0 {
+		t.Fatalf("closed success run = calls %d results %d, want skipped", *calls, len(repo.results))
 	}
 
 	service, repo, calls = makeService(AccountMonitorLatest{Status: "failed", HTTPStatus: intPtr(http.StatusBadGateway), CheckedAt: time.Now().UTC()})
-	if _, err := service.RunAll(context.Background(), 1); err != nil {
+	service.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	if completed, err := service.RunAll(context.Background(), 1); err != nil {
 		t.Fatal(err)
+	} else if completed != 0 {
+		t.Fatalf("closed HTTP error run completed=%d, want no probe", completed)
 	}
 	if *calls != 0 || len(repo.results) != 0 {
 		t.Fatalf("closed HTTP error run = calls %d results %d, want stopped", *calls, len(repo.results))
 	}
+}
+
+func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
+	account := Account{ID: 407, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI}
+	newService := func(reader ActiveProbeUsageWindowReader) (*AccountMonitorService, *accountMonitorRepoStub, *int) {
+		repo := &accountMonitorRepoStub{}
+		svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil)
+		svc.SetActiveProbeUsageReader(reader)
+		calls := 0
+		svc.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+			calls++
+			return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+		}
+		return svc, repo, &calls
+	}
+
+	t.Run("no reader fails closed", func(t *testing.T) {
+		svc, repo, calls := newService(nil)
+		completed, err := svc.RunAll(context.Background(), 1)
+		require.NoError(t, err)
+		require.Equal(t, 0, completed)
+		require.Zero(t, *calls)
+		require.Empty(t, repo.results)
+	})
+
+	t.Run("real request in bucket skips probe", func(t *testing.T) {
+		svc, repo, calls := newService(&modelDetectionUsageStub{accountUsed: true})
+		completed, err := svc.RunAll(context.Background(), 1)
+		require.NoError(t, err)
+		require.Equal(t, 0, completed)
+		require.Zero(t, *calls)
+		require.Empty(t, repo.results)
+	})
+
+	t.Run("empty bucket permits one probe", func(t *testing.T) {
+		svc, repo, calls := newService(&modelDetectionUsageStub{})
+		completed, err := svc.RunAll(context.Background(), 1)
+		require.NoError(t, err)
+		require.Equal(t, 1, completed)
+		require.Equal(t, 1, *calls)
+		require.Len(t, repo.results, 1)
+	})
 }
 
 func TestAccountMonitorRunAllProbesAPIKey401RecoveryAndClearsTempState(t *testing.T) {

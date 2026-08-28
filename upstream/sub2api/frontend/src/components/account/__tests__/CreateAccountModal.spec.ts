@@ -190,6 +190,19 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.upstream_billing_probe_enabled).toBe(true)
   })
 
+  it('enables active probes by default and persists an explicit disabled state', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'admin.accounts.claudeConsole')
+    expect(wrapper.get('[data-testid="active-probe-enabled"]').attributes('aria-checked')).toBe('true')
+    await wrapper.get('[data-testid="active-probe-enabled"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('anthropic account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock.mock.calls[0]?.[0]?.active_probe_enabled).toBe(false)
+  })
+
   it('creates OpenAI API key accounts with official rate sync enabled by default', async () => {
     const wrapper = await submitApiKeyAccount('openai')
 
@@ -338,6 +351,18 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     expect(createOpenAICodexPATMock).toHaveBeenCalledTimes(1)
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+  })
+
+  it('persists the active probe toggle for Codex PAT imports', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await wrapper.get('[data-testid="active-probe-enabled"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Codex import')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await wrapper.get('[data-testid="import-codex-pat"]').trigger('click')
+    await flushPromises()
+
+    expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.active_probe_enabled).toBe(false)
   })
 
   it('sends explicit true for Codex session import after the toggle is enabled', async () => {

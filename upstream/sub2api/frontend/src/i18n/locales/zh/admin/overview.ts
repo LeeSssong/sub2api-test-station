@@ -841,6 +841,8 @@ export default {
         descriptionPlaceholder: '请输入描述（可选）',
         rateMultiplierLabel: '费率倍数',
         rateMultiplierHint: '1.0 = 标准费率，0.5 = 半价，2.0 = 双倍',
+        activeProbe: '自动主动探测',
+        activeProbeHint: '本分组账号仅在当前 5 分钟真实请求为空时参与自动连接探测和定时模型检测。',
         rpmLimit: '每分钟请求数 (RPM)',
         rpmLimitPlaceholder: '0 表示不限制',
         rpmLimitHint: '每用户在本分组每分钟最大请求数，0 = 不限制；一旦设置即接管该用户的限流（覆盖用户级 rpm_limit）',

@@ -554,6 +554,7 @@ export interface Group {
   max_reasoning_effort?: string // OpenAI/Codex reasoning ceiling; empty means unlimited
   reasoning_effort_mappings?: ReasoningEffortMapping[]
   is_exclusive: boolean
+  active_probe_enabled: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
   daily_limit_usd: number | null
@@ -765,6 +766,7 @@ export interface CreateGroupRequest {
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
+  active_probe_enabled?: boolean
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
@@ -826,6 +828,7 @@ export interface UpdateGroupRequest {
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
+  active_probe_enabled?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null
@@ -1120,6 +1123,7 @@ export interface Account {
   // 改为通过 credentials_status.has_<key> 暴露存在性。
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
+  active_probe_enabled: boolean
   ollama_cloud_usage?: OllamaCloudUsageState
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
@@ -1430,6 +1434,7 @@ export interface CreateAccountRequest {
   auto_pause_on_expired?: boolean
   upstream_billing_probe_enabled?: boolean
   upstream_billing_rate_sync_enabled?: boolean
+  active_probe_enabled?: boolean
   confirm_mixed_channel_risk?: boolean
 }
 
@@ -1451,6 +1456,7 @@ export interface UpdateAccountRequest {
   auto_pause_on_expired?: boolean
   upstream_billing_probe_enabled?: boolean
   upstream_billing_rate_sync_enabled?: boolean
+  active_probe_enabled?: boolean
   confirm_mixed_channel_risk?: boolean
 }
 
@@ -1571,6 +1577,7 @@ export interface CodexSessionImportRequest {
   update_existing?: boolean
   skip_default_group_bind?: boolean
   confirm_mixed_channel_risk?: boolean
+  active_probe_enabled?: boolean
 }
 
 export interface OpenAICodexPATCreateRequest {
@@ -1589,6 +1596,7 @@ export interface OpenAICodexPATCreateRequest {
   extra?: Record<string, unknown>
   skip_default_group_bind?: boolean
   confirm_mixed_channel_risk?: boolean
+  active_probe_enabled?: boolean
 }
 
 export interface CodexSessionImportMessage {

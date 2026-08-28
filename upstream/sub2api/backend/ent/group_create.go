@@ -190,6 +190,20 @@ func (_c *GroupCreate) SetNillableStatus(v *string) *GroupCreate {
 	return _c
 }
 
+// SetActiveProbeEnabled sets the "active_probe_enabled" field.
+func (_c *GroupCreate) SetActiveProbeEnabled(v bool) *GroupCreate {
+	_c.mutation.SetActiveProbeEnabled(v)
+	return _c
+}
+
+// SetNillableActiveProbeEnabled sets the "active_probe_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableActiveProbeEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetActiveProbeEnabled(*v)
+	}
+	return _c
+}
+
 // SetDuplicateOperationID sets the "duplicate_operation_id" field.
 func (_c *GroupCreate) SetDuplicateOperationID(v string) *GroupCreate {
 	_c.mutation.SetDuplicateOperationID(v)
@@ -1019,6 +1033,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.ActiveProbeEnabled(); !ok {
+		v := group.DefaultActiveProbeEnabled
+		_c.mutation.SetActiveProbeEnabled(v)
+	}
 	if _, ok := _c.mutation.Platform(); !ok {
 		v := group.DefaultPlatform
 		_c.mutation.SetPlatform(v)
@@ -1193,6 +1211,9 @@ func (_c *GroupCreate) check() error {
 		if err := group.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Group.status": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.ActiveProbeEnabled(); !ok {
+		return &ValidationError{Name: "active_probe_enabled", err: errors.New(`ent: missing required field "Group.active_probe_enabled"`)}
 	}
 	if v, ok := _c.mutation.DuplicateOperationID(); ok {
 		if err := group.DuplicateOperationIDValidator(v); err != nil {
@@ -1403,6 +1424,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(group.FieldStatus, field.TypeString, value)
 		_node.Status = value
+	}
+	if value, ok := _c.mutation.ActiveProbeEnabled(); ok {
+		_spec.SetField(group.FieldActiveProbeEnabled, field.TypeBool, value)
+		_node.ActiveProbeEnabled = value
 	}
 	if value, ok := _c.mutation.DuplicateOperationID(); ok {
 		_spec.SetField(group.FieldDuplicateOperationID, field.TypeString, value)
@@ -1913,6 +1938,18 @@ func (u *GroupUpsert) SetStatus(v string) *GroupUpsert {
 // UpdateStatus sets the "status" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateStatus() *GroupUpsert {
 	u.SetExcluded(group.FieldStatus)
+	return u
+}
+
+// SetActiveProbeEnabled sets the "active_probe_enabled" field.
+func (u *GroupUpsert) SetActiveProbeEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldActiveProbeEnabled, v)
+	return u
+}
+
+// UpdateActiveProbeEnabled sets the "active_probe_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateActiveProbeEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldActiveProbeEnabled)
 	return u
 }
 
@@ -2995,6 +3032,20 @@ func (u *GroupUpsertOne) SetStatus(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateStatus() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetActiveProbeEnabled sets the "active_probe_enabled" field.
+func (u *GroupUpsertOne) SetActiveProbeEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetActiveProbeEnabled(v)
+	})
+}
+
+// UpdateActiveProbeEnabled sets the "active_probe_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateActiveProbeEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateActiveProbeEnabled()
 	})
 }
 
@@ -4385,6 +4436,20 @@ func (u *GroupUpsertBulk) SetStatus(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateStatus() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateStatus()
+	})
+}
+
+// SetActiveProbeEnabled sets the "active_probe_enabled" field.
+func (u *GroupUpsertBulk) SetActiveProbeEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetActiveProbeEnabled(v)
+	})
+}
+
+// UpdateActiveProbeEnabled sets the "active_probe_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateActiveProbeEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateActiveProbeEnabled()
 	})
 }
 

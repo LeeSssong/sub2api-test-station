@@ -190,6 +190,7 @@ type OpenAICodexPATCreateRequest struct {
 	Extra                   map[string]any `json:"extra"`
 	SkipDefaultGroupBind    *bool          `json:"skip_default_group_bind"`
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"`
+	ActiveProbeEnabled      *bool          `json:"active_probe_enabled"`
 }
 
 // RefreshToken refreshes an OpenAI OAuth token
@@ -449,6 +450,7 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		GroupIDs:              req.GroupIDs,
 		ExpiresAt:             req.ExpiresAt,
 		AutoPauseOnExpired:    req.AutoPauseOnExpired,
+		ActiveProbeEnabled:    req.ActiveProbeEnabled,
 		SkipDefaultGroupBind:  skipDefaultGroupBind,
 		SkipMixedChannelCheck: req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk,
 	})

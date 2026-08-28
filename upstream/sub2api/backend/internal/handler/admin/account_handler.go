@@ -143,6 +143,7 @@ type CreateAccountRequest struct {
 	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
 	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
 	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
+	ActiveProbeEnabled      *bool          `json:"active_probe_enabled"`
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
@@ -167,6 +168,7 @@ type UpdateAccountRequest struct {
 	AutoPauseOnExpired      *bool                  `json:"auto_pause_on_expired"`
 	ProbeEnabled            *bool                  `json:"upstream_billing_probe_enabled"`
 	RateSyncEnabled         *bool                  `json:"upstream_billing_rate_sync_enabled"`
+	ActiveProbeEnabled      *bool                  `json:"active_probe_enabled"`
 	ConfirmMixedChannelRisk *bool                  `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
@@ -268,6 +270,7 @@ type BulkUpdateAccountsRequest struct {
 	Credentials             map[string]any            `json:"credentials"`
 	Extra                   map[string]any            `json:"extra"`
 	ProbeEnabled            *bool                     `json:"upstream_billing_probe_enabled"`
+	ActiveProbeEnabled      *bool                     `json:"active_probe_enabled"`
 	ConfirmMixedChannelRisk *bool                     `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
@@ -963,6 +966,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			AutoPauseOnExpired:    req.AutoPauseOnExpired,
 			ProbeEnabled:          req.ProbeEnabled,
 			RateSyncEnabled:       req.RateSyncEnabled,
+			ActiveProbeEnabled:    req.ActiveProbeEnabled,
 			SkipMixedChannelCheck: skipCheck,
 		})
 		if execErr != nil {
@@ -1153,6 +1157,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		AutoPauseOnExpired:    req.AutoPauseOnExpired,
 		ProbeEnabled:          req.ProbeEnabled,
 		RateSyncEnabled:       req.RateSyncEnabled,
+		ActiveProbeEnabled:    req.ActiveProbeEnabled,
 		SkipMixedChannelCheck: skipCheck,
 	}
 	var account *service.Account
@@ -1199,7 +1204,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func hasNonProcurementAccountUpdate(req UpdateAccountRequest) bool {
-	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ConfirmMixedChannelRisk != nil
+	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ActiveProbeEnabled != nil || req.ConfirmMixedChannelRisk != nil
 }
 
 func toServiceProcurementCostUpdate(cost, quota procurementCostRequest) *service.ProcurementCostUpdate {
@@ -2328,7 +2333,8 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		req.GroupIDs != nil ||
 		len(req.Credentials) > 0 ||
 		len(req.Extra) > 0 ||
-		req.ProbeEnabled != nil
+		req.ProbeEnabled != nil ||
+		req.ActiveProbeEnabled != nil
 
 	if !hasUpdates {
 		response.BadRequest(c, "No updates provided")
@@ -2350,6 +2356,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		Credentials:           req.Credentials,
 		Extra:                 req.Extra,
 		ProbeEnabled:          req.ProbeEnabled,
+		ActiveProbeEnabled:    req.ActiveProbeEnabled,
 		SkipMixedChannelCheck: skipCheck,
 	})
 	if err != nil {

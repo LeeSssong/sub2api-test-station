@@ -88,13 +88,14 @@ type APIKey struct {
 }
 
 type Group struct {
-	ID             int64   `json:"id"`
-	Name           string  `json:"name"`
-	Description    string  `json:"description"`
-	Platform       string  `json:"platform"`
-	RateMultiplier float64 `json:"rate_multiplier"`
-	IsExclusive    bool    `json:"is_exclusive"`
-	Status         string  `json:"status"`
+	ID                 int64   `json:"id"`
+	Name               string  `json:"name"`
+	Description        string  `json:"description"`
+	Platform           string  `json:"platform"`
+	RateMultiplier     float64 `json:"rate_multiplier"`
+	IsExclusive        bool    `json:"is_exclusive"`
+	ActiveProbeEnabled bool    `json:"active_probe_enabled"`
+	Status             string  `json:"status"`
 
 	SubscriptionType          string   `json:"subscription_type"`
 	DailyLimitUSD             *float64 `json:"daily_limit_usd"`
@@ -204,6 +205,7 @@ type Account struct {
 	Credentials                map[string]any                 `json:"credentials"`
 	CredentialsStatus          map[string]bool                `json:"credentials_status,omitempty"`
 	Extra                      map[string]any                 `json:"extra"`
+	ActiveProbeEnabled         bool                           `json:"active_probe_enabled"`
 	OllamaCloudUsage           *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
 	ProxyID                    *int64                         `json:"proxy_id"`
 	ProxyFallbackOriginID      *int64                         `json:"proxy_fallback_origin_id"`

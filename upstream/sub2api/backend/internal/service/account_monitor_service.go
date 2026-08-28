@@ -2573,11 +2573,23 @@ func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error)
 	}
 	filtered := accounts[:0]
 	for _, account := range accounts {
-		if account.Schedulable {
+		if account.Schedulable && account.ActiveProbeEnabled() && accountActiveProbeEnabledByGroups(&account) {
 			filtered = append(filtered, account)
 		}
 	}
 	return filtered, nil
+}
+
+func accountActiveProbeEnabledByGroups(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	for _, group := range account.Groups {
+		if group != nil && !group.ActiveProbeEnabled {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *AccountMonitorService) listActiveAccounts(ctx context.Context) ([]Account, error) {

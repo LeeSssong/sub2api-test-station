@@ -359,6 +359,19 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty(legacyPolicyKey)
   })
 
+  it('loads and persists the account active-probe switch', async () => {
+    const account = buildAccount()
+    account.active_probe_enabled = false
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    expect(wrapper.get('[data-testid="active-probe-enabled"]').attributes('aria-checked')).toBe('false')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.active_probe_enabled).toBe(false)
+  })
+
   it('loads the official sync switch and omits the native rate while sync is enabled', async () => {
     const account = buildAccount()
     account.extra = {

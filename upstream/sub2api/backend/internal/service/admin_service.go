@@ -214,6 +214,7 @@ type CreateGroupInput struct {
 	Platform                  string
 	RateMultiplier            float64
 	IsExclusive               bool
+	ActiveProbeEnabled        *bool
 	SubscriptionType          string   // standard/subscription
 	DailyLimitUSD             *float64 // 日限额 (USD)
 	WeeklyLimitUSD            *float64 // 周限额 (USD)
@@ -288,6 +289,7 @@ type UpdateGroupInput struct {
 	Platform                  string
 	RateMultiplier            *float64 // 使用指针以支持设置为0
 	IsExclusive               *bool
+	ActiveProbeEnabled        *bool
 	Status                    string
 	SubscriptionType          string   // standard/subscription
 	DailyLimitUSD             *float64 // 日限额 (USD)
@@ -374,6 +376,9 @@ type CreateAccountInput struct {
 	AutoPauseOnExpired *bool
 	ProbeEnabled       *bool
 	RateSyncEnabled    *bool
+	// ActiveProbeEnabled controls automatic connection probes and scheduled model detection.
+	// Nil preserves the backward-compatible enabled default.
+	ActiveProbeEnabled *bool
 	// SkipDefaultGroupBind prevents auto-binding to platform default group when GroupIDs is empty.
 	SkipDefaultGroupBind bool
 	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
@@ -410,6 +415,8 @@ type UpdateAccountInput struct {
 	AutoPauseOnExpired    *bool
 	ProbeEnabled          *bool
 	RateSyncEnabled       *bool
+	// ActiveProbeEnabled controls automatic connection probes and scheduled model detection.
+	ActiveProbeEnabled    *bool
 	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
 }
 
@@ -436,6 +443,7 @@ type BulkUpdateAccountsInput struct {
 	Credentials    map[string]any
 	Extra          map[string]any
 	ProbeEnabled   *bool
+	ActiveProbeEnabled *bool
 	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
 	// This should only be set when the caller has explicitly confirmed the risk.
 	SkipMixedChannelCheck bool

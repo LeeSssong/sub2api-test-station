@@ -185,6 +185,7 @@ type AccountBulkUpdate struct {
 	Credentials    map[string]any
 	Extra          map[string]any
 	ProbeEnabled   *bool
+	ActiveProbeEnabled *bool
 }
 
 // CreateAccountRequest 创建账号请求

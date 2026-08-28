@@ -39,6 +39,7 @@ type CodexSessionImportRequest struct {
 	UpdateExisting          *bool          `json:"update_existing"`
 	SkipDefaultGroupBind    *bool          `json:"skip_default_group_bind"`
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"`
+	ActiveProbeEnabled      *bool          `json:"active_probe_enabled"`
 }
 
 type CodexSessionImportResult struct {
@@ -285,6 +286,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 				LoadFactor:         req.LoadFactor,
 				ExpiresAt:          effectiveExpiresAt,
 				AutoPauseOnExpired: autoPauseOnExpired,
+				ActiveProbeEnabled: req.ActiveProbeEnabled,
 			}
 			if req.ProxyID != nil {
 				updateInput.ProxyID = req.ProxyID
@@ -343,6 +345,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 			GroupIDs:              req.GroupIDs,
 			ExpiresAt:             effectiveExpiresAt,
 			AutoPauseOnExpired:    autoPauseOnExpired,
+			ActiveProbeEnabled:    req.ActiveProbeEnabled,
 			SkipDefaultGroupBind:  skipDefaultGroupBind,
 			SkipMixedChannelCheck: skipMixedChannelCheck,
 		})

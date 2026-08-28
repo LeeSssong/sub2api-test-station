@@ -68,6 +68,9 @@ func (Group) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
+		field.Bool("active_probe_enabled").
+			Default(true).
+			Comment("是否允许该分组内账号执行自动主动探测"),
 		field.String("duplicate_operation_id").
 			MaxLen(64).
 			Optional().

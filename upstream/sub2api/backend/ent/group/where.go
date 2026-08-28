@@ -115,6 +115,11 @@ func Status(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldStatus, v))
 }
 
+// ActiveProbeEnabled applies equality check predicate on the "active_probe_enabled" field. It's identical to ActiveProbeEnabledEQ.
+func ActiveProbeEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldActiveProbeEnabled, v))
+}
+
 // DuplicateOperationID applies equality check predicate on the "duplicate_operation_id" field. It's identical to DuplicateOperationIDEQ.
 func DuplicateOperationID(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldDuplicateOperationID, v))
@@ -893,6 +898,16 @@ func StatusEqualFold(v string) predicate.Group {
 // StatusContainsFold applies the ContainsFold predicate on the "status" field.
 func StatusContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldStatus, v))
+}
+
+// ActiveProbeEnabledEQ applies the EQ predicate on the "active_probe_enabled" field.
+func ActiveProbeEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldActiveProbeEnabled, v))
+}
+
+// ActiveProbeEnabledNEQ applies the NEQ predicate on the "active_probe_enabled" field.
+func ActiveProbeEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldActiveProbeEnabled, v))
 }
 
 // DuplicateOperationIDEQ applies the EQ predicate on the "duplicate_operation_id" field.

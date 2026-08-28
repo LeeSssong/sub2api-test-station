@@ -32,6 +32,7 @@ const (
 	AccountModelDetectionTriggerConsecutiveAbnormal = "consecutive_abnormal"
 	AccountModelDetectionTriggerInsufficient        = "insufficient"
 	AccountModelDetectionTriggerModelConflict       = "model_conflict"
+	AccountModelDetectionTriggerSuspicious          = "suspicious"
 )
 
 const (

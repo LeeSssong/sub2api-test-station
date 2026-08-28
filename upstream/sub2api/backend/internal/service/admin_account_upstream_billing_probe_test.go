@@ -161,6 +161,52 @@ func TestCreateAccountAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) 
 	require.ErrorIs(t, err, ErrUpstreamBillingProbeAccountInvalid)
 }
 
+func TestCreateAccountPersistsActiveProbeSetting(t *testing.T) {
+	disabled := false
+	repo := &upstreamBillingProbeAccountRepo{}
+	created, err := (&adminServiceImpl{accountRepo: repo}).CreateAccount(context.Background(), &CreateAccountInput{
+		Name:                 "probe-disabled",
+		Platform:             PlatformAnthropic,
+		Type:                 AccountTypeOAuth,
+		Credentials:          map[string]any{"access_token": "token"},
+		ActiveProbeEnabled:   &disabled,
+		SkipDefaultGroupBind: true,
+	})
+
+	require.NoError(t, err)
+	require.False(t, created.ActiveProbeEnabled())
+}
+
+func TestUpdateAccountPersistsActiveProbeSetting(t *testing.T) {
+	accountID := int64(120)
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		accountID: {ID: accountID, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Extra: map[string]any{}},
+	}}
+	disabled := false
+	updated, err := (&adminServiceImpl{accountRepo: repo}).UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		ActiveProbeEnabled: &disabled,
+	})
+
+	require.NoError(t, err)
+	require.False(t, updated.ActiveProbeEnabled())
+}
+
+func TestBulkUpdateAccountsPersistsActiveProbeSetting(t *testing.T) {
+	enabled := false
+	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{
+		1: {ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+	}}
+	result, err := (&adminServiceImpl{accountRepo: repo}).BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:        []int64{1},
+		ActiveProbeEnabled: &enabled,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Success)
+	require.Len(t, repo.bulkUpdates, 1)
+	require.Equal(t, false, repo.bulkUpdates[0].Extra[ActiveProbeEnabledExtraKey])
+}
+
 func TestUpdateAccountPreservesManagedUpstreamBillingProbeStateForUnrelatedEdit(t *testing.T) {
 	accountID := int64(110)
 	repo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{

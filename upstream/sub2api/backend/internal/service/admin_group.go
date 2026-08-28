@@ -452,12 +452,17 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		}
 	}
 
+	activeProbeEnabled := true
+	if input.ActiveProbeEnabled != nil {
+		activeProbeEnabled = *input.ActiveProbeEnabled
+	}
 	group := &Group{
 		Name:                            input.Name,
 		Description:                     input.Description,
 		Platform:                        platform,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
+		ActiveProbeEnabled:              activeProbeEnabled,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
 		DailyLimitUSD:                   dailyLimit,
@@ -661,6 +666,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.IsExclusive != nil {
 		group.IsExclusive = *input.IsExclusive
+	}
+	if input.ActiveProbeEnabled != nil {
+		group.ActiveProbeEnabled = *input.ActiveProbeEnabled
 	}
 	if input.Status != "" {
 		group.Status = input.Status

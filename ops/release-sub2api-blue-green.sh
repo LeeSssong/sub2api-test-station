@@ -224,7 +224,7 @@ done'
   printf '%s\n' "$verification_script" | perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
     -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
-    sudo -n bash -s -- verify_executor_directory_chain "$(dirname "$host_executor")" \
+    sudo -n bash -s -- "$(dirname "$host_executor")" \
     >/dev/null 2>&1 || fail 'remote host executor parent chain is not root-owned, non-symlink, and non-writable'
   check_budget
 }
@@ -254,7 +254,7 @@ done'
   printf '%s\n' "$verification_script" | perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" \
     -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
     -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" \
-    sudo -n bash -s -- verify_executor_path_chain "$host_executor" \
+    sudo -n bash -s -- "$host_executor" \
     >/dev/null 2>&1 || fail 'remote host executor path chain is not root-owned, non-symlink, and non-writable'
   check_budget
 }

@@ -9,6 +9,7 @@ const REFRESH_TOKEN_KEY = 'refresh_token'
 const TOKEN_EXPIRES_AT_KEY = 'token_expires_at'
 const TOKEN_REFRESH_LOCK_NAME = 'sub2api-auth-token-refresh'
 const TOKEN_REFRESH_TIMEOUT_MS = 30_000
+const TOKEN_REFRESH_BUFFER_MS = 120_000
 const PEER_REFRESH_WAIT_MS = 1_000
 const PEER_REFRESH_GRACE_MS = 1_000
 const PEER_REFRESH_POLL_MS = 25

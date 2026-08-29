@@ -14,8 +14,8 @@
 
 - 保留 5 分钟桶、真实请求优先、最后一分钟主动探测兜底、同桶不混用。
 - 真实成功定义保持 `actual_cost > 0` 且 `usage_completeness <> 'unknown'`；真实错误进入分母。
-- 探测全失败的已关闭兜底桶计为一次失败逻辑请求；探测自身无结果/未知不选中。
-- 不新增迁移、表、配置、账务写入、历史回填或 GitHub Actions。
+- 探测全失败的已关闭兜底桶计为一次失败逻辑请求；探测自身无结果、未知、无可用账号、执行/读取/持久化异常也必须 fail-closed 计为一次 `0/1` 失败，并记录完整性故障。
+- 不新增迁移、配置、账务写入、历史回填或 GitHub Actions；如实现桶终态保证层，允许增加仅用于探测终态幂等的最小记录，不得成为第二套质量事实源。
 - 所有发布动作遵守验收站与主站授权门禁；本计划只负责本地实现和直接相关验证。
 
 ### Task 1: Replace V4 repository projection with request-weighted source arbitration
@@ -48,7 +48,7 @@ Replace the old availability-only fields in `MonitorV4GroupProjection` with `Suc
 
 - [x] **Step 4: Implement the CTE projection**
 
-Keep the existing scope validation and arguments. Build CTEs in this order: `scopes`, `groups`, `buckets`; `usage_events` with non-unknown usage and success=`actual_cost > 0`; `error_events` with non-token status >= 400 errors not matching a usage request; `real_events` deduplicated by group/account/logical request key; `real_buckets`; `probe_rows`; `probe_runs` (one result per group/bucket/run, any success wins and successful timings use minimum non-null values); `probe_buckets` (one result per group/bucket); `selected_events` (real source wins, otherwise one probe logical event only for closed or final-minute current buckets); and `aggregate` for request/success counts and independent P95s. Return nullable SQL P95 values and scan with `sql.NullFloat64`; do not coalesce no-sample P95 to zero.
+Keep the existing scope validation and arguments. Build CTEs in this order: `scopes`, `groups`, `buckets`; `usage_events` with non-unknown usage and success=`actual_cost > 0`; `error_events` with non-token status >= 400 errors not matching a usage request; `real_events` deduplicated by group/account/logical request key; `real_buckets`; `probe_rows`; `probe_runs` (one result per group/bucket/run, any success wins and successful timings use minimum non-null values); `probe_buckets` (one result per group/bucket); `bucket_matrix` (every visible group × every closed bucket); `selected_events` (real source wins, otherwise exactly one probe logical event, with absent/invalid probe evidence synthesized as failed `0/1`); and `aggregate` for request/success counts and independent P95s. Return nullable SQL P95 values and scan with `sql.NullFloat64`; do not coalesce no-sample P95 to zero.
 
 - [x] **Step 5: Run focused repository tests and confirm GREEN**
 
@@ -189,7 +189,7 @@ pnpm build
 
 - [x] **Step 4: Self-review the diff and contract**
 
-Check that no V4 response contains v1 availability fields, SQL has no window-outside fallback, empty/current-ineligible buckets are excluded, probe failures are aggregated once, and no migration/config/GitHub Actions files changed.
+Check that no V4 response contains v1 availability fields, SQL has no window-outside fallback, every closed group/bucket has exactly one real or probe terminal event, probe failures and fail-closed missing-probe buckets are aggregated once, and no migration/config/GitHub Actions files changed.
 
 - [x] **Step 5: Write the handoff and commit verification evidence**
 

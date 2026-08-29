@@ -21,19 +21,23 @@ func NewMonitorV4Handler(svc monitorV4Snapshotter) *MonitorV4Handler {
 }
 
 type monitorV4GroupResponse struct {
-	ID                  int64   `json:"id"`
-	Name                string  `json:"name"`
-	Platform            string  `json:"platform"`
-	RateMultiplier      float64 `json:"rate_multiplier"`
-	Availability        float64 `json:"availability"`
-	AvailabilityBuckets int     `json:"availability_bucket_count"`
-	TotalBuckets        int     `json:"total_bucket_count"`
-	TTFTP95MS           float64 `json:"ttft_p95_ms"`
-	LatencyP95MS        float64 `json:"latency_p95_ms"`
-	SampleCount         int     `json:"sample_count"`
-	SourceUpdatedAt     string  `json:"source_updated_at,omitempty"`
-	CurrentOperational  bool    `json:"current_operational"`
-	MetricFallback      bool    `json:"is_fallback_metric"`
+	ID                        int64    `json:"id"`
+	Name                      string   `json:"name"`
+	Platform                  string   `json:"platform"`
+	RateMultiplier            float64  `json:"rate_multiplier"`
+	SuccessRate               *float64 `json:"success_rate"`
+	RequestCount              int      `json:"request_count"`
+	SuccessCount              int      `json:"success_count"`
+	RealRequestCount          int      `json:"real_request_count"`
+	RealSuccessCount          int      `json:"real_success_count"`
+	ProbeFallbackBucketCount  int      `json:"probe_fallback_bucket_count"`
+	ProbeFallbackRequestCount int      `json:"probe_fallback_request_count"`
+	TTFTP95MS                 *float64 `json:"ttft_p95_ms"`
+	TTFTSampleCount           int      `json:"ttft_sample_count"`
+	LatencyP95MS              *float64 `json:"latency_p95_ms"`
+	LatencySampleCount        int      `json:"latency_sample_count"`
+	SourceUpdatedAt           *string  `json:"source_updated_at"`
+	CurrentOperational        bool     `json:"current_operational"`
 }
 
 type monitorV4SnapshotResponse struct {
@@ -80,15 +84,19 @@ func (h *MonitorV4Handler) Snapshot(c *gin.Context) {
 	}
 	groups := make([]monitorV4GroupResponse, 0, len(snapshot.Groups))
 	for _, group := range snapshot.Groups {
-		updatedAt := ""
+		var updatedAt *string
 		if group.SourceUpdatedAt != nil {
-			updatedAt = group.SourceUpdatedAt.UTC().Format(time.RFC3339)
+			value := group.SourceUpdatedAt.UTC().Format(time.RFC3339)
+			updatedAt = &value
 		}
 		groups = append(groups, monitorV4GroupResponse{
 			ID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier,
-			Availability: group.Availability, AvailabilityBuckets: group.AvailabilityBuckets, TotalBuckets: group.TotalBuckets,
-			TTFTP95MS: group.TTFTP95MS, LatencyP95MS: group.LatencyP95MS, SampleCount: group.SampleCount,
-			SourceUpdatedAt: updatedAt, CurrentOperational: group.CurrentOperational, MetricFallback: group.MetricFallback,
+			SuccessRate: group.SuccessRate, RequestCount: group.RequestCount, SuccessCount: group.SuccessCount,
+			RealRequestCount: group.RealRequestCount, RealSuccessCount: group.RealSuccessCount,
+			ProbeFallbackBucketCount: group.ProbeFallbackBucketCount, ProbeFallbackRequestCount: group.ProbeFallbackRequestCount,
+			TTFTP95MS: group.TTFTP95MS, TTFTSampleCount: group.TTFTSampleCount,
+			LatencyP95MS: group.LatencyP95MS, LatencySampleCount: group.LatencySampleCount,
+			SourceUpdatedAt: updatedAt, CurrentOperational: group.CurrentOperational,
 		})
 	}
 	response.Success(c, monitorV4SnapshotResponse{ContractVersion: snapshot.ContractVersion, Window: snapshot.Window, RefreshIntervalSeconds: snapshot.RefreshIntervalSeconds, GeneratedAt: snapshot.GeneratedAt.UTC().Format(time.RFC3339), Groups: groups})

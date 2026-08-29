@@ -259,6 +259,8 @@ import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'
 import { resolveUpstreamPayload } from '../utils/errorDetailResponse'
 
+type DiagnosticPayloadKey = 'client' | 'upstream_message' | 'upstream_detail' | 'upstream_events'
+
 interface Props {
   show: boolean
   errorId: number | null
@@ -284,12 +286,14 @@ const showUpstreamList = computed(() => props.errorType === 'request')
 
 const requestId = computed(() => detail.value?.request_id || detail.value?.client_request_id || '')
 
-const primaryResponseBody = computed(() => {
-	const diagnosis = detail.value?.diagnosis
-	if (diagnosis) {
-		return String(diagnosis.original_upstream_detail || diagnosis.original_upstream_message || '').trim()
-	}
-  return resolvePrimaryResponseBody(detail.value, props.errorType)
+const rootCauseMessage = computed(() => {
+  const diagnosis = detail.value?.diagnosis
+  if (diagnosis) {
+    return String(
+      diagnosis.original_upstream_detail || diagnosis.original_upstream_message || detail.value?.message || ''
+    ).trim()
+  }
+  return String(detail.value?.message || '').trim()
 })
 
 const diagnosticPayloadSections = computed(() => {

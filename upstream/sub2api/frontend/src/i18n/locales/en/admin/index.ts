@@ -17,6 +17,7 @@ export default {
   ...settings,
   ...audit,
   ...promptAudit,
+  ...plugins,
   schedulerSettings: {
     title: 'Scheduler Settings',
     description: 'Set operational scheduler priorities by group and preview the result before saving.',

@@ -29,11 +29,11 @@
 - Consumes: `[]service.MonitorV2GroupAccountScope`, window bounds and bucket size.
 - Produces: `MonitorV4GroupProjection` with `SuccessRate`, `RequestCount`, `SuccessCount`, source counts, independent P95 values/sample counts, and current status.
 
-- [ ] **Step 1: Write RED sqlmock cases**
+- [x] **Step 1: Write RED sqlmock cases**
 
 Add repository tests that expect `real_events`, `error_events`, `probe_runs`, `probe_buckets`, `real_request_count`, `success_count`, and the last-minute/current-bucket guard. Return rows in the new column order and assert that real-failure buckets suppress probes, mixed probe buckets return one request, all-failed probes return zero success, and TTFT/latency sample counts are independent.
 
-- [ ] **Step 2: Run the focused repository tests and confirm RED**
+- [x] **Step 2: Run the focused repository tests and confirm RED**
 
 ```bash
 cd upstream/sub2api/backend
@@ -42,19 +42,19 @@ go test ./internal/repository -run 'TestAccountMonitorRepository.*V4|TestAccount
 
 Expected: FAIL because the current projection still scans v1 availability columns and has no request-weighted fields.
 
-- [ ] **Step 3: Change the projection type**
+- [x] **Step 3: Change the projection type**
 
 Replace the old availability-only fields in `MonitorV4GroupProjection` with `SuccessRate *float64`, `RequestCount`, `SuccessCount`, `RealRequestCount`, `RealSuccessCount`, `ProbeFallbackBucketCount`, `ProbeFallbackRequestCount`, nullable `TTFTP95MS`/`LatencyP95MS`, their sample counts, `SourceUpdatedAt`, and `CurrentOperational`.
 
-- [ ] **Step 4: Implement the CTE projection**
+- [x] **Step 4: Implement the CTE projection**
 
 Keep the existing scope validation and arguments. Build CTEs in this order: `scopes`, `groups`, `buckets`; `usage_events` with non-unknown usage and success=`actual_cost > 0`; `error_events` with non-token status >= 400 errors not matching a usage request; `real_events` deduplicated by group/account/logical request key; `real_buckets`; `probe_rows`; `probe_runs` (one result per group/bucket/run, any success wins and successful timings use minimum non-null values); `probe_buckets` (one result per group/bucket); `selected_events` (real source wins, otherwise one probe logical event only for closed or final-minute current buckets); and `aggregate` for request/success counts and independent P95s. Return nullable SQL P95 values and scan with `sql.NullFloat64`; do not coalesce no-sample P95 to zero.
 
-- [ ] **Step 5: Run focused repository tests and confirm GREEN**
+- [x] **Step 5: Run focused repository tests and confirm GREEN**
 
 Run the command from Step 2. Expected: PASS, including `mock.ExpectationsWereMet()`.
 
-- [ ] **Step 6: Commit the repository projection**
+- [x] **Step 6: Commit the repository projection**
 
 ```bash
 git add upstream/sub2api/backend/internal/repository/account_monitor_repo.go upstream/sub2api/backend/internal/repository/account_monitor_repo_test.go upstream/sub2api/backend/internal/service/account_monitor_types.go
@@ -71,11 +71,11 @@ git commit -m "feat: weight monitor v4 by logical requests"
 - Consumes: existing `Account` snapshots and `Account.IsSchedulableAt(time.Time)`.
 - Produces: automatic monitor runs that call `probeAccount` only for accounts currently eligible under native scheduling gates.
 
-- [ ] **Step 1: Write RED unit coverage**
+- [x] **Step 1: Write RED unit coverage**
 
 Add a focused `listPool` test using active, schedulable, probe-enabled accounts. Assert that a future `TempUnschedulableUntil` and API-key quota exhaustion are excluded while an eligible account remains.
 
-- [ ] **Step 2: Run the focused service test and confirm RED**
+- [x] **Step 2: Run the focused service test and confirm RED**
 
 ```bash
 cd upstream/sub2api/backend
@@ -84,11 +84,11 @@ go test ./internal/service -run 'TestAccountMonitor.*Pool|TestListPool' -count=1
 
 Expected: FAIL because `listPool` currently checks only the boolean `Schedulable` field.
 
-- [ ] **Step 3: Implement native gate reuse**
+- [x] **Step 3: Implement native gate reuse**
 
 Capture one `now := time.Now().UTC()` in `listPool` and require `account.IsSchedulableAt(now)` before the existing account/group active-probe switches. Preserve existing status and group membership behavior.
 
-- [ ] **Step 4: Run focused service tests**
+- [x] **Step 4: Run focused service tests**
 
 ```bash
 go test ./internal/service -run 'TestAccountMonitor.*(Pool|Run|Probe)' -count=1
@@ -96,7 +96,7 @@ go test ./internal/service -run 'TestAccountMonitor.*(Pool|Run|Probe)' -count=1
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the probe-pool gate**
+- [x] **Step 5: Commit the probe-pool gate**
 
 ```bash
 git add upstream/sub2api/backend/internal/service/account_monitor_service.go upstream/sub2api/backend/internal/service/account_monitor_service_test.go
@@ -123,11 +123,11 @@ git commit -m "fix: skip blocked accounts in monitor probe pool"
 - Consumes: new `MonitorV4GroupProjection` fields from Task 1.
 - Produces: API contract version `2` and a single user-visible “成功率” metric.
 
-- [ ] **Step 1: Write RED service and frontend contract tests**
+- [x] **Step 1: Write RED service and frontend contract tests**
 
 Update service tests to assert null success rate for zero requests and exact percentage conversion for `success_count/request_count`. Update frontend fixtures to use `contract_version: '2'`, `success_rate`, request counts, nullable P95 fields, and reject a v1 availability-only response.
 
-- [ ] **Step 2: Run focused tests and confirm RED**
+- [x] **Step 2: Run focused tests and confirm RED**
 
 ```bash
 cd upstream/sub2api/backend
@@ -138,19 +138,19 @@ pnpm vitest run src/features/monitor-v4/__tests__/api.spec.ts src/features/monit
 
 Expected: FAIL because the current service/handler/frontend still expose contract version `1` and availability fields.
 
-- [ ] **Step 3: Map the v2 backend contract**
+- [x] **Step 3: Map the v2 backend contract**
 
 Set `MonitorV4ContractVersion` to `2`. Compute a nullable percentage in `snapshotWithGroups`; preserve null when `RequestCount == 0`. Map nullable P95s and all source/request counters into the service group and handler DTO. Remove v1 availability, bucket totals, and metric fallback fields from the v2 JSON response.
 
-- [ ] **Step 4: Update frontend validation and rendering**
+- [x] **Step 4: Update frontend validation and rendering**
 
 Change `MONITOR_V4_CONTRACT_VERSION` to `'2'`. Validate nullable `success_rate` in 0–100, non-negative integer request/success counters with success <= request, source counters with real/probe invariants, and nullable P95 fields. Render the ring label as “成功率”, show `成功 N/M 次请求`, and render `--` for null P95. Keep window switching and refresh behavior unchanged.
 
-- [ ] **Step 5: Run focused tests and confirm GREEN**
+- [x] **Step 5: Run focused tests and confirm GREEN**
 
 Run the commands from Step 2. Expected: PASS, including old-contract rejection and null P95 cases.
 
-- [ ] **Step 6: Commit the API/frontend contract**
+- [x] **Step 6: Commit the API/frontend contract**
 
 ```bash
 git add upstream/sub2api/backend/internal/service/monitor_v4.go upstream/sub2api/backend/internal/service/monitor_v4_test.go upstream/sub2api/backend/internal/handler/monitor_v4_handler.go upstream/sub2api/frontend/src/features/monitor-v4 upstream/sub2api/frontend/src/i18n/locales/zh/channelMonitorV2.ts upstream/sub2api/frontend/src/i18n/locales/en/channelMonitorV2.ts
@@ -162,7 +162,7 @@ git commit -m "feat: expose monitor v4 request success rate"
 **Files:**
 - Create: `docs/handoffs/2026-08-29-t85-monitor-v4-real-request-probe-dedup-handoff.md`
 
-- [ ] **Step 1: Format and diff-check**
+- [x] **Step 1: Format and diff-check**
 
 ```bash
 cd upstream/sub2api/backend
@@ -170,7 +170,7 @@ gofmt -w internal/repository/account_monitor_repo.go internal/repository/account
 git diff --check
 ```
 
-- [ ] **Step 2: Run direct backend verification**
+- [x] **Step 2: Run direct backend verification**
 
 ```bash
 go test ./internal/repository -run 'TestAccountMonitorRepository.*V4|TestAccountMonitorRepositoryProjectMonitorV4' -count=1
@@ -178,7 +178,7 @@ go test ./internal/service -run 'TestMonitorV4|TestAccountMonitor.*(Pool|Run|Pro
 go build ./cmd/server
 ```
 
-- [ ] **Step 3: Run direct frontend verification**
+- [x] **Step 3: Run direct frontend verification**
 
 ```bash
 cd ../frontend
@@ -187,11 +187,11 @@ pnpm typecheck
 pnpm build
 ```
 
-- [ ] **Step 4: Self-review the diff and contract**
+- [x] **Step 4: Self-review the diff and contract**
 
 Check that no V4 response contains v1 availability fields, SQL has no window-outside fallback, empty/current-ineligible buckets are excluded, probe failures are aggregated once, and no migration/config/GitHub Actions files changed.
 
-- [ ] **Step 5: Write the handoff and commit verification evidence**
+- [x] **Step 5: Write the handoff and commit verification evidence**
 
 Record baseline `main` SHA, candidate commits, changed files, test output summaries, no-migration/config status, `downtime_required=unverified until root preflight`, rollback, and remaining production risks in the handoff, then commit.
 

@@ -2571,13 +2571,45 @@ func (s *AccountMonitorService) listPool(ctx context.Context) ([]Account, error)
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
 	filtered := accounts[:0]
 	for _, account := range accounts {
-		if account.Schedulable && account.ActiveProbeEnabled() && accountActiveProbeEnabledByGroups(&account) {
+		nativeEligible := account.IsSchedulableAt(now)
+		// API-key recovery probes are the native half-open exception: they are
+		// rate-limited by shouldSkipAPIKeyRecoveryProbe and only test an explicit
+		// 401/authentication temporary block. Balance, quota, and permission blocks
+		// must stay out of the automatic probe pool.
+		recoveryEligible := accountMonitorAPIKey401RecoveryEligible(&account, now)
+		if (nativeEligible || recoveryEligible) && account.ActiveProbeEnabled() && accountActiveProbeEnabledByGroups(&account) {
 			filtered = append(filtered, account)
 		}
 	}
 	return filtered, nil
+}
+
+func accountMonitorAPIKey401RecoveryEligible(account *Account, now time.Time) bool {
+	if account == nil || account.Type != AccountTypeAPIKey || account.TempUnschedulableUntil == nil || !now.Before(*account.TempUnschedulableUntil) {
+		return false
+	}
+	if account.IsQuotaExceeded() || (account.RateLimitResetAt != nil && now.Before(*account.RateLimitResetAt)) || (account.OverloadUntil != nil && now.Before(*account.OverloadUntil)) {
+		return false
+	}
+
+	reason := strings.ToLower(strings.TrimSpace(account.TempUnschedulableReason))
+	if reason == "" || strings.Contains(reason, "403") || strings.Contains(reason, "forbidden") {
+		return false
+	}
+	for _, blocked := range []string{"balance", "quota", "insufficient", "billing", "payment", "precharge"} {
+		if strings.Contains(reason, blocked) {
+			return false
+		}
+	}
+	for _, authMarker := range []string{"401", "unauthorized", "authentication", "invalid_auth", "invalid_api_key", "invalid api key", "credential_invalid", "credential"} {
+		if strings.Contains(reason, authMarker) {
+			return true
+		}
+	}
+	return false
 }
 
 func accountActiveProbeEnabledByGroups(account *Account) bool {

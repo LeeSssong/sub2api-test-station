@@ -315,19 +315,23 @@ type MonitorV2NativeGroupProjection struct {
 	Timeline               []MonitorV2NativeTimelinePoint
 }
 
-// MonitorV4GroupProjection is the unified probe plus real-request projection
-// used by the hybrid performance monitor. Metrics are always concrete values;
-// the service supplies historical or zero fallbacks when the current window
-// has no performance samples.
+// MonitorV4GroupProjection is the request-weighted real-request projection
+// used by the hybrid performance monitor. Probe fallback rows are already
+// reduced to one logical request per selected bucket by the repository.
 type MonitorV4GroupProjection struct {
-	AvailabilityBucketCount int
-	TotalBucketCount        int
-	TTFTP95MS               float64
-	LatencyP95MS            float64
-	SampleCount             int
-	SourceUpdatedAt         *time.Time
-	CurrentOperational      bool
-	MetricFallback          bool
+	SuccessRate               *float64
+	RequestCount              int
+	SuccessCount              int
+	RealRequestCount          int
+	RealSuccessCount          int
+	ProbeFallbackBucketCount  int
+	ProbeFallbackRequestCount int
+	TTFTP95MS                 *float64
+	TTFTSampleCount           int
+	LatencyP95MS              *float64
+	LatencySampleCount        int
+	SourceUpdatedAt           *time.Time
+	CurrentOperational        bool
 }
 
 // AccountMonitorGroupProbeRepository is the native read path used by Monitor V2.

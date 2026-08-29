@@ -17,6 +17,10 @@ function number(value: unknown, path: string, integer = false): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (integer && !Number.isInteger(value))) throw new MonitorV4ContractError(`${path} must be a non-negative number`)
   return value
 }
+function nullableNumber(value: unknown, path: string): number | null {
+  if (value === null) return null
+  return number(value, path)
+}
 function text(value: unknown, path: string): string {
   if (typeof value !== 'string' || !value.trim() || Number.isNaN(Date.parse(value))) throw new MonitorV4ContractError(`${path} must be RFC3339 text`)
   return value
@@ -27,23 +31,40 @@ function group(value: unknown, path: string): MonitorV4Group {
   if (id <= 0) throw new MonitorV4ContractError(`${path}.id must be positive`)
   const name = typeof source.name === 'string' && source.name.trim() ? source.name : (() => { throw new MonitorV4ContractError(`${path}.name is required`) })()
   const platform = typeof source.platform === 'string' ? source.platform : ''
-  const availability = number(source.availability, `${path}.availability`)
-  if (availability > 100) throw new MonitorV4ContractError(`${path}.availability must be <= 100`)
-  const total = number(source.total_bucket_count, `${path}.total_bucket_count`, true)
-  const available = number(source.availability_bucket_count, `${path}.availability_bucket_count`, true)
-  if (available > total) throw new MonitorV4ContractError(`${path}.availability buckets exceed total`)
+  const successRate = nullableNumber(source.success_rate, `${path}.success_rate`)
+  if (successRate !== null && successRate > 100) throw new MonitorV4ContractError(`${path}.success_rate must be <= 100`)
+  const requestCount = number(source.request_count, `${path}.request_count`, true)
+  const successCount = number(source.success_count, `${path}.success_count`, true)
+  const realRequestCount = number(source.real_request_count, `${path}.real_request_count`, true)
+  const realSuccessCount = number(source.real_success_count, `${path}.real_success_count`, true)
+  const probeFallbackBucketCount = number(source.probe_fallback_bucket_count, `${path}.probe_fallback_bucket_count`, true)
+  const probeFallbackRequestCount = number(source.probe_fallback_request_count, `${path}.probe_fallback_request_count`, true)
+  if (
+    successCount > requestCount ||
+    realSuccessCount > realRequestCount ||
+    probeFallbackRequestCount !== probeFallbackBucketCount ||
+    realRequestCount + probeFallbackRequestCount !== requestCount ||
+    realSuccessCount > successCount ||
+    successCount > realSuccessCount + probeFallbackRequestCount
+  ) throw new MonitorV4ContractError(`${path} request counts are inconsistent`)
+  if (successRate === null ? requestCount !== 0 : requestCount === 0) throw new MonitorV4ContractError(`${path}.success_rate does not match request_count`)
+  const ttftP95 = nullableNumber(source.ttft_p95_ms, `${path}.ttft_p95_ms`)
+  const latencyP95 = nullableNumber(source.latency_p95_ms, `${path}.latency_p95_ms`)
+  const ttftSampleCount = number(source.ttft_sample_count, `${path}.ttft_sample_count`, true)
+  const latencySampleCount = number(source.latency_sample_count, `${path}.latency_sample_count`, true)
+  if ((ttftP95 === null) !== (ttftSampleCount === 0) || (latencyP95 === null) !== (latencySampleCount === 0)) throw new MonitorV4ContractError(`${path} P95 values do not match sample counts`)
   const sourceUpdatedAt = source.source_updated_at == null || source.source_updated_at === '' ? null : text(source.source_updated_at, `${path}.source_updated_at`)
-  if (typeof source.current_operational !== 'boolean' || typeof source.is_fallback_metric !== 'boolean') throw new MonitorV4ContractError(`${path} status flags are invalid`)
+  if (typeof source.current_operational !== 'boolean') throw new MonitorV4ContractError(`${path} status flags are invalid`)
   return {
     id, name, platform,
     rate_multiplier: number(source.rate_multiplier, `${path}.rate_multiplier`),
-    availability, availability_bucket_count: available, total_bucket_count: total,
-    ttft_p95_ms: number(source.ttft_p95_ms, `${path}.ttft_p95_ms`),
-    latency_p95_ms: number(source.latency_p95_ms, `${path}.latency_p95_ms`),
-    sample_count: number(source.sample_count, `${path}.sample_count`, true),
+    success_rate: successRate, request_count: requestCount, success_count: successCount,
+    real_request_count: realRequestCount, real_success_count: realSuccessCount,
+    probe_fallback_bucket_count: probeFallbackBucketCount, probe_fallback_request_count: probeFallbackRequestCount,
+    ttft_p95_ms: ttftP95, ttft_sample_count: ttftSampleCount,
+    latency_p95_ms: latencyP95, latency_sample_count: latencySampleCount,
     source_updated_at: sourceUpdatedAt,
     current_operational: source.current_operational,
-    is_fallback_metric: source.is_fallback_metric,
   }
 }
 

@@ -278,10 +278,9 @@ func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 	return out, nil
 }
 
-// ProjectMonitorV4Groups combines successful active probes with strict
-// successful usage-log requests. Availability is bucketed independently from
-// the shared performance sample so a successful request without timings still
-// makes its five-minute bucket operational.
+// ProjectMonitorV4Groups projects request-weighted real traffic, using one
+// logical active-probe fallback request for a group/bucket when no real event
+// is present. Real traffic always owns its bucket.
 func (r *accountMonitorRepository) ProjectMonitorV4Groups(
 	ctx context.Context,
 	scopes []service.MonitorV2GroupAccountScope,
@@ -319,85 +318,137 @@ WITH scopes AS (
   FROM unnest($4::bigint[], $5::bigint[]) AS scope(group_id, account_id)
 ), groups AS (
   SELECT DISTINCT group_id FROM scopes
-), buckets AS (
-  SELECT bucket_start
-  FROM generate_series($1::timestamptz, $2::timestamptz - $3::interval, $3::interval) AS series(bucket_start)
-), events AS (
-  SELECT s.group_id, r.checked_at AS observed_at,
-         date_bin($3::interval, r.checked_at, $1::timestamptz) AS bucket_start,
-         (r.status = 'success') AS successful,
-         r.ttft_ms AS first_token_ms,
-         r.latency_ms AS duration_ms
-  FROM scopes s
-  JOIN account_monitor_results r ON r.account_id = s.account_id
-  WHERE r.checked_at >= ($1::timestamptz - interval '90 days') AND r.checked_at < $2
-  UNION ALL
-  SELECT s.group_id, u.created_at AS observed_at,
+), usage_candidates AS (
+  SELECT s.group_id, u.account_id, u.id::bigint AS source_id, u.created_at AS observed_at,
          date_bin($3::interval, u.created_at, $1::timestamptz) AS bucket_start,
-         TRUE AS successful,
-         u.first_token_ms,
-         u.duration_ms
+         (u.actual_cost > 0) AS successful,
+         u.first_token_ms::double precision AS first_token_ms,
+         u.duration_ms::double precision AS duration_ms,
+         COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key,
+         NULLIF(u.logical_request_id, '') AS logical_request_id,
+         NULLIF(u.request_id, '') AS request_id,
+         1 AS source_priority
   FROM scopes s
   JOIN usage_logs u ON u.account_id = s.account_id AND u.group_id = s.group_id
-  WHERE u.created_at >= ($1::timestamptz - interval '90 days') AND u.created_at < $2
-    AND u.actual_cost > 0
-    AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
-), bucket_state AS (
-  SELECT g.group_id, b.bucket_start,
-         (COUNT(*) FILTER (WHERE e.successful) > 0) AS available
-  FROM groups g CROSS JOIN buckets b
-  LEFT JOIN events e ON e.group_id = g.group_id AND e.bucket_start = b.bucket_start
-  GROUP BY g.group_id, b.bucket_start
-), availability AS (
-  SELECT group_id,
-         COUNT(*) FILTER (WHERE available)::int AS available_buckets,
-         COUNT(*)::int AS total_buckets
-  FROM bucket_state
-  GROUP BY group_id
-), current_success AS (
-  SELECT group_id,
-         COUNT(*) FILTER (WHERE successful AND observed_at >= ($2::timestamptz - $3::interval)) > 0 AS current_operational,
-         MAX(observed_at) FILTER (WHERE successful) AS source_updated_at
-  FROM events
-  GROUP BY group_id
-), current_samples AS (
-  SELECT group_id,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL AND duration_ms IS NOT NULL) AS ttft_p95_ms,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL AND duration_ms IS NOT NULL) AS latency_p95_ms,
-         COUNT(*) FILTER (WHERE successful AND first_token_ms IS NOT NULL AND duration_ms IS NOT NULL)::int AS sample_count
-  FROM events
-  WHERE bucket_start >= $1 AND bucket_start < $2
-  GROUP BY group_id
-), fallback_bucket AS (
-  SELECT group_id, MAX(bucket_start) AS bucket_start
-  FROM events
-  WHERE successful AND bucket_start < $1
-  GROUP BY group_id
-), fallback_samples AS (
-  SELECT e.group_id,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY e.first_token_ms) FILTER (WHERE e.first_token_ms IS NOT NULL AND e.duration_ms IS NOT NULL) AS ttft_p95_ms,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY e.duration_ms) FILTER (WHERE e.first_token_ms IS NOT NULL AND e.duration_ms IS NOT NULL) AS latency_p95_ms,
-         COUNT(*) FILTER (WHERE e.first_token_ms IS NOT NULL AND e.duration_ms IS NOT NULL)::int AS sample_count
-  FROM events e
-  JOIN fallback_bucket f ON f.group_id = e.group_id AND f.bucket_start = e.bucket_start
-  WHERE e.successful
-  GROUP BY e.group_id
+  WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
+    AND u.usage_completeness IS DISTINCT FROM 'unknown'
+), error_candidates AS (
+  SELECT s.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
+         date_bin($3::interval, o.created_at, $1::timestamptz) AS bucket_start,
+         FALSE AS successful,
+         NULL::double precision AS first_token_ms,
+         NULL::double precision AS duration_ms,
+         COALESCE(matched_usage.request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
+         0 AS source_priority
+  FROM scopes s
+  JOIN ops_error_logs o ON o.account_id = s.account_id AND o.group_id = s.group_id
+  LEFT JOIN LATERAL (
+    SELECT u.request_key
+    FROM usage_candidates u
+    WHERE u.group_id = s.group_id AND u.account_id = o.account_id
+      AND (
+        (NULLIF(o.request_id, '') IS NOT NULL AND (u.request_id = o.request_id OR u.logical_request_id = o.request_id))
+        OR (NULLIF(o.client_request_id, '') IS NOT NULL AND (u.request_id = o.client_request_id OR u.logical_request_id = o.client_request_id))
+      )
+    ORDER BY u.observed_at DESC, u.source_id DESC
+    LIMIT 1
+  ) matched_usage ON TRUE
+  WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+    AND COALESCE(o.status_code, 0) >= 400
+), real_candidates AS (
+  SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, request_key, source_priority
+  FROM usage_candidates
+  UNION ALL
+  SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, request_key, source_priority
+  FROM error_candidates
+), real_events AS (
+  SELECT group_id, account_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, request_key, 'real'::text AS source
+  FROM (
+    SELECT rc.*, ROW_NUMBER() OVER (
+      PARTITION BY rc.group_id, rc.account_id, rc.request_key
+      ORDER BY rc.source_priority ASC, rc.observed_at DESC, rc.source_id DESC
+    ) AS position
+    FROM real_candidates rc
+  ) ranked
+  WHERE position = 1
+), real_buckets AS (
+  SELECT group_id, bucket_start
+  FROM real_events
+  GROUP BY group_id, bucket_start
+), probe_rows AS (
+  SELECT s.group_id, r.run_id, r.checked_at AS observed_at,
+         date_bin($3::interval, r.checked_at, $1::timestamptz) AS bucket_start,
+         (r.status = 'success') AS successful,
+         r.ttft_ms,
+         r.latency_ms
+  FROM scopes s
+  JOIN account_monitor_results r ON r.account_id = s.account_id
+  WHERE r.checked_at >= $1::timestamptz AND r.checked_at < $2::timestamptz
+), probe_runs AS (
+  SELECT group_id, bucket_start, run_id,
+         BOOL_OR(successful) AS successful,
+         MIN(ttft_ms) FILTER (WHERE successful AND ttft_ms IS NOT NULL) AS first_token_ms,
+         MIN(latency_ms) FILTER (WHERE successful AND latency_ms IS NOT NULL) AS duration_ms,
+         MAX(observed_at) AS observed_at
+  FROM probe_rows
+  GROUP BY group_id, bucket_start, run_id
+), probe_buckets AS (
+  SELECT group_id, bucket_start,
+         BOOL_OR(successful) AS successful,
+         MIN(first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS first_token_ms,
+         MIN(duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL) AS duration_ms,
+         MAX(observed_at) AS observed_at
+  FROM probe_runs
+  GROUP BY group_id, bucket_start
+), selected_events AS (
+  SELECT r.group_id, r.bucket_start, r.observed_at, r.successful, r.first_token_ms, r.duration_ms, r.source
+  FROM real_events r
+  UNION ALL
+  SELECT p.group_id, p.bucket_start, p.observed_at, p.successful, p.first_token_ms, p.duration_ms, 'probe'::text AS source
+  FROM probe_buckets p
+  LEFT JOIN real_buckets rb ON rb.group_id = p.group_id AND rb.bucket_start = p.bucket_start
+  WHERE rb.group_id IS NULL
+    AND (
+      p.bucket_start + $3::interval <= $2::timestamptz
+      OR (
+        $2::timestamptz >= p.bucket_start + interval '4 minutes'
+        AND $2::timestamptz < p.bucket_start + $3::interval
+      )
+    )
+), latest_selected AS (
+  SELECT DISTINCT ON (group_id) group_id, successful
+  FROM selected_events
+  ORDER BY group_id, bucket_start DESC, observed_at DESC
+), aggregate AS (
+  SELECT g.group_id,
+         CASE WHEN COUNT(s.group_id) = 0 THEN NULL
+              ELSE COUNT(*) FILTER (WHERE s.successful)::double precision * 100 / COUNT(s.group_id)
+         END AS success_rate,
+         COUNT(s.group_id)::int AS request_count,
+         COUNT(*) FILTER (WHERE s.successful)::int AS success_count,
+         COUNT(*) FILTER (WHERE s.source = 'real')::int AS real_request_count,
+         COUNT(*) FILTER (WHERE s.source = 'real' AND s.successful)::int AS real_success_count,
+         COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
+         COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
+         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY s.first_token_ms)
+           FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL) AS ttft_p95_ms,
+         COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
+         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY s.duration_ms)
+           FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL) AS latency_p95_ms,
+         COUNT(*) FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL)::int AS latency_sample_count,
+         MAX(s.observed_at) AS source_updated_at,
+         COALESCE(BOOL_OR(ls.successful), FALSE) AS current_operational
+  FROM groups g
+  LEFT JOIN selected_events s ON s.group_id = g.group_id
+  LEFT JOIN latest_selected ls ON ls.group_id = g.group_id
+  GROUP BY g.group_id
 )
-SELECT g.group_id,
-       a.available_buckets,
-       a.total_buckets,
-       COALESCE(cs.ttft_p95_ms, fs.ttft_p95_ms, 0)::double precision,
-       COALESCE(cs.latency_p95_ms, fs.latency_p95_ms, 0)::double precision,
-       CASE WHEN COALESCE(cs.sample_count, 0) > 0 THEN cs.sample_count ELSE COALESCE(fs.sample_count, 0) END::int,
-       COALESCE(cu.current_operational, FALSE),
-       cu.source_updated_at,
-       (COALESCE(cs.sample_count, 0) = 0 AND fs.sample_count IS NOT NULL AND fs.sample_count > 0) AS metric_fallback
-FROM groups g
-JOIN availability a ON a.group_id = g.group_id
-LEFT JOIN current_samples cs ON cs.group_id = g.group_id
-LEFT JOIN fallback_samples fs ON fs.group_id = g.group_id
-LEFT JOIN current_success cu ON cu.group_id = g.group_id
-ORDER BY g.group_id
+SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,
+       probe_fallback_bucket_count, probe_fallback_request_count, ttft_p95_ms, ttft_sample_count,
+       latency_p95_ms, latency_sample_count, source_updated_at, current_operational
+FROM aggregate
+ORDER BY group_id
 `, start.UTC(), end.UTC(), bucketSize.String(), pq.Array(groupIDs), pq.Array(accountIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query hybrid monitor v4 groups: %w", err)
@@ -405,23 +456,42 @@ ORDER BY g.group_id
 	defer rows.Close()
 	for rows.Next() {
 		var (
-			groupID, availableBuckets, totalBuckets, sampleCount int
-			ttftP95, latencyP95                                  float64
-			currentOperational, metricFallback                   bool
-			sourceUpdatedAt                                      sql.NullTime
+			groupID, requestCount, successCount, realRequestCount, realSuccessCount          int
+			probeFallbackBuckets, probeFallbackRequests, ttftSampleCount, latencySampleCount int
+			successRate, ttftP95, latencyP95                                                 sql.NullFloat64
+			currentOperational                                                               bool
+			sourceUpdatedAt                                                                  sql.NullTime
 		)
-		if err := rows.Scan(&groupID, &availableBuckets, &totalBuckets, &ttftP95, &latencyP95, &sampleCount, &currentOperational, &sourceUpdatedAt, &metricFallback); err != nil {
+		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &sourceUpdatedAt, &currentOperational); err != nil {
 			return nil, fmt.Errorf("scan hybrid monitor v4 groups: %w", err)
 		}
+		var successRatePtr, ttftP95Ptr, latencyP95Ptr *float64
+		if successRate.Valid {
+			value := successRate.Float64
+			successRatePtr = &value
+		}
+		if ttftP95.Valid {
+			value := ttftP95.Float64
+			ttftP95Ptr = &value
+		}
+		if latencyP95.Valid {
+			value := latencyP95.Float64
+			latencyP95Ptr = &value
+		}
 		out[int64(groupID)] = service.MonitorV4GroupProjection{
-			AvailabilityBucketCount: availableBuckets,
-			TotalBucketCount:        totalBuckets,
-			TTFTP95MS:               ttftP95,
-			LatencyP95MS:            latencyP95,
-			SampleCount:             sampleCount,
-			SourceUpdatedAt:         accountMonitorNullableTime(sourceUpdatedAt),
-			CurrentOperational:      currentOperational,
-			MetricFallback:          metricFallback,
+			SuccessRate:               successRatePtr,
+			RequestCount:              requestCount,
+			SuccessCount:              successCount,
+			RealRequestCount:          realRequestCount,
+			RealSuccessCount:          realSuccessCount,
+			ProbeFallbackBucketCount:  probeFallbackBuckets,
+			ProbeFallbackRequestCount: probeFallbackRequests,
+			TTFTP95MS:                 ttftP95Ptr,
+			TTFTSampleCount:           ttftSampleCount,
+			LatencyP95MS:              latencyP95Ptr,
+			LatencySampleCount:        latencySampleCount,
+			SourceUpdatedAt:           accountMonitorNullableTime(sourceUpdatedAt),
+			CurrentOperational:        currentOperational,
 		}
 	}
 	if err := rows.Err(); err != nil {

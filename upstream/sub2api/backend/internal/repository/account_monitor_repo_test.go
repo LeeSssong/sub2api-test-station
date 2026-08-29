@@ -32,6 +32,50 @@ func TestAccountMonitorRepositoryHealthHistoryErrorRollsBackWithoutEvent(t *test
 	}
 }
 
+func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	projector, ok := repo.(service.AccountMonitorHybridProjectionRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement hybrid projection")
+	}
+	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	updatedAt := end.Add(-time.Minute)
+	mock.ExpectQuery(`(?s)WITH scopes AS.*usage_candidates AS.*error_candidates AS.*COALESCE\(matched_usage\.request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*BOOL_OR\(successful\).*GROUP BY group_id, bucket_start.*selected_events AS.*request_count`).
+		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
+			"probe_fallback_bucket_count", "probe_fallback_request_count", "ttft_p95_ms", "ttft_sample_count",
+			"latency_p95_ms", "latency_sample_count", "source_updated_at", "current_operational",
+		}).AddRow(7, 75.0, 4, 3, 2, 1, 2, 2, 120.0, 2, 800.0, 3, updatedAt, true))
+
+	projection, err := projector.ProjectMonitorV4Groups(context.Background(), []service.MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 11}}, start, end, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := projection[7]
+	if row.RequestCount != 4 || row.SuccessCount != 3 || row.RealRequestCount != 2 || row.RealSuccessCount != 1 {
+		t.Fatalf("request projection = %#v", row)
+	}
+	if row.ProbeFallbackBucketCount != 2 || row.ProbeFallbackRequestCount != 2 || row.SuccessRate == nil || *row.SuccessRate != 75 {
+		t.Fatalf("probe projection = %#v", row)
+	}
+	if row.TTFTP95MS == nil || *row.TTFTP95MS != 120 || row.TTFTSampleCount != 2 || row.LatencyP95MS == nil || *row.LatencyP95MS != 800 || row.LatencySampleCount != 3 {
+		t.Fatalf("P95 projection = %#v", row)
+	}
+	if !row.CurrentOperational || row.SourceUpdatedAt == nil || !row.SourceUpdatedAt.Equal(updatedAt) {
+		t.Fatalf("status projection = %#v", row)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryLoadsAndSavesSingletonSettings(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

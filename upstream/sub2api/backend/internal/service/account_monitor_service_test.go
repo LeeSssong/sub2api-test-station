@@ -994,7 +994,7 @@ func (s *accountMonitorAccountRepoStub) ListAllWithFilters(
 	return append([]Account(nil), s.accounts...), nil
 }
 
-func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T) {
+func TestAccountMonitorListPoolUsesNativeSchedulingGates(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 	repo := &accountMonitorAccountRepoStub{
 		accounts: []Account{
@@ -1002,6 +1002,7 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 			{ID: 2, Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future},
 			{ID: 4, Status: StatusDisabled, Schedulable: true},
 			{ID: 6, Status: StatusActive, Schedulable: false},
+			{ID: 1, Status: StatusActive, Schedulable: true},
 		},
 		schedulableAccounts: []Account{
 			{ID: 9, Status: StatusActive, Schedulable: true},
@@ -1013,14 +1014,11 @@ func TestAccountMonitorListPoolUsesPersistedActiveSchedulableFlags(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts) != 3 || accounts[0].ID != 2 || accounts[1].ID != 6 || accounts[2].ID != 9 {
+	if len(accounts) != 1 || accounts[0].ID != 1 {
 		t.Fatalf("accounts = %#v", accounts)
 	}
 	if !repo.listAllCalled || repo.listAllStatus != "" {
 		t.Fatalf("ListAllWithFilters must not use the composite active filter: %#v", repo)
-	}
-	if repo.listSchedulableCalled {
-		t.Fatal("account monitor must not use runtime scheduler eligibility")
 	}
 }
 
@@ -1149,10 +1147,11 @@ func TestAccountMonitorModelFallsBackToNativePlatformDefaults(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorListPoolKeepsActiveAccountsIncludingPaused(t *testing.T) {
+func TestAccountMonitorListPoolExcludesNativeSchedulingBlocks(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
 	service := NewAccountMonitorService(nil, &accountMonitorAccountRepoStub{accounts: []Account{
 		{ID: 9, Status: StatusActive, Schedulable: true},
-		{ID: 2, Status: StatusActive, Schedulable: true},
+		{ID: 2, Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future},
 		{ID: 4, Status: StatusDisabled, Schedulable: true},
 		{ID: 6, Status: StatusActive, Schedulable: false},
 	}}, nil, nil, nil)
@@ -1161,8 +1160,33 @@ func TestAccountMonitorListPoolKeepsActiveAccountsIncludingPaused(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(accounts) != 3 || accounts[0].ID != 2 || accounts[1].ID != 6 || accounts[2].ID != 9 {
+	if len(accounts) != 1 || accounts[0].ID != 9 {
 		t.Fatalf("accounts = %#v", accounts)
+	}
+}
+
+func TestAccountMonitorAPIKey401RecoveryEligibility(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	tests := []struct {
+		name   string
+		reason string
+		want   bool
+	}{
+		{name: "401 status", reason: `{"status_code":401,"error_message":"unauthorized"}`, want: true},
+		{name: "credential failure class", reason: `{"failure_class":"credential_invalid","recovery_policy":"probe_required"}`, want: true},
+		{name: "balance exhausted", reason: `{"failure_class":"balance_exhausted","recovery_policy":"probe_required"}`},
+		{name: "quota", reason: `{"failure_class":"quota_exhausted"}`},
+		{name: "insufficient", reason: `insufficient balance for precharge`},
+		{name: "forbidden precharge balance", reason: `precharge balance check failed: HTTP 403 forbidden`},
+		{name: "unclassified temporary block", reason: `temporary upstream error`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{Type: AccountTypeAPIKey, TempUnschedulableUntil: &future, TempUnschedulableReason: tt.reason}
+			if got := accountMonitorAPIKey401RecoveryEligible(account, time.Now().UTC()); got != tt.want {
+				t.Fatalf("accountMonitorAPIKey401RecoveryEligible() = %v, want %v for %q", got, tt.want, tt.reason)
+			}
+		})
 	}
 }
 
@@ -3581,7 +3605,7 @@ func TestAccountMonitorRunAllProbesAPIKey401RecoveryAndClearsTempState(t *testin
 	}
 	until := time.Now().UTC().Add(time.Hour)
 	accountRepo := &accountMonitorAPIKeyRecoveryRepoStub{accountMonitorAccountRepoStub: accountMonitorAccountRepoStub{
-		accounts: []Account{{ID: 406, Status: StatusActive, Schedulable: true, Type: AccountTypeAPIKey, TempUnschedulableUntil: &until}},
+		accounts: []Account{{ID: 406, Status: StatusActive, Schedulable: true, Type: AccountTypeAPIKey, TempUnschedulableUntil: &until, TempUnschedulableReason: `{"status_code":401,"error_message":"invalid API key"}`}},
 	}}
 	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
 	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{})

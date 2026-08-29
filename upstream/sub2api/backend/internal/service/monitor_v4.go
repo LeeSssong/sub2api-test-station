@@ -3,13 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 )
 
 const (
-	MonitorV4ContractVersion = "1"
+	MonitorV4ContractVersion = "2"
 	MonitorV4BucketSize      = 5 * time.Minute
 	monitorV4MaxGroups       = 100
 )
@@ -32,19 +31,23 @@ type MonitorV4Metric struct {
 }
 
 type MonitorV4Group struct {
-	ID                  int64
-	Name                string
-	Platform            string
-	RateMultiplier      float64
-	Availability        float64
-	AvailabilityBuckets int
-	TotalBuckets        int
-	TTFTP95MS           float64
-	LatencyP95MS        float64
-	SampleCount         int
-	SourceUpdatedAt     *time.Time
-	CurrentOperational  bool
-	MetricFallback      bool
+	ID                        int64
+	Name                      string
+	Platform                  string
+	RateMultiplier            float64
+	SuccessRate               *float64
+	RequestCount              int
+	SuccessCount              int
+	RealRequestCount          int
+	RealSuccessCount          int
+	ProbeFallbackBucketCount  int
+	ProbeFallbackRequestCount int
+	TTFTP95MS                 *float64
+	TTFTSampleCount           int
+	LatencyP95MS              *float64
+	LatencySampleCount        int
+	SourceUpdatedAt           *time.Time
+	CurrentOperational        bool
 }
 
 type MonitorV4Snapshot struct {
@@ -110,15 +113,14 @@ func (s *MonitorV4Service) snapshotWithGroups(ctx context.Context, window Monito
 	cards := make([]MonitorV4Group, 0, len(visibleGroups))
 	for _, group := range visibleGroups {
 		projection := projections[group.ID]
-		availability := 0.0
-		if projection.TotalBucketCount > 0 {
-			availability = math.Round(float64(projection.AvailabilityBucketCount)*1000/float64(projection.TotalBucketCount)) / 10
-		}
 		cards = append(cards, MonitorV4Group{
 			ID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier,
-			Availability: availability, AvailabilityBuckets: projection.AvailabilityBucketCount, TotalBuckets: projection.TotalBucketCount,
-			TTFTP95MS: projection.TTFTP95MS, LatencyP95MS: projection.LatencyP95MS, SampleCount: projection.SampleCount,
-			SourceUpdatedAt: projection.SourceUpdatedAt, CurrentOperational: projection.CurrentOperational, MetricFallback: projection.MetricFallback,
+			SuccessRate: projection.SuccessRate, RequestCount: projection.RequestCount, SuccessCount: projection.SuccessCount,
+			RealRequestCount: projection.RealRequestCount, RealSuccessCount: projection.RealSuccessCount,
+			ProbeFallbackBucketCount: projection.ProbeFallbackBucketCount, ProbeFallbackRequestCount: projection.ProbeFallbackRequestCount,
+			TTFTP95MS: projection.TTFTP95MS, TTFTSampleCount: projection.TTFTSampleCount,
+			LatencyP95MS: projection.LatencyP95MS, LatencySampleCount: projection.LatencySampleCount,
+			SourceUpdatedAt: projection.SourceUpdatedAt, CurrentOperational: projection.CurrentOperational,
 		})
 	}
 	refreshIntervalSeconds := MonitorPageRefreshIntervalSecondsDefault

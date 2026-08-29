@@ -14,10 +14,10 @@
     </header>
 
     <div class="hybrid-card__ring-wrap">
-      <div class="hybrid-ring" :class="`hybrid-ring--${tone}`" data-test="ring" role="img" :aria-label="`${group.availability}%`">
+      <div class="hybrid-ring" :class="`hybrid-ring--${tone}`" data-test="ring" role="img" :aria-label="successRateLabel">
         <div class="hybrid-ring__center">
-          <strong data-test="availability">{{ formatAvailability(group.availability) }}%</strong>
-          <span>{{ t('channelMonitorV2.hybrid.availability') }}</span>
+          <strong data-test="success-rate">{{ successRateLabel }}</strong>
+          <span>{{ t('channelMonitorV2.hybrid.successRate') }}</span>
         </div>
       </div>
     </div>
@@ -34,8 +34,7 @@
     </div>
 
     <footer class="hybrid-card__footer">
-      <span data-test="sample-count">{{ t('channelMonitorV2.hybrid.sampleCount', { count: group.sample_count }) }}</span>
-      <span data-test="latest-probe">{{ latestProbe }}</span>
+      <span data-test="request-count">{{ t('channelMonitorV2.hybrid.requestCount', { success: group.success_count, total: group.request_count }) }}</span>
     </footer>
   </article>
 </template>
@@ -47,14 +46,9 @@ import type { MonitorV4Group } from './types'
 
 const props = defineProps<{ group: MonitorV4Group }>()
 const { t } = useI18n()
-const tone = computed(() => props.group.availability >= 85 ? 'green' : props.group.availability >= 50 ? 'amber' : 'red')
-const formatAvailability = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(1)
-const formatSeconds = (value: number) => `${(value / 1000).toFixed(2)} s`
-const formatProbeTime = (value: string | null | undefined) => {
-  if (!value) return '--'
-  return new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
-}
-const latestProbe = computed(() => t('channelMonitorV2.hybrid.latestProbe', { time: formatProbeTime(props.group.source_updated_at) }))
+const tone = computed(() => props.group.success_rate === null ? 'amber' : props.group.success_rate >= 85 ? 'green' : props.group.success_rate >= 50 ? 'amber' : 'red')
+const successRateLabel = computed(() => props.group.success_rate === null ? '--' : `${Number.isInteger(props.group.success_rate) ? props.group.success_rate : props.group.success_rate.toFixed(1)}%`)
+const formatSeconds = (value: number | null) => value === null ? '--' : `${(value / 1000).toFixed(2)} s`
 </script>
 
 <style scoped>

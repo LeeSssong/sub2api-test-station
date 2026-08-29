@@ -17,8 +17,11 @@ func (s *monitorV4NativeReaderStub) ProjectMonitorV4Groups(_ context.Context, gr
 }
 
 func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *testing.T) {
+	rate := 75.0
+	ttft := 120.0
+	latency := 900.0
 	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
-		7: {AvailabilityBucketCount: 1, TotalBucketCount: 1, TTFTP95MS: 120, LatencyP95MS: 900, SampleCount: 1},
+		7: {SuccessRate: &rate, RequestCount: 4, SuccessCount: 3, TTFTP95MS: &ttft, LatencyP95MS: &latency, TTFTSampleCount: 3, LatencySampleCount: 3},
 	}}
 	svc := NewMonitorV4Service(
 		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Hybrid", Platform: PlatformOpenAI, Status: StatusActive}}},
@@ -38,6 +41,25 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	}
 }
 
+func TestMonitorV4SnapshotPreservesNullableMetrics(t *testing.T) {
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
+		7: {RequestCount: 0, SuccessCount: 0},
+	}}
+	svc := NewMonitorV4Service(
+		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Hybrid", Platform: PlatformOpenAI, Status: StatusActive}}},
+		&monitorV2AvailableGroupReaderStub{}, native, nil,
+		&monitorV2ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	if len(snapshot.Groups) != 1 || snapshot.Groups[0].SuccessRate != nil || snapshot.Groups[0].TTFTP95MS != nil || snapshot.Groups[0].LatencyP95MS != nil {
+		t.Fatalf("nullable metrics = %#v", snapshot.Groups)
+	}
+}
+
 func TestMonitorV4WindowStart(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	start, err := monitorV4WindowStart(MonitorV4Window7D, now)
@@ -52,9 +74,9 @@ func TestMonitorV4WindowStart(t *testing.T) {
 	}
 }
 
-func TestMonitorV4AvailabilityThresholdInputsRemainConcrete(t *testing.T) {
-	projection := MonitorV4GroupProjection{AvailabilityBucketCount: 17, TotalBucketCount: 20, TTFTP95MS: 0, LatencyP95MS: 0, SampleCount: 0}
-	if projection.TotalBucketCount == 0 || projection.TTFTP95MS < 0 || projection.LatencyP95MS < 0 {
-		t.Fatal("zero-sample projection must retain concrete metric values")
+func TestMonitorV4RequestCountsRemainConsistent(t *testing.T) {
+	projection := MonitorV4GroupProjection{RequestCount: 20, SuccessCount: 17, RealRequestCount: 15, RealSuccessCount: 14, ProbeFallbackBucketCount: 5, ProbeFallbackRequestCount: 5}
+	if projection.SuccessCount > projection.RequestCount || projection.RealSuccessCount > projection.RealRequestCount || projection.ProbeFallbackRequestCount != projection.ProbeFallbackBucketCount || projection.RealRequestCount+projection.ProbeFallbackRequestCount != projection.RequestCount || projection.RealSuccessCount > projection.SuccessCount || projection.SuccessCount > projection.RealSuccessCount+projection.ProbeFallbackRequestCount {
+		t.Fatal("request-weighted projection is inconsistent")
 	}
 }

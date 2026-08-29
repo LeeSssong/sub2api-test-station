@@ -4,7 +4,7 @@ import HybridPerformanceView from '../HybridPerformanceView.vue'
 
 const { getSnapshot } = vi.hoisted(() => ({
   getSnapshot: vi.fn().mockResolvedValue({
-    contract_version: '1', window: '7d', refresh_interval_seconds: 0,
+    contract_version: '2', window: '7d', refresh_interval_seconds: 0,
     generated_at: '2026-08-25T00:00:00Z', groups: [],
   }),
 }))

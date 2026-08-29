@@ -1032,6 +1032,19 @@ const CostMetric = defineComponent({
   white-space: nowrap;
 }
 
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"]::before {
+  margin-right: auto;
+  color: var(--monitor-muted);
+  content: '事实源：持久化真实请求 · 调度策略：成功率 → TTFT P95 → 利润率';
+  font-size: 12px;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-edit"],
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-delete"],
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="refresh-account"] {
+  display: none;
+}
+
 .monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] {
   min-width: 0;
   padding: 0 24px 12px;

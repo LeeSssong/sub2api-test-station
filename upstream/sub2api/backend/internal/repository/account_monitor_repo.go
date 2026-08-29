@@ -809,6 +809,176 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 	return result, nil
 }
 
+// ListRealRequestAggregates uses the persisted usage/error stream as the
+// account-monitor quality source. It deliberately keeps active-probe rows out
+// of this projection.
+func (r *accountMonitorRepository) ListRealRequestAggregates(
+	ctx context.Context,
+	accountIDs []int64,
+	since, until time.Time,
+) (map[int64]service.AccountMonitorWindowAggregate, error) {
+	result := make(map[int64]service.AccountMonitorWindowAggregate, len(accountIDs))
+	if len(accountIDs) == 0 || !until.After(since) {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		WITH usage_events AS (
+			SELECT u.account_id, u.id::bigint AS source_id, u.created_at,
+				u.first_token_ms::double precision AS first_token_ms,
+				u.duration_ms::double precision AS duration_ms,
+				u.actual_cost::double precision AS revenue,
+				COALESCE(u.account_cost, COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1))::double precision AS account_cost,
+				(u.account_cost IS NOT NULL OR u.account_stats_cost IS NOT NULL OR u.total_cost IS NOT NULL) AS cost_complete,
+				(u.actual_cost > 0) AS successful,
+				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key,
+				1 AS source_priority
+			FROM usage_logs u
+			WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3
+			  AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), error_events AS (
+			SELECT e.account_id, e.id::bigint AS source_id, e.created_at,
+				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
+				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
+				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key,
+				0 AS source_priority
+			FROM ops_error_logs e
+			WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3
+			  AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+		), events AS (
+			SELECT * FROM usage_events UNION ALL SELECT * FROM error_events
+		), dedup AS (
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn
+			FROM events e
+		)
+		SELECT account_id, COUNT(*)::bigint, COUNT(*) FILTER (WHERE successful)::bigint,
+			COUNT(*) FILTER (WHERE NOT successful)::bigint,
+			COALESCE(SUM(revenue), 0)::double precision,
+			COALESCE(SUM(account_cost) FILTER (WHERE cost_complete), 0)::double precision,
+			BOOL_AND(cost_complete OR successful = FALSE),
+			COALESCE(COUNT(*) FILTER (WHERE successful)::double precision / NULLIF(COUNT(*), 0), 0),
+			COUNT(first_token_ms) FILTER (WHERE successful)::int,
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL),
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL),
+			MAX(created_at)
+		FROM dedup WHERE rn = 1 GROUP BY account_id
+	`, pq.Array(accountIDs), since.UTC(), until.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var a service.AccountMonitorWindowAggregate
+		var complete bool
+		if err := rows.Scan(&id, &a.RequestCount, &a.SuccessCount, &a.ErrorCount, &a.Revenue, &a.AccountCost, &complete, &a.SuccessRate, &a.TTFTSampleCount, &a.TTFTP95MS, &a.LatencyP95MS, &a.LastObservedAt); err != nil {
+			return nil, err
+		}
+		a.BaseCost = a.AccountCost
+		a.CostComplete = complete
+		result[id] = a
+	}
+	return result, rows.Err()
+}
+
+func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context, accountIDs []int64, since, until time.Time, bucketCount int) (map[int64][]service.AccountMonitorRealRequestTimelinePoint, error) {
+	result := make(map[int64][]service.AccountMonitorRealRequestTimelinePoint, len(accountIDs))
+	if len(accountIDs) == 0 || !until.After(since) {
+		return result, nil
+	}
+	if bucketCount <= 0 || bucketCount > 48 {
+		bucketCount = service.AccountMonitorTimelineLimit
+	}
+	bucketSeconds := until.Sub(since).Seconds() / float64(bucketCount)
+	rows, err := r.db.QueryContext(ctx, `
+		WITH usage_events AS (
+			SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms,
+				(u.actual_cost > 0) AS successful,
+				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
+			FROM usage_logs u WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), error_events AS (
+			SELECT e.account_id, e.id::bigint AS source_id, e.created_at, NULL::double precision AS first_token_ms, FALSE AS successful,
+				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
+			FROM ops_error_logs e WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+		), dedup AS (
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
+		), buckets AS (
+			SELECT account_id, FLOOR(EXTRACT(EPOCH FROM (created_at - $2)) / $4)::int AS bucket_index,
+				COUNT(*)::bigint AS request_count, COUNT(*) FILTER (WHERE successful)::bigint AS success_count,
+				COUNT(*) FILTER (WHERE NOT successful)::bigint AS failure_count,
+				PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_p95_ms
+			FROM dedup WHERE rn = 1 GROUP BY account_id, bucket_index
+		)
+		SELECT account_id, bucket_index, request_count, success_count, failure_count, ttft_p95_ms FROM buckets ORDER BY account_id, bucket_index
+	`, pq.Array(accountIDs), since.UTC(), until.UTC(), bucketSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var index int
+		var p service.AccountMonitorRealRequestTimelinePoint
+		if err := rows.Scan(&id, &index, &p.RequestCount, &p.SuccessCount, &p.FailureCount, &p.TTFTP95MS); err != nil {
+			return nil, err
+		}
+		p.StartAt = since.Add(time.Duration(float64(index)*bucketSeconds) * time.Second).UTC()
+		p.EndAt = since.Add(time.Duration(float64(index+1)*bucketSeconds) * time.Second).UTC()
+		result[id] = append(result[id], p)
+	}
+	return result, rows.Err()
+}
+
+func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Context, groupIDs, accountIDs []int64, since, until time.Time) (map[int64]map[int64]service.AccountMonitorWindowAggregate, error) {
+	result := make(map[int64]map[int64]service.AccountMonitorWindowAggregate)
+	if len(groupIDs) == 0 || len(accountIDs) == 0 || !until.After(since) {
+		return result, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		WITH usage_events AS (
+			SELECT u.group_id, u.account_id, u.id::bigint AS source_id, u.created_at,
+				u.first_token_ms::double precision AS first_token_ms, u.duration_ms::double precision AS duration_ms,
+				u.actual_cost::double precision AS revenue,
+				COALESCE(u.account_cost, COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1))::double precision AS account_cost,
+				(u.account_cost IS NOT NULL OR u.account_stats_cost IS NOT NULL OR u.total_cost IS NOT NULL) AS cost_complete,
+				(u.actual_cost > 0) AS successful,
+				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
+			FROM usage_logs u WHERE u.group_id = ANY($1) AND u.account_id = ANY($2) AND u.created_at >= $3 AND u.created_at < $4 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), error_events AS (
+			SELECT e.group_id, e.account_id, e.id::bigint AS source_id, e.created_at,
+				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
+				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
+				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
+			FROM ops_error_logs e WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+		), dedup AS (
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.group_id, e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
+		)
+		SELECT group_id, account_id, COUNT(*)::bigint, COUNT(*) FILTER (WHERE successful)::bigint, COUNT(*) FILTER (WHERE NOT successful)::bigint,
+			COALESCE(SUM(revenue), 0)::double precision, COALESCE(SUM(account_cost) FILTER (WHERE cost_complete), 0)::double precision,
+			BOOL_AND(cost_complete OR successful = FALSE), COALESCE(COUNT(*) FILTER (WHERE successful)::double precision / NULLIF(COUNT(*), 0), 0),
+			COUNT(first_token_ms) FILTER (WHERE successful)::int, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL),
+			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL), MAX(created_at)
+		FROM dedup WHERE rn = 1 GROUP BY group_id, account_id ORDER BY group_id, account_id
+	`, pq.Array(groupIDs), pq.Array(accountIDs), since.UTC(), until.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var gid, aid int64
+		var a service.AccountMonitorWindowAggregate
+		var complete bool
+		if err := rows.Scan(&gid, &aid, &a.RequestCount, &a.SuccessCount, &a.ErrorCount, &a.Revenue, &a.AccountCost, &complete, &a.SuccessRate, &a.TTFTSampleCount, &a.TTFTP95MS, &a.LatencyP95MS, &a.LastObservedAt); err != nil {
+			return nil, err
+		}
+		a.BaseCost, a.CostComplete = a.AccountCost, complete
+		if result[gid] == nil {
+			result[gid] = make(map[int64]service.AccountMonitorWindowAggregate)
+		}
+		result[gid][aid] = a
+	}
+	return result, rows.Err()
+}
+
 func (r *accountMonitorRepository) ListGroupWindowAggregates(
 	ctx context.Context,
 	groupID int64,

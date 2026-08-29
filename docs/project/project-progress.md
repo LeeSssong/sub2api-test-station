@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**T91 星桥 Q 额度发放与真实支付来源统一（2026-08-29）：** 状态：进行中（DESIGNING，暂停实现）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 分支 `codex/t91-q-issuance-payment-source` 保留在 `84dc3c40a`，原独立 worktree 已清理且未产生业务代码变更；未修改运行时代码、未推送、未部署，测试站部署暂停，等待修订规格确认和兑换码归类决策。
+
+**T90 账号监控卡片真实请求证据、利润率与性能柱状图（2026-08-29）：** 状态：设计调整中（DESIGNING，R2 已确认；未创建实现 worktree）。原确认稿为 `/Users/gongtengxinwen/.codex/visualizations/2026/08/28/01a0494d-bac1-7781-a6a6-0f90fc2877a3/account-monitor-card-proposal.html`，R1 视觉稿为 `/Users/gongtengxinwen/.codex/visualizations/2026/08/28/01a0494d-bac1-7781-a6a6-0f90fc2877a3/account-monitor-card-proposal-r1.html`，R2 视觉稿为 `/Users/gongtengxinwen/.codex/visualizations/2026/08/28/01a0494d-bac1-7781-a6a6-0f90fc2877a3/account-monitor-card-proposal-r2.html`；R2 规格为 `docs/superpowers/specs/2026-08-29-t90-r2-account-monitor-operator-surface.md`，实施计划已按 R2 更新。新方向是卡片只保留判断字段且去掉说明性文字，详情弹窗展示账号管理页全部可见字段、不额外脱敏，账号操作统一收敛到原生单账号操作菜单；保留账号主动探测；模型监测页面/历史/设置保留并保留手动触发，但不自动触发。当前 T85 与 T91 占用两个功能设计窗口，T86 已冻结，T90 未写运行时代码、未合并、未推送、未部署。
+
 **运营日报、错误生命周期、模型准入与调度质量治理（2026-08-29）：** 状态：进行中（DESIGNING）。规格为 `docs/superpowers/specs/2026-08-29-operations-daily-governance-design.md`，实施计划为 `docs/superpowers/plans/2026-08-29-operations-daily-governance.md`。用户于 2026-08-29 明确取消 T86；生产只读核对确认全部账号 Luna 映射已清零、5 个已启用活跃分组目录均不含 Luna，且 17:35:02（北京时间）更新后暂无 Luna 错误或用量流水。T86 不实施入口拦截或额外配置清理，独立任务已归档；T87、T88、T89 仍为 BACKLOG。未修改运行时代码、未写入生产配置、未推送或部署。
 **T85 Monitor V4 混合真实请求成功率与 P95 口径修正（2026-08-28）：** 状态：进行中（DESIGNING）。目标是把第四套分组性能监控从“成功桶数/桶总数”修正为 5 分钟桶源选择后的请求级成功率：真实请求优先；当前桶进入最后一分钟且仍无真实请求时才使用同桶主动探测；同桶不混用；空桶不计入分母；成功请求的 TTFT 与总耗时分别按各自可用样本取 P95；不使用窗口外历史回退。复用 `usage_logs`、`ops_error_logs`、`account_monitor_results` 与 T83 空桶门禁，不新增事实源或迁移。规格书待用户审阅批准；当前保留 T84 根目录脏改动、未跟踪文件和 `codex/t84-active-probe-adaptive` worktree，尚未创建本任务实现 worktree，未改运行时代码、未推送、未合并、未部署。
 

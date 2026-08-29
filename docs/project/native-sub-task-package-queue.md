@@ -1,5 +1,14 @@
 # 原生 Sub 小步发布任务包队列
 
+## 运营日报、错误生命周期、模型准入与调度质量治理（2026-08-29）
+
+- **T86 分组模型请求准入与 Luna 映射清理：** 状态 `DESIGNING`。用户已确认开始执行，将从当前根 `main` 创建独立用户可见顶层任务和 Codex worktree；T85 的既有 dirty worktree 保持保护且不被触碰。范围是将启用的 `groups.models_list_config` 从目录展示规则扩展为请求入口准入；禁止 Luna 的分组在账号选择前返回 `400/model_not_supported/retryable=false`，不再产生路由 503、failover、上游调用或计费。账号 278、279、280、281、282、289、290、291 的 `gpt-5.6-luna` 映射清理是独立、受控、可审计的原生配置变更，必须在入口拦截验证后执行。复用原生分组、模型映射、错误与诊断能力，不自动降级模型、不使用 GitHub Actions；本状态不授权生产配置写入或主站部署。
+- **T87 逻辑请求错误生命周期投影：** 状态 `BACKLOG`。以 `logical_request_id`（缺失时 `request_id`）聚合所有 attempt，区分自动恢复、单次用户可见失败、重试耗尽和不可安全重放停止；复用 `ops_error_logs`、既有 request/attempt 字段和管理员 ops 入口，不新增错误事实源。
+- **T88 运营日报账务口径与逐日对账：** 状态 `BACKLOG`。将普通用户收入、管理员内部消耗、全站有效上游成本和对外经营贡献分列；保留有效成本公式与 T49 unknown attempt 排除规则，并添加原生只读对账不变量。不得改扣费、余额、价格或历史流水。
+- **T89 T82 调度性能与路由 503 原因投影：** 状态 `BACKLOG`。拆分本站 routing 503 与上游 502/503，记录 admission/slow-session/safe-replay 的原因与分段耗时，固定同一资格集合再比较 T82 前后质量；遵守 T83 当前 5 分钟真实请求空桶探测门禁。
+
+**T85 Monitor V4 混合真实请求成功率与 P95 口径修正（2026-08-28）：** 状态 `DESIGNING`。用户确认的产品口径为：每个 5 分钟桶真实请求优先；若当前桶进入最后一分钟仍无真实请求，才使用同桶主动探测；真实请求与探测在同桶不混用；空桶不计失败、不进入分母；成功率为所选成功请求数/所选总请求数；TTFT P95 与总耗时 P95 分别从成功所选事件中按各自非空字段计算；不使用窗口外历史回退。实现复用原生 `usage_logs`、`ops_error_logs`、`account_monitor_results` 及 T83 空桶门禁，预计无迁移、无配置变更。规格书待用户审阅批准；当前尚未创建实现 worktree，未改运行时代码、未合并、未推送、未部署。
+
 **T82 调度健康状态与故障转移闭环 + T83 主动探测空桶准入（2026-08-28）：** 状态 `DONE`。根 `main@81df056d560aa50b535169f47c2c6b3c2d11af4d`、tree `0173f738891232e4cdf5744b27e55f4aee77a2ec` 已推送并通过维护蓝绿链发布主站；宿主记录 `/var/lib/sub2api/release-records/20260828T042218Z-production-2548695.json` 返回 `succeeded/promoted`、`downtime_required=false`，活动槽 `green`。T82 提供余额/401/502/503/高延时的可恢复隔离、探活恢复、半开与滞回、最多两次安全跨账号切换、质量兜底账号和结构化调度观测；T83 使账号/渠道/模型主动探测只在当前 5 分钟真实请求空桶时准入，无 usage reader fail-closed。无迁移；直接相关 Go 测试、server build 和 diff-check 通过，0600 测试/发布证据分别为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-28-main-81df056d5-t82-t83-scheduler-health-active-probe.json`、`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-28-main-81df056d5-t82-t83-production-release.json`。主站 `/healthz`、`/readyz`、`/health` 均 200，随后验收站以相同 commit/tree 同步成功，六服务 healthy，`/admin/lab/health`、`/admin/lab/login` 均 200。
 
 ## 当前实现任务（2026-08-29）

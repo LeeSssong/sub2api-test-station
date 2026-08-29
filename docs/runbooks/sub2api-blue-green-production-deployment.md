@@ -108,6 +108,14 @@ to   59628d84dd909c8a91949eab2015dc216a8fe76027a2bcc8c996b504eb055e80
 file 228_account_model_detection_evidence.sql — add-only structured detector evidence fields and indexes; no historical backfill, credential/prompt/output persistence, usage/accounting rewrite, or destructive data operation.
 ```
 
+Current T84 transition:
+
+```text
+from 59628d84dd909c8a91949eab2015dc216a8fe76027a2bcc8c996b504eb055e80
+to   e177e184c777b6080167c1cf787a5d2fe6a95eb0d965ed3522320da76ee5ee8e
+file 229_active_probe_switches.sql — add-only account/group active-probe switches with defaults enabled; no historical backfill, credential changes, usage/accounting rewrite, or destructive data operation.
+```
+
 Invoke the same controller with the explicit maintenance flag:
 
 ```bash

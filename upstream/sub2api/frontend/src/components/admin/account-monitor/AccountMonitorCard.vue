@@ -1,6 +1,84 @@
 <template>
-  <article class="monitor-card-shell w-full min-w-0" data-test="monitor-card" :data-account-id="account.account_id">
-    <div class="monitor-card-layout grid min-w-0" data-test="monitor-card-header">
+  <article class="monitor-card-shell" data-test="monitor-card" :data-account-id="account.account_id">
+    <div class="monitor-card-layout" data-test="monitor-card-header">
+      <header class="monitor-card-header">
+        <section class="monitor-card-identity" data-test="identity-column" aria-label="账号身份与状态">
+          <div class="monitor-card-eyeline">
+            <span class="monitor-card-status-dot" :class="statusDotClass" aria-hidden="true" />
+            <span>{{ statusLabel }} · {{ schedulableLabel }} · {{ platformLabel }} · 目标组 {{ currentGroupLabel }}</span>
+          </div>
+          <h2 data-test="account-identity">
+            <a v-if="account.homepage_url" :href="account.homepage_url" target="_blank" rel="noopener noreferrer" data-test="account-homepage-link">{{ account.name }}</a>
+            <span v-else>{{ account.name }}</span>
+            <span class="account-id">#{{ account.account_id }}</span>
+          </h2>
+          <div class="monitor-card-meta" data-test="account-metadata">
+            <span>当前分组：{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>基于 {{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次已持久化真实请求</span><span aria-hidden="true">·</span><span>数据累计至当前</span>
+            <template v-if="recommendation">
+              <span aria-hidden="true">·</span>
+              <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
+              <span v-else class="monitor-card-recommendation" data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
+            </template>
+          </div>
+        </section>
+        <section v-if="schedulerContext" class="monitor-card-scheduler" data-test="scheduler-column" aria-label="本组调度优先级">
+          <div class="scheduler-label">本组调度优先级</div>
+          <div class="scheduler-rank" data-test="scheduler-rank">{{ schedulerRankLabel }}<span v-if="schedulerRanked"> / {{ schedulerRankTotalLabel }}</span></div>
+          <div v-if="schedulerEligibilityLabel" class="scheduler-hint">{{ schedulerEligibilityLabel }}</div>
+          <div class="priority-control" data-test="priority-control">
+            <span>全局优先级</span>
+            <template v-if="editingPriority">
+              <label class="sr-only" :for="`account-priority-${account.account_id}`">全局优先级</label>
+              <input :id="`account-priority-${account.account_id}`" ref="priorityInput" v-model="draftPriority" class="priority-input" data-test="priority-input" inputmode="numeric" min="1" step="1" type="number" :disabled="savingPriority" @keyup.enter="savePriority" @keyup.esc="cancelPriorityEdit">
+              <button class="priority-icon" data-test="save-priority" type="button" title="保存全局优先级" aria-label="保存全局优先级" :disabled="savingPriority" @click="savePriority"><Icon name="check" size="xs" /></button>
+              <button class="priority-icon" data-test="cancel-priority" type="button" title="取消编辑全局优先级" aria-label="取消编辑全局优先级" :disabled="savingPriority" @click="cancelPriorityEdit"><Icon name="x" size="xs" /></button>
+            </template>
+            <template v-else>
+              <strong>{{ displayedPriority }}</strong>
+              <button class="priority-icon" data-test="edit-priority" type="button" title="编辑全局优先级" aria-label="编辑全局优先级" @click="beginPriorityEdit"><Icon name="edit" size="xs" /></button>
+            </template>
+          </div>
+          <p v-if="priorityError" class="priority-error" data-test="priority-error" role="alert">{{ priorityError }}</p>
+        </section>
+      </header>
+      <div class="monitor-card-body">
+        <div class="monitor-card-main">
+          <section class="monitor-card-metrics" data-test="key-metrics" aria-label="关键服务指标">
+            <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="realSuccessRate" detail="真实请求" />
+            <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="realTTFTP95" detail="真实成功请求" />
+            <MetricCell data-test="profit-rate-metric" tone="profit" label="利润率" :value="profitRateLabel" detail="当前分组" />
+            <MetricCell data-test="native-priority-metric" tone="native-priority" label="Sub 原生优先级" :value="String(account.priority ?? '--')" detail="账号原生调度字段" />
+            <div class="service-metric multiplier-metric" data-test="upstream-multiplier-metric">
+              <div class="metric-label">上游声明倍率</div>
+              <button class="metric-value metric-link" type="button" title="编辑上游声明倍率" @click="emit('editCost', account)">{{ formatMultiplier(account.upstream_multiplier?.value ?? account.multiplier?.value) }}</button>
+              <p class="metric-detail">可编辑</p>
+            </div>
+          </section>
+          <section class="monitor-card-model" data-test="model-detection-section">
+            <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-pill" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span><Icon name="chevronDown" size="xs" /></button>
+            <button type="button" class="model-edit" data-test="edit-connection-probe-model" @click="openModelDetectionDialog">{{ t('admin.accounts.modelDetection.editConnectionProbeModel') }}</button>
+            <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
+          </section>
+        </div>
+        <section class="monitor-card-chart" data-test="timeline-section" aria-label="真实性能">
+          <div class="chart-head">
+            <h3>真实性能</h3>
+            <button type="button" class="chart-action" data-test="refresh-account" title="刷新主动探测" aria-label="刷新主动探测" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新主动探测</button>
+          </div>
+          <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
+            <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" :title="bar.title" data-test="real-request-bar" />
+          </div>
+        </section>
+      </div>
+      <footer class="monitor-card-footer" data-test="account-actions" aria-label="账号操作">
+        <button class="footer-button primary" data-test="account-info" type="button" title="查看账号详情" aria-label="查看账号详情" @click="emit('accountInfo', account)"><Icon name="eye" size="xs" />账号详情</button>
+        <button class="footer-button" data-test="account-more" type="button" title="账号操作" aria-label="账号操作" @click="emit('accountMore', account, $event)"><Icon name="more" size="xs" />账号操作</button>
+        <button class="sr-only" data-test="account-edit" type="button" @click="emit('accountEdit', account)">编辑</button>
+        <button class="sr-only" data-test="account-delete" type="button" @click="emit('accountDelete', account)">删除</button>
+      </footer>
+      <AccountModelDetectionDialog :show="modelDetectionDialogOpen" :account="account" :models="modelDetectionModels" :saving="savingModelDetection" :detecting="detectingModelDetection" @close="modelDetectionDialogOpen = false" @save="emit('saveModelDetectionModels', account.account_id, $event)" @detect="emit('detectModelDetection', account.account_id)" />
+    </div>
+    <div v-if="false" class="legacy-monitor-card" aria-hidden="true">
       <section class="min-w-0" data-test="identity-column" aria-label="账号身份与状态">
         <div class="monitor-card-eyeline">
           <span class="monitor-card-status-dot h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
@@ -137,7 +215,6 @@
 
       <footer v-if="false" class="hidden" data-test="card-footer"></footer>
     </div>
-    <AccountModelDetectionDialog :show="modelDetectionDialogOpen" :account="account" :models="modelDetectionModels" :saving="savingModelDetection" :detecting="detectingModelDetection" @close="modelDetectionDialogOpen = false" @save="emit('saveModelDetectionModels', account.account_id, $event)" @detect="emit('detectModelDetection', account.account_id)" />
   </article>
 </template>
 
@@ -145,7 +222,6 @@
 import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import type { AccountModelDetectionModelsResponse, AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
 import AccountModelDetectionDialog from './AccountModelDetectionDialog.vue'
 
@@ -526,18 +602,13 @@ const MetricCell = defineComponent({
     label: { type: String, required: true },
     value: { type: String, required: true },
     detail: { type: String, required: true },
-    tone: { type: String, required: true },
+    tone: { type: String, required: false, default: '' },
   },
   setup(metricProps, { attrs }) {
-    const toneClass: Record<string, string> = {
-      success: 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20',
-      ttft: 'border-blue-200 bg-blue-50 dark:border-blue-900/50 dark:bg-blue-950/20',
-      latency: 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20',
-    }
-    return () => h('div', { ...attrs, class: ['min-h-[116px] min-w-0 rounded-lg border p-3 service-metric', toneClass[metricProps.tone], attrs.class] }, [
-      h('div', { class: 'text-[11px] text-gray-500 dark:text-slate-400' }, metricProps.label),
-      h('div', { class: 'mt-1 whitespace-nowrap font-mono text-lg font-semibold text-gray-900 dark:text-white', 'data-test': `${metricProps.tone}-metric-value` }, metricProps.value),
-      h('p', { class: 'mt-1 text-[10px] leading-4 text-gray-400 dark:text-slate-500' }, metricProps.detail),
+    return () => h('div', { ...attrs, class: ['service-metric', attrs.class] }, [
+      h('div', { class: 'metric-label' }, metricProps.label),
+      h('div', { class: 'metric-value', 'data-test': `${metricProps.tone || metricProps.label}-metric-value` }, metricProps.value),
+      h('p', { class: 'metric-detail' }, metricProps.detail),
     ])
   },
 })
@@ -1100,5 +1171,288 @@ const CostMetric = defineComponent({
   .monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px 16px 18px; }
   .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] { align-items: flex-start; flex-wrap: wrap; justify-content: flex-start; padding: 12px 16px; }
   .monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] { padding-inline: 16px; }
+}
+</style>
+
+<style scoped>
+/* Final R2 surface: one visual contract, with legacy utility overrides intentionally
+   kept below the component so old class-based selectors cannot reshape the card. */
+.monitor-card-shell {
+  --monitor-bg: #0b1523;
+  --monitor-bg-deep: #09121e;
+  --monitor-line: #1e2d41;
+  --monitor-line-strong: #26384f;
+  --monitor-text: #dbe7f5;
+  --monitor-muted: #9eb0c1;
+  display: block !important;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--monitor-line-strong);
+  border-radius: 14px;
+  background: var(--monitor-bg);
+  color: var(--monitor-text);
+  box-shadow: none;
+}
+
+.monitor-card-layout {
+  display: block !important;
+  min-width: 0;
+  padding: 0 !important;
+  background: var(--monitor-bg);
+}
+
+.monitor-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--monitor-line);
+}
+
+.monitor-card-identity { min-width: 0; }
+.monitor-card-eyeline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #c2d1df;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.monitor-card-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px #103a35;
+}
+.monitor-card-identity h2 {
+  margin: 8px 0 4px;
+  color: #f7fbff;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.monitor-card-identity h2 a,
+.monitor-card-identity h2 a:hover { color: inherit; }
+.monitor-card-identity .account-id {
+  color: #8094ab;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.monitor-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  min-width: 0;
+  color: var(--monitor-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.monitor-card-recommendation {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #57d8be;
+  font: inherit;
+  cursor: pointer;
+}
+
+.monitor-card-scheduler {
+  min-width: 148px;
+  flex: 0 0 auto;
+  text-align: right;
+}
+.scheduler-label {
+  color: var(--monitor-muted);
+  font-size: 11px;
+}
+.scheduler-rank {
+  margin-top: 4px;
+  color: #f6fbff;
+  font: 600 30px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: -0.06em;
+  white-space: nowrap;
+}
+.scheduler-rank span {
+  color: #8fa3b8;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.scheduler-hint {
+  margin-top: 6px;
+  color: #57d8be;
+  font-size: 11px;
+}
+.priority-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--monitor-muted);
+  font-size: 11px;
+}
+.priority-control strong { color: var(--monitor-text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.priority-input { width: 64px; min-height: 28px; border: 1px solid #30445d; border-radius: 6px; background: #0d1b2d; color: #e7f0f8; padding: 0 7px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.priority-icon { display: inline-grid; width: 28px; height: 28px; place-items: center; border: 1px solid #30445d; border-radius: 6px; background: #0d1b2d; color: #dce8f5; }
+.priority-error { margin: 5px 0 0; color: #f39aa4; font-size: 11px; }
+
+.monitor-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.72fr) minmax(280px, .78fr);
+  gap: 0;
+  min-width: 0;
+}
+.monitor-card-main { min-width: 0; padding: 18px 22px 20px; }
+.monitor-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.monitor-card-metrics :deep(.service-metric) {
+  min-width: 0;
+  min-height: 74px;
+  padding: 0 12px 0 0;
+  border: 0;
+  border-right: 1px solid #203046;
+  border-radius: 0;
+  background: transparent;
+}
+.monitor-card-metrics :deep(.service-metric:last-child) { border-right: 0; padding-right: 0; }
+.monitor-card-metrics :deep(.metric-link) { width: fit-content; border: 0; background: transparent; padding-inline: 0; text-align: left; cursor: pointer; }
+.monitor-card-metrics :deep(.metric-label) { display: block; color: #9eb0c1; font-size: 11px; }
+.monitor-card-metrics :deep(.metric-value) { display: block; margin-top: 7px; color: #edf5fc; font: 600 17px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.monitor-card-metrics :deep(.metric-detail) { margin-top: 4px; color: #71869e; font-size: 11px; line-height: 1.35; }
+
+.monitor-card-chart {
+  min-width: 0;
+  padding: 18px 20px;
+  border-left: 1px solid var(--monitor-line);
+  background: #0a1626;
+}
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chart-head h3 { margin: 0; color: #d7e3ee; font-size: 12px; font-weight: 600; }
+.chart-action {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #2f4862;
+  border-radius: 6px;
+  background: #102237;
+  color: #dce8f5;
+  padding: 0 9px;
+  font-size: 11px;
+}
+.chart-action:disabled { cursor: wait; opacity: .65; }
+.performance-bars {
+  display: flex;
+  align-items: flex-end;
+  height: 92px;
+  gap: 4px;
+  margin-top: 12px;
+}
+.performance-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 3px 3px 1px 1px;
+  outline: none;
+}
+.monitor-card-chart::after { display: none !important; content: none !important; }
+
+.monitor-card-model {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-top: 16px;
+  padding-top: 13px;
+  border-top: 1px solid var(--monitor-line);
+}
+.model-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #dce8f3;
+  padding: 0;
+  font-size: 12px;
+}
+.model-status > svg { color: #8fa3b8; }
+.model-title { font-weight: 650; }
+.model-pill { border-radius: 999px; padding: 3px 7px; color: #b9c8d8; font-size: 10px; }
+.model-edit, .model-detect {
+  min-height: 28px;
+  border: 1px solid #2f4862;
+  border-radius: 6px;
+  background: #102237;
+  color: #dce8f5;
+  padding: 0 9px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.model-detect { border-color: #2f766a; background: #0d5d54; color: #effffb; }
+.model-detect:disabled { cursor: wait; opacity: .65; }
+
+.monitor-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px 22px;
+  border-top: 1px solid var(--monitor-line);
+  background: var(--monitor-bg-deep);
+}
+.monitor-card-footer::before { display: none !important; content: none !important; }
+.footer-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #30455e;
+  border-radius: 7px;
+  background: #101f31;
+  color: #dce8f5;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.footer-button.primary { border-color: #167e70; background: #0d5d54; color: #edfffb; }
+
+@media (max-width: 700px) {
+  .monitor-card-header { flex-direction: column; }
+  .monitor-card-scheduler { width: 100%; text-align: left; }
+  .priority-control { justify-content: flex-start; }
+}
+@media (max-width: 900px) {
+  .monitor-card-body { grid-template-columns: 1fr; }
+  .monitor-card-chart { border-top: 1px solid var(--monitor-line); border-left: 0; }
+}
+@media (max-width: 900px) and (min-width: 561px) {
+  .monitor-card-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .monitor-card-metrics :deep(.service-metric:nth-child(3)) { border-right: 0; }
+  .monitor-card-metrics :deep(.service-metric:nth-child(n + 4)) { padding-top: 12px; border-top: 1px solid #203046; }
+}
+@media (max-width: 560px) {
+  .monitor-card-header, .monitor-card-main { padding-inline: 16px; }
+  .monitor-card-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .monitor-card-metrics :deep(.service-metric) { padding-top: 12px; padding-bottom: 12px; border-top: 1px solid #203046; }
+  .monitor-card-metrics :deep(.service-metric:nth-child(2n)) { border-right: 0; padding-right: 0; padding-left: 10px; }
+  .monitor-card-footer { flex-direction: column; padding-inline: 16px; }
+  .footer-button { width: 100%; justify-content: center; }
+  .monitor-card-model { grid-template-columns: 1fr auto; }
+  .model-status { grid-column: 1 / -1; }
+  .model-edit, .model-detect { width: 100%; }
 }
 </style>

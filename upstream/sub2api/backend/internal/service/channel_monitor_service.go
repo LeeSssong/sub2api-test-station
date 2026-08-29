@@ -84,8 +84,9 @@ type ChannelMonitorService struct {
 	activeProbeUsageReader ActiveProbeUsageWindowReader
 	// scheduler 由 wire 通过 SetScheduler 注入；CRUD 后调用对应钩子即时同步任务。
 	// 测试或未注入场景下保持 nil，所有钩子调用变为 no-op。
-	scheduler MonitorScheduler
-	now       func() time.Time
+	scheduler    MonitorScheduler
+	now          func() time.Time
+	quotaFetcher *ChannelMonitorQuotaFetcher
 }
 
 const maxChannelMonitorNameRunes = 100
@@ -672,6 +673,34 @@ func (s *ChannelMonitorService) RunCheck(ctx context.Context, id int64) ([]*Chec
 	}
 	s.persistCheckResults(ctx, m, results)
 	return results, nil
+}
+
+func (s *ChannelMonitorService) runQuotaOnlyCheck(ctx context.Context, m *ChannelMonitor) []*CheckResult {
+	snapshot := s.fetchQuotaSnapshot(ctx, m)
+	res := deriveQuotaCheckResult(snapshot, m.PrimaryModel, time.Now())
+	res.Quota = snapshot
+	return []*CheckResult{res}
+}
+
+func (s *ChannelMonitorService) fetchQuotaSnapshot(ctx context.Context, m *ChannelMonitor) *domain.MonitorQuotaSnapshot {
+	if m.AccountID == nil {
+		return quotaErrorSnapshot("usage", "linked account not found", time.Now())
+	}
+	if s.quotaFetcher == nil {
+		return quotaErrorSnapshot("usage", "quota fetcher is not configured", time.Now())
+	}
+	return s.quotaFetcher.Fetch(ctx, *m.AccountID)
+}
+
+func attachQuotaSnapshot(results []*CheckResult, snapshot *domain.MonitorQuotaSnapshot) {
+	if len(results) == 0 || snapshot == nil {
+		return
+	}
+	primary := results[0]
+	primary.Quota = snapshot
+	if !snapshot.Success && strings.TrimSpace(primary.Message) == "" {
+		primary.Message = truncateMessage("quota fetch failed: " + snapshot.Error)
+	}
 }
 
 // ErrChannelMonitorProbeSkipped indicates a scheduled probe was deliberately

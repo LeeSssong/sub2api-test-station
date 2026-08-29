@@ -300,7 +300,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		if err == nil {
 			h.gatewayService.RecordOpenAISlowSessionGuard(account.ID, result, selection.HalfOpenProbe)
 		}
-		cyberBlockKeyChat := ""
+		var cyberBlockBodyChat []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyChat = body
 		}

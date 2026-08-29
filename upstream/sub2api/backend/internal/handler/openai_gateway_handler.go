@@ -304,7 +304,7 @@ func logOpenAIResilienceEvent(log *zap.Logger, event string, metadata service.Op
 	)
 }
 
-func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
+func resolveOpenAIMessagesDispatchMappedModel(c *gin.Context, apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
 	}
@@ -983,7 +983,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if err == nil {
 			h.gatewayService.RecordOpenAISlowSessionGuard(account.ID, result, selection.HalfOpenProbe)
 		}
-		cyberBlockKeyHTTP := ""
+		var cyberBlockBodyHTTP []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyHTTP = sessionHashBody
 		}
@@ -1365,10 +1365,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		recordInput := buildSuccessfulOpenAIUsageRecordInput(result, apiKey, account, subscription, result.AttemptMetadata, requestHasSideEffects, quotaPlatform)
-		recordInput.InboundEndpoint, recordInput.UpstreamEndpoint = inboundEndpoint, upstreamEndpoint
-		recordInput.UserAgent, recordInput.IPAddress, recordInput.RequestPayloadHash = userAgent, clientIP, requestPayloadHash
-		recordInput.APIKeyService, recordInput.QuotaPlatform, recordInput.SessionID = h.apiKeyService, quotaPlatform, sessionID
+		recordInput.APIKeyService, recordInput.QuotaPlatform = h.apiKeyService, quotaPlatform
 		recordInput.ChannelUsageFields = clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 		recordInput.PricingAt, recordInput.CyberBlocked = pricingAt, cyberBlocked
 		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
@@ -1877,7 +1876,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if err == nil {
 			h.gatewayService.RecordOpenAISlowSessionGuard(account.ID, result, selection.HalfOpenProbe)
 		}
-		cyberBlockKeyMsg := ""
+		var cyberBlockBodyMsg []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyMsg = body
 		}
@@ -3318,7 +3317,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				if waitForWSSameAccountRetry(account, failoverErr) {
 					if failoverErr.ShouldReportAccountScheduleFailure() {
-						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, wsForwardModel, false, nil), false, nil, err)
+						h.gatewayService.ReportOpenAIAccountScheduleResult(account, wsForwardModel, false, nil, err)
 					}
 					if !ensureUserSlotHeld() {
 						return

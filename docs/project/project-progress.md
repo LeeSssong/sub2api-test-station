@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**运营日报、错误生命周期、模型准入与调度质量治理（2026-08-29）：** 状态：进行中（DESIGNING）。用户已确认设计与实施计划；规格为 `docs/superpowers/specs/2026-08-29-operations-daily-governance-design.md`，实施计划为 `docs/superpowers/plans/2026-08-29-operations-daily-governance.md`。任务已拆分为 T86 模型准入/Luna 清理、T87 错误生命周期、T88 日报账务对账、T89 T82 性能与路由 503 观测；T86 是下一优先候选。尚未创建本组合的实现 worktree、修改运行时代码、写入生产配置、推送或部署。
+**运营日报、错误生命周期、模型准入与调度质量治理（2026-08-29）：** 状态：进行中（DESIGNING）。用户已确认设计、实施计划并明确开始执行 T86；规格为 `docs/superpowers/specs/2026-08-29-operations-daily-governance-design.md`，实施计划为 `docs/superpowers/plans/2026-08-29-operations-daily-governance.md`。T86 将从当前根 `main` 创建独立用户可见顶层任务和 Codex worktree；T85 的既有 dirty worktree 继续保护。T87、T88、T89 保持 BACKLOG。当前未修改运行时代码、未写入生产配置、未推送或部署；T86 状态不构成主站发布授权。
 **T85 Monitor V4 混合真实请求成功率与 P95 口径修正（2026-08-28）：** 状态：进行中（DESIGNING）。目标是把第四套分组性能监控从“成功桶数/桶总数”修正为 5 分钟桶源选择后的请求级成功率：真实请求优先；当前桶进入最后一分钟且仍无真实请求时才使用同桶主动探测；同桶不混用；空桶不计入分母；成功请求的 TTFT 与总耗时分别按各自可用样本取 P95；不使用窗口外历史回退。复用 `usage_logs`、`ops_error_logs`、`account_monitor_results` 与 T83 空桶门禁，不新增事实源或迁移。规格书待用户审阅批准；当前保留 T84 根目录脏改动、未跟踪文件和 `codex/t84-active-probe-adaptive` worktree，尚未创建本任务实现 worktree，未改运行时代码、未推送、未合并、未部署。
 
 **T85 Monitor V4 混合真实请求成功率与 P95 口径修正（2026-08-28）：** 状态：进行中（DESIGNING）。目标是把第四套分组性能监控从“成功桶数/桶总数”修正为 5 分钟桶源选择后的请求级成功率：真实请求优先；当前桶进入最后一分钟且仍无真实请求时才使用同桶主动探测；同桶不混用；空桶不计入分母；成功请求的 TTFT 与总耗时分别按各自可用样本取 P95；不使用窗口外历史回退。复用 `usage_logs`、`ops_error_logs`、`account_monitor_results` 与 T83 空桶门禁，不新增事实源或迁移。规格书待用户审阅批准；当前保留 T84 根目录脏改动、未跟踪文件和 `codex/t84-active-probe-adaptive` worktree，尚未创建本任务实现 worktree，未改运行时代码、未推送、未合并、未部署。

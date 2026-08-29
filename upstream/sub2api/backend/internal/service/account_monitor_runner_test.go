@@ -67,3 +67,18 @@ func TestAccountMonitorRunnerDetectionLoopRunsImmediatelyAndStopsWithRunner(t *t
 		t.Fatalf("runner context error = %v", err)
 	}
 }
+
+func TestAccountMonitorRunnerSettleOnceRunsTerminalWatchdog(t *testing.T) {
+	repo := &accountMonitorRepoStub{
+		groups: []AccountMonitorGroup{{ID: 7, Status: StatusActive}},
+	}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	runner := NewAccountMonitorRunner(svc)
+	runner.settleOnce()
+	if len(repo.probeBucketTerminals) < 1 || len(repo.probeBucketTerminals) > 2 {
+		t.Fatalf("terminal writes = %d, want one previous-bucket write and optionally the current final-minute bucket", len(repo.probeBucketTerminals))
+	}
+	if repo.probeBucketTerminals[0].groupID != 7 {
+		t.Fatalf("watchdog group id = %d, want 7", repo.probeBucketTerminals[0].groupID)
+	}
+}

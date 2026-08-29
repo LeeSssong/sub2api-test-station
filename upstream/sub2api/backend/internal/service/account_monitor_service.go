@@ -2350,6 +2350,24 @@ func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int,
 	return completed, runErr
 }
 
+// SettleDueProbeBuckets is a lightweight watchdog pass used by the runner.
+// It does not execute account probes; it only closes any due group/bucket
+// terminal that a prior monitor run may have missed. The unique ledger key
+// keeps this safe to call concurrently with RunAll.
+func (s *AccountMonitorService) SettleDueProbeBuckets(ctx context.Context) error {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	accounts, err := s.listMonitorAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("list monitor accounts for probe terminal watchdog: %w", err)
+	}
+	if err := s.settleDueProbeBuckets(ctx, monitorGroupAccountIDs(accounts), time.Now().UTC(), uuid.NewString()); err != nil {
+		return fmt.Errorf("settle monitor probe terminal watchdog: %w", err)
+	}
+	return nil
+}
+
 func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int, error) {
 	accounts, err := s.listPool(ctx)
 	if err != nil {

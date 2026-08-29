@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	accountModelDetectionScheduleInterval = 30 * time.Second
-	accountModelDetectionQueueInterval    = time.Second
+	accountModelDetectionScheduleInterval  = 30 * time.Second
+	accountModelDetectionQueueInterval     = time.Second
+	accountMonitorTerminalWatchdogInterval = time.Minute
 )
 
 type AccountMonitorRunner struct {
@@ -119,6 +120,8 @@ func (r *AccountMonitorRunner) ReloadSettings(settings AccountMonitorSettings) {
 
 func (r *AccountMonitorRunner) loop() {
 	defer r.wg.Done()
+	terminalTicker := time.NewTicker(accountMonitorTerminalWatchdogInterval)
+	defer terminalTicker.Stop()
 	for {
 		r.mu.Lock()
 		interval := r.interval
@@ -136,6 +139,9 @@ func (r *AccountMonitorRunner) loop() {
 			r.runOnce()
 		case <-r.reload:
 			timer.Stop()
+		case <-terminalTicker.C:
+			timer.Stop()
+			r.settleOnce()
 		case <-timer.C:
 			r.runOnce()
 		}
@@ -185,5 +191,15 @@ func (r *AccountMonitorRunner) runOnce() {
 	defer r.runMu.Unlock()
 	if _, err := r.svc.RunAll(r.ctx, 0); err != nil {
 		slog.Warn("account_monitor: run failed", "error", err)
+	}
+}
+
+func (r *AccountMonitorRunner) settleOnce() {
+	if r == nil || r.svc == nil || !r.runMu.TryLock() {
+		return
+	}
+	defer r.runMu.Unlock()
+	if err := r.svc.SettleDueProbeBuckets(r.ctx); err != nil {
+		slog.Warn("account_monitor: terminal watchdog failed", "error", err)
 	}
 }

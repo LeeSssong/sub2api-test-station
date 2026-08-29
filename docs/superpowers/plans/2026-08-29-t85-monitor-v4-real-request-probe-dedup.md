@@ -167,6 +167,8 @@ git commit -m "feat: expose monitor v4 request success rate"
 - Modify: `upstream/sub2api/backend/internal/service/account_monitor_types.go`
 - Modify: `upstream/sub2api/backend/internal/service/account_monitor_service.go`
 - Modify: `upstream/sub2api/backend/internal/service/account_monitor_service_test.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_runner.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_runner_test.go`
 
 - [x] **Step 1: Add the idempotent terminal ledger**
 
@@ -174,7 +176,7 @@ Create a unique `(group_id, bucket_start)` observation ledger with only `success
 
 - [x] **Step 2: Settle due buckets after each monitor run**
 
-After account probes finish, settle the previous closed bucket and the current bucket only during its final minute. Usage-reader failures and missing readers no longer silently skip the account probe; blocked accounts are represented by a fail-closed group terminal.
+After account probes finish, settle the previous closed bucket and the current bucket only during its final minute. A one-minute runner watchdog repeats the same idempotent settlement pass so a missed monitor run is closed on the next tick. Usage-reader failures and missing readers no longer silently skip the account probe; blocked accounts are represented by a fail-closed group terminal.
 
 - [x] **Step 3: Read terminals and fail closed**
 

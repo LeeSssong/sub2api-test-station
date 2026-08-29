@@ -34,7 +34,7 @@
 ## 主要变更
 
 - 后端：`account_monitor_repo.go` 将 V4 聚合改为统一真实候选集、错误优先逻辑请求去重、真实桶优先、探测 run/bucket 两级去重与独立 P95 聚合。
-- 运行层：`account_monitor_service.go` 增加严格的 401/认证恢复探测判定，避免余额和权限类阻塞账号反复探测。
+- 运行层：`account_monitor_service.go` 增加严格的 401/认证恢复探测判定，避免余额和权限类阻塞账号反复探测；`account_monitor_runner.go` 每分钟重复终态结算，补齐偶发漏跑的上一桶/当前最后一分钟桶。
 - API：V4 合同从 `1` 升至 `2`；删除 availability、桶数、窗口外历史回退和 fallback 标志，改为成功率、成功/总请求数、来源计数及可空 P95。
 - 前端：只显示“成功率”主环和“成功 N/M 次请求”；P95 无成功样本显示 `--`，前端合同校验拒绝来源计数不一致或旧版响应。
 
@@ -62,7 +62,7 @@ pnpm typecheck
 pnpm build
 ```
 
-刷新后的验证结果：仓储 V4/终态/历史清理定向测试通过；服务 V4/探测池/RunAll/终态结算定向测试通过；迁移形状测试通过；`go build ./cmd/server` 通过；Monitor V4 Vitest 为 3 文件 11 用例全部通过；`pnpm typecheck` 通过；`pnpm build` 以 exit code 0 完成；`git diff --check` 通过。
+刷新后的验证结果：仓储 V4/终态/历史清理定向测试通过；服务 V4/探测池/RunAll/终态结算定向测试通过；runner watchdog 定向测试通过；迁移形状测试通过；`go build ./cmd/server` 通过；Monitor V4 Vitest 为 3 文件 11 用例全部通过；`pnpm typecheck` 通过；`pnpm build` 以 exit code 0 完成；`git diff --check` 通过。
 
 全服务包 `go test ./internal/service -count=1` 仍有既有调度/韧性观测测试失败（如 sticky weighted scheduler、embedding sticky binding、resilience observability 等），未发现失败栈指向本次 T85 文件；未将其作为本任务通过依据。
 
@@ -73,7 +73,7 @@ pnpm build
 - 本次交接后的生产只读重算显示：8 月 27 日配置可见分组为 GPT-Pro、GPT-Plus、GPT-特惠；按“无真实请求桶缺失也 fail-closed 为 `0/1`”口径，三组成功率分别为 92.4242%、88.9780%、91.3601%。详细计算证据待根线程补充到独立只读报告。
 - 只读报告：`docs/superpowers/reports/2026-08-29-t85-monitor-v4-2026-08-27-readonly-recalculation.md`。GPT-Pro 为 854/924（70 失败），GPT-Plus 为 444/499（55 失败），GPT-特惠为 6,482/7,095（613 失败）；达到 95% 分别还需修复 24、31、259 个失败。
 - 仓储测试使用 sqlmock 验证 SQL 合同与扫描列；未运行需要本机 Docker/PostgreSQL 的集成测试。
-- 运行层当前由每轮 `RunAll` 结算上一完整桶/当前最后一分钟桶；如果监控进程长期停止，仍需后续 watchdog/补偿任务补齐停机期间的终态。读取侧已 fail-closed，不会高估成功率。
+- 运行层由每轮 `RunAll` 和每分钟 watchdog 重复结算上一完整桶/当前最后一分钟桶；唯一键保证重复调用幂等。监控进程长期停止期间不会回溯重放历史探测，历史缺失仍由读取侧 fail-closed 为 `0/1` 并告警，后续可由独立补偿任务继续补齐持久化终态。
 - `account_monitor_bucket_terminals` 是观察终态 ledger，不替代 `usage_logs`、`ops_error_logs` 或账号级 `account_monitor_results`，也不记录请求体、凭据或完整错误正文。
 
 ## 根线程后续动作

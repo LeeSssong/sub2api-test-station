@@ -30,7 +30,10 @@ func AdaptResponsesClientTools(req map[string]any) (ResponsesClientToolMapping, 
 		if len(adapter.CustomTools) == 0 {
 			return ResponsesClientToolMapping{}, false, nil
 		}
-		changed := rewriteClientToolHistory(req["input"], &adapter)
+		changed, err := rewriteClientToolHistory(req["input"], &adapter)
+		if err != nil {
+			return ResponsesClientToolMapping{}, false, err
+		}
 		if len(adapter.CustomTools) == 0 {
 			adapter.CustomTools = nil
 		}
@@ -155,6 +158,40 @@ func AdaptResponsesClientTools(req map[string]any) (ResponsesClientToolMapping, 
 	return adapter, changed, nil
 }
 
+// AdaptResponsesClientToolsWithInheritedMapping adapts follow-up requests that
+// omit the session-level tools declaration while retaining client-tool history.
+func AdaptResponsesClientToolsWithInheritedMapping(req map[string]any, inherited ResponsesClientToolMapping, inheritedLoweredTools ...[]any) (ResponsesClientToolMapping, bool, error) {
+	if req == nil {
+		return ResponsesClientToolMapping{}, false, nil
+	}
+	if _, present := req["tools"]; present {
+		return AdaptResponsesClientTools(req)
+	}
+	if len(inherited.CustomTools) == 0 && !inherited.ToolSearch && len(inherited.NamespaceTools) == 0 {
+		return ResponsesClientToolMapping{}, false, nil
+	}
+	if len(inheritedLoweredTools) > 0 && len(inheritedLoweredTools[0]) > 0 {
+		restored := restoreInheritedResponsesClientToolDeclarations(inheritedLoweredTools[0], inherited)
+		req["tools"] = restored
+		return AdaptResponsesClientTools(req)
+	}
+	changed, err := rewriteClientToolHistory(req["input"], &inherited)
+	if err != nil {
+		return ResponsesClientToolMapping{}, false, err
+	}
+	if len(inherited.NamespaceTools) > 0 {
+		before := changed
+		rewriteNamespaceQualifiedCalls(req["input"], inherited.NamespaceTools)
+		if _, present := req["input"]; present && !before {
+			changed = true
+		}
+	}
+	if rewriteClientToolChoice(req, &inherited) {
+		changed = true
+	}
+	return inherited, changed, nil
+}
+
 func inferCustomToolNames(value any, names map[string]bool) {
 	if len(names) == 0 && value == nil {
 		return
@@ -182,6 +219,27 @@ func copyClientTool(tool map[string]any) map[string]any {
 		copy[key] = value
 	}
 	return copy
+}
+
+// stripResponsesDeferredToolFlags removes client-side lazy-loading metadata
+// before forwarding tools to upstreams that do not understand it.
+
+func stripResponsesDeferredToolFlags(tools []any) bool {
+	if hasResponsesToolSearchDeclaration(tools) {
+		return false
+	}
+	changed := false
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, exists := tool["defer_loading"]; exists {
+			delete(tool, "defer_loading")
+			changed = true
+		}
+	}
+	return changed
 }
 
 func rewriteClientToolHistory(value any, adapter *ResponsesClientToolMapping) (bool, error) {

@@ -1252,7 +1252,6 @@ func ProvideChannelMonitorRunner(svc *ChannelMonitorService, settingService *Set
 		svc.SetRuntimeReader(settingService)
 		svc.SetActiveProbeUsageReader(usageService)
 		svc.SetScheduler(r)
-		svc.SetQuotaFetcher(quotaFetcher)
 	}
 	if shouldStartSingleton(cfg) {
 		r.Start()

@@ -1004,6 +1004,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if err != nil {
 		return nil, err
 	}
+	_, hasLongContextBillingUpdate := input.Extra[openAILongContextBillingEnabledKey]
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
 
@@ -1122,9 +1123,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// Prepare bulk updates for columns and JSONB fields.
 	repoUpdates := AccountBulkUpdate{
-		Credentials:  input.Credentials,
-		Extra:        input.Extra,
-		ProbeEnabled: input.ProbeEnabled,
+		Credentials:        input.Credentials,
+		Extra:              input.Extra,
+		ProbeEnabled:       input.ProbeEnabled,
 		ActiveProbeEnabled: input.ActiveProbeEnabled,
 	}
 	if input.ActiveProbeEnabled != nil {

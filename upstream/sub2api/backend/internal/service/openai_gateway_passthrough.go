@@ -1673,16 +1673,9 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	if len(responseHeaders) > 0 && responseHeaders[0] != nil {
 		headers = responseHeaders[0].Clone()
 	}
-	outputStarted := openAIStreamClientOutputStarted(c, false)
-	responseID := extractOpenAIResponseIDFromJSONBytes(payload)
-	usageKnown := len(payload) > 0 && (gjson.GetBytes(payload, "usage").Exists() || gjson.GetBytes(payload, "response.usage").Exists())
-	unsafeToReplay := gjson.GetBytes(payload, "unsafe_to_replay").Bool() ||
-		gjson.GetBytes(payload, "response.unsafe_to_replay").Bool() ||
-		gjson.GetBytes(payload, "error.unsafe_to_replay").Bool() ||
-		gjson.GetBytes(payload, "response.error.unsafe_to_replay").Bool()
-	// 流内 failed 事件承载于 HTTP 200，响应头是正常配额快照而非限流信号，
-	// 不写账号级限流/封禁状态；重试与切号由 failover 引擎按
-	// StatusCode/RetryableOnSameAccount 决定。
+	statusCode, shouldDisable := s.handleOpenAIStreamTerminalAccountSideEffects(c, account, payload, message, headers)
+	// 流内 failed 事件承载于 HTTP 200；使用事件的语义状态更新账号健康，
+	// 再由 failover 引擎按 StatusCode/RetryableOnSameAccount 决定恢复策略。
 	message = s.recordOpenAIStreamUpstreamError(c, account, passthrough, upstreamRequestID, "failover", payload, message)
 	errType := "upstream_error"
 	if statusCode == http.StatusTooManyRequests {
@@ -1694,37 +1687,10 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 			"message": message,
 		},
 	})
-	classification := ClassifyOpenAIUpstreamFailure(statusCode, message, payload, outputStarted, false)
-	var recovery *OpenAIStreamRecoveryPayload
-	if outputStarted {
-		recovery = &OpenAIStreamRecoveryPayload{
-			Type: "upstream_stream_error", Message: "Upstream response stream was interrupted",
-			Retryable: classification.Transient, ResumeSupported: classification.Transient && responseID != "", RetryAfterSeconds: 10,
-			ResponseID: responseID,
-		}
-	}
-	return &UpstreamFailoverError{
-		StatusCode:               statusCode,
-		ResponseBody:             body,
-		ResponseHeaders:          headers,
-		RetryableOnSameAccount:   !classification.Hard && openAIStreamFailedEventRetryableOnSameAccount(account, payload, message) && classification.SafeToReplay,
-		RequestScopedTransient:   isOpenAIUpstreamCapacityShedEvent(payload),
-		OutputStarted:            outputStarted,
-		SafeToFailoverAfterWrite: false,
-		ResponseID:               responseID,
-		UsageKnown:               usageKnown,
-		UnsafeToReplay:           unsafeToReplay,
-		ResponseFailedOnly: strings.EqualFold(strings.TrimSpace(firstNonEmptyString(
-			gjson.GetBytes(payload, "type").String(),
-			gjson.GetBytes(payload, "response.type").String(),
-		)), "response.failed"),
-		Recovery: recovery,
-		NextAccountAction: func() NextAccountAction {
-			if outputStarted || classification.Hard {
-				return NextAccountStop
-			}
-			return NextAccountLegacyRetry
-		}(),
+	retryableOnSameAccount := openAIStreamFailedEventRetryableOnSameAccount(account, payload, message)
+	classificationHeaders := headers
+	if statusCode == http.StatusTooManyRequests {
+		classificationHeaders = nil
 	}
 	failoverErr := s.newOpenAIAccountFailoverErrorWithClassificationHeaders(account, statusCode, headers, classificationHeaders, payload, message, shouldDisable, retryableOnSameAccount)
 	if failoverErr.IsCredentialFailure() || failoverErr.RequestScopedTransient {
@@ -1781,6 +1747,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	capacityFailoverSuppressedLogged := false
 	failedMessage := ""
 	clientOutputStarted := false
+	codexFailureTerminal := account != nil && account.Platform == PlatformOpenAI
+	failureDelivered := false
+	suppressCurrentEvent := false
+	responseFailedPending := false
+	var bareErrorPayload []byte
+	bareErrorAccountSideEffectsPending := false
 	upstreamRequestID := openAIUpstreamRequestID(resp.Header)
 	// pendingLines 在首个可见输出前保留前导事件，确保无输出失败仍可安全 failover。
 	pendingLines := make([]string, 0, 8)

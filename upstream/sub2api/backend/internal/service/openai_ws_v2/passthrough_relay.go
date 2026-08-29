@@ -61,6 +61,7 @@ type RelayTurnResult struct {
 	StartedAt             time.Time
 	Duration              time.Duration
 	FirstTokenMs          *int
+	ResponseServiceTier   string
 }
 
 type RelayExit struct {
@@ -102,17 +103,21 @@ type RelayTraceEvent struct {
 }
 
 type relayState struct {
-	usage               Usage
-	requestModelMu      sync.RWMutex
-	requestModel        string
-	lastResponseID      string
-	lastResponseModel   string
-	responseConflict    bool
-	actualResponseModel string
-	terminalEventType   string
-	firstTokenMs        *int
-	turnTimingByID      map[string]*relayTurnTiming
-	activeTurn          *relayTurnTiming
+	usage                   Usage
+	turnUsage               Usage
+	requestModelMu          sync.RWMutex
+	requestModel            string
+	pendingTurnStart        atomic.Pointer[time.Time]
+	lastResponseID          string
+	lastResponseModel       string
+	responseConflict        bool
+	actualResponseModel     string
+	terminalEventType       string
+	firstTokenMs            *int
+	turnTimingByID          map[string]*relayTurnTiming
+	activeTurn              *relayTurnTiming
+	pendingBareError        *observedUpstreamEvent
+	lastResponseServiceTier string
 }
 
 type relayExitSignal struct {
@@ -132,6 +137,8 @@ type observedUpstreamEvent struct {
 	actualResponseModel string
 	duration            time.Duration
 	firstToken          *int
+	startedAt           time.Time
+	responseServiceTier string
 }
 
 type relayTurnTiming struct {
@@ -277,31 +284,35 @@ func Relay(
 	if !options.StartClientAfterFirstDownstream {
 		startClientReader()
 	}
-	go runUpstreamToClientWithResponseModel(
-		relayCtx,
-		upstreamConn,
-		writeClient,
-		startAt,
-		nowFn,
-		state,
-		options.OnUsageParseFailure,
-		options.OnResponseModel,
-		options.OnTurnComplete,
-		options.BeforeWriteClient,
-		options.BeforeClientWrite,
-		options.AfterClientWrite,
-		func(msgType coderws.MessageType, payload []byte) {
-			if options.StartClientAfterFirstDownstream {
-				startClientReader()
-			}
-		},
-		&dropDownstreamWrites,
-		upstreamToClientFrames,
-		droppedDownstreamFrames,
-		markActivity,
-		onTrace,
-		exitCh,
-	)
+	upstreamDone := make(chan struct{})
+	go func() {
+		defer close(upstreamDone)
+		runUpstreamToClientWithResponseModel(
+			relayCtx,
+			upstreamConn,
+			writeClient,
+			startAt,
+			nowFn,
+			state,
+			options.OnUsageParseFailure,
+			options.OnResponseModel,
+			options.OnTurnComplete,
+			options.BeforeWriteClient,
+			options.BeforeClientWrite,
+			options.AfterClientWrite,
+			func(msgType coderws.MessageType, payload []byte) {
+				if options.StartClientAfterFirstDownstream {
+					startClientReader()
+				}
+			},
+			&dropDownstreamWrites,
+			upstreamToClientFrames,
+			droppedDownstreamFrames,
+			markActivity,
+			onTrace,
+			exitCh,
+		)
+	}()
 	go runIdleWatchdog(relayCtx, nowFn, options.IdleTimeout, &lastActivity, onTrace, exitCh)
 
 	firstExit := <-exitCh

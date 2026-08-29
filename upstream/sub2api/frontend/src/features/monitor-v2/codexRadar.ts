@@ -16,12 +16,14 @@ export interface CodexRadarRecommendation {
   key: CodexRadarKey
   title: string
   rule: string
+  status: 'fresh' | 'empty'
   items: CodexRadarItem[]
 }
 
 export interface CodexRadarInsights {
   generated_at: string
   source_updated_at: string
+  source_status: 'fresh' | 'stale'
   stale: boolean
   recommendations: CodexRadarRecommendation[]
 }
@@ -52,11 +54,17 @@ export function parseCodexRadarInsights(value: unknown): CodexRadarInsights {
     const recommendation = object(raw, `recommendations.${index}`)
     const key = string(recommendation.key, `recommendations.${index}.key`, 64) as CodexRadarKey
     if (key !== CODEX_RADAR_KEYS[index]) throw new Error('recommendation order changed')
-    if (!Array.isArray(recommendation.items) || recommendation.items.length < 1 || recommendation.items.length > 2) throw new Error('one or two items required')
+    if (!Array.isArray(recommendation.items) || recommendation.items.length > 2) throw new Error('zero, one, or two items required')
+    const rawStatus = recommendation.status === undefined
+      ? (recommendation.items.length === 0 ? 'empty' : 'fresh')
+      : string(recommendation.status, `recommendations.${index}.status`, 16)
+    if (rawStatus !== 'fresh' && rawStatus !== 'empty') throw new Error('invalid recommendation status')
+    const status: CodexRadarRecommendation['status'] = rawStatus
     return {
       key,
       title: string(recommendation.title, `recommendations.${index}.title`, 128),
       rule: string(recommendation.rule, `recommendations.${index}.rule`),
+      status,
       items: recommendation.items.map((rawItem, itemIndex) => {
         const item = object(rawItem, `recommendations.${index}.items.${itemIndex}`)
         return {
@@ -70,10 +78,12 @@ export function parseCodexRadarInsights(value: unknown): CodexRadarInsights {
       }),
     }
   })
-  return { generated_at: generatedAt, source_updated_at: sourceUpdatedAt, stale: source.stale, recommendations }
+  const sourceStatus = source.source_status === undefined ? (source.stale ? 'stale' : 'fresh') : string(source.source_status, 'source_status', 16)
+  if (sourceStatus !== 'fresh' && sourceStatus !== 'stale') throw new Error('invalid source_status')
+  return { generated_at: generatedAt, source_updated_at: sourceUpdatedAt, source_status: sourceStatus, stale: source.stale, recommendations }
 }
 
 export async function getCodexRadarInsights(signal?: AbortSignal): Promise<CodexRadarInsights> {
-  const { data } = await apiClient.get('/monitor-v2/codexradar-insights', { signal })
+  const { data } = await apiClient.get('/public/codexradar/insights', { signal })
   return parseCodexRadarInsights(data)
 }

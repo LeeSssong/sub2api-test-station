@@ -32,6 +32,20 @@ describe('CodexRadar community DTO', () => {
   it('uses only the fixed native proxy endpoint', async () => {
     get.mockResolvedValueOnce({ data: fixture })
     await getCodexRadarCommunity()
-    expect(get).toHaveBeenCalledWith('/monitor-v2/codexradar-community', { signal: undefined })
+    expect(get).toHaveBeenCalledWith('/public/codexradar/community', { signal: undefined })
+  })
+
+  it('accepts partial tabs with an empty unavailable tab', () => {
+    const parsed = parseCodexRadarCommunity({
+      ...fixture,
+      source_status: 'partial',
+      tabs: [
+        { key: 'comprehensive', source_updated_at: '', status: 'unavailable', error_code: 'NO_SHARED_MODEL_EFFORTS', points: [] },
+        fixture.tabs[1],
+        { ...fixture.tabs[2], status: 'unavailable', error_code: 'SOURCE_UNAVAILABLE', source_updated_at: '', points: [] },
+      ],
+    })
+    expect(parsed.tabs[0]).toMatchObject({ status: 'unavailable', error_code: 'NO_SHARED_MODEL_EFFORTS', points: [] })
+    expect(parsed.tabs[2].source_updated_at).toBe('')
   })
 })

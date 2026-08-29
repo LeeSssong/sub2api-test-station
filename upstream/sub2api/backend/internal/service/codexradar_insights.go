@@ -15,9 +15,9 @@ import (
 
 const (
 	codexRadarInsightsURL      = "https://codexradar.com/api/radar-insights"
-	codexRadarMaxResponseBytes = 512 << 10
+	codexRadarMaxResponseBytes = 2 << 20
 	codexRadarCacheTTL         = 60 * time.Second
-	codexRadarTimeout          = 3 * time.Second
+	codexRadarTimeout          = 10 * time.Second
 )
 
 var ErrCodexRadarUnavailable = errors.New("codexradar insights unavailable")
@@ -32,15 +32,17 @@ type CodexRadarRecommendationItem struct {
 }
 
 type CodexRadarRecommendation struct {
-	Key   string                         `json:"key"`
-	Title string                         `json:"title"`
-	Rule  string                         `json:"rule"`
-	Items []CodexRadarRecommendationItem `json:"items"`
+	Key    string                         `json:"key"`
+	Title  string                         `json:"title"`
+	Rule   string                         `json:"rule"`
+	Status string                         `json:"status,omitempty"`
+	Items  []CodexRadarRecommendationItem `json:"items"`
 }
 
 type CodexRadarInsights struct {
 	GeneratedAt     string                     `json:"generated_at"`
 	SourceUpdatedAt string                     `json:"source_updated_at"`
+	SourceStatus    string                     `json:"source_status"`
 	Recommendations []CodexRadarRecommendation `json:"recommendations"`
 }
 
@@ -135,7 +137,7 @@ func (s *CodexRadarInsightsService) fetch(ctx context.Context) (CodexRadarInsigh
 	}
 	return CodexRadarInsights{
 		GeneratedAt: wire.GeneratedAt, SourceUpdatedAt: wire.SourceUpdatedAt,
-		Recommendations: wire.Recommendations,
+		SourceStatus: "fresh", Recommendations: normalizeCodexRadarRecommendations(wire.Recommendations),
 	}, nil
 }
 
@@ -161,7 +163,7 @@ func validateCodexRadarWire(wire codexRadarWireResponse) error {
 		if !validCodexRadarText(recommendation.Key, 64) || !validCodexRadarText(recommendation.Title, 128) || !validCodexRadarText(recommendation.Rule, 2048) {
 			return errors.New("invalid recommendation text")
 		}
-		if len(recommendation.Items) < 1 || len(recommendation.Items) > 2 {
+		if len(recommendation.Items) > 2 {
 			return errors.New("invalid recommendation item count")
 		}
 		for _, item := range recommendation.Items {
@@ -184,6 +186,17 @@ func validateCodexRadarWire(wire codexRadarWireResponse) error {
 	}
 	wire.Recommendations = ordered
 	return nil
+}
+
+func normalizeCodexRadarRecommendations(recommendations []CodexRadarRecommendation) []CodexRadarRecommendation {
+	for index := range recommendations {
+		status := "fresh"
+		if len(recommendations[index].Items) == 0 {
+			status = "empty"
+		}
+		recommendations[index].Status = status
+	}
+	return recommendations
 }
 
 func validCodexRadarText(value string, maximum int) bool {

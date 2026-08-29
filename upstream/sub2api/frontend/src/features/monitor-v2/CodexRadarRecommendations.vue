@@ -15,7 +15,10 @@
     <div v-if="loading" class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-busy="true">
       <div v-for="index in 4" :key="index" class="h-36 animate-pulse rounded-lg border border-gray-200 bg-gray-100 motion-reduce:animate-none dark:border-dark-700 dark:bg-dark-900" />
     </div>
-    <p v-else-if="failed" class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300">站长推荐暂时不可用</p>
+    <div v-else-if="failed" class="mt-4 flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300">
+      <span>站长推荐暂时不可用</span>
+      <button type="button" class="shrink-0 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-bold hover:bg-white dark:border-dark-600 dark:hover:bg-dark-800" @click="load">重试</button>
+    </div>
     <div v-else-if="insights" class="mt-5 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <article
         v-for="recommendation in insights.recommendations"
@@ -28,7 +31,8 @@
           <h3 class="text-base font-black">{{ recommendation.title }}</h3>
           <p class="mt-1.5 line-clamp-3 break-words text-xs leading-5 text-gray-600 dark:text-gray-400" :title="recommendation.rule">{{ recommendation.rule }}</p>
         </div>
-        <div class="divide-y divide-gray-200 dark:divide-dark-700/80">
+        <div v-if="recommendation.status === 'empty'" class="px-4 py-7 text-sm text-gray-500 dark:text-gray-400">当前暂无推荐</div>
+        <div v-else class="divide-y divide-gray-200 dark:divide-dark-700/80">
           <div v-for="item in recommendation.items" :key="`${item.model}-${item.effort}`" class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3.5">
             <div class="min-w-0">
               <p class="truncate text-sm font-bold text-gray-900 dark:text-gray-100">{{ modelLabel(item.model) }} {{ item.effort }}</p>
@@ -74,19 +78,26 @@ function formatUpdatedAt(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
-onMounted(() => {
+async function load() {
+  controller?.abort()
   controller = new AbortController()
-  void Promise.resolve()
-    .then(() => getCodexRadarInsights(controller?.signal))
-    .then((value) => {
-      if (value) insights.value = value
-      else failed.value = true
-    })
-    .catch((error: unknown) => {
-      if ((error as { name?: string })?.name !== 'AbortError') failed.value = true
-    })
-    .finally(() => { loading.value = false })
-})
+  loading.value = true
+  failed.value = false
+  try {
+    const value = await getCodexRadarInsights(controller.signal)
+    if (!value) throw new Error('empty CodexRadar response')
+    insights.value = value
+  } catch (error: unknown) {
+    if ((error as { name?: string })?.name !== 'AbortError') {
+      insights.value = null
+      failed.value = true
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => { void load() })
 
 onBeforeUnmount(() => controller?.abort())
 </script>

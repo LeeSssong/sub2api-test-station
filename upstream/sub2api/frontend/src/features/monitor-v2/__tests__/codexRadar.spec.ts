@@ -31,6 +31,15 @@ describe('CodexRadar DTO', () => {
   it('uses only the fixed native proxy endpoint', async () => {
     get.mockResolvedValueOnce({ data: fixture })
     await getCodexRadarInsights()
-    expect(get).toHaveBeenCalledWith('/monitor-v2/codexradar-insights', { signal: undefined })
+    expect(get).toHaveBeenCalledWith('/public/codexradar/insights', { signal: undefined })
+  })
+
+  it('keeps empty categories as explicit empty states', () => {
+    const parsed = parseCodexRadarInsights({
+      ...fixture,
+      source_status: 'fresh',
+      recommendations: fixture.recommendations.map((item, index) => index === 0 ? { ...item, items: [], status: 'empty' } : item),
+    })
+    expect(parsed.recommendations[0]).toMatchObject({ status: 'empty', items: [] })
   })
 })

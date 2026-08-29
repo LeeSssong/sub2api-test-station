@@ -45,12 +45,15 @@ type CodexRadarCommunityPoint struct {
 type CodexRadarCommunityTab struct {
 	Key             CodexRadarCommunityKey     `json:"key"`
 	SourceUpdatedAt string                     `json:"source_updated_at"`
+	Status          string                     `json:"status,omitempty"`
+	ErrorCode       string                     `json:"error_code,omitempty"`
 	Points          []CodexRadarCommunityPoint `json:"points"`
 }
 
 type CodexRadarCommunity struct {
-	GeneratedAt string                   `json:"generated_at"`
-	Tabs        []CodexRadarCommunityTab `json:"tabs"`
+	GeneratedAt  string                   `json:"generated_at"`
+	SourceStatus string                   `json:"source_status"`
+	Tabs         []CodexRadarCommunityTab `json:"tabs"`
 }
 
 type codexRadarSoftwareWire struct {
@@ -146,51 +149,129 @@ func (s *CodexRadarCommunityService) Get(ctx context.Context) (CodexRadarCommuni
 }
 
 func (s *CodexRadarCommunityService) fetch(ctx context.Context) (CodexRadarCommunity, error) {
-	var software codexRadarSoftwareWire
-	if err := s.fetchJSON(ctx, codexRadarSoftwareMetricsURL, &software); err != nil {
-		return CodexRadarCommunity{}, err
+	type sourceResult struct {
+		software *codexRadarSoftwareWire
+		visual   *codexRadarVisualWire
+		err      error
 	}
-	if err := validateCodexRadarSoftware(software); err != nil {
-		return CodexRadarCommunity{}, err
+	results := make(chan sourceResult, 2)
+	go func() {
+		var value codexRadarSoftwareWire
+		if err := s.fetchJSON(ctx, codexRadarSoftwareMetricsURL, &value); err != nil {
+			results <- sourceResult{err: fmt.Errorf("software source: %w", err)}
+			return
+		}
+		if err := validateCodexRadarSoftware(value); err != nil {
+			results <- sourceResult{err: fmt.Errorf("software source: %w", err)}
+			return
+		}
+		results <- sourceResult{software: &value}
+	}()
+	go func() {
+		var value codexRadarVisualWire
+		if err := s.fetchJSON(ctx, codexRadarVisualReasoningURL, &value); err != nil {
+			results <- sourceResult{err: fmt.Errorf("visual source: %w", err)}
+			return
+		}
+		if err := validateCodexRadarVisual(value); err != nil {
+			results <- sourceResult{err: fmt.Errorf("visual source: %w", err)}
+			return
+		}
+		results <- sourceResult{visual: &value}
+	}()
+	var software *codexRadarSoftwareWire
+	var visual *codexRadarVisualWire
+	var sourceErrors []error
+	for range 2 {
+		result := <-results
+		if result.software != nil {
+			software = result.software
+		}
+		if result.visual != nil {
+			visual = result.visual
+		}
+		if result.err != nil {
+			sourceErrors = append(sourceErrors, result.err)
+		}
 	}
-	var visual codexRadarVisualWire
-	if err := s.fetchJSON(ctx, codexRadarVisualReasoningURL, &visual); err != nil {
-		return CodexRadarCommunity{}, err
-	}
-	if err := validateCodexRadarVisual(visual); err != nil {
-		return CodexRadarCommunity{}, err
+	if software == nil && visual == nil {
+		return CodexRadarCommunity{}, errors.Join(sourceErrors...)
 	}
 
-	softwarePoints := make([]CodexRadarCommunityPoint, 0, len(software.Points))
-	for _, point := range software.Points {
-		softwarePoints = append(softwarePoints, CodexRadarCommunityPoint{
-			Model: point.Model, Effort: point.Effort, Samples: point.Total, IQ: point.IQ,
-			AverageCostUSD: point.AveragePriceUSD, AverageDurationMinutes: point.AverageMinutes,
-		})
+	softwarePoints := make([]CodexRadarCommunityPoint, 0)
+	if software != nil {
+		softwarePoints = make([]CodexRadarCommunityPoint, 0, len(software.Points))
 	}
-	visualPoints := make([]CodexRadarCommunityPoint, 0, len(visual.Points))
-	for _, point := range visual.Points {
-		visualPoints = append(visualPoints, CodexRadarCommunityPoint{
-			Model: point.Model, Effort: point.Effort, Samples: point.ValidTasks, IQ: point.IQ,
-			AverageCostUSD: point.AveragePriceUSD, AverageDurationMinutes: point.AverageMinutes,
-		})
+	if software != nil {
+		for _, point := range software.Points {
+			softwarePoints = append(softwarePoints, CodexRadarCommunityPoint{
+				Model: point.Model, Effort: point.Effort, Samples: point.Total, IQ: point.IQ,
+				AverageCostUSD: point.AveragePriceUSD, AverageDurationMinutes: point.AverageMinutes,
+			})
+		}
 	}
-	comprehensive := compositeCodexRadarPoints(software.Points, visual.Points)
-	if len(comprehensive) == 0 {
-		return CodexRadarCommunity{}, errors.New("no shared model efforts")
+	visualPoints := make([]CodexRadarCommunityPoint, 0)
+	if visual != nil {
+		visualPoints = make([]CodexRadarCommunityPoint, 0, len(visual.Points))
 	}
-	combinedUpdatedAt, err := olderCodexRadarTime(software.SourceUpdatedAt, visual.SourceUpdatedAt)
-	if err != nil {
-		return CodexRadarCommunity{}, err
+	if visual != nil {
+		for _, point := range visual.Points {
+			visualPoints = append(visualPoints, CodexRadarCommunityPoint{
+				Model: point.Model, Effort: point.Effort, Samples: point.ValidTasks, IQ: point.IQ,
+				AverageCostUSD: point.AveragePriceUSD, AverageDurationMinutes: point.AverageMinutes,
+			})
+		}
+	}
+	status := "fresh"
+	if len(sourceErrors) > 0 {
+		status = "partial"
+	}
+	tabs := make([]CodexRadarCommunityTab, 0, 3)
+	if software != nil && visual != nil {
+		comprehensive := compositeCodexRadarPoints(software.Points, visual.Points)
+		if len(comprehensive) > 0 {
+			combinedUpdatedAt, err := olderCodexRadarTime(software.SourceUpdatedAt, visual.SourceUpdatedAt)
+			if err != nil {
+				return CodexRadarCommunity{}, err
+			}
+			tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, SourceUpdatedAt: combinedUpdatedAt, Status: "fresh", Points: comprehensive})
+		} else {
+			status = "partial"
+			tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, Status: "unavailable", ErrorCode: "NO_SHARED_MODEL_EFFORTS", Points: []CodexRadarCommunityPoint{}})
+		}
+	} else {
+		status = "partial"
+		tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, Status: "unavailable", ErrorCode: "SOURCE_INCOMPLETE", Points: []CodexRadarCommunityPoint{}})
+	}
+	softwareUpdatedAt := ""
+	if software != nil {
+		softwareUpdatedAt = software.SourceUpdatedAt
+	}
+	visualUpdatedAt := ""
+	if visual != nil {
+		visualUpdatedAt = visual.SourceUpdatedAt
 	}
 	return CodexRadarCommunity{
-		GeneratedAt: s.now().UTC().Format(time.RFC3339),
-		Tabs: []CodexRadarCommunityTab{
-			{Key: CodexRadarCommunityComprehensive, SourceUpdatedAt: combinedUpdatedAt, Points: comprehensive},
-			{Key: CodexRadarCommunitySoftware, SourceUpdatedAt: software.SourceUpdatedAt, Points: softwarePoints},
-			{Key: CodexRadarCommunityVisual, SourceUpdatedAt: visual.SourceUpdatedAt, Points: visualPoints},
-		},
+		GeneratedAt: s.now().UTC().Format(time.RFC3339), SourceStatus: status,
+		Tabs: append(tabs,
+			CodexRadarCommunityTab{Key: CodexRadarCommunitySoftware, SourceUpdatedAt: softwareUpdatedAt, Status: sourceTabStatus(software != nil), ErrorCode: sourceTabError(software != nil), Points: softwarePoints},
+			CodexRadarCommunityTab{Key: CodexRadarCommunityVisual, SourceUpdatedAt: visualUpdatedAt, Status: sourceTabStatus(visual != nil), ErrorCode: sourceTabError(visual != nil), Points: visualPoints},
+		),
 	}, nil
+}
+
+func sourceTabStatus(available bool) string {
+	if available {
+		return "fresh"
+	}
+	return "unavailable"
+}
+
+func sourceTabError(available bool) string {
+	if available {
+		return ""
+	}
+	return "SOURCE_UNAVAILABLE"
 }
 
 func (s *CodexRadarCommunityService) fetchJSON(ctx context.Context, target string, destination any) error {

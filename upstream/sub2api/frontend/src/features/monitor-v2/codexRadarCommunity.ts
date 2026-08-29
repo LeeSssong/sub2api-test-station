@@ -19,11 +19,14 @@ export interface CodexRadarCommunityPoint {
 export interface CodexRadarCommunityTab {
   key: CodexRadarCommunityKey
   source_updated_at: string
+  status: 'fresh' | 'unavailable'
+  error_code?: string
   points: CodexRadarCommunityPoint[]
 }
 
 export interface CodexRadarCommunity {
   generated_at: string
+  source_status: 'fresh' | 'partial' | 'stale'
   stale: boolean
   tabs: CodexRadarCommunityTab[]
 }
@@ -59,6 +62,11 @@ function timestamp(value: unknown, path: string): string {
   return parsed
 }
 
+function optionalTimestamp(value: unknown, path: string): string {
+  if (value === '') return ''
+  return timestamp(value, path)
+}
+
 export function parseCodexRadarCommunity(value: unknown): CodexRadarCommunity {
   const source = object(value, 'community')
   const generatedAt = timestamp(source.generated_at, 'generated_at')
@@ -68,7 +76,12 @@ export function parseCodexRadarCommunity(value: unknown): CodexRadarCommunity {
     const tab = object(rawTab, `tabs.${tabIndex}`)
     const key = string(tab.key, `tabs.${tabIndex}.key`, 32) as CodexRadarCommunityKey
     if (key !== CODEX_RADAR_COMMUNITY_KEYS[tabIndex]) throw new Error('community tab order changed')
-    if (!Array.isArray(tab.points) || tab.points.length < 1 || tab.points.length > 128) throw new Error('bounded points required')
+    if (!Array.isArray(tab.points) || tab.points.length > 128) throw new Error('bounded points required')
+    const status: CodexRadarCommunityTab['status'] = tab.status === undefined ? 'fresh' : string(tab.status, `tabs.${tabIndex}.status`, 16) as CodexRadarCommunityTab['status']
+    if (status !== 'fresh' && status !== 'unavailable') throw new Error('invalid tab status')
+    const errorCode = tab.error_code === undefined ? undefined : string(tab.error_code, `tabs.${tabIndex}.error_code`, 64)
+    if (status === 'unavailable' && !errorCode) throw new Error('unavailable tab requires error_code')
+    if (status === 'fresh' && tab.points.length === 0) throw new Error('fresh tab requires points')
     const seen = new Set<string>()
     const points = tab.points.map((rawPoint, pointIndex) => {
       const point = object(rawPoint, `tabs.${tabIndex}.points.${pointIndex}`)
@@ -93,12 +106,14 @@ export function parseCodexRadarCommunity(value: unknown): CodexRadarCommunity {
       }
       return parsed
     })
-    return { key, source_updated_at: timestamp(tab.source_updated_at, 'source_updated_at'), points }
+    return { key, source_updated_at: status === 'unavailable' ? optionalTimestamp(tab.source_updated_at, 'source_updated_at') : timestamp(tab.source_updated_at, 'source_updated_at'), status, error_code: errorCode, points }
   })
-  return { generated_at: generatedAt, stale: source.stale, tabs }
+  const sourceStatus = source.source_status === undefined ? (source.stale ? 'stale' : 'fresh') : string(source.source_status, 'source_status', 16)
+  if (!['fresh', 'partial', 'stale'].includes(sourceStatus)) throw new Error('invalid source_status')
+  return { generated_at: generatedAt, source_status: sourceStatus as CodexRadarCommunity['source_status'], stale: source.stale, tabs }
 }
 
 export async function getCodexRadarCommunity(signal?: AbortSignal): Promise<CodexRadarCommunity> {
-  const { data } = await apiClient.get('/monitor-v2/codexradar-community', { signal })
+  const { data } = await apiClient.get('/public/codexradar/community', { signal })
   return parseCodexRadarCommunity(data)
 }

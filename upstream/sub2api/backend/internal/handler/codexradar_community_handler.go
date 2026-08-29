@@ -23,13 +23,25 @@ func NewCodexRadarCommunityHandler(service codexRadarCommunityGetter) *CodexRada
 func (h *CodexRadarCommunityHandler) Get(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	if h == nil || h.service == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"message": "社区测试数据暂时不可用"}})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"code": "CODEXRADAR_COMMUNITY_UNAVAILABLE", "message": "社区测试数据暂时不可用"}})
 		return
 	}
 	value, stale, err := h.service.Get(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"message": "社区测试数据暂时不可用"}})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"code": "CODEXRADAR_COMMUNITY_UNAVAILABLE", "message": "社区测试数据暂时不可用"}})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"generated_at": value.GeneratedAt, "tabs": value.Tabs, "stale": stale})
+	sourceStatus := value.SourceStatus
+	if sourceStatus == "" {
+		sourceStatus = "fresh"
+	}
+	if stale {
+		sourceStatus = "stale"
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"generated_at":  value.GeneratedAt,
+		"source_status": sourceStatus,
+		"tabs":          value.Tabs,
+		"stale":         stale,
+	})
 }

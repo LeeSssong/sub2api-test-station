@@ -21,6 +21,17 @@ type monitorV2RouteSnapshotter struct{}
 
 type codexRadarCommunityRouteGetter struct{}
 
+type codexRadarInsightsRouteGetter struct{}
+
+func (codexRadarInsightsRouteGetter) Get(context.Context) (service.CodexRadarInsights, bool, error) {
+	return service.CodexRadarInsights{
+		GeneratedAt:     "2026-08-19T05:00:00Z",
+		SourceUpdatedAt: "2026-08-19T04:00:00Z",
+		SourceStatus:    "fresh",
+		Recommendations: []service.CodexRadarRecommendation{},
+	}, false, nil
+}
+
 func (codexRadarCommunityRouteGetter) Get(context.Context) (service.CodexRadarCommunity, bool, error) {
 	return service.CodexRadarCommunity{
 		GeneratedAt: "2026-08-19T05:00:00Z",
@@ -177,4 +188,20 @@ func TestCodexRadarCommunityRouteUsesAuthenticatedUserBoundary(t *testing.T) {
 	require.True(t, authCalled)
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"generated_at":"2026-08-19T05:00:00Z"`)
+}
+
+func TestCodexRadarPublicRoutesDoNotRequireAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	v1 := engine.Group("/api/v1")
+	RegisterCodexRadarRoutes(v1, &handler.Handlers{
+		CodexRadar:          handler.NewCodexRadarInsightsHandler(codexRadarInsightsRouteGetter{}),
+		CodexRadarCommunity: handler.NewCodexRadarCommunityHandler(codexRadarCommunityRouteGetter{}),
+	}, nil)
+
+	for _, path := range []string{"/api/v1/public/codexradar/insights", "/api/v1/public/codexradar/community"} {
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, recorder.Code, path)
+	}
 }

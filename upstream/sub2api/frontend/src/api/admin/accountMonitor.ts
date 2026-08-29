@@ -56,6 +56,40 @@ export interface AccountMonitorMultiplier {
   sample_count: number
 }
 
+export interface AccountMonitorRank { rank: number; total: number }
+export interface AccountMonitorRealRequestEvidence {
+  request_count: number
+  success_count: number
+  failure_count: number
+  success_rate: number
+  ttft_p95_ms?: number | null
+  ttft_sample_count: number
+  observed_at: string
+}
+export interface AccountMonitorGlobalRanks {
+  success_rate?: AccountMonitorRank | null
+  ttft_p95?: AccountMonitorRank | null
+}
+export interface AccountMonitorGroupProfitability {
+  group_id: number
+  group_name: string
+  profit_rate?: number | null
+  status: 'confirmed' | 'no_real_request' | 'no_revenue' | 'cost_incomplete' | string
+  reason?: string
+  rank?: AccountMonitorRank | null
+  revenue: number
+  account_cost: number
+  sample_count: number
+}
+export interface AccountMonitorRealRequestTimelinePoint {
+  start_at: string
+  end_at: string
+  request_count: number
+  success_count: number
+  failure_count: number
+  ttft_p95_ms?: number | null
+}
+
 export interface AccountMonitorBalance {
   value_usd?: number | null
   source?: 'sub2api' | 'newapi' | string
@@ -264,6 +298,11 @@ export interface AccountMonitorAccount {
   eligible?: boolean
   evidence?: AccountMonitorQualityEvidence
   group_recommendation?: AccountMonitorGroupRecommendation | null
+  real_request_evidence?: AccountMonitorRealRequestEvidence | null
+  global_ranks?: AccountMonitorGlobalRanks
+  group_profitability?: AccountMonitorGroupProfitability | null
+  upstream_multiplier?: AccountMonitorMultiplier | null
+  real_request_timeline?: AccountMonitorRealRequestTimelinePoint[]
 }
 
 export interface AccountModelDetectionModelOption {

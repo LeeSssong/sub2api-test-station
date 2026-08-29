@@ -990,6 +990,7 @@ const CostMetric = defineComponent({
 
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;

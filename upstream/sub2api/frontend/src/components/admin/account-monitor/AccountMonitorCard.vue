@@ -383,7 +383,6 @@ const realRequestBars = computed(() => {
 })
 const realTimelineAriaLabel = computed(() => `真实性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次真实请求`)
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
-const statisticsCutoffLabel = computed(() => formatShortTime(props.statisticsCutoff))
 const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
 const modelDetectionStatusHint = computed(() => {
@@ -429,13 +428,6 @@ const balanceValue = computed(() => {
   const balance = props.account.balance
   if (balance?.value_usd != null && Number.isFinite(balance.value_usd)) return `$${balance.value_usd.toFixed(2)}`
   return '暂不可用'
-})
-const balanceDetail = computed(() => {
-  const balance = props.account.balance
-  if (!balance) return '暂无余额快照'
-  if (balance.status === 'stale' || balance.status === 'failed') return '数据延迟'
-  if (balance.source) return `来源：${balance.source}`
-  return '余额快照'
 })
 function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return '--'

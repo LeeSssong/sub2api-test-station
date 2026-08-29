@@ -103,6 +103,50 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 	return tx.Commit()
 }
 
+// EnsureProbeBucketTerminal closes a group/bucket exactly once. It derives the
+// terminal from every account-level probe attempt in that bucket: any success
+// wins, otherwise the group receives a persisted failure terminal. This is an
+// observation ledger only; real usage_logs remain the quality source of truth.
+func (r *accountMonitorRepository) EnsureProbeBucketTerminal(
+	ctx context.Context,
+	groupID int64,
+	accountIDs []int64,
+	bucketStart time.Time,
+	runID string,
+) error {
+	if r == nil || r.db == nil {
+		return errors.New("nil account monitor repository")
+	}
+	if groupID <= 0 || bucketStart.IsZero() || runID == "" {
+		return errors.New("invalid monitor probe bucket terminal")
+	}
+	_, err := r.db.ExecContext(ctx, `
+INSERT INTO account_monitor_bucket_terminals (
+		group_id, bucket_start, run_id, status, ttft_ms, latency_ms, checked_at
+	)
+	SELECT $1, $2, $3::uuid,
+		CASE WHEN COALESCE(BOOL_OR(r.status = 'success'), FALSE) THEN 'success' ELSE 'failed' END,
+		MIN(r.ttft_ms) FILTER (WHERE r.status = 'success' AND r.ttft_ms IS NOT NULL),
+		MIN(r.latency_ms) FILTER (WHERE r.status = 'success' AND r.latency_ms IS NOT NULL),
+		COALESCE(MAX(r.checked_at), $2)
+	FROM account_monitor_results r
+	WHERE r.account_id = ANY($4::bigint[])
+	  AND r.checked_at >= $2
+	  AND r.checked_at < $2 + $5::interval
+	ON CONFLICT (group_id, bucket_start) DO UPDATE
+	SET status = EXCLUDED.status,
+	    ttft_ms = EXCLUDED.ttft_ms,
+	    latency_ms = EXCLUDED.latency_ms,
+	    checked_at = EXCLUDED.checked_at
+	WHERE account_monitor_bucket_terminals.status = 'failed'
+	  AND EXCLUDED.status = 'success'
+	`, groupID, bucketStart.UTC(), runID, pq.Array(accountIDs), (5 * time.Minute).String())
+	if err != nil {
+		return fmt.Errorf("ensure monitor probe bucket terminal: %w", err)
+	}
+	return nil
+}
+
 func (r *accountMonitorRepository) ProjectMonitorV2Groups(
 	ctx context.Context,
 	scopes []service.MonitorV2GroupAccountScope,
@@ -287,8 +331,31 @@ func (r *accountMonitorRepository) ProjectMonitorV4Groups(
 	start, end time.Time,
 	bucketSize time.Duration,
 ) (map[int64]service.MonitorV4GroupProjection, error) {
+	groupIDs := make([]int64, 0, len(scopes))
+	seenGroups := make(map[int64]struct{}, len(scopes))
+	for _, scope := range scopes {
+		if _, exists := seenGroups[scope.GroupID]; exists {
+			continue
+		}
+		seenGroups[scope.GroupID] = struct{}{}
+		groupIDs = append(groupIDs, scope.GroupID)
+	}
+	return r.ProjectMonitorV4GroupsForGroups(ctx, groupIDs, scopes, start, end, bucketSize)
+}
+
+// ProjectMonitorV4GroupsForGroups is the complete V4 projection. The visible
+// group ids are passed independently from account scopes so a group with no
+// currently schedulable accounts still receives one fail-closed terminal event
+// per closed five-minute bucket.
+func (r *accountMonitorRepository) ProjectMonitorV4GroupsForGroups(
+	ctx context.Context,
+	groupIDs []int64,
+	scopes []service.MonitorV2GroupAccountScope,
+	start, end time.Time,
+	bucketSize time.Duration,
+) (map[int64]service.MonitorV4GroupProjection, error) {
 	out := make(map[int64]service.MonitorV4GroupProjection)
-	if len(scopes) == 0 {
+	if len(groupIDs) == 0 {
 		return out, nil
 	}
 	if r == nil || r.db == nil {
@@ -297,8 +364,20 @@ func (r *accountMonitorRepository) ProjectMonitorV4Groups(
 	if start.IsZero() || end.IsZero() || !end.After(start) || bucketSize <= 0 {
 		return nil, errors.New("monitor v4 projection requires a valid time range and bucket")
 	}
+	seenGroups := make(map[int64]struct{}, len(groupIDs))
+	uniqueGroupIDs := make([]int64, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			return nil, errors.New("monitor v4 projection group ids must be positive")
+		}
+		if _, exists := seenGroups[groupID]; exists {
+			continue
+		}
+		seenGroups[groupID] = struct{}{}
+		uniqueGroupIDs = append(uniqueGroupIDs, groupID)
+	}
 	seen := make(map[service.MonitorV2GroupAccountScope]struct{}, len(scopes))
-	groupIDs := make([]int64, 0, len(scopes))
+	scopeGroupIDs := make([]int64, 0, len(scopes))
 	accountIDs := make([]int64, 0, len(scopes))
 	for _, scope := range scopes {
 		if scope.GroupID <= 0 || scope.AccountID <= 0 {
@@ -307,8 +386,11 @@ func (r *accountMonitorRepository) ProjectMonitorV4Groups(
 		if _, exists := seen[scope]; exists {
 			return nil, fmt.Errorf("duplicate monitor v4 projection scope %d/%d", scope.GroupID, scope.AccountID)
 		}
+		if _, exists := seenGroups[scope.GroupID]; !exists {
+			return nil, fmt.Errorf("monitor v4 projection scope group %d is not visible", scope.GroupID)
+		}
 		seen[scope] = struct{}{}
-		groupIDs = append(groupIDs, scope.GroupID)
+		scopeGroupIDs = append(scopeGroupIDs, scope.GroupID)
 		accountIDs = append(accountIDs, scope.AccountID)
 	}
 
@@ -317,10 +399,26 @@ WITH scopes AS (
   SELECT group_id, account_id
   FROM unnest($4::bigint[], $5::bigint[]) AS scope(group_id, account_id)
 ), groups AS (
-  SELECT DISTINCT group_id FROM scopes
+  SELECT unnest($6::bigint[]) AS group_id
+), bucket_bounds AS (
+  SELECT date_bin($3::interval, $1::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS start_bucket,
+         date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS end_bucket
+), buckets AS (
+  SELECT series.bucket_start
+  FROM bucket_bounds bb
+  CROSS JOIN LATERAL generate_series(
+         CASE WHEN bb.start_bucket < $1::timestamptz THEN bb.start_bucket + $3::interval ELSE bb.start_bucket END,
+         bb.end_bucket - $3::interval,
+         $3::interval
+       ) AS series(bucket_start)
+  WHERE series.bucket_start + $3::interval <= $2::timestamptz
+  UNION ALL
+  SELECT date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00')
+  WHERE $2::timestamptz >= date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') + $3::interval - interval '1 minute'
+    AND $2::timestamptz < date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') + $3::interval
 ), usage_candidates AS (
-  SELECT s.group_id, u.account_id, u.id::bigint AS source_id, u.created_at AS observed_at,
-         date_bin($3::interval, u.created_at, $1::timestamptz) AS bucket_start,
+  SELECT u.group_id, u.account_id, u.id::bigint AS source_id, u.created_at AS observed_at,
+         date_bin($3::interval, u.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          (u.actual_cost > 0) AS successful,
          u.first_token_ms::double precision AS first_token_ms,
          u.duration_ms::double precision AS duration_ms,
@@ -328,24 +426,24 @@ WITH scopes AS (
          NULLIF(u.logical_request_id, '') AS logical_request_id,
          NULLIF(u.request_id, '') AS request_id,
          1 AS source_priority
-  FROM scopes s
-  JOIN usage_logs u ON u.account_id = s.account_id AND u.group_id = s.group_id
+  FROM usage_logs u
+  JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
     AND u.usage_completeness IS DISTINCT FROM 'unknown'
 ), error_candidates AS (
-  SELECT s.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
-         date_bin($3::interval, o.created_at, $1::timestamptz) AS bucket_start,
+  SELECT o.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
+         date_bin($3::interval, o.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          FALSE AS successful,
          NULL::double precision AS first_token_ms,
          NULL::double precision AS duration_ms,
          COALESCE(matched_usage.request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
          0 AS source_priority
-  FROM scopes s
-  JOIN ops_error_logs o ON o.account_id = s.account_id AND o.group_id = s.group_id
+  FROM ops_error_logs o
+  JOIN groups g ON g.group_id = o.group_id
   LEFT JOIN LATERAL (
     SELECT u.request_key
     FROM usage_candidates u
-    WHERE u.group_id = s.group_id AND u.account_id = o.account_id
+    WHERE u.group_id = o.group_id AND u.account_id = o.account_id
       AND (
         (NULLIF(o.request_id, '') IS NOT NULL AND (u.request_id = o.request_id OR u.logical_request_id = o.request_id))
         OR (NULLIF(o.client_request_id, '') IS NOT NULL AND (u.request_id = o.client_request_id OR u.logical_request_id = o.client_request_id))
@@ -378,13 +476,27 @@ WITH scopes AS (
   GROUP BY group_id, bucket_start
 ), probe_rows AS (
   SELECT s.group_id, r.run_id, r.checked_at AS observed_at,
-         date_bin($3::interval, r.checked_at, $1::timestamptz) AS bucket_start,
+         date_bin($3::interval, r.checked_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          (r.status = 'success') AS successful,
          r.ttft_ms,
          r.latency_ms
   FROM scopes s
   JOIN account_monitor_results r ON r.account_id = s.account_id
   WHERE r.checked_at >= $1::timestamptz AND r.checked_at < $2::timestamptz
+    AND NOT EXISTS (
+      SELECT 1
+      FROM account_monitor_bucket_terminals t
+      WHERE t.group_id = s.group_id
+        AND t.bucket_start = date_bin($3::interval, r.checked_at, TIMESTAMPTZ '2001-01-01 00:00:00+00')
+        AND t.run_id = r.run_id
+    )
+  UNION ALL
+  SELECT t.group_id, t.run_id, t.checked_at AS observed_at, t.bucket_start,
+         (t.status = 'success') AS successful,
+         t.ttft_ms,
+         t.latency_ms
+  FROM account_monitor_bucket_terminals t
+  WHERE t.checked_at >= $1::timestamptz AND t.checked_at < $2::timestamptz
 ), probe_runs AS (
   SELECT group_id, bucket_start, run_id,
          BOOL_OR(successful) AS successful,
@@ -401,21 +513,32 @@ WITH scopes AS (
          MAX(observed_at) AS observed_at
   FROM probe_runs
   GROUP BY group_id, bucket_start
+), bucket_matrix AS (
+  SELECT g.group_id, b.bucket_start,
+         (rb.group_id IS NOT NULL) AS has_real,
+         p.successful AS probe_successful,
+		p.first_token_ms AS probe_first_token_ms,
+		p.duration_ms AS probe_duration_ms,
+		p.observed_at AS probe_observed_at,
+		(p.group_id IS NULL) AS probe_missing
+  FROM groups g
+  CROSS JOIN buckets b
+  LEFT JOIN real_buckets rb ON rb.group_id = g.group_id AND rb.bucket_start = b.bucket_start
+  LEFT JOIN probe_buckets p ON p.group_id = g.group_id AND p.bucket_start = b.bucket_start
 ), selected_events AS (
-  SELECT r.group_id, r.bucket_start, r.observed_at, r.successful, r.first_token_ms, r.duration_ms, r.source
+  SELECT r.group_id, r.bucket_start, r.observed_at, r.successful, r.first_token_ms, r.duration_ms, r.source,
+         FALSE AS probe_missing
   FROM real_events r
   UNION ALL
-  SELECT p.group_id, p.bucket_start, p.observed_at, p.successful, p.first_token_ms, p.duration_ms, 'probe'::text AS source
-  FROM probe_buckets p
-  LEFT JOIN real_buckets rb ON rb.group_id = p.group_id AND rb.bucket_start = p.bucket_start
-  WHERE rb.group_id IS NULL
-    AND (
-      p.bucket_start + $3::interval <= $2::timestamptz
-      OR (
-        $2::timestamptz >= p.bucket_start + interval '4 minutes'
-        AND $2::timestamptz < p.bucket_start + $3::interval
-      )
-    )
+  SELECT bm.group_id, bm.bucket_start,
+         bm.probe_observed_at,
+         COALESCE(bm.probe_successful, FALSE),
+         CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN bm.probe_first_token_ms END,
+		CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN bm.probe_duration_ms END,
+		'probe'::text AS source,
+		bm.probe_missing
+  FROM bucket_matrix bm
+  WHERE bm.has_real IS NOT TRUE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events
@@ -429,8 +552,9 @@ WITH scopes AS (
          COUNT(*) FILTER (WHERE s.successful)::int AS success_count,
          COUNT(*) FILTER (WHERE s.source = 'real')::int AS real_request_count,
          COUNT(*) FILTER (WHERE s.source = 'real' AND s.successful)::int AS real_success_count,
-         COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
-         COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
+			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
+			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
+			COUNT(*) FILTER (WHERE s.source = 'probe' AND s.probe_missing)::int AS missing_probe_terminal_count,
          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY s.first_token_ms)
            FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL) AS ttft_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
@@ -444,25 +568,27 @@ WITH scopes AS (
   LEFT JOIN latest_selected ls ON ls.group_id = g.group_id
   GROUP BY g.group_id
 )
-SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,
-       probe_fallback_bucket_count, probe_fallback_request_count, ttft_p95_ms, ttft_sample_count,
+	SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,
+	       probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count,
+	       ttft_p95_ms, ttft_sample_count,
        latency_p95_ms, latency_sample_count, source_updated_at, current_operational
 FROM aggregate
 ORDER BY group_id
-`, start.UTC(), end.UTC(), bucketSize.String(), pq.Array(groupIDs), pq.Array(accountIDs))
+`, start.UTC(), end.UTC(), bucketSize.String(), pq.Array(scopeGroupIDs), pq.Array(accountIDs), pq.Array(uniqueGroupIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query hybrid monitor v4 groups: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var (
-			groupID, requestCount, successCount, realRequestCount, realSuccessCount          int
-			probeFallbackBuckets, probeFallbackRequests, ttftSampleCount, latencySampleCount int
-			successRate, ttftP95, latencyP95                                                 sql.NullFloat64
-			currentOperational                                                               bool
-			sourceUpdatedAt                                                                  sql.NullTime
+			groupID, requestCount, successCount, realRequestCount, realSuccessCount int
+			probeFallbackBuckets, probeFallbackRequests, missingProbeTerminals      int
+			ttftSampleCount, latencySampleCount                                     int
+			successRate, ttftP95, latencyP95                                        sql.NullFloat64
+			currentOperational                                                      bool
+			sourceUpdatedAt                                                         sql.NullTime
 		)
-		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &sourceUpdatedAt, &currentOperational); err != nil {
+		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &missingProbeTerminals, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &sourceUpdatedAt, &currentOperational); err != nil {
 			return nil, fmt.Errorf("scan hybrid monitor v4 groups: %w", err)
 		}
 		var successRatePtr, ttftP95Ptr, latencyP95Ptr *float64
@@ -486,6 +612,7 @@ ORDER BY group_id
 			RealSuccessCount:          realSuccessCount,
 			ProbeFallbackBucketCount:  probeFallbackBuckets,
 			ProbeFallbackRequestCount: probeFallbackRequests,
+			MissingProbeTerminalCount: missingProbeTerminals,
 			TTFTP95MS:                 ttftP95Ptr,
 			TTFTSampleCount:           ttftSampleCount,
 			LatencyP95MS:              latencyP95Ptr,
@@ -1187,6 +1314,13 @@ func (r *accountMonitorRepository) ListHistory(
 func (r *accountMonitorRepository) DeleteBefore(ctx context.Context, before time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		DELETE FROM account_monitor_results
+		WHERE checked_at < $1
+	`, before.UTC())
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `
+		DELETE FROM account_monitor_bucket_terminals
 		WHERE checked_at < $1
 	`, before.UTC())
 	return err

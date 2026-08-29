@@ -4,7 +4,7 @@
 
 **Goal:** 将 Monitor V4 改为真实请求成功率主指标，并让主动探测兜底每个分组/5 分钟桶只贡献一个逻辑请求，同时跳过已知不可调度账号。
 
-**Architecture:** 复用现有 `usage_logs`、`ops_error_logs` 和 `account_monitor_results`。仓储 SQL 先构造真实请求事件，再对探测按 run/bucket 聚合并执行真实优先仲裁；服务层使用 `Account.IsSchedulableAt` 收紧自动探测池；handler/frontend 将 V4 合同升级为请求数、成功数和独立 P95 字段。
+**Architecture:** 复用现有 `usage_logs`、`ops_error_logs` 和 `account_monitor_results`。仓储 SQL 先构造真实请求事件，再对探测按 run/bucket 聚合并执行真实优先仲裁；服务层使用 `Account.IsSchedulableAt` 收紧自动探测池；新增最小的 `account_monitor_bucket_terminals` 观察终态表，保证分组/桶结算幂等；handler/frontend 将 V4 合同升级为请求数、成功数和独立 P95 字段。
 
 **Tech Stack:** Go、database/sql、PostgreSQL CTE/PERCENTILE_CONT、sqlmock、Vue 3、TypeScript、Vitest、pnpm。
 
@@ -15,7 +15,7 @@
 - 保留 5 分钟桶、真实请求优先、最后一分钟主动探测兜底、同桶不混用。
 - 真实成功定义保持 `actual_cost > 0` 且 `usage_completeness <> 'unknown'`；真实错误进入分母。
 - 探测全失败的已关闭兜底桶计为一次失败逻辑请求；探测自身无结果、未知、无可用账号、执行/读取/持久化异常也必须 fail-closed 计为一次 `0/1` 失败，并记录完整性故障。
-- 不新增迁移、配置、账务写入、历史回填或 GitHub Actions；如实现桶终态保证层，允许增加仅用于探测终态幂等的最小记录，不得成为第二套质量事实源。
+- 不新增配置、账务写入、历史回填或 GitHub Actions；本轮已按用户确认增加仅用于探测终态幂等的最小迁移/记录，不得成为第二套质量事实源。
 - 所有发布动作遵守验收站与主站授权门禁；本计划只负责本地实现和直接相关验证。
 
 ### Task 1: Replace V4 repository projection with request-weighted source arbitration
@@ -157,7 +157,34 @@ git add upstream/sub2api/backend/internal/service/monitor_v4.go upstream/sub2api
 git commit -m "feat: expose monitor v4 request success rate"
 ```
 
-### Task 4: Full direct verification and handoff
+### Task 4: Add the group/bucket probe terminal guarantee
+
+**Files:**
+- Create: `upstream/sub2api/backend/migrations/230_account_monitor_bucket_terminals.sql`
+- Create: `upstream/sub2api/backend/migrations/account_monitor_bucket_terminals_migration_test.go`
+- Modify: `upstream/sub2api/backend/internal/repository/account_monitor_repo.go`
+- Modify: `upstream/sub2api/backend/internal/repository/account_monitor_repo_test.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_types.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_service.go`
+- Modify: `upstream/sub2api/backend/internal/service/account_monitor_service_test.go`
+
+- [x] **Step 1: Add the idempotent terminal ledger**
+
+Create a unique `(group_id, bucket_start)` observation ledger with only `success`/`failed`, timing metadata, and run timestamps. Keep it separate from billing and request facts.
+
+- [x] **Step 2: Settle due buckets after each monitor run**
+
+After account probes finish, settle the previous closed bucket and the current bucket only during its final minute. Usage-reader failures and missing readers no longer silently skip the account probe; blocked accounts are represented by a fail-closed group terminal.
+
+- [x] **Step 3: Read terminals and fail closed**
+
+Project the terminal ledger with account-level probe rows, deduplicate by run/bucket, and synthesize a failed `0/1` event for historical buckets with no terminal. Expose an internal missing-terminal count and emit a sanitized integrity warning.
+
+- [x] **Step 4: Add direct tests**
+
+Cover terminal upsert SQL, migration shape, missing-probe aggregation, group matrix construction with no account scopes, historical fact scopes, usage-reader failure probing, and terminal settlement.
+
+### Task 5: Full direct verification and handoff
 
 **Files:**
 - Create: `docs/handoffs/2026-08-29-t85-monitor-v4-real-request-probe-dedup-handoff.md`

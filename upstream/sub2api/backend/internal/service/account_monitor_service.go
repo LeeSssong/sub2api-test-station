@@ -398,7 +398,10 @@ func (s *AccountMonitorService) monitorGroupScopes(ctx context.Context, groupIDs
 }
 
 // ProjectMonitorV4Groups returns the unified active-probe and strict
-// successful-user-request projection for the hybrid monitor.
+// successful-user-request projection for the hybrid monitor. V4 keeps all
+// current account/group facts in scope so a temporary scheduling block cannot
+// erase historical real-request evidence; IsSchedulableAt is reserved for the
+// automatic probe pool.
 func (s *AccountMonitorService) ProjectMonitorV4Groups(
 	ctx context.Context,
 	groupIDs []int64,
@@ -416,15 +419,89 @@ func (s *AccountMonitorService) ProjectMonitorV4Groups(
 	if !ok {
 		return nil, errors.New("account monitor hybrid projection repository unavailable")
 	}
-	scopes, err := s.monitorGroupScopes(ctx, groupIDs)
+	scopes, err := s.monitorGroupFactScopes(ctx, groupIDs)
 	if err != nil {
 		return nil, err
+	}
+	if groupsRepo, ok := hybridRepo.(AccountMonitorHybridProjectionGroupsRepository); ok {
+		projection, err := groupsRepo.ProjectMonitorV4GroupsForGroups(ctx, groupIDs, scopes, start, end, bucketSize)
+		if err != nil {
+			return nil, fmt.Errorf("project hybrid monitor v4 groups: %w", err)
+		}
+		logMonitorV4ProbeCompleteness(ctx, projection)
+		return projection, nil
 	}
 	projection, err := hybridRepo.ProjectMonitorV4Groups(ctx, scopes, start, end, bucketSize)
 	if err != nil {
 		return nil, fmt.Errorf("project hybrid monitor v4 groups: %w", err)
 	}
+	logMonitorV4ProbeCompleteness(ctx, projection)
 	return projection, nil
+}
+
+func logMonitorV4ProbeCompleteness(ctx context.Context, projection map[int64]MonitorV4GroupProjection) {
+	for groupID, group := range projection {
+		if group.MissingProbeTerminalCount <= 0 {
+			continue
+		}
+		slog.WarnContext(ctx, "monitor_v4_probe_terminal_missing_fail_closed", "group_id", groupID, "bucket_count", group.MissingProbeTerminalCount)
+	}
+}
+
+// monitorGroupFactScopes maps visible groups to all currently known account
+// memberships. Unlike monitorGroupScopes (used by native availability), it
+// intentionally does not apply transient schedulability gates: usage_logs and
+// ops_error_logs remain valid historical request facts after an account enters
+// cooldown, is rate-limited, or exhausts quota.
+func (s *AccountMonitorService) monitorGroupFactScopes(ctx context.Context, groupIDs []int64) ([]MonitorV2GroupAccountScope, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, errors.New("account monitor account repository unavailable")
+	}
+	accounts, err := s.listMonitorAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	requestedGroups := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID > 0 {
+			requestedGroups[groupID] = struct{}{}
+		}
+	}
+	scopes := make([]MonitorV2GroupAccountScope, 0, len(accounts))
+	seen := make(map[MonitorV2GroupAccountScope]struct{})
+	for i := range accounts {
+		account := &accounts[i]
+		if account.ID <= 0 {
+			continue
+		}
+		accountGroups := make(map[int64]struct{}, len(account.GroupIDs)+len(account.Groups))
+		for _, groupID := range account.GroupIDs {
+			accountGroups[groupID] = struct{}{}
+		}
+		for _, group := range account.Groups {
+			if group != nil {
+				accountGroups[group.ID] = struct{}{}
+			}
+		}
+		for groupID := range accountGroups {
+			if _, requested := requestedGroups[groupID]; !requested {
+				continue
+			}
+			scope := MonitorV2GroupAccountScope{GroupID: groupID, AccountID: account.ID}
+			if _, exists := seen[scope]; exists {
+				continue
+			}
+			seen[scope] = struct{}{}
+			scopes = append(scopes, scope)
+		}
+	}
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].GroupID == scopes[j].GroupID {
+			return scopes[i].AccountID < scopes[j].AccountID
+		}
+		return scopes[i].GroupID < scopes[j].GroupID
+	})
+	return scopes, nil
 }
 
 func ParseAccountMonitorRange(raw string) (AccountMonitorRange, time.Duration, error) {
@@ -2099,6 +2176,10 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 	if err != nil {
 		return 0, err
 	}
+	allAccounts, err := s.listMonitorAccounts(ctx)
+	if err != nil {
+		return 0, err
+	}
 	runID := uuid.NewString()
 	ids := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
@@ -2122,13 +2203,24 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 		}
 		g.Go(func() error {
 			reader := s.activeProbeUsageReader()
-			if reader == nil {
-				return nil
+			if reader != nil {
+				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
+				used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
+				if usageErr != nil {
+					// A usage-read failure must not silently turn into a skipped
+					// probe. Real requests still win in the projection; when the
+					// reader is unavailable, execute the probe and let persistence
+					// or the read-side fail-closed path record the failure.
+					slog.WarnContext(gctx, "account_monitor.active_probe_usage_read_failed", "account_id", account.ID, "error", usageErr)
+				} else if used {
+					return nil
+				}
 			}
-			bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
-			used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
-			if usageErr != nil || used {
-				return nil
+			if reader == nil {
+				slog.WarnContext(gctx, "account_monitor.active_probe_usage_reader_unavailable", "account_id", account.ID)
+			}
+			if err := gctx.Err(); err != nil {
+				return err
 			}
 			result := s.probeAccount(gctx, account)
 			if err := s.repo.InsertResult(gctx, result, runID); err != nil {
@@ -2144,14 +2236,116 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			return nil
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return completed, err
+	probeRunErr := g.Wait()
+	terminalErr := s.settleDueProbeBuckets(ctx, monitorGroupAccountIDs(allAccounts), time.Now().UTC(), runID)
+	if probeRunErr != nil || terminalErr != nil {
+		return completed, errors.Join(probeRunErr, terminalErr)
 	}
 	if err := s.repo.DeleteBefore(ctx, time.Now().Add(-AccountMonitorResultRetentionDays*24*time.Hour)); err != nil {
 		return completed, fmt.Errorf("delete account monitor history: %w", err)
 	}
 	_ = actorID
 	return completed, nil
+}
+
+// settleDueProbeBuckets closes the previous bucket on every run and closes the
+// current bucket only during its final minute. The unique repository key makes
+// retries and overlapping scheduler runs idempotent. A usage-reader error does
+// not skip the terminal write: real usage remains authoritative in V4 and will
+// suppress this probe terminal at read time.
+func (s *AccountMonitorService) settleDueProbeBuckets(
+	ctx context.Context,
+	groupAccounts map[int64][]int64,
+	now time.Time,
+	runID string,
+) error {
+	if s == nil || s.repo == nil {
+		return nil
+	}
+	groups, err := s.repo.ListGroups(ctx)
+	if err != nil {
+		return fmt.Errorf("list monitor groups for probe terminal settlement: %w", err)
+	}
+	for _, group := range groups {
+		if group.ID <= 0 {
+			continue
+		}
+		if group.Status != StatusActive {
+			continue
+		}
+		if _, exists := groupAccounts[group.ID]; !exists {
+			groupAccounts[group.ID] = nil
+		}
+	}
+	if len(groupAccounts) == 0 {
+		return nil
+	}
+	currentStart, _ := currentActiveProbeBucket(now)
+	currentLocal := now.In(activeProbeLocation)
+	currentStartLocal := currentStart.In(activeProbeLocation)
+	buckets := []time.Time{currentStart.Add(-5 * time.Minute)}
+	if currentLocal.Sub(currentStartLocal) >= 4*time.Minute && currentLocal.Sub(currentStartLocal) < 5*time.Minute {
+		buckets = append(buckets, currentStart)
+	}
+	reader := s.activeProbeUsageReader()
+	groupIDs := make([]int64, 0, len(groupAccounts))
+	for groupID := range groupAccounts {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+	var errs []error
+	for _, groupID := range groupIDs {
+		accountIDs := groupAccounts[groupID]
+		for _, bucketStart := range buckets {
+			if reader != nil {
+				used, err := reader.HasGroupUsageInWindow(ctx, groupID, bucketStart, bucketStart.Add(5*time.Minute))
+				if err != nil {
+					slog.WarnContext(ctx, "account_monitor.group_usage_read_failed_for_terminal", "group_id", groupID, "bucket_start", bucketStart.UTC(), "error", err)
+				} else if used {
+					continue
+				}
+			}
+			if err := s.repo.EnsureProbeBucketTerminal(ctx, groupID, accountIDs, bucketStart.UTC(), runID); err != nil {
+				errs = append(errs, fmt.Errorf("group %d bucket %s: %w", groupID, bucketStart.UTC().Format(time.RFC3339), err))
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func monitorGroupAccountIDs(accounts []Account) map[int64][]int64 {
+	byGroup := make(map[int64][]int64)
+	seen := make(map[int64]map[int64]struct{})
+	for _, account := range accounts {
+		if account.ID <= 0 {
+			continue
+		}
+		groups := make(map[int64]struct{}, len(account.GroupIDs)+len(account.Groups))
+		for _, groupID := range account.GroupIDs {
+			if groupID > 0 {
+				groups[groupID] = struct{}{}
+			}
+		}
+		for _, group := range account.Groups {
+			if group != nil && group.ID > 0 {
+				groups[group.ID] = struct{}{}
+			}
+		}
+		for groupID := range groups {
+			if seen[groupID] == nil {
+				seen[groupID] = make(map[int64]struct{})
+			}
+			if _, exists := seen[groupID][account.ID]; exists {
+				continue
+			}
+			seen[groupID][account.ID] = struct{}{}
+			byGroup[groupID] = append(byGroup[groupID], account.ID)
+		}
+	}
+	for groupID := range byGroup {
+		sort.Slice(byGroup[groupID], func(i, j int) bool { return byGroup[groupID][i] < byGroup[groupID][j] })
+	}
+	return byGroup
 }
 
 func (s *AccountMonitorService) RunOne(

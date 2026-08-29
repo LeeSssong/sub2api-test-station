@@ -98,6 +98,16 @@ type accountMonitorRepoStub struct {
 	aggregateCalls         []time.Time
 	aggregateResults       []map[int64]AccountMonitorAggregate
 	monitorV2Scopes        []MonitorV2GroupAccountScope
+	monitorV4Scopes        []MonitorV2GroupAccountScope
+	monitorV4GroupIDs      []int64
+	monitorV4Projection    map[int64]MonitorV4GroupProjection
+	monitorV4ProjectionErr error
+	probeBucketTerminals   []struct {
+		groupID    int64
+		accountIDs []int64
+		bucket     time.Time
+		runID      string
+	}
 	monitorV2FreshSince    time.Time
 	monitorV2Start         time.Time
 	monitorV2End           time.Time
@@ -215,6 +225,49 @@ func (s *accountMonitorRepoStub) ProjectMonitorV2Groups(
 		return nil, s.monitorV2ProjectionErr
 	}
 	return s.monitorV2Projection, nil
+}
+
+func (s *accountMonitorRepoStub) ProjectMonitorV4GroupsForGroups(
+	_ context.Context,
+	groupIDs []int64,
+	scopes []MonitorV2GroupAccountScope,
+	_, _ time.Time,
+	_ time.Duration,
+) (map[int64]MonitorV4GroupProjection, error) {
+	s.monitorV4GroupIDs = append([]int64(nil), groupIDs...)
+	s.monitorV4Scopes = append([]MonitorV2GroupAccountScope(nil), scopes...)
+	if s.monitorV4ProjectionErr != nil {
+		return nil, s.monitorV4ProjectionErr
+	}
+	return s.monitorV4Projection, nil
+}
+
+func (s *accountMonitorRepoStub) ProjectMonitorV4Groups(
+	ctx context.Context,
+	scopes []MonitorV2GroupAccountScope,
+	start, end time.Time,
+	bucketSize time.Duration,
+) (map[int64]MonitorV4GroupProjection, error) {
+	groupIDs := make([]int64, 0, len(scopes))
+	seen := make(map[int64]struct{}, len(scopes))
+	for _, scope := range scopes {
+		if _, exists := seen[scope.GroupID]; exists {
+			continue
+		}
+		seen[scope.GroupID] = struct{}{}
+		groupIDs = append(groupIDs, scope.GroupID)
+	}
+	return s.ProjectMonitorV4GroupsForGroups(ctx, groupIDs, scopes, start, end, bucketSize)
+}
+
+func (s *accountMonitorRepoStub) EnsureProbeBucketTerminal(_ context.Context, groupID int64, accountIDs []int64, bucketStart time.Time, runID string) error {
+	s.probeBucketTerminals = append(s.probeBucketTerminals, struct {
+		groupID    int64
+		accountIDs []int64
+		bucket     time.Time
+		runID      string
+	}{groupID: groupID, accountIDs: append([]int64(nil), accountIDs...), bucket: bucketStart, runID: runID})
+	return nil
 }
 
 type accountMonitorSchedulerProjectionStub struct {
@@ -1056,6 +1109,31 @@ func TestAccountMonitorProjectMonitorV2GroupsUsesSchedulableScopes(t *testing.T)
 	}
 	if !repo.monitorV2Start.Equal(start) || !repo.monitorV2End.Equal(end) || repo.monitorV2BucketSize != time.Hour {
 		t.Fatalf("native query bounds = start %s end %s bucket %s", repo.monitorV2Start, repo.monitorV2End, repo.monitorV2BucketSize)
+	}
+}
+
+func TestAccountMonitorProjectMonitorV4UsesHistoricalFactScopes(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	accounts := []Account{
+		{ID: 1, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}},
+		{ID: 2, Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future, GroupIDs: []int64{7}},
+		{ID: 3, Status: StatusDisabled, Schedulable: true, GroupIDs: []int64{7}},
+	}
+	repo := &accountMonitorRepoStub{monitorV4Projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1}}}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: accounts}, nil, nil, nil)
+	start := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	_, err := svc.ProjectMonitorV4Groups(context.Background(), []int64{7}, start, end, time.Hour)
+	if err != nil {
+		t.Fatalf("ProjectMonitorV4Groups() error = %v", err)
+	}
+	wantScopes := []MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 1}, {GroupID: 7, AccountID: 2}, {GroupID: 7, AccountID: 3}}
+	if !reflect.DeepEqual(repo.monitorV4GroupIDs, []int64{7}) {
+		t.Fatalf("V4 group ids = %#v, want [7]", repo.monitorV4GroupIDs)
+	}
+	if !reflect.DeepEqual(repo.monitorV4Scopes, wantScopes) {
+		t.Fatalf("V4 fact scopes = %#v, want %#v", repo.monitorV4Scopes, wantScopes)
 	}
 }
 
@@ -3557,7 +3635,7 @@ func TestAccountMonitorRunAllSkipsUnschedulableAccounts(t *testing.T) {
 }
 
 func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
-	account := Account{ID: 407, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI}
+	account := Account{ID: 407, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, GroupIDs: []int64{7}}
 	newService := func(reader ActiveProbeUsageWindowReader) (*AccountMonitorService, *accountMonitorRepoStub, *int) {
 		repo := &accountMonitorRepoStub{}
 		svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, nil)
@@ -3574,9 +3652,9 @@ func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
 		svc, repo, calls := newService(nil)
 		completed, err := svc.RunAll(context.Background(), 1)
 		require.NoError(t, err)
-		require.Equal(t, 0, completed)
-		require.Zero(t, *calls)
-		require.Empty(t, repo.results)
+		require.Equal(t, 1, completed)
+		require.Equal(t, 1, *calls)
+		require.Len(t, repo.results, 1)
 	})
 
 	t.Run("real request in bucket skips probe", func(t *testing.T) {
@@ -3588,6 +3666,15 @@ func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
 		require.Empty(t, repo.results)
 	})
 
+	t.Run("usage reader error still probes", func(t *testing.T) {
+		svc, repo, calls := newService(&modelDetectionUsageStub{err: errors.New("usage unavailable")})
+		completed, err := svc.RunAll(context.Background(), 1)
+		require.NoError(t, err)
+		require.Equal(t, 1, completed)
+		require.Equal(t, 1, *calls)
+		require.Len(t, repo.results, 1)
+	})
+
 	t.Run("empty bucket permits one probe", func(t *testing.T) {
 		svc, repo, calls := newService(&modelDetectionUsageStub{})
 		completed, err := svc.RunAll(context.Background(), 1)
@@ -3595,7 +3682,49 @@ func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
 		require.Equal(t, 1, completed)
 		require.Equal(t, 1, *calls)
 		require.Len(t, repo.results, 1)
+		require.NotEmpty(t, repo.probeBucketTerminals)
 	})
+}
+
+func TestAccountMonitorSettleDueProbeBucketsWritesPreviousAndFinalMinuteForActiveGroups(t *testing.T) {
+	repo := &accountMonitorRepoStub{
+		groups: []AccountMonitorGroup{
+			{ID: 7, Status: StatusActive},
+			{ID: 8, Status: StatusActive},
+			{ID: 9, Status: StatusDisabled},
+		},
+	}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	now := time.Date(2026, 8, 29, 12, 4, 30, 0, activeProbeLocation)
+	groupAccounts := map[int64][]int64{7: {11}}
+
+	if err := svc.settleDueProbeBuckets(context.Background(), groupAccounts, now, "run-settlement-test"); err != nil {
+		t.Fatalf("settleDueProbeBuckets() error = %v", err)
+	}
+	if len(repo.probeBucketTerminals) != 4 {
+		t.Fatalf("terminal writes = %d, want previous and final-minute buckets for two active groups", len(repo.probeBucketTerminals))
+	}
+	wantBuckets := map[int64]map[time.Time]bool{
+		7: {time.Date(2026, 8, 29, 3, 55, 0, 0, time.UTC): true, time.Date(2026, 8, 29, 4, 0, 0, 0, time.UTC): true},
+		8: {time.Date(2026, 8, 29, 3, 55, 0, 0, time.UTC): true, time.Date(2026, 8, 29, 4, 0, 0, 0, time.UTC): true},
+	}
+	for _, terminal := range repo.probeBucketTerminals {
+		if terminal.runID != "run-settlement-test" {
+			t.Fatalf("terminal run id = %q, want run-settlement-test", terminal.runID)
+		}
+		if !wantBuckets[terminal.groupID][terminal.bucket.UTC()] {
+			t.Fatalf("unexpected terminal group/bucket = %d/%s", terminal.groupID, terminal.bucket.UTC().Format(time.RFC3339))
+		}
+		delete(wantBuckets[terminal.groupID], terminal.bucket.UTC())
+	}
+	for groupID, buckets := range wantBuckets {
+		if len(buckets) != 0 {
+			t.Fatalf("missing terminal buckets for group %d: %#v", groupID, buckets)
+		}
+	}
+	if got := groupAccounts[8]; got != nil {
+		t.Fatalf("group 8 account scope = %#v, want nil for active group without accounts", got)
+	}
 }
 
 func TestAccountMonitorRunAllProbesAPIKey401RecoveryAndClearsTempState(t *testing.T) {

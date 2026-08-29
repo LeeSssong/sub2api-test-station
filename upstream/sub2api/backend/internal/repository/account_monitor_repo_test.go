@@ -32,6 +32,25 @@ func TestAccountMonitorRepositoryHealthHistoryErrorRollsBackWithoutEvent(t *test
 	}
 }
 
+func TestAccountMonitorRepositoryEnsuresProbeBucketTerminalIdempotently(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	bucket := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
+	mock.ExpectExec(`(?s)INSERT INTO account_monitor_bucket_terminals.*BOOL_OR\(r\.status = 'success'\).*ON CONFLICT \(group_id, bucket_start\) DO UPDATE.*EXCLUDED\.status = 'success'`).
+		WithArgs(int64(7), bucket, "7d4b56d2-8223-4f77-8d22-f6a93d818980", sqlmock.AnyArg(), "5m0s").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	if err := repo.EnsureProbeBucketTerminal(context.Background(), 7, []int64{11, 12}, bucket, "7d4b56d2-8223-4f77-8d22-f6a93d818980"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -46,13 +65,13 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 	updatedAt := end.Add(-time.Minute)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*usage_candidates AS.*error_candidates AS.*COALESCE\(matched_usage\.request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*BOOL_OR\(successful\).*GROUP BY group_id, bucket_start.*selected_events AS.*request_count`).
-		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg()).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*generate_series.*usage_candidates AS.*error_candidates AS.*COALESCE\(matched_usage\.request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*bucket_matrix AS.*selected_events AS.*request_count`).
+		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
-			"probe_fallback_bucket_count", "probe_fallback_request_count", "ttft_p95_ms", "ttft_sample_count",
+			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
 			"latency_p95_ms", "latency_sample_count", "source_updated_at", "current_operational",
-		}).AddRow(7, 75.0, 4, 3, 2, 1, 2, 2, 120.0, 2, 800.0, 3, updatedAt, true))
+		}).AddRow(7, 75.0, 4, 3, 2, 1, 2, 2, 0, 120.0, 2, 800.0, 3, updatedAt, true))
 
 	projection, err := projector.ProjectMonitorV4Groups(context.Background(), []service.MonitorV2GroupAccountScope{{GroupID: 7, AccountID: 11}}, start, end, 5*time.Minute)
 	if err != nil {
@@ -70,6 +89,87 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	}
 	if !row.CurrentOperational || row.SourceUpdatedAt == nil || !row.SourceUpdatedAt.Equal(updatedAt) {
 		t.Fatalf("status projection = %#v", row)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccountMonitorRepositoryProjectMonitorV4FailClosesMissingProbeBucket(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	projector, ok := repo.(service.AccountMonitorHybridProjectionGroupsRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement complete hybrid projection")
+	}
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	end := start.Add(10*time.Minute + 30*time.Second)
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*COALESCE\(bm\.probe_successful, FALSE\)`).
+		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
+			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
+			"latency_p95_ms", "latency_sample_count", "source_updated_at", "current_operational",
+		}).AddRow(7, 0.0, 2, 0, 0, 0, 2, 2, 2, nil, 0, nil, 0, nil, false))
+
+	projection, err := projector.ProjectMonitorV4GroupsForGroups(
+		context.Background(), []int64{7}, nil, start, end, 5*time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := projection[7]
+	if row.RequestCount != 2 || row.SuccessCount != 0 || row.SuccessRate == nil || *row.SuccessRate != 0 {
+		t.Fatalf("missing-probe projection = %#v, want two failed logical requests", row)
+	}
+	if row.ProbeFallbackBucketCount != 2 || row.ProbeFallbackRequestCount != 2 {
+		t.Fatalf("missing-probe counters = %#v, want one per closed bucket", row)
+	}
+	if row.MissingProbeTerminalCount != 2 {
+		t.Fatalf("missing-probe terminal count = %d, want 2", row.MissingProbeTerminalCount)
+	}
+	if row.TTFTP95MS != nil || row.LatencyP95MS != nil || row.CurrentOperational {
+		t.Fatalf("missing-probe timing/status = %#v", row)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccountMonitorRepositoryProjectMonitorV4ConstructsGroupMatrixWithoutAccountScopes(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	projector, ok := repo.(service.AccountMonitorHybridProjectionGroupsRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement complete hybrid projection")
+	}
+	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	end := start.Add(5*time.Minute + 10*time.Second)
+	mock.ExpectQuery(`(?s)WITH scopes AS.*SELECT unnest\(\$6::bigint\[\]\).*CROSS JOIN buckets.*LEFT JOIN real_buckets`).
+		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
+			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
+			"latency_p95_ms", "latency_sample_count", "source_updated_at", "current_operational",
+		}).AddRow(99, 0.0, 1, 0, 0, 0, 1, 1, 1, nil, 0, nil, 0, nil, false))
+
+	projection, err := projector.ProjectMonitorV4GroupsForGroups(
+		context.Background(), []int64{99}, nil, start, end, 5*time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, exists := projection[99]
+	if !exists || row.RequestCount != 1 || row.SuccessRate == nil || *row.SuccessRate != 0 {
+		t.Fatalf("group without scopes = %#v, want one fail-closed bucket", projection)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -364,6 +464,8 @@ func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *test
 
 	mock.ExpectExec("DELETE FROM account_monitor_results").WithArgs(since).
 		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec("DELETE FROM account_monitor_bucket_terminals").WithArgs(since).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := repo.DeleteBefore(context.Background(), since); err != nil {
 		t.Fatal(err)
 	}

@@ -326,6 +326,7 @@ type MonitorV4GroupProjection struct {
 	RealSuccessCount          int
 	ProbeFallbackBucketCount  int
 	ProbeFallbackRequestCount int
+	MissingProbeTerminalCount int
 	TTFTP95MS                 *float64
 	TTFTSampleCount           int
 	LatencyP95MS              *float64
@@ -350,6 +351,20 @@ type AccountMonitorGroupProbeRepository interface {
 type AccountMonitorHybridProjectionRepository interface {
 	ProjectMonitorV4Groups(
 		ctx context.Context,
+		scopes []MonitorV2GroupAccountScope,
+		start, end time.Time,
+		bucketSize time.Duration,
+	) (map[int64]MonitorV4GroupProjection, error)
+}
+
+// AccountMonitorHybridProjectionGroupsRepository is the V4 read path variant
+// that receives the visible group ids separately from account facts. This
+// lets the repository construct a complete group × closed-bucket matrix even
+// when a currently visible group has no account scope rows.
+type AccountMonitorHybridProjectionGroupsRepository interface {
+	ProjectMonitorV4GroupsForGroups(
+		ctx context.Context,
+		groupIDs []int64,
 		scopes []MonitorV2GroupAccountScope,
 		start, end time.Time,
 		bucketSize time.Duration,
@@ -461,6 +476,10 @@ type AccountMonitorRepository interface {
 	LoadSettings(ctx context.Context) (AccountMonitorSettings, error)
 	SaveSettings(ctx context.Context, settings AccountMonitorSettings) error
 	InsertResult(ctx context.Context, result AccountMonitorProbeResult, runID string) error
+	// EnsureProbeBucketTerminal atomically records one group/bucket probe
+	// terminal. Existing account-level probe rows are reduced to one logical
+	// result; an empty/failed set becomes a persisted failure terminal.
+	EnsureProbeBucketTerminal(ctx context.Context, groupID int64, accountIDs []int64, bucketStart time.Time, runID string) error
 	ListAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorAggregate, error)
 	ListWindowAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)
 	ListLatest(ctx context.Context, accountIDs []int64) (map[int64]AccountMonitorLatest, error)

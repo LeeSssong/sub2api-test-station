@@ -26,7 +26,7 @@
 - 全失败成功率回归：`6c1f9475e`（`test: cover failed monitor v4 success rate`）
 - 终态保证实现提交：`ae29b9376`（`feat: guarantee monitor v4 probe bucket terminals`）
 - 刷新基线：`main@aeafa1569`；候选刷新合并提交：`30b530683`
-- 当前候选：`codex/t85-monitor-probe-dedup@30b530683`（未推送、未合并、未部署）
+- 当前候选：`codex/t85-monitor-probe-dedup@81f23e445`（未推送、未合并、未部署）
 - 规格/计划：
   - `docs/superpowers/specs/2026-08-29-t85-monitor-v4-real-request-probe-dedup-design.md`
   - `docs/superpowers/plans/2026-08-29-t85-monitor-v4-real-request-probe-dedup.md`

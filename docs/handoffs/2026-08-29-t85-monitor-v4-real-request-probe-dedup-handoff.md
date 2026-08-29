@@ -1,6 +1,6 @@
 # T85 Monitor V4 真实请求成功率与探测兜底去重交接
 
-日期：2026-08-29  
+日期：2026-08-29
 状态：`READY_FOR_ROOT_REVIEW`（仅本地候选；未合并、未推送、未部署）
 
 ## 目标与已实现口径
@@ -19,7 +19,8 @@
 
 - 初始基线：`main@32334261da92721e1ea6251df1d9a951c9d184ab`
 - 实现提交：`af0bfb850`（`feat: correct monitor v4 request success metrics`）
-- 已同步的最新根主线：`main@9ac9d1f2f`；候选同步提交：`c51486fe0`
+- 全失败成功率回归：`6c1f9475e`（`test: cover failed monitor v4 success rate`）
+- 已同步的最新根主线：`main@84dc3c40a`；候选同步提交：`9dfcfe64d`
 - 规格/计划：
   - `docs/superpowers/specs/2026-08-29-t85-monitor-v4-real-request-probe-dedup-design.md`
   - `docs/superpowers/plans/2026-08-29-t85-monitor-v4-real-request-probe-dedup.md`

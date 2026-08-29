@@ -1,9 +1,12 @@
 <template>
-  <article class="w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" data-test="monitor-card" :data-account-id="account.account_id">
-    <div class="grid min-w-0 gap-x-4 gap-y-3 px-[18px] py-4 max-[430px]:px-[14px] max-[430px]:py-[14px] 2xl:grid-cols-[minmax(15rem,1.45fr)_minmax(10rem,.9fr)_minmax(11rem,1fr)_minmax(15rem,1.35fr)_minmax(13rem,1.1fr)_auto]" data-test="monitor-card-header">
+  <article class="monitor-card-shell w-full min-w-0" data-test="monitor-card" :data-account-id="account.account_id">
+    <div class="monitor-card-layout grid min-w-0" data-test="monitor-card-header">
       <section class="min-w-0" data-test="identity-column" aria-label="账号身份与状态">
+        <div class="monitor-card-eyeline">
+          <span class="monitor-card-status-dot h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
+          <span>账号状态 · {{ schedulableLabel }} · {{ platformLabel }} · 目标组 {{ currentGroupLabel }}</span>
+        </div>
         <div class="flex min-w-0 items-start gap-2">
-          <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
           <div class="min-w-0">
             <h2 class="break-words text-base font-semibold leading-6 text-gray-900 dark:text-white [overflow-wrap:anywhere]" data-test="account-identity">
               <a
@@ -19,23 +22,14 @@
               <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400"> #{{ account.account_id }}</span>
             </h2>
             <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-4 text-gray-500 dark:text-slate-400" data-test="account-metadata">
-              <span>平台 {{ platformLabel }}</span>
-              <span aria-hidden="true">/</span>
-              <span class="min-w-0 break-words">当前分组 {{ currentGroupLabel }}</span>
-              <span aria-hidden="true">/</span>
-              <span>调度状态 {{ schedulableLabel }}</span>
+              <span>当前分组：{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>基于 {{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次已持久化真实请求</span><span aria-hidden="true">·</span><span>数据累计至当前</span>
               <template v-if="recommendation">
-                <span aria-hidden="true">/</span>
+                <span aria-hidden="true">·</span>
                 <HelpTooltip v-if="formalMigration" class="!ml-0" width-class="w-80" data-test="recommendation-tooltip-trigger">
-                  <template #trigger>
-                    <span class="inline-flex min-w-0 items-center gap-0.5 text-amber-600 dark:text-amber-300" data-test="group-recommendation">
-                      <span class="break-words">{{ recommendationLabel }}</span>
-                      <button class="inline-flex h-5 w-5 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500" data-test="recommendation-warning" type="button" :title="recommendationTooltip" :aria-label="recommendationTooltip">!</button>
-                    </span>
-                  </template>
+                  <template #trigger><button class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button></template>
                   <div data-test="group-recommendation-tooltip">{{ recommendationTooltip }}</div>
                 </HelpTooltip>
-                <span v-else class="break-words" data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
+                <span v-else class="monitor-card-recommendation" data-test="group-recommendation" :class="recommendationTextClass">{{ recommendationLabel }}</span>
               </template>
             </div>
           </div>
@@ -365,7 +359,11 @@ const successfulRequestCount = computed(() => Math.max(0, Number(props.account.r
 const probeTTFTP50MS = computed(() => props.account.probe_ttft_p50_ms ?? props.account.ttft_p50_ms ?? null)
 const probeLatencyP95MS = computed(() => props.account.probe_latency_p95_ms ?? props.account.latency_p95_ms ?? null)
 const realEvidence = computed(() => props.account.real_request_evidence)
-const realSuccessRate = computed(() => realEvidence.value && realEvidence.value.request_count > 0 ? formatPercent(realEvidence.value.success_rate) : '--')
+const realSuccessRate = computed(() => {
+  if (realEvidence.value && realEvidence.value.request_count > 0) return formatPercent(realEvidence.value.success_rate)
+  if (props.account.success_rate != null) return formatPercent(props.account.success_rate)
+  return '--'
+})
 const realTTFTP95 = computed(() => formatMs(realEvidence.value?.ttft_p95_ms ?? props.account.ttft_p95_ms))
 const profitRateLabel = computed(() => {
   const profit = props.account.group_profitability
@@ -555,3 +553,506 @@ const CostMetric = defineComponent({
   },
 })
 </script>
+
+<style scoped>
+.monitor-card-shell {
+  --monitor-bg: #08111f;
+  --monitor-bg-deep: #07101c;
+  --monitor-panel: #0a1626;
+  --monitor-line: #1c2a3e;
+  --monitor-line-strong: #24344b;
+  --monitor-text: #dbe7f5;
+  --monitor-muted: #91a5ba;
+  --monitor-dim: #71849c;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--monitor-line-strong);
+  border-radius: 14px;
+  background: var(--monitor-bg);
+  color: var(--monitor-text);
+  box-shadow: none;
+}
+
+.monitor-card-shell :deep(button) {
+  font-family: inherit;
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  min-width: 0;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--monitor-line);
+  background: var(--monitor-bg);
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="identity-column"] {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="scheduler-column"] {
+  grid-column: 2;
+  min-width: 148px;
+  border: 0;
+  padding: 0;
+  text-align: right;
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="key-metrics"] {
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  min-width: 0;
+  padding: 18px 24px 22px;
+  background: var(--monitor-bg);
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="timeline-section"] {
+  grid-column: 2;
+  min-width: 0;
+  border-top: 0;
+  border-left: 1px solid var(--monitor-line);
+  padding: 18px 20px;
+  background: var(--monitor-panel);
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="account-actions"] {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px 24px;
+  border-top: 1px solid var(--monitor-line);
+  background: var(--monitor-bg-deep);
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="model-detection-section"],
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="calls-disclosure"],
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="card-footer"] {
+  display: none;
+}
+
+.monitor-card-shell [data-test="identity-column"] > .flex:first-child {
+  align-items: center;
+  gap: 8px;
+}
+
+.monitor-card-shell [data-test="identity-column"] .mt-1\.5 {
+  margin-top: 0;
+}
+
+.monitor-card-shell [data-test="identity-column"] [data-test="account-identity"] {
+  margin: 8px 0 4px;
+  color: #f7fbff;
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.monitor-card-shell [data-test="identity-column"] [data-test="account-identity"] a,
+.monitor-card-shell [data-test="identity-column"] [data-test="account-identity"] span {
+  color: inherit;
+}
+
+.monitor-card-shell [data-test="identity-column"] [data-test="account-identity"] .font-mono {
+  color: #8094ab;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.monitor-card-shell [data-test="account-metadata"] {
+  margin-top: 0;
+  color: #92a4b8;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.monitor-card-shell [data-test="identity-column"] > .mt-2 {
+  margin-top: 10px;
+}
+
+.monitor-card-shell [data-test="status-badge"] {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.monitor-card-shell [data-test="identity-column"] .h-2.w-2 {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 4px #103a35;
+}
+
+.monitor-card-shell [data-test="scheduler-column"] > div:first-child,
+.monitor-card-shell [data-test="scheduler-column"] > .monitor-card-scheduler-label {
+  color: #8fa2b7;
+  font-size: 12px;
+}
+
+.monitor-card-shell [data-test="scheduler-rank"] {
+  display: block;
+  margin-top: 4px;
+  color: #f6fbff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.06em;
+}
+
+.monitor-card-shell [data-test="scheduler-rank"] span,
+.monitor-card-shell [data-test="scheduler-rank"] small {
+  color: #90a4b9;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.monitor-card-shell [data-test="scheduler-column"] .mt-1.flex,
+.monitor-card-shell [data-test="scheduler-column"] [data-test="priority-control"] {
+  justify-content: flex-end;
+  margin-top: 8px;
+  color: var(--monitor-muted);
+  font-size: 11px;
+}
+
+.monitor-card-shell [data-test="scheduler-column"] [data-test="priority-control"] strong {
+  color: var(--monitor-text);
+}
+
+.monitor-card-shell [data-test="scheduler-column"] [data-test="priority-error"] {
+  text-align: right;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > .service-metric,
+.monitor-card-shell [data-test="key-metrics"] > [data-test="profit-rate-metric"],
+.monitor-card-shell [data-test="key-metrics"] > [data-test="native-priority-metric"],
+.monitor-card-shell [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] {
+  min-width: 0;
+  min-height: 118px;
+  padding: 0 12px 0 0;
+  border: 0;
+  border-right: 1px solid #1b293d;
+  border-radius: 0;
+  background: transparent;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > :nth-child(5) {
+  border-right: 0;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > :not(.monitor-card-legacy) > div:first-child,
+.monitor-card-shell [data-test="key-metrics"] > :not(.monitor-card-legacy) > span:first-child {
+  display: block;
+  color: #90a1b5;
+  font-size: 12px;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > :not(.monitor-card-legacy) strong {
+  display: block;
+  margin-top: 7px;
+  color: #eaf2fb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > :not(.monitor-card-legacy) small,
+.monitor-card-shell [data-test="key-metrics"] > :not(.monitor-card-legacy) p {
+  display: block;
+  margin-top: 4px;
+  color: #71849c;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] .flex,
+.monitor-card-shell [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] button {
+  min-height: 24px;
+  border: 1px solid #30445d;
+  border-radius: 6px;
+  background: #0d1b2d;
+  color: #b8c9da;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.monitor-card-shell [data-test="key-metrics"] > [data-test="cost-metric"],
+.monitor-card-shell [data-test="key-metrics"] > [data-test="balance-metric"],
+.monitor-card-shell [data-test="key-metrics"] > [data-test="concurrency-metric"] {
+  display: none;
+}
+
+.monitor-card-shell [data-test="timeline-section"] h3 {
+  margin: 0;
+  color: #b8c9da;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.monitor-card-shell [data-test="timeline-section"] > div:first-child {
+  align-items: flex-start;
+}
+
+.monitor-card-shell [data-test="timeline-section"] > div:first-child > div::after {
+  display: block;
+  margin-top: 4px;
+  color: #71849c;
+  content: '近 24 个真实请求时间桶 · 柱越高表示综合表现越好';
+  font-size: 11px;
+}
+
+.monitor-card-shell [data-test="edit-connection-probe-model"] {
+  color: #57d8be;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.monitor-card-shell [data-test="timeline-section"] [role="img"] {
+  display: flex;
+  align-items: flex-end;
+  height: 104px;
+  gap: 4px;
+  margin: 15px 0 7px;
+}
+
+.monitor-card-shell [data-test="real-request-bar"] {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 3px 3px 1px 1px;
+}
+
+.monitor-card-shell [data-test="timeline-section"]::after {
+  display: block;
+  color: #91a5ba;
+  font-size: 11px;
+  content: '● 正常    ● TTFT 变慢    ● 失败';
+  white-space: pre;
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="account-actions"] .icon-button {
+  display: inline-flex;
+  width: auto;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #30445d;
+  border-radius: 7px;
+  background: #0d1b2d;
+  color: #dce8f5;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="account-actions"] .icon-button:first-of-type {
+  border-color: #167e70;
+  background: #0e5c54;
+  color: #edfffb;
+}
+
+.monitor-card-shell > [data-test="monitor-card-header"] > [data-test="account-actions"] .icon-button span {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 960px) {
+  .monitor-card-shell > [data-test="monitor-card-header"] {
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="identity-column"],
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="scheduler-column"],
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="key-metrics"],
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="timeline-section"] {
+    grid-column: 1;
+  }
+
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="scheduler-column"] {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="key-metrics"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="timeline-section"] {
+    border-top: 1px solid var(--monitor-line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .monitor-card-shell > [data-test="monitor-card-header"] {
+    padding: 18px 16px 14px;
+  }
+
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="key-metrics"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 16px 0 18px;
+  }
+
+  .monitor-card-shell [data-test="key-metrics"] > .service-metric,
+  .monitor-card-shell [data-test="key-metrics"] > [data-test="profit-rate-metric"],
+  .monitor-card-shell [data-test="key-metrics"] > [data-test="native-priority-metric"],
+  .monitor-card-shell [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] {
+    padding: 0 10px 12px 0;
+    border-top: 1px solid #1b293d;
+    border-right: 1px solid #1b293d;
+  }
+
+  .monitor-card-shell [data-test="key-metrics"] > :nth-child(even) {
+    border-right: 0;
+    padding-left: 10px;
+  }
+
+  .monitor-card-shell > [data-test="monitor-card-header"] > [data-test="account-actions"] {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding: 12px 0;
+  }
+}
+
+/* The live component keeps its existing interaction hooks, but the shell follows the approved design-grid. */
+.monitor-card-shell > .monitor-card-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.72fr) minmax(280px, .78fr);
+  grid-template-areas:
+    'identity scheduler'
+    'metrics quality'
+    'foot foot'
+    'detection detection';
+  gap: 0;
+  padding: 0;
+  background: var(--monitor-bg);
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="identity-column"] { grid-area: identity; }
+.monitor-card-shell > .monitor-card-layout > [data-test="quality-column"] { display: none; }
+.monitor-card-shell > .monitor-card-layout > [data-test="scheduler-column"] { grid-area: scheduler; }
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] { grid-area: metrics; }
+.monitor-card-shell > .monitor-card-layout > [data-test="timeline-section"] { grid-area: quality; }
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] { grid-area: foot; }
+.monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] { grid-area: detection; }
+.monitor-card-shell > .monitor-card-layout > [data-test="calls-disclosure"],
+.monitor-card-shell > .monitor-card-layout > [data-test="card-footer"] { display: none; }
+
+.monitor-card-shell > .monitor-card-layout > [data-test="identity-column"] {
+  min-width: 0;
+  padding: 22px 24px 18px;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="scheduler-column"] {
+  min-width: 0;
+  padding: 22px 24px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--monitor-line);
+  text-align: right;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  min-width: 0;
+  padding: 18px 24px 22px;
+  border-top: 1px solid var(--monitor-line);
+  background: var(--monitor-bg);
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="timeline-section"] {
+  min-width: 0;
+  border-top: 1px solid var(--monitor-line);
+  border-left: 1px solid var(--monitor-line);
+  padding: 18px 20px;
+  background: var(--monitor-panel);
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px 24px;
+  border-top: 1px solid var(--monitor-line);
+  background: var(--monitor-bg-deep);
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] {
+  min-width: 0;
+  padding: 0 24px 12px;
+  border: 0;
+  background: var(--monitor-bg-deep);
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] button {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+  color: var(--monitor-muted);
+  font-size: 11px;
+  text-align: left;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] button > span:nth-child(2) { border-radius: 999px; padding: 2px 8px; }
+.monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] button > span:nth-child(3) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] button > svg { margin-left: auto; }
+
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > .service-metric,
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > [data-test="profit-rate-metric"],
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > [data-test="native-priority-metric"],
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] {
+  min-width: 0;
+  min-height: 118px;
+  padding: 0 12px 0 0;
+  border: 0;
+  border-right: 1px solid #1b293d;
+  border-radius: 0;
+  background: transparent;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > [data-test="upstream-multiplier-metric"] { border-right: 0; }
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > [data-test="latency-metric"],
+.monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] > [data-test="cost-metric"] { display: none; }
+
+@media (max-width: 960px) {
+  .monitor-card-shell > .monitor-card-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'identity' 'scheduler' 'metrics' 'quality' 'foot' 'detection';
+  }
+  .monitor-card-shell > .monitor-card-layout > [data-test="scheduler-column"] { text-align: left; }
+  .monitor-card-shell > .monitor-card-layout > [data-test="timeline-section"] { border-left: 0; }
+  .monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .monitor-card-shell > .monitor-card-layout > [data-test="identity-column"],
+  .monitor-card-shell > .monitor-card-layout > [data-test="scheduler-column"] { padding: 18px 16px 14px; }
+  .monitor-card-shell > .monitor-card-layout > [data-test="key-metrics"] { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px 16px 18px; }
+  .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] { align-items: flex-start; flex-wrap: wrap; justify-content: flex-start; padding: 12px 16px; }
+  .monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] { padding-inline: 16px; }
+}
+</style>

@@ -58,7 +58,7 @@
             <div data-test="score-breakdown-tooltip">{{ scoreTooltip }}</div>
           </HelpTooltip>
           </div>
-          <p class="mt-1 text-[10px] text-gray-500 dark:text-slate-400" data-test="score-evidence-detail">{{ evidenceDetail }}</p>
+          <p v-if="false" class="mt-1 text-[10px] text-gray-500 dark:text-slate-400" data-test="score-evidence-detail">{{ evidenceDetail }}</p>
         </div>
         <div class="mt-3" data-test="rank-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400">{{ qualityRankTitle }}</div>
@@ -69,7 +69,7 @@
       <section v-if="schedulerContext" class="min-w-0 border-l border-gray-100 pl-4 dark:border-slate-800" data-test="scheduler-column" aria-label="调度优先级">
         <div class="text-[11px] text-gray-500 dark:text-slate-400">调度优先级</div>
         <div class="mt-1 flex min-w-0 items-baseline gap-1.5"><strong class="truncate font-mono text-lg font-semibold text-gray-900 dark:text-white" data-test="scheduler-rank">{{ schedulerRankLabel }}<span v-if="schedulerRanked" class="text-xs font-normal text-gray-500 dark:text-slate-400"> / {{ schedulerRankTotalLabel }}</span></strong></div>
-        <p class="mt-1 break-words text-[10px] text-gray-500 dark:text-slate-400" data-test="scheduler-policy">{{ schedulerPolicyLabel }}</p>
+        <p v-if="false" class="mt-1 break-words text-[10px] text-gray-500 dark:text-slate-400" data-test="scheduler-policy">{{ schedulerPolicyLabel }}</p>
         <div class="mt-2 flex items-center gap-1" data-test="priority-control">
           <span class="text-[10px] text-gray-500 dark:text-slate-400">全局优先级</span>
           <template v-if="editingPriority">
@@ -87,24 +87,27 @@
       </section>
 
       <section class="grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-3 lg:grid-cols-2" data-test="key-metrics" aria-label="关键服务指标">
-        <MetricCell data-test="success-rate-metric" tone="success" label="可用性" :value="formatPercent(probeSuccessRate)" detail="当前可用性" />
-        <MetricCell data-test="ttft-metric" tone="ttft" label="首 Token P50" :value="formatMs(probeTTFTP50MS)" detail="成功响应" />
+        <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="realSuccessRate" detail="真实请求" />
+        <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="`${realTTFTP95} · P50 ${formatMs(probeTTFTP50MS)}`" detail="真实成功请求" />
         <MetricCell data-test="latency-metric" tone="latency" label="完整响应 P95" :value="formatMs(probeLatencyP95MS)" detail="成功响应" />
+        <div data-test="profit-rate-metric" class="metric-extra rounded-lg border border-violet-200 bg-violet-50 p-3 dark:border-violet-900/50 dark:bg-violet-950/20"><div class="text-[11px] text-gray-500 dark:text-slate-400">利润率</div><div class="mt-1 font-mono text-lg font-semibold">{{ profitRateLabel }}</div><p class="mt-1 text-[10px]">当前分组</p></div>
+        <div data-test="native-priority-metric" class="metric-extra rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50"><div class="text-[11px] text-gray-500 dark:text-slate-400">Sub 原生优先级</div><div class="mt-1 font-mono text-lg font-semibold">{{ account.priority ?? '--' }}</div></div>
+        <div data-test="upstream-multiplier-metric" class="metric-extra rounded-lg border border-cyan-200 bg-cyan-50 p-3 dark:border-cyan-900/50 dark:bg-cyan-950/20"><div class="text-[11px] text-gray-500 dark:text-slate-400">上游声明倍率</div><div class="mt-1 font-mono text-lg font-semibold">{{ formatMultiplier(account.upstream_multiplier?.value ?? account.multiplier?.value) }}</div><p class="mt-1 text-[10px]">可编辑</p></div>
         <div class="service-metric min-w-0 border-l border-violet-200 bg-violet-50 px-2 pl-3 dark:border-violet-900/50 dark:bg-violet-950/20" data-test="cost-metric">
           <div class="text-[11px] text-gray-500 dark:text-slate-400"><HelpTooltip class="!ml-0" trigger="click" width-class="w-72" data-test="cost-tooltip-trigger"><template #trigger><button class="cursor-help text-left" type="button" :title="costSourceTooltip" :aria-label="costSourceTooltip">账号成本<span v-if="manualCost" class="ml-1 font-bold text-amber-500 dark:text-amber-300" data-test="manual-cost-warning">!</span></button></template><div data-test="cost-source-tooltip">{{ costSourceTooltip }}</div></HelpTooltip></div>
           <div class="mt-1 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ costValue }}</div>
-          <p class="mt-1 break-words text-[10px] leading-4 text-gray-400 dark:text-slate-500" data-test="cost-detail">{{ costDetail }}</p>
+          <p v-if="false" class="mt-1 break-words text-[10px] leading-4 text-gray-400 dark:text-slate-500" data-test="cost-detail">{{ costDetail }}</p>
           <div class="mt-1 flex items-center gap-1" data-test="cost-actions"><button class="icon-button h-7 w-7" data-test="edit-cost" type="button" title="编辑账号成本" aria-label="编辑账号成本" @click="emit('editCost', account)"><Icon name="edit" size="xs" /></button></div>
         </div>
-        <div v-if="isOpenAIAPIKey" class="min-w-0 border-l border-cyan-200 bg-cyan-50/70 px-2 pl-3 dark:border-cyan-900/50 dark:bg-cyan-950/20" data-test="balance-metric"><div class="text-[11px] text-gray-500 dark:text-slate-400">上游余额</div><div class="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ balanceValue }}</div><p class="mt-1 break-words text-[10px] leading-4 text-gray-400 dark:text-slate-500">{{ balanceDetail }}</p></div>
-        <div class="service-metric min-w-0 border-l border-gray-200 bg-gray-50 pl-3 dark:border-slate-700 dark:bg-slate-900/50" data-test="concurrency-metric"><div class="text-[11px] text-gray-500 dark:text-slate-400">当前并发</div><div class="mt-1 font-mono text-sm font-semibold text-gray-900 dark:text-white">{{ concurrencyValue }}</div><p class="mt-1 break-words text-[10px] text-gray-400 dark:text-slate-500">{{ concurrency?.delayed ? '数据延迟' : '近实时运维快照' }}</p></div>
-        <div class="col-span-2 min-w-0" data-test="equivalent-cost-multiplier"><CostMetric label="成本折合本站倍率" :value="formatMultiplier(account.equivalent_site_multiplier)" /></div>
+        <div v-if="false && isOpenAIAPIKey" class="min-w-0 border-l border-cyan-200 bg-cyan-50/70 px-2 pl-3" data-test="balance-metric"><div>上游余额</div><div>{{ balanceValue }}</div></div>
+        <div v-if="false" class="service-metric min-w-0" data-test="concurrency-metric"><div>当前并发</div><div>{{ concurrencyValue }}</div></div>
+        <div v-if="false" class="col-span-2 min-w-0" data-test="equivalent-cost-multiplier"><CostMetric label="成本折合本站倍率" :value="formatMultiplier(account.equivalent_site_multiplier)" /></div>
       </section>
 
       <section class="min-w-0 border-l border-gray-100 pl-4 dark:border-slate-800" data-test="timeline-section" aria-label="近期表现">
         <div class="flex min-w-0 items-center justify-between gap-2"><h3 class="text-xs font-semibold text-gray-800 dark:text-slate-100">近期表现</h3><button type="button" class="shrink-0 text-[11px] text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-300" data-test="edit-connection-probe-model" @click="openModelDetectionDialog">{{ t('admin.accounts.modelDetection.editConnectionProbeModel') }}</button></div>
-        <div class="mt-3 grid h-9 min-w-0 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="timelineAriaLabel"><span v-for="(bar, index) in probeBars" :key="`${account.account_id}-${index}`" class="min-w-0 rounded-sm" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" :title="bar.title" data-test="probe-bar" aria-hidden="true" /></div>
-        <div class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
+        <div class="mt-3 grid h-9 min-w-0 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="realTimelineAriaLabel"><span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="min-w-0 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" :title="bar.title" data-test="real-request-bar" /></div>
+        <div v-if="false" class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
       </section>
 
       <section class="flex min-w-0 flex-wrap items-start justify-end gap-1 2xl:flex-col 2xl:items-stretch" data-test="account-actions" aria-label="账号操作">
@@ -116,7 +119,7 @@
         <button class="icon-button h-8 w-8 2xl:w-full" data-test="refresh-account" type="button" title="刷新当前账号" aria-label="刷新当前账号" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="sm" :class="{ 'animate-spin': running }" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">刷新</span></button>
       </section>
 
-      <div v-if="schedulerContext" class="min-w-0 2xl:col-span-6">
+      <div v-if="false && schedulerContext" class="min-w-0 2xl:col-span-6">
         <div class="flex min-w-0 items-start gap-3 border-t border-gray-100 pt-3 dark:border-slate-800">
           <p v-if="rankingReason" class="min-w-0 flex-1 break-words text-[11px] leading-4 text-gray-500 dark:text-slate-400" data-test="ranking-reason">{{ rankingReason }}</p>
           <button class="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-slate-300 dark:hover:bg-slate-800" data-test="ranking-explanation-toggle" type="button" :aria-controls="rankingExplanationID" :aria-expanded="rankingExplanationExpanded" @click="rankingExplanationExpanded = !rankingExplanationExpanded"><Icon name="eye" size="xs" /><span>{{ rankingExplanationExpanded ? '收起依据' : '查看排名依据' }}</span><Icon name="chevronDown" size="xs" :class="{ 'rotate-180': rankingExplanationExpanded }" /></button>
@@ -133,12 +136,12 @@
         <button type="button" class="flex min-h-8 w-full min-w-0 items-center gap-2 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="font-semibold text-gray-700 dark:text-slate-200">{{ t('admin.accounts.modelDetection.section') }}</span><span class="rounded-full px-2 py-0.5" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span><span class="min-w-0 flex-1 truncate text-gray-500 dark:text-slate-400">{{ modelDetectionStatusHint }}</span><Icon name="chevronDown" size="xs" /></button>
       </section>
 
-      <section class="min-w-0 border-t border-gray-100 2xl:col-span-6 dark:border-slate-800" data-test="calls-disclosure">
+      <section v-if="false" class="min-w-0 border-t border-gray-100 2xl:col-span-6 dark:border-slate-800" data-test="calls-disclosure">
         <button class="flex min-h-10 w-full min-w-0 items-center gap-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500" data-test="calls-toggle" type="button" :aria-controls="callsPanelID" :aria-expanded="callsExpanded" @click="callsExpanded = !callsExpanded"><span class="font-semibold text-gray-800 dark:text-slate-100">{{ callsTitle }}</span><span class="min-w-0 truncate text-[11px] text-gray-500 dark:text-slate-400">{{ callsSummary }}</span><Icon name="chevronDown" size="xs" class="ml-auto" :class="{ 'rotate-180': callsExpanded }" /></button>
         <div v-if="callsExpanded" :id="callsPanelID" class="grid grid-cols-2 gap-3 border-t border-gray-100 pb-1 pt-3 text-xs dark:border-slate-800"><div><div class="text-[10px] text-gray-500 dark:text-slate-400">成功请求</div><div class="mt-1 font-mono font-semibold text-gray-900 dark:text-white">{{ successfulRequestCount }}</div></div><div><div class="text-[10px] text-gray-500 dark:text-slate-400">失败请求</div><div class="mt-1 font-mono font-semibold text-gray-900 dark:text-white">{{ account.error_count }}</div></div></div>
       </section>
 
-      <footer class="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-[11px] text-gray-500 max-[430px]:flex-col max-[430px]:items-start max-[430px]:gap-[3px] max-[430px]:py-[9px] 2xl:col-span-6 dark:border-slate-800 dark:text-slate-400" data-test="card-footer"><span class="break-words">检查于 {{ checkedAtLabel }} · 统计截止 {{ statisticsCutoffLabel }}</span></footer>
+      <footer v-if="false" class="hidden" data-test="card-footer"></footer>
     </div>
     <AccountModelDetectionDialog :show="modelDetectionDialogOpen" :account="account" :models="modelDetectionModels" :saving="savingModelDetection" :detecting="detectingModelDetection" @close="modelDetectionDialogOpen = false" @save="emit('saveModelDetectionModels', account.account_id, $event)" @detect="emit('detectModelDetection', account.account_id)" />
   </article>
@@ -153,7 +156,6 @@ import type { AccountModelDetectionModelsResponse, AccountMonitorAccount, Accoun
 import AccountModelDetectionDialog from './AccountModelDetectionDialog.vue'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
-type ProbeBar = { colorClass: string, height: number, title: string }
 type SchedulerDetails = NonNullable<AccountMonitorAccount['scheduler_explanation']> & {
   reason?: string | null
   tie_break?: string | null
@@ -360,28 +362,28 @@ const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
 const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
 const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
-const probeSuccessRate = computed(() => props.account.probe_success_rate ?? props.account.success_rate ?? 0)
 const probeTTFTP50MS = computed(() => props.account.probe_ttft_p50_ms ?? props.account.ttft_p50_ms ?? null)
 const probeLatencyP95MS = computed(() => props.account.probe_latency_p95_ms ?? props.account.latency_p95_ms ?? null)
+const realEvidence = computed(() => props.account.real_request_evidence)
+const realSuccessRate = computed(() => realEvidence.value && realEvidence.value.request_count > 0 ? formatPercent(realEvidence.value.success_rate) : '--')
+const realTTFTP95 = computed(() => formatMs(realEvidence.value?.ttft_p95_ms ?? props.account.ttft_p95_ms))
+const profitRateLabel = computed(() => {
+  const profit = props.account.group_profitability
+  if (!profit || profit.status !== 'confirmed' || profit.profit_rate == null) return profit?.status === 'no_real_request' ? '--' : '待确认'
+  return formatPercent(profit.profit_rate)
+})
+const realRequestBars = computed(() => {
+  const points = props.account.real_request_timeline ?? []
+  if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, title: '暂无真实请求' }))
+  return points.map((point) => {
+    const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 5000
+    const colorClass = point.request_count === 0 ? 'bg-gray-200 dark:bg-slate-700' : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
+    return { colorClass, height: point.request_count === 0 ? 16 : Math.max(28, Math.min(100, 28 + point.request_count * 4)), title: `${formatShortTime(point.start_at)} · 请求 ${point.request_count} · 成功 ${point.success_count} · 失败 ${point.failure_count} · TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
+  })
+})
+const realTimelineAriaLabel = computed(() => `真实性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次真实请求`)
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const statisticsCutoffLabel = computed(() => formatShortTime(props.statisticsCutoff))
-const timelinePoints = computed(() => (props.account.timeline ?? []).slice(-24))
-const probeBars = computed<ProbeBar[]>(() => {
-  const bars: ProbeBar[] = Array.from({ length: Math.max(0, 24 - timelinePoints.value.length) }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: '暂无探测' }))
-  for (const point of timelinePoints.value) {
-    const timestamp = formatDateTime(point.checked_at)
-    if (isCompletedProbe(point.status)) {
-      const latency = point.latency_ms ?? point.ttft_ms
-      bars.push({ colorClass: 'bg-emerald-500 dark:bg-emerald-400', height: point.status === 'unavailable' || point.status === 'model_unavailable' || point.status === 'degraded' ? 40 : latencyBarHeight(latency), title: `${timestamp} · ${latency == null ? '探测完成' : `成功 · ${formatMs(latency)}`}` })
-    } else if (isFailedProbe(point.status)) {
-      bars.push({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: `${timestamp} · 暂无结果` })
-    } else {
-      bars.push({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 15, title: `${timestamp} · 暂无结果` })
-    }
-  }
-  return bars
-})
-const timelineAriaLabel = computed(() => '近期成功表现')
 const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
 const modelDetectionStatusHint = computed(() => {
@@ -476,17 +478,6 @@ function formatNumber(value: number): string {
 function formatMetricNumber(value: number): string {
   if (!Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }).format(value)
-}
-function isCompletedProbe(status: string): boolean {
-  return ['success', 'operational', 'ok', 'unavailable', 'model_unavailable', 'degraded'].includes(status)
-}
-function isFailedProbe(status: string): boolean {
-  return ['failed', 'error'].includes(status)
-}
-function latencyBarHeight(value?: number | null): number {
-  if (value == null || !Number.isFinite(value)) return 65
-  const ratio = Math.log10(Math.max(100, value) / 100)
-  return Math.round(Math.max(35, Math.min(100, 100 - ratio * 32.5)))
 }
 function errorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error && reason.message ? reason.message : fallback

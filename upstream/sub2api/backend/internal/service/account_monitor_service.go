@@ -226,7 +226,6 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	for i := range groups {
 		groups[i].ScoreWeights = normalizeAccountMonitorScoreWeights(groups[i].ScoreWeights)
 	}
-
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		aggregate := aggregates[account.ID]
@@ -265,6 +264,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			ErrorCount:                 int64(aggregate.ErrorCount),
 			Timeline:                   append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
+		row.UpstreamMultiplier = &row.Multiplier
 		if s.modelDetection != nil {
 			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
 				row.ModelDetection = &detection
@@ -473,9 +473,27 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	}
 	observedAt := time.Now().UTC()
 	since := observedAt.Add(-duration)
-	windowAggregates, err := s.repo.ListWindowAggregates(ctx, ids, since, observedAt)
-	if err != nil {
-		return AccountMonitorPage{}, fmt.Errorf("list account monitor window aggregates: %w", err)
+	var windowAggregates map[int64]AccountMonitorWindowAggregate
+	// Prefer the dedicated real-request projection when the native repository
+	// provides it. Legacy adapters continue to use the existing window query.
+	if realRepo, ok := s.repo.(AccountMonitorRealRequestRepository); ok {
+		if real, realErr := realRepo.ListRealRequestAggregates(ctx, ids, since, observedAt); realErr == nil {
+			windowAggregates = real
+		} else {
+			return AccountMonitorPage{}, fmt.Errorf("list real request aggregates: %w", realErr)
+		}
+	} else {
+		windowAggregates, err = s.repo.ListWindowAggregates(ctx, ids, since, observedAt)
+		if err != nil {
+			return AccountMonitorPage{}, fmt.Errorf("list account monitor window aggregates: %w", err)
+		}
+	}
+	var realTimelines map[int64][]AccountMonitorRealRequestTimelinePoint
+	if timelineRepo, ok := s.repo.(AccountMonitorRealRequestTimelineRepository); ok {
+		realTimelines, err = timelineRepo.ListRealRequestTimelines(ctx, ids, since, observedAt, AccountMonitorTimelineLimit)
+		if err != nil {
+			return AccountMonitorPage{}, fmt.Errorf("list real request timelines: %w", err)
+		}
 	}
 	probeAggregates, err := s.repo.ListAggregates(ctx, ids, since, observedAt)
 	if err != nil {
@@ -515,6 +533,17 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	for i := range groups {
 		groups[i].ScoreWeights = normalizeAccountMonitorScoreWeights(groups[i].ScoreWeights)
 	}
+	var groupReal map[int64]map[int64]AccountMonitorWindowAggregate
+	if groupRepo, ok := s.repo.(AccountMonitorGroupRealRequestRepository); ok {
+		groupIDs := make([]int64, 0, len(groups))
+		for _, group := range groups {
+			groupIDs = append(groupIDs, group.ID)
+		}
+		groupReal, err = groupRepo.ListGroupRealRequestAggregates(ctx, groupIDs, ids, since, observedAt)
+		if err != nil {
+			return AccountMonitorPage{}, fmt.Errorf("list group real request aggregates: %w", err)
+		}
+	}
 
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
@@ -538,6 +567,9 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
+		}
+		if realTimelines != nil {
+			row.RealRequestTimeline = realTimelines[account.ID]
 		}
 		if s.modelDetection != nil {
 			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
@@ -567,8 +599,16 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	}
 
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
+	applyRealRequestEvidence(rows, windowAggregates, observedAt)
+	applyGlobalRealRequestRanks(rows)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
 	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
+	if groupReal != nil {
+		applyGroupProfitabilityByGroup(groups, groupReal)
+	} else {
+		applyGroupProfitability(groups, windowAggregates)
+	}
+	applyGroupSchedulerOrder(groups)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
@@ -620,6 +660,145 @@ func (s *AccountMonitorService) projectGroupRecommendations(
 		)
 	}
 	return rows
+}
+
+func applyRealRequestEvidence(rows []AccountMonitorAccount, aggregates map[int64]AccountMonitorWindowAggregate, observedAt time.Time) {
+	for i := range rows {
+		a := aggregates[rows[i].AccountID]
+		rows[i].RealRequestEvidence = &AccountMonitorRealRequestEvidence{
+			RequestCount: a.RequestCount, SuccessCount: a.SuccessCount, FailureCount: a.ErrorCount,
+			SuccessRate: a.SuccessRate, TTFTP95MS: a.TTFTP95MS, TTFTSampleCount: a.TTFTSampleCount, ObservedAt: observedAt,
+		}
+	}
+}
+
+func applyGlobalRealRequestRanks(rows []AccountMonitorAccount) {
+	eligible := make([]int, 0, len(rows))
+	for i := range rows {
+		if rows[i].RealRequestEvidence != nil && rows[i].RealRequestEvidence.RequestCount > 0 {
+			eligible = append(eligible, i)
+		}
+	}
+	bySuccess := append([]int(nil), eligible...)
+	sort.SliceStable(bySuccess, func(i, j int) bool {
+		l, r := rows[bySuccess[i]].RealRequestEvidence, rows[bySuccess[j]].RealRequestEvidence
+		if l.SuccessRate != r.SuccessRate {
+			return l.SuccessRate > r.SuccessRate
+		}
+		return rows[bySuccess[i]].AccountID < rows[bySuccess[j]].AccountID
+	})
+	byTTFT := append([]int(nil), eligible...)
+	sort.SliceStable(byTTFT, func(i, j int) bool {
+		l, r := rows[byTTFT[i]].RealRequestEvidence.TTFTP95MS, rows[byTTFT[j]].RealRequestEvidence.TTFTP95MS
+		if l == nil && r != nil {
+			return false
+		}
+		if l != nil && r == nil {
+			return true
+		}
+		if l != nil && r != nil && *l != *r {
+			return *l < *r
+		}
+		return rows[byTTFT[i]].AccountID < rows[byTTFT[j]].AccountID
+	})
+	for rank, index := range bySuccess {
+		value := AccountMonitorRank{Rank: rank + 1, Total: len(bySuccess)}
+		rows[index].GlobalRanks.SuccessRate = &value
+	}
+	for rank, index := range byTTFT {
+		value := AccountMonitorRank{Rank: rank + 1, Total: len(byTTFT)}
+		rows[index].GlobalRanks.TTFTP95 = &value
+	}
+}
+
+func applyGroupProfitability(groups []AccountMonitorGroup, aggregates map[int64]AccountMonitorWindowAggregate) {
+	for gi := range groups {
+		members := make([]int, 0, len(groups[gi].Accounts))
+		for i := range groups[gi].Accounts {
+			row := &groups[gi].Accounts[i]
+			a := aggregates[row.AccountID]
+			profit := &AccountMonitorGroupProfitability{GroupID: groups[gi].ID, GroupName: groups[gi].Name, Revenue: a.Revenue, AccountCost: a.AccountCost, SampleCount: a.RequestCount, Status: "no_real_request"}
+			if a.RequestCount > 0 {
+				if a.Revenue <= 0 {
+					profit.Status = "no_revenue"
+				} else if !a.CostComplete {
+					profit.Status = "cost_incomplete"
+				} else {
+					value := (a.Revenue - a.AccountCost) / a.Revenue
+					profit.ProfitRate = &value
+					profit.Status = "confirmed"
+					members = append(members, i)
+				}
+			}
+			row.GroupProfitability = profit
+		}
+		sort.SliceStable(members, func(i, j int) bool {
+			l, r := groups[gi].Accounts[members[i]].GroupProfitability.ProfitRate, groups[gi].Accounts[members[j]].GroupProfitability.ProfitRate
+			if *l != *r {
+				return *l > *r
+			}
+			return groups[gi].Accounts[members[i]].AccountID < groups[gi].Accounts[members[j]].AccountID
+		})
+		for rank, index := range members {
+			value := AccountMonitorRank{Rank: rank + 1, Total: len(members)}
+			groups[gi].Accounts[index].GroupProfitability.Rank = &value
+		}
+	}
+}
+
+func applyGroupProfitabilityByGroup(groups []AccountMonitorGroup, aggregates map[int64]map[int64]AccountMonitorWindowAggregate) {
+	for gi := range groups {
+		members := make([]int, 0, len(groups[gi].Accounts))
+		for i := range groups[gi].Accounts {
+			row := &groups[gi].Accounts[i]
+			a := aggregates[groups[gi].ID][row.AccountID]
+			profit := &AccountMonitorGroupProfitability{GroupID: groups[gi].ID, GroupName: groups[gi].Name, Revenue: a.Revenue, AccountCost: a.AccountCost, SampleCount: a.RequestCount, Status: "no_real_request"}
+			if a.RequestCount > 0 {
+				switch {
+				case a.Revenue <= 0:
+					profit.Status = "no_revenue"
+				case !a.CostComplete:
+					profit.Status = "cost_incomplete"
+				default:
+					value := (a.Revenue - a.AccountCost) / a.Revenue
+					profit.ProfitRate = &value
+					profit.Status = "confirmed"
+					members = append(members, i)
+				}
+			}
+			row.GroupProfitability = profit
+		}
+		sort.SliceStable(members, func(i, j int) bool {
+			l := groups[gi].Accounts[members[i]].GroupProfitability.ProfitRate
+			r := groups[gi].Accounts[members[j]].GroupProfitability.ProfitRate
+			if *l != *r {
+				return *l > *r
+			}
+			return groups[gi].Accounts[members[i]].AccountID < groups[gi].Accounts[members[j]].AccountID
+		})
+		for rank, index := range members {
+			value := AccountMonitorRank{Rank: rank + 1, Total: len(members)}
+			groups[gi].Accounts[index].GroupProfitability.Rank = &value
+		}
+	}
+}
+
+func applyGroupSchedulerOrder(groups []AccountMonitorGroup) {
+	for gi := range groups {
+		sort.SliceStable(groups[gi].Accounts, func(i, j int) bool {
+			l, r := groups[gi].Accounts[i].SchedulerRank, groups[gi].Accounts[j].SchedulerRank
+			if l == nil && r != nil {
+				return false
+			}
+			if l != nil && r == nil {
+				return true
+			}
+			if l != nil && r != nil && *l != *r {
+				return *l < *r
+			}
+			return groups[gi].Accounts[i].AccountID < groups[gi].Accounts[j].AccountID
+		})
+	}
 }
 
 func (s *AccountMonitorService) evaluateGroupRecommendation(

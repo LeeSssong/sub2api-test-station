@@ -29,9 +29,13 @@
         <InfoField label="备注" :value="account.notes" />
       </section>
 
-      <p class="text-xs text-gray-500 dark:text-gray-400" data-test="account-info-security-note">
-        凭据仅显示存在状态，不展示任何凭据原文。
-      </p>
+      <section class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号全部字段" data-test="account-all-fields">
+        <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">全部字段</h4>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <InfoField v-for="field in allFields" :key="field.key" :label="field.key" :value="field.value" :mono="field.mono" />
+        </div>
+      </section>
+
     </div>
   </BaseDialog>
 </template>
@@ -71,6 +75,12 @@ const credentialStatus = computed(() => {
   const keys = Object.keys(status).filter((key) => status[key])
   return keys.length ? `已配置（${keys.length} 项）` : '未配置'
 })
+
+const allFields = computed(() => Object.entries(props.account ?? {}).map(([key, value]) => ({
+  key,
+  value: value == null || value === '' ? '--' : typeof value === 'object' ? JSON.stringify(value) : String(value),
+  mono: /id|token|key|url|rate|quota|limit|time|date/i.test(key),
+})))
 
 function formatNumber(value?: number | null): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)

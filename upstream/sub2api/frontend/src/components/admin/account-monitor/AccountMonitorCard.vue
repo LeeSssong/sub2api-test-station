@@ -999,6 +999,38 @@ const CostMetric = defineComponent({
   background: var(--monitor-bg-deep);
 }
 
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] .icon-button {
+  display: inline-flex;
+  width: auto;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #30445d;
+  border-radius: 7px;
+  background: #0d1b2d;
+  color: #dce8f5;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] .icon-button:first-of-type {
+  border-color: #167e70;
+  background: #0e5c54;
+  color: #edfffb;
+}
+
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] .icon-button span {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+}
+
 .monitor-card-shell > .monitor-card-layout > [data-test="model-detection-section"] {
   min-width: 0;
   padding: 0 24px 12px;

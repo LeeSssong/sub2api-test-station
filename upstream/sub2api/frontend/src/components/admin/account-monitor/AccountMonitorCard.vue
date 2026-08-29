@@ -106,7 +106,7 @@
 
       <section class="flex min-w-0 flex-wrap items-start justify-end gap-1 2xl:flex-col 2xl:items-stretch" data-test="account-actions" aria-label="账号操作">
         <span class="sr-only">账号操作</span>
-        <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-info" type="button" title="查看账号信息" aria-label="查看账号信息" @click="emit('accountInfo', account)"><Icon name="eye" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">账号信息</span></button>
+        <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-info" type="button" title="查看账号详情" aria-label="查看账号详情" @click="emit('accountInfo', account)"><Icon name="eye" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">账号详情</span></button>
         <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-edit" type="button" title="编辑账号" aria-label="编辑账号" @click="emit('accountEdit', account)"><Icon name="edit" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">编辑</span></button>
         <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-delete" type="button" title="删除账号" aria-label="删除账号" @click="emit('accountDelete', account)"><Icon name="trash" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">删除</span></button>
         <button class="icon-button h-8 w-8 2xl:w-full" data-test="account-more" type="button" title="更多账号操作" aria-label="更多账号操作" @click="emit('accountMore', account, $event)"><Icon name="more" size="xs" /><span class="sr-only 2xl:not-sr-only 2xl:ml-1 2xl:text-[11px]">更多</span></button>

@@ -60,6 +60,26 @@ func TestMonitorV4SnapshotPreservesNullableMetrics(t *testing.T) {
 	}
 }
 
+func TestMonitorV4SnapshotKeepsZeroSuccessRateForFailedRequests(t *testing.T) {
+	zero := 0.0
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
+		7: {SuccessRate: &zero, RequestCount: 3, SuccessCount: 0, RealRequestCount: 3, RealSuccessCount: 0},
+	}}
+	svc := NewMonitorV4Service(
+		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Failed", Platform: PlatformOpenAI, Status: StatusActive}}},
+		&monitorV2AvailableGroupReaderStub{}, native, nil,
+		&monitorV2ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
+	)
+
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("Snapshot() error = %v", err)
+	}
+	if len(snapshot.Groups) != 1 || snapshot.Groups[0].SuccessRate == nil || *snapshot.Groups[0].SuccessRate != 0 {
+		t.Fatalf("failed-request success rate = %#v, want non-null 0%%", snapshot.Groups)
+	}
+}
+
 func TestMonitorV4WindowStart(t *testing.T) {
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.FixedZone("CST", 8*60*60))
 	start, err := monitorV4WindowStart(MonitorV4Window7D, now)

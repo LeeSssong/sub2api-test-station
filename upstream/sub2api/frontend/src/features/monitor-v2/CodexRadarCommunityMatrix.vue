@@ -20,14 +20,21 @@
       </div>
       <div v-if="activeTab" class="flex shrink-0 items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400">
         <span v-if="community?.stale" class="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-300">最近成功数据</span>
-        <span>{{ formatUpdatedAt(activeTab.source_updated_at) }} 更新</span>
+        <span v-if="activeTab.source_updated_at">{{ formatUpdatedAt(activeTab.source_updated_at) }} 更新</span>
+        <span v-else>该来源暂无数据</span>
       </div>
     </div>
 
     <div v-if="loading" class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" aria-busy="true">
       <div v-for="index in 6" :key="index" class="h-28 animate-pulse rounded-lg border border-gray-200 bg-gray-100 motion-reduce:animate-none dark:border-dark-700 dark:bg-dark-900" />
     </div>
-    <p v-else-if="failed" class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300">社区测试数据暂时不可用</p>
+    <div v-else-if="failed" class="mt-4 flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300">
+      <span>社区测试数据暂时不可用</span>
+      <button type="button" class="shrink-0 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-bold hover:bg-white dark:border-dark-600 dark:hover:bg-dark-800" @click="load">重试</button>
+    </div>
+    <div v-else-if="activeTab?.status === 'unavailable'" class="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-5 text-sm text-amber-800 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-200">
+      {{ activeTab.error_code === 'NO_SHARED_MODEL_EFFORTS' ? '暂无同时覆盖软件工程与视觉推理的共同档位' : '该来源暂时不可用，其他来源仍可查看' }}
+    </div>
     <div v-else-if="activeTab" data-community-scroll class="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2" tabindex="0" aria-label="可横向滚动查看全部模型档位">
       <div data-community-grid class="min-w-[1120px] space-y-3">
         <div v-for="family in groupedPoints" :key="family.model" :data-community-family="family.model" class="grid grid-cols-6 gap-2.5">
@@ -128,15 +135,24 @@ function formatUpdatedAt(value: string) {
   return new Intl.DateTimeFormat(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
-onMounted(() => {
+async function load() {
+  controller?.abort()
   controller = new AbortController()
-  void getCodexRadarCommunity(controller.signal)
-    .then((value) => { community.value = value })
-    .catch((error: unknown) => {
-      if ((error as { name?: string })?.name !== 'AbortError') failed.value = true
-    })
-    .finally(() => { loading.value = false })
-})
+  loading.value = true
+  failed.value = false
+  try {
+    community.value = await getCodexRadarCommunity(controller.signal)
+  } catch (error: unknown) {
+    if ((error as { name?: string })?.name !== 'AbortError') {
+      community.value = null
+      failed.value = true
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => { void load() })
 
 onBeforeUnmount(() => controller?.abort())
 </script>

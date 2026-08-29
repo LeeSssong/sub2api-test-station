@@ -100,10 +100,39 @@ func TestCodexRadarCommunityRejectsInvalidWithoutSnapshot(t *testing.T) {
 				}
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
 			})}
-			_, _, err := NewCodexRadarCommunityService(client, time.Now).Get(context.Background())
-			require.ErrorIs(t, err, ErrCodexRadarCommunityUnavailable)
+			value, stale, err := NewCodexRadarCommunityService(client, time.Now).Get(context.Background())
+			require.NoError(t, err)
+			require.False(t, stale)
+			require.Equal(t, "partial", value.SourceStatus)
+			require.Equal(t, "unavailable", value.Tabs[0].Status)
+			require.NotEqual(t, value.Tabs[1].Status, value.Tabs[2].Status)
 		})
 	}
+}
+
+func TestCodexRadarCommunityRejectsWhenBothSourcesFail(t *testing.T) {
+	client := &http.Client{Transport: codexRadarRoundTripper(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("source down")
+	})}
+	_, _, err := NewCodexRadarCommunityService(client, time.Now).Get(context.Background())
+	require.ErrorIs(t, err, ErrCodexRadarCommunityUnavailable)
+}
+
+func TestCodexRadarCommunityReturnsPartialWhenOneSourceFails(t *testing.T) {
+	client := &http.Client{Transport: codexRadarRoundTripper(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/api/visual-spatial-reasoning" {
+			return nil, errors.New("visual source down")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(validCodexRadarSoftwareFixture))}, nil
+	})}
+	value, stale, err := NewCodexRadarCommunityService(client, time.Now).Get(context.Background())
+	require.NoError(t, err)
+	require.False(t, stale)
+	require.Equal(t, "partial", value.SourceStatus)
+	require.Equal(t, "unavailable", value.Tabs[0].Status)
+	require.Equal(t, "fresh", value.Tabs[1].Status)
+	require.Equal(t, "unavailable", value.Tabs[2].Status)
+	require.NotEmpty(t, value.Tabs[1].Points)
 }
 
 func TestCodexRadarCommunityRejectsOversizedAndRemoteFailure(t *testing.T) {

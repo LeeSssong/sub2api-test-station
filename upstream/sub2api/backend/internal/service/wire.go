@@ -1039,6 +1039,7 @@ var ProviderSet = wire.NewSet(
 	NewProxyService,
 	NewRedeemService,
 	NewPromoService,
+	ProvideQuotaWalletServices,
 	NewUsageService,
 	NewSubUpstreamCostService,
 	NewDashboardService,
@@ -1143,6 +1144,7 @@ var ProviderSet = wire.NewSet(
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,
 	NewChannelService,
+	NewModelPlazaService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
 	ProvideContentModerationService,
@@ -1152,6 +1154,7 @@ var ProviderSet = wire.NewSet(
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
+	NewChannelMonitorQuotaFetcher,
 	ProvideMonitorV2Service,
 	ProvideMonitorV4Service,
 	ProvideChannelMonitorRunner,
@@ -1166,6 +1169,10 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 )
+
+func ProvideQuotaWalletServices(repo QuotaWalletRepository) []QuotaWalletService {
+	return []QuotaWalletService{NewQuotaWalletService(repo)}
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {

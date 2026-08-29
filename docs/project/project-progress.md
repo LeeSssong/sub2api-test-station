@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T91 星桥 Q 额度发放与真实支付来源统一（2026-08-29）：** 状态：进行中（DESIGNING，暂停实现）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 独立顶层任务及 worktree `/Users/gongtengxinwen/.codex/worktrees/4d58/sub2api搭建`、分支 `codex/t91-q-issuance-payment-source` 已保留；未修改运行时代码、未推送、未部署，测试站部署暂停，等待修订规格确认和兑换码归类决策。
+**T91 星桥 Q 额度发放与真实支付来源统一（2026-08-29）：** 状态：进行中（DESIGNING，暂停实现）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 分支 `codex/t91-q-issuance-payment-source` 保留在 `84dc3c40a`，原独立 worktree 已清理且未产生业务代码变更；未修改运行时代码、未推送、未部署，测试站部署暂停，等待修订规格确认和兑换码归类决策。
 
 **T90 账号监控卡片真实请求证据、利润率与性能柱状图（2026-08-29）：** 状态：设计调整中（DESIGNING，R2 已确认；未创建实现 worktree）。原确认稿为 `/Users/gongtengxinwen/.codex/visualizations/2026/08/28/01a0494d-bac1-7781-a6a6-0f90fc2877a3/account-monitor-card-proposal.html`，R1 视觉稿为 `/Users/gongtengxinwen/.codex/visualizations/2026/08/28/01a0494d-bac1-7781-a6a6-0f90fc2877a3/account-monitor-card-proposal-r1.html`，R2 视觉稿为 `/Users/gongtengxinwen/.codex/visualizations/2026/08/28/01a0494d-bac1-7781-a6a6-0f90fc2877a3/account-monitor-card-proposal-r2.html`；R2 规格为 `docs/superpowers/specs/2026-08-29-t90-r2-account-monitor-operator-surface.md`，实施计划已按 R2 更新。新方向是卡片只保留判断字段且去掉说明性文字，详情弹窗展示账号管理页全部可见字段、不额外脱敏，账号操作统一收敛到原生单账号操作菜单；保留账号主动探测；模型监测页面/历史/设置保留并保留手动触发，但不自动触发。当前 T85 与 T91 占用两个功能设计窗口，T86 已冻结，T90 未写运行时代码、未合并、未推送、未部署。
 

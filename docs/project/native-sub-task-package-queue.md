@@ -2,7 +2,7 @@
 
 ## 运营日报、错误生命周期、模型准入与调度质量治理（2026-08-29）
 
-- **T91 星桥 Q 额度发放与真实支付来源统一：** 状态 `DESIGNING`（暂停实现，等待修订规格确认及兑换码归类决策）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 worktree `/Users/gongtengxinwen/.codex/worktrees/4d58/sub2api搭建`、分支 `codex/t91-q-issuance-payment-source` 保留但不再写入；测试站部署暂停。
+- **T91 星桥 Q 额度发放与真实支付来源统一：** 状态 `DESIGNING`（暂停实现，等待修订规格确认及兑换码归类决策）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 分支 `codex/t91-q-issuance-payment-source` 保留在 `84dc3c40a`，原独立 worktree 已清理且未产生业务代码变更；测试站部署暂停。
 
 - **T90 账号监控卡片真实请求证据、利润率与性能柱状图：** 状态 `DESIGNING`（R2 策略已确认；暂不创建实现 worktree）。原规格为 `docs/superpowers/specs/2026-08-29-account-monitor-card-real-request-evidence-design.md`，R1 规格为 `docs/superpowers/specs/2026-08-29-t90-r1-account-monitor-native-account-surface.md`，R2 规格为 `docs/superpowers/specs/2026-08-29-t90-r2-account-monitor-operator-surface.md`，实施计划已按 R2 更新。新方向是：卡片只保留判断字段且去掉说明性文字；详情弹窗展示账号管理页全部可见字段，不额外脱敏；账号管理页现有单账号操作统一收敛到“账号操作”；保留账号主动探测；模型监测页面/历史/设置保留并保留手动触发，但不自动触发。当前 T85 与 T91 占用两个功能设计窗口，T86 已冻结，T90 在可用窗口前不得创建实现 worktree。
 

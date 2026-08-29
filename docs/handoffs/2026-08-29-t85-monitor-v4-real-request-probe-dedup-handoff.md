@@ -22,9 +22,11 @@
 ## 提交与基线
 
 - 初始基线：`main@32334261da92721e1ea6251df1d9a951c9d184ab`
-- 实现提交：`af0bfb850`（`feat: correct monitor v4 request success metrics`）
+- T85 基础实现提交：`af0bfb850`（`feat: correct monitor v4 request success metrics`）
 - 全失败成功率回归：`6c1f9475e`（`test: cover failed monitor v4 success rate`）
-- 已同步的最新根主线：`main@84dc3c40a`；候选同步提交：`9dfcfe64d`
+- 终态保证实现提交：`ae29b9376`（`feat: guarantee monitor v4 probe bucket terminals`）
+- 刷新基线：`main@aeafa1569`；候选刷新合并提交：`30b530683`
+- 当前候选：`codex/t85-monitor-probe-dedup@30b530683`（未推送、未合并、未部署）
 - 规格/计划：
   - `docs/superpowers/specs/2026-08-29-t85-monitor-v4-real-request-probe-dedup-design.md`
   - `docs/superpowers/plans/2026-08-29-t85-monitor-v4-real-request-probe-dedup.md`
@@ -38,7 +40,7 @@
 
 ## 已验证
 
-在同步最新 `main` 后重新执行：
+在刷新到 `main@aeafa1569` 后重新执行：
 
 ```bash
 cd upstream/sub2api/backend
@@ -60,7 +62,7 @@ pnpm typecheck
 pnpm build
 ```
 
-本轮新增验证结果：仓储 V4/终态/历史清理定向测试通过；服务 V4/探测池/RunAll 定向测试通过；迁移形状测试通过；`go build ./cmd/server` 通过；Monitor V4 Vitest 为 3 文件 11 用例全部通过；`pnpm typecheck` 通过；`pnpm build` 以 exit code 0 完成；`git diff --check` 通过。
+刷新后的验证结果：仓储 V4/终态/历史清理定向测试通过；服务 V4/探测池/RunAll/终态结算定向测试通过；迁移形状测试通过；`go build ./cmd/server` 通过；Monitor V4 Vitest 为 3 文件 11 用例全部通过；`pnpm typecheck` 通过；`pnpm build` 以 exit code 0 完成；`git diff --check` 通过。
 
 全服务包 `go test ./internal/service -count=1` 仍有既有调度/韧性观测测试失败（如 sticky weighted scheduler、embedding sticky binding、resilience observability 等），未发现失败栈指向本次 T85 文件；未将其作为本任务通过依据。
 

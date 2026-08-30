@@ -150,7 +150,7 @@ func TestScanCCStreamNotifiesAfterEmittingFirstSemanticChunk(t *testing.T) {
 	}
 	resp.Body = io.NopCloser(bytes.NewBufferString("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"))
 
-	state := (&OpenAIGatewayService{}).scanCCStream(c, resp, "test", "request", time.Now(), func(_ *apicompat.ChatCompletionsChunk) {
+	state := (&OpenAIGatewayService{}).scanCCStream(ctx, resp, "test", "request", time.Now(), func(_ *apicompat.ChatCompletionsChunk) {
 		order = append(order, "emit")
 	})
 

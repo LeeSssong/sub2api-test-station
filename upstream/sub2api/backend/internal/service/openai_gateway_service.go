@@ -251,14 +251,11 @@ type OpenAIForwardResult struct {
 	// response before any client-facing rewrite or protocol conversion.
 	UpstreamResponseModel         string
 	UpstreamResponseModelConflict bool
-	// UpstreamResponseServiceTier is the tier the upstream reports having used
-	// (response service_tier: "priority" / "default" / "flex" / ...); "" when not declared.
-	UpstreamResponseServiceTier string
 	// UpstreamEndpoint is the actual upstream API path used for this request.
 	// It avoids guessing when one downstream protocol can use multiple upstream endpoints.
 	UpstreamEndpoint string
-	// ServiceTier 优先取上游实际响应回显的 tier；缺失时回退到最终出站 body 的
-	// tier。nil 表示两者都无识别 tier。
+	// ServiceTier records the OpenAI Responses API service tier, e.g. "priority" / "flex".
+	// Nil means the request did not specify a recognized tier.
 	ServiceTier *string
 	// ReasoningEffort is extracted from request body (reasoning.effort) or derived from model suffix.
 	// Stored for usage records display; nil means not provided / not applicable.
@@ -296,9 +293,8 @@ type OpenAIForwardResult struct {
 	// AudioUsage carries Voice billing units when present.
 	AudioUsage *AudioUsage
 
-	wsReplayInput                []json.RawMessage
-	wsReplayInputExists          bool
-	wsAccountFailoverReplayInput []json.RawMessage
+	wsReplayInput       []json.RawMessage
+	wsReplayInputExists bool
 }
 
 // UpdateActualResponseModel persists the audit-only model observed in an
@@ -453,7 +449,6 @@ type OpenAIGatewayService struct {
 	billingCacheService   *BillingCacheService
 	userGroupRateResolver *userGroupRateResolver
 	httpUpstream          HTTPUpstream
-	pluginManager         *PluginManager
 	deferredService       *DeferredService
 	openAITokenProvider   *OpenAITokenProvider
 	grokTokenProvider     *GrokTokenProvider
@@ -480,7 +475,6 @@ type OpenAIGatewayService struct {
 	openaiWSStateStore             OpenAIWSStateStore
 	openaiScheduler                OpenAIAccountScheduler
 	openaiWSPassthroughDialer      openAIWSClientDialer
-	openaiWSSessionPreemptions     openAIWSSessionPreemptRegistry
 	openaiAccountStats             *openAIAccountRuntimeStats
 	openaiModelTransient           *openAIAccountModelTransientState
 	openaiRecoveryExclusions       *openAIRecoveryExclusionState
@@ -497,7 +491,6 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockLocks      sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiAccountRuntimeBlockGeneration sync.Map // key: int64(accountID), value: uint64
 	openaiAccountRuntimeBlockSequence   atomic.Uint64
-	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiOAuth429WindowStartUnixNano   atomic.Int64
 	openaiOAuth429WindowCount           atomic.Int64
@@ -1258,17 +1251,6 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 			return "", "", errors.New("access_token not found in credentials")
 		}
 		return accessToken, "oauth", nil
-	case AccountTypeSetupToken:
-		if !account.IsOpenAIOAuthLike() {
-			return "", "", fmt.Errorf("unsupported account type: %s", account.Type)
-		}
-		// OpenAI setup tokens are inference-only bearer credentials. They use the
-		// Codex OAuth forwarding protocol but have no refresh-token lifecycle.
-		accessToken := account.GetOpenAIAccessToken()
-		if accessToken == "" {
-			return "", "", errors.New("access_token not found in credentials")
-		}
-		return accessToken, "oauth", nil
 	case AccountTypeAPIKey:
 		if account.Platform == PlatformGrok {
 			apiKey := strings.TrimSpace(account.GetCredential("api_key"))
@@ -1277,7 +1259,7 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 			}
 			return apiKey, "apikey", nil
 		}
-		apiKey := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+		apiKey := account.GetOpenAIApiKey()
 		if apiKey == "" {
 			return "", "", errors.New("api_key not found in credentials")
 		}

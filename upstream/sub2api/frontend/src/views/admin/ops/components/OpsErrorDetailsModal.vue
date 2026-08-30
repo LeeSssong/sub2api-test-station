@@ -15,7 +15,6 @@ interface Props {
   platform?: string
   groupId?: number | null
   errorType: 'request' | 'upstream'
-  resumeState?: boolean
 }
 
 const props = defineProps<Props>()
@@ -113,17 +112,6 @@ async function fetchErrorLogs() {
     }
     Object.assign(params, buildOpsErrorTimeParams(props.timeRange, props.customStartTime, props.customEndTime))
 
-    if (props.timeRange === 'custom') {
-      if (props.customStartTime && props.customEndTime) {
-        params.start_time = props.customStartTime
-        params.end_time = props.customEndTime
-        delete params.time_range
-      } else {
-        // Safety fallback: avoid sending time_range=custom (backend doesn't support it)
-        params.time_range = '1h'
-      }
-    }
-
     const platform = String(props.platform || '').trim()
     if (platform) params.platform = platform
     if (typeof props.groupId === 'number' && props.groupId > 0) params.group_id = props.groupId
@@ -168,7 +156,6 @@ watch(
   () => props.show,
   (open) => {
     if (!open) return
-    if (props.resumeState) return
     page.value = 1
     pageSize.value = 10
     resetFilters()

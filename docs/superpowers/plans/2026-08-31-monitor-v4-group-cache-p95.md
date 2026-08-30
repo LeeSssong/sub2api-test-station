@@ -6,6 +6,7 @@
 
 - Spec: `docs/superpowers/specs/2026-08-31-monitor-v4-group-cache-p95-design.md`
 - Baseline: `main@e9db36d4b5cf789ac85bbabdfb82aa2c4beb7479`
+- Refreshed baseline: `main@5d77271b32990076b8b0344a3f1909c62192abc6`
 
 ## Scope
 
@@ -23,7 +24,7 @@
 - [x] 1. Add focused backend and frontend contract tests.
 - [x] 2. Extend projection/domain/handler and card/i18n with cache P95.
 - [x] 3. Run focused tests, typecheck/build, gofmt and diff check.
-- [ ] 4. Record verification and handoff; root controls merge/deploy.
+- [x] 4. Record verification and handoff; root controls merge/deploy.
 
 ## Verification Commands
 

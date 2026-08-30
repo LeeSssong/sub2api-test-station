@@ -467,11 +467,16 @@ WITH scopes AS (
 ), usage_candidates AS (
   SELECT u.*
   FROM raw_usage_candidates u
-  LEFT JOIN excluded_usage_keys exclusion
-    ON exclusion.group_id = u.group_id
-   AND exclusion.account_id IS NOT DISTINCT FROM u.account_id
-   AND (exclusion.request_key = u.request_id OR exclusion.request_key = u.logical_request_id)
-  WHERE exclusion.request_key IS NULL
+  LEFT JOIN excluded_usage_keys request_exclusion
+    ON request_exclusion.group_id = u.group_id
+   AND request_exclusion.account_id IS NOT DISTINCT FROM u.account_id
+   AND request_exclusion.request_key = u.request_id
+  LEFT JOIN excluded_usage_keys logical_exclusion
+    ON logical_exclusion.group_id = u.group_id
+   AND logical_exclusion.account_id IS NOT DISTINCT FROM u.account_id
+   AND logical_exclusion.request_key = u.logical_request_id
+  WHERE request_exclusion.request_key IS NULL
+    AND logical_exclusion.request_key IS NULL
 ), usage_request_keys AS (
   SELECT DISTINCT group_id, account_id, request_id AS request_key, request_key AS canonical_request_key
   FROM usage_candidates
@@ -595,23 +600,31 @@ WITH scopes AS (
 		bm.probe_missing
   FROM bucket_matrix bm
   WHERE bm.has_real IS NOT TRUE
-), ranked_events AS (
-  SELECT se.*,
-         ROW_NUMBER() OVER (
-           PARTITION BY se.group_id
-           ORDER BY CASE WHEN se.successful THEN se.first_token_ms END NULLS LAST, se.observed_at, se.bucket_start
-         ) AS ttft_position,
-         COUNT(se.first_token_ms) FILTER (WHERE se.successful) OVER (PARTITION BY se.group_id) AS ttft_count,
-         ROW_NUMBER() OVER (
-           PARTITION BY se.group_id
-           ORDER BY CASE WHEN se.successful THEN se.duration_ms END NULLS LAST, se.observed_at, se.bucket_start
-         ) AS latency_position,
-         COUNT(se.duration_ms) FILTER (WHERE se.successful) OVER (PARTITION BY se.group_id) AS latency_count
-  FROM selected_events se
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
-  FROM ranked_events
+  FROM selected_events
   ORDER BY group_id, bucket_start DESC, observed_at DESC
+), metric_arrays AS (
+  SELECT group_id,
+         array_agg(first_token_ms ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_values,
+         array_agg(duration_ms ORDER BY duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL) AS latency_values
+  FROM selected_events
+  GROUP BY group_id
+), metric_stats AS (
+  SELECT ma.group_id,
+         (SELECT AVG(value) FROM unnest(
+           (COALESCE(ma.ttft_values, ARRAY[]::double precision[]))[
+             FLOOR(CARDINALITY(COALESCE(ma.ttft_values, ARRAY[]::double precision[])) * 0.05)::int + 1:
+             CARDINALITY(COALESCE(ma.ttft_values, ARRAY[]::double precision[])) - FLOOR(CARDINALITY(COALESCE(ma.ttft_values, ARRAY[]::double precision[])) * 0.05)::int
+           ]
+         ) AS values(value)) AS ttft_trimmed_mean,
+         (SELECT AVG(value) FROM unnest(
+           (COALESCE(ma.latency_values, ARRAY[]::double precision[]))[
+             FLOOR(CARDINALITY(COALESCE(ma.latency_values, ARRAY[]::double precision[])) * 0.05)::int + 1:
+             CARDINALITY(COALESCE(ma.latency_values, ARRAY[]::double precision[])) - FLOOR(CARDINALITY(COALESCE(ma.latency_values, ARRAY[]::double precision[])) * 0.05)::int
+           ]
+         ) AS values(value)) AS latency_trimmed_mean
+  FROM metric_arrays ma
 ), aggregate AS (
   SELECT g.group_id,
          CASE WHEN COUNT(s.group_id) = 0 THEN NULL
@@ -624,23 +637,16 @@ WITH scopes AS (
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe' AND s.probe_missing)::int AS missing_probe_terminal_count,
-         AVG(s.first_token_ms) FILTER (
-           WHERE s.successful AND s.first_token_ms IS NOT NULL
-             AND s.ttft_position > FLOOR(s.ttft_count * 0.05)
-             AND s.ttft_position <= s.ttft_count - FLOOR(s.ttft_count * 0.05)
-         ) AS ttft_p95_ms,
+         MAX(ms.ttft_trimmed_mean) AS ttft_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
-         AVG(s.duration_ms) FILTER (
-           WHERE s.successful AND s.duration_ms IS NOT NULL
-             AND s.latency_position > FLOOR(s.latency_count * 0.05)
-             AND s.latency_position <= s.latency_count - FLOOR(s.latency_count * 0.05)
-         ) AS latency_p95_ms,
+         MAX(ms.latency_trimmed_mean) AS latency_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL)::int AS latency_sample_count,
          MAX(s.observed_at) AS source_updated_at,
          COALESCE(BOOL_OR(ls.successful), FALSE) AS current_operational
   FROM groups g
-  LEFT JOIN ranked_events s ON s.group_id = g.group_id
+  LEFT JOIN selected_events s ON s.group_id = g.group_id
   LEFT JOIN latest_selected ls ON ls.group_id = g.group_id
+  LEFT JOIN metric_stats ms ON ms.group_id = g.group_id
   GROUP BY g.group_id
 )
 	SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,

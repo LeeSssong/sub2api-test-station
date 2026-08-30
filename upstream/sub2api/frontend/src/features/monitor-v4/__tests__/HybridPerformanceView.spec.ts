@@ -66,4 +66,16 @@ describe('HybridPerformanceView', () => {
     expect(wrapper.get('[data-test="hybrid-retry"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('requests the 30-day window when its tab is selected', async () => {
+    getSnapshot.mockReset()
+    getSnapshot.mockResolvedValue({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })
+    const wrapper = mount(HybridPerformanceView, {
+      global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
+    })
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal)))
+    await wrapper.get('[data-test="hybrid-window-30d"]').trigger('click')
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('30d', expect.any(AbortSignal)))
+    wrapper.unmount()
+  })
 })

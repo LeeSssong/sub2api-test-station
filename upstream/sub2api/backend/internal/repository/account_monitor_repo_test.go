@@ -65,7 +65,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 	updatedAt := end.Add(-time.Minute)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*generate_series.*raw_usage_candidates AS.*usage_request_keys AS.*error_candidates AS.*COALESCE\(request_match\.canonical_request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*bucket_matrix AS.*selected_events AS.*ranked_events AS.*AVG\(s\.first_token_ms\).*FLOOR\(s\.ttft_count \* 0\.05\).*AVG\(s\.duration_ms\).*FLOOR\(s\.latency_count \* 0\.05\).*request_count`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*generate_series.*raw_usage_candidates AS.*excluded_usage_keys AS.*usage_candidates AS.*request_exclusion.*logical_exclusion.*usage_request_keys AS.*error_candidates AS.*COALESCE\(request_match\.canonical_request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*bucket_matrix AS.*selected_events AS.*metric_arrays AS.*array_agg\(first_token_ms ORDER BY first_token_ms\).*metric_stats AS.*FLOOR\(CARDINALITY.*0\.05.*ttft_trimmed_mean.*latency_trimmed_mean.*request_count`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",

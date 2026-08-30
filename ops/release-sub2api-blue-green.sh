@@ -431,6 +431,7 @@ host_environment=(
   "RELEASE_ENV=${RELEASE_RELEASE_ENV:-/opt/sub2api/production/release.env}"
   "RELEASE_STATE=${RELEASE_STATE_PATH:-/var/lib/sub2api/release-state}"
   "RELEASE_RECORD_ROOT=${RELEASE_RECORD_ROOT_PATH:-/var/lib/sub2api/release-records}"
+  "WORKER_HEALTH_TIMEOUT_SECONDS=${RELEASE_WORKER_HEALTH_TIMEOUT_SECONDS:-240}"
   "ADMIN_API_KEY_FILE=${RELEASE_ADMIN_API_KEY_FILE:-/opt/sub2api/production/secrets/sub2api-admin-api-key}"
   "GATEWAY_API_KEY_FILE=${RELEASE_GATEWAY_API_KEY_FILE:-/opt/sub2api/production/secrets/sub2api-gateway-api-key}"
   "BASE_URL=${RELEASE_BASE_URL:-https://api.xingqiaolab.top}"

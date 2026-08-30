@@ -89,6 +89,26 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.find('[data-test="cost-metric"]').exists()).toBe(false)
   })
 
+  it('shows multiplier-estimated profit before real requests exist', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        request_count: 0,
+        real_request_evidence: {
+          request_count: 0,
+          success_count: 0,
+          failure_count: 0,
+          success_rate: 0,
+          ttft_sample_count: 0,
+          observed_at: '2026-08-30T00:00:00Z',
+        },
+        group_profitability: { status: 'estimated', profit_rate: 0.25 },
+      },
+    })
+
+    expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('25%')
+  })
+
   it('keeps manual model detection and account action entry points', async () => {
     const detect = vi.fn()
     const info = vi.fn()

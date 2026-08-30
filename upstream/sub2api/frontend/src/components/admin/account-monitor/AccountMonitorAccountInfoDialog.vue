@@ -8,32 +8,29 @@
         <InfoField label="账号类型" :value="account.type" />
         <InfoField label="状态" :value="account.status" />
         <InfoField label="调度状态" :value="account.schedulable ? '可调度' : '不可调度'" />
-        <InfoField label="全局优先级" :value="String(account.priority)" mono />
-        <InfoField label="代理" :value="account.proxy?.name || (account.proxy_id == null ? '未配置' : `代理 #${account.proxy_id}`)" />
       </section>
 
-      <section class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号配置">
-        <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">账号配置</h4>
+      <section class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号运行配置">
+        <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">账号运行配置</h4>
         <div class="grid gap-3 sm:grid-cols-2">
           <InfoField label="所属分组" :value="groupNames" />
-          <InfoField label="倍率" :value="formatNumber(account.rate_multiplier)" mono />
+          <InfoField label="容量" :value="capacityLabel" />
+          <InfoField label="代理" :value="proxyName" />
+          <InfoField label="全局优先级" :value="String(account.priority)" mono />
+          <InfoField label="调度评分" :value="schedulerScoreLabel" mono />
+          <InfoField label="计费倍率" :value="formatMultiplier(account.rate_multiplier)" mono />
+          <InfoField label="上游声明倍率" :value="upstreamMultiplierLabel" mono />
+          <InfoField label="使用窗口" :value="usageWindowLabel" />
           <InfoField label="到期时间" :value="formatDate(account.expires_at)" />
+          <InfoField label="最近使用" :value="formatDate(account.last_used_at)" />
           <InfoField label="创建时间" :value="formatDate(account.created_at)" />
           <InfoField label="最近更新时间" :value="formatDate(account.updated_at)" />
-          <InfoField label="凭据状态" :value="credentialStatus" />
         </div>
       </section>
 
       <section v-if="account.notes" class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号备注">
         <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">账号备注</h4>
         <InfoField label="备注" :value="account.notes" />
-      </section>
-
-      <section class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号全部字段" data-test="account-all-fields">
-        <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-100">全部字段</h4>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <InfoField v-for="field in allFields" :key="field.key" :label="field.key" :value="field.value" :mono="field.mono" />
-        </div>
       </section>
 
     </div>
@@ -69,21 +66,59 @@ const groupNames = computed(() => {
   return ids.length ? ids.map((id) => `分组 #${id}`).join('、') : '未加入分组'
 })
 
-const credentialStatus = computed(() => {
-  const status = props.account?.credentials_status
-  if (!status) return '未返回凭据状态'
-  const keys = Object.keys(status).filter((key) => status[key])
-  return keys.length ? `已配置（${keys.length} 项）` : '未配置'
+const proxyName = computed(() => {
+  const account = props.account
+  if (!account) return '--'
+  return account.proxy?.name || (account.proxy_id == null ? '未配置' : `代理 #${account.proxy_id}`)
 })
 
-const allFields = computed(() => Object.entries(props.account ?? {}).map(([key, value]) => ({
-  key,
-  value: value == null || value === '' ? '--' : typeof value === 'object' ? JSON.stringify(value) : String(value),
-  mono: /id|token|key|url|rate|quota|limit|time|date/i.test(key),
-})))
+const capacityLabel = computed(() => {
+  const account = props.account
+  if (!account) return '--'
+  const current = account.current_concurrency ?? 0
+  const configured = account.concurrency > 0 ? String(account.concurrency) : '不限'
+  return `${current} / ${configured}`
+})
+
+const schedulerScoreLabel = computed(() => {
+  const account = props.account
+  if (!account?.scheduler_score) return '--'
+  const base = formatNumber(account.scheduler_score.base_score)
+  const sticky = account.scheduler_score.sticky_score_infinity
+    ? '+∞'
+    : formatNumber(account.scheduler_score.sticky_score)
+  return `${base} / ${sticky}`
+})
+
+const usageWindowLabel = computed(() => {
+  const windows = (props.account as (Account & {
+    usage_windows?: Array<{ name: string; utilization: number }>
+  }) | null)?.usage_windows ?? []
+  if (!windows.length) return '--'
+  return windows.map((window) => `${window.name} ${formatPercent(window.utilization)}`).join('、')
+})
+
+const upstreamMultiplierLabel = computed(() => {
+  const extra = props.account?.extra as Record<string, unknown> | undefined
+  const probe = extra?.upstream_billing_probe as Record<string, unknown> | undefined
+  const data = probe?.data as Record<string, unknown> | undefined
+  return formatMultiplier(
+    data?.effective_rate_multiplier as number | undefined
+      ?? data?.resolved_rate_multiplier as number | undefined
+      ?? props.account?.rate_multiplier,
+  )
+})
 
 function formatNumber(value?: number | null): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)
+}
+
+function formatPercent(value?: number | null): string {
+  return value == null || !Number.isFinite(value) ? '--' : `${(value * 100).toFixed(1)}%`
+}
+
+function formatMultiplier(value?: number | null): string {
+  return value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(2)}×`
 }
 
 function formatDate(value?: number | string | null): string {

@@ -10,7 +10,7 @@ const BaseDialogStub = defineComponent({
 })
 
 describe('AccountMonitorAccountInfoDialog', () => {
-  it('shows account-level fields absent from the compact monitor projection without credential plaintext', () => {
+  it('shows the native account-management fields and excludes raw account payload fields', () => {
     const wrapper = mount(AccountMonitorAccountInfoDialog, {
       props: {
         show: true,
@@ -25,12 +25,16 @@ describe('AccountMonitorAccountInfoDialog', () => {
           proxy_id: 9,
           proxy: { id: 9, name: 'Primary proxy' },
           group_ids: [3],
+          groups: [{ id: 3, name: 'GPT-Pro' }],
           notes: 'internal note',
           error_message: 'Bearer sk-secret-value from upstream',
           credentials: { api_key: 'sk-secret-value' },
           credentials_status: { has_api_key: true },
           rate_multiplier: 0.8,
-          concurrency: 0,
+          concurrency: 10,
+          current_concurrency: 2,
+          scheduler_score: { base_score: 0.8, sticky_score: 0.9, sticky_weighted_enabled: true },
+          usage_windows: [{ name: '今日', utilization: 0.25, requests: 2, tokens: 100 }],
           last_used_at: null,
           expires_at: null,
           auto_pause_on_expired: false,
@@ -43,10 +47,14 @@ describe('AccountMonitorAccountInfoDialog', () => {
 
     expect(wrapper.text()).toContain('Native account')
     expect(wrapper.text()).toContain('Primary proxy')
-    expect(wrapper.text()).toContain('已配置（1 项）')
+    expect(wrapper.text()).toContain('2 / 10')
+    expect(wrapper.text()).toContain('GPT-Pro')
+    expect(wrapper.text()).toContain('25.0%')
     expect(wrapper.text()).toContain('internal note')
     expect(wrapper.text()).not.toContain('sk-secret-value')
     expect(wrapper.text()).not.toContain('Bearer')
-    expect(wrapper.get('[data-test="account-info-security-note"]').text()).toContain('不展示任何凭据原文')
+    expect(wrapper.text()).not.toContain('credentials')
+    expect(wrapper.text()).not.toContain('extra')
+    expect(wrapper.find('[data-test="account-all-fields"]').exists()).toBe(false)
   })
 })

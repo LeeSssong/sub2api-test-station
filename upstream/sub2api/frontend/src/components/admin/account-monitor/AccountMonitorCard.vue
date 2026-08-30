@@ -428,7 +428,7 @@ const realSuccessRate = computed(() => {
 const realTTFTP95 = computed(() => formatMs(realEvidence.value?.ttft_p95_ms ?? props.account.ttft_p95_ms))
 const profitRateLabel = computed(() => {
   const profit = props.account.group_profitability
-  if (!profit || profit.status !== 'confirmed' || profit.profit_rate == null) return profit?.status === 'no_real_request' ? '--' : '待确认'
+  if (!profit || !['confirmed', 'estimated'].includes(profit.status) || profit.profit_rate == null) return profit?.status === 'no_real_request' ? '--' : '待确认'
   return formatPercent(profit.profit_rate)
 })
 const realRequestBars = computed(() => {

@@ -74,7 +74,7 @@ export interface AccountMonitorGroupProfitability {
   group_id: number
   group_name: string
   profit_rate?: number | null
-  status: 'confirmed' | 'no_real_request' | 'no_revenue' | 'cost_incomplete' | string
+  status: 'confirmed' | 'estimated' | 'no_real_request' | 'no_revenue' | 'cost_incomplete' | string
   reason?: string
   rank?: AccountMonitorRank | null
   revenue: number

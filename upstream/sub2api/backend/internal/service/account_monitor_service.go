@@ -806,6 +806,10 @@ func applyGroupProfitability(groups []AccountMonitorGroup, aggregates map[int64]
 					profit.Status = "confirmed"
 					members = append(members, i)
 				}
+			} else if estimated, ok := accountMonitorEstimatedProfitRate(groups[gi].RateMultiplier, row.Multiplier); ok {
+				profit.ProfitRate = &estimated
+				profit.Status = "estimated"
+				members = append(members, i)
 			}
 			row.GroupProfitability = profit
 		}
@@ -842,6 +846,10 @@ func applyGroupProfitabilityByGroup(groups []AccountMonitorGroup, aggregates map
 					profit.Status = "confirmed"
 					members = append(members, i)
 				}
+			} else if estimated, ok := accountMonitorEstimatedProfitRate(groups[gi].RateMultiplier, row.Multiplier); ok {
+				profit.ProfitRate = &estimated
+				profit.Status = "estimated"
+				members = append(members, i)
 			}
 			row.GroupProfitability = profit
 		}
@@ -858,6 +866,17 @@ func applyGroupProfitabilityByGroup(groups []AccountMonitorGroup, aggregates map
 			groups[gi].Accounts[index].GroupProfitability.Rank = &value
 		}
 	}
+}
+
+func accountMonitorEstimatedProfitRate(groupMultiplier float64, multiplier AccountMonitorMultiplier) (float64, bool) {
+	if groupMultiplier <= 0 || multiplier.Status != AccountMonitorMultiplierStatusOK || multiplier.Value == nil {
+		return 0, false
+	}
+	value := (groupMultiplier - *multiplier.Value) / groupMultiplier
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false
+	}
+	return value, true
 }
 
 func applyGroupSchedulerOrder(groups []AccountMonitorGroup) {

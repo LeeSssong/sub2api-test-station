@@ -6,6 +6,7 @@
 
 - Spec: `docs/superpowers/specs/2026-08-31-monitor-v4-group-cache-p95-design.md`
 - Baseline: `main@e9db36d4b5cf789ac85bbabdfb82aa2c4beb7479`
+- Refreshed baseline: `main@5d77271b32990076b8b0344a3f1909c62192abc6`
 
 ## Scope
 
@@ -14,23 +15,24 @@
 
 ## Acceptance
 
-- [ ] Successful real-request `cache_read_tokens` P95 is returned per group, including zero values.
-- [ ] Probe/failure rows are excluded and null/zero sample behavior is explicit.
-- [ ] Existing card renders the new field without layout regression.
+- [x] Successful real-request `cache_read_tokens` P95 is returned per group, including zero values.
+- [x] Probe/failure rows are excluded and null/zero sample behavior is explicit.
+- [x] Existing card renders the new field without layout regression.
 
 ## Tasks
 
-- [ ] 1. Add focused backend and frontend contract tests.
-- [ ] 2. Extend projection/domain/handler and card/i18n with cache P95.
-- [ ] 3. Run focused tests, typecheck/build, gofmt and diff check.
-- [ ] 4. Record verification and handoff; root controls merge/deploy.
+- [x] 1. Add focused backend and frontend contract tests.
+- [x] 2. Extend projection/domain/handler and card/i18n with cache P95.
+- [x] 3. Run focused tests, typecheck/build, gofmt and diff check.
+- [x] 4. Record verification and handoff; root controls merge/deploy.
 
 ## Verification Commands
 
-- `go test ./internal/repository ./internal/service ./internal/handler/...`
-- `pnpm vitest run src/features/monitor-v4`
-- `pnpm typecheck`
-- `pnpm build`
+- Go 1.27.0 container, repository: `go test -vet=off -p 1 -run '^TestAccountMonitorRepositoryProjectMonitorV4' -count=1 ./internal/repository`
+- Go 1.27.0 container, service/handler: compile all non-test package sources and run only the self-contained Monitor V4 test files (the full packages contain unrelated baseline test compile failures).
+- `./node_modules/.bin/vitest run src/features/monitor-v4/__tests__/HybridPerformanceGroupCard.spec.ts src/features/monitor-v4/__tests__/api.spec.ts`
+- `./node_modules/.bin/vue-tsc --noEmit`
+- `./node_modules/.bin/vue-tsc -b && ./node_modules/.bin/vite build`
 - `gofmt -w ... && git diff --check`
 
 ## Risks

@@ -31,23 +31,25 @@ type MonitorV4Metric struct {
 }
 
 type MonitorV4Group struct {
-	ID                        int64
-	Name                      string
-	Platform                  string
-	RateMultiplier            float64
-	SuccessRate               *float64
-	RequestCount              int
-	SuccessCount              int
-	RealRequestCount          int
-	RealSuccessCount          int
-	ProbeFallbackBucketCount  int
-	ProbeFallbackRequestCount int
-	TTFTP95MS                 *float64
-	TTFTSampleCount           int
-	LatencyP95MS              *float64
-	LatencySampleCount        int
-	SourceUpdatedAt           *time.Time
-	CurrentOperational        bool
+	ID                         int64
+	Name                       string
+	Platform                   string
+	RateMultiplier             float64
+	SuccessRate                *float64
+	RequestCount               int
+	SuccessCount               int
+	RealRequestCount           int
+	RealSuccessCount           int
+	ProbeFallbackBucketCount   int
+	ProbeFallbackRequestCount  int
+	TTFTP95MS                  *float64
+	TTFTSampleCount            int
+	LatencyP95MS               *float64
+	LatencySampleCount         int
+	CacheReadTokensP95         *float64
+	CacheReadTokensSampleCount int
+	SourceUpdatedAt            *time.Time
+	CurrentOperational         bool
 }
 
 type MonitorV4Snapshot struct {
@@ -120,6 +122,7 @@ func (s *MonitorV4Service) snapshotWithGroups(ctx context.Context, window Monito
 			ProbeFallbackBucketCount: projection.ProbeFallbackBucketCount, ProbeFallbackRequestCount: projection.ProbeFallbackRequestCount,
 			TTFTP95MS: projection.TTFTP95MS, TTFTSampleCount: projection.TTFTSampleCount,
 			LatencyP95MS: projection.LatencyP95MS, LatencySampleCount: projection.LatencySampleCount,
+			CacheReadTokensP95: projection.CacheReadTokensP95, CacheReadTokensSampleCount: projection.CacheReadTokensSampleCount,
 			SourceUpdatedAt: projection.SourceUpdatedAt, CurrentOperational: projection.CurrentOperational,
 		})
 	}

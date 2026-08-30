@@ -11,6 +11,29 @@ type monitorV4NativeReaderStub struct {
 	groupIDs   []int64
 }
 
+type monitorV4GroupRepoStub struct {
+	GroupRepository
+	groups []Group
+}
+
+func (s *monitorV4GroupRepoStub) ListActive(context.Context) ([]Group, error) {
+	return append([]Group(nil), s.groups...), nil
+}
+
+type monitorV4AvailableGroupReaderStub struct{}
+
+func (*monitorV4AvailableGroupReaderStub) GetAvailableGroups(context.Context, int64) ([]Group, error) {
+	return nil, nil
+}
+
+type monitorV4ConfiguredGroupReaderStub struct {
+	config *ChannelMonitorV2Config
+}
+
+func (s *monitorV4ConfiguredGroupReaderStub) GetConfig(context.Context) (*ChannelMonitorV2Config, error) {
+	return s.config, nil
+}
+
 func (s *monitorV4NativeReaderStub) ProjectMonitorV4Groups(_ context.Context, groupIDs []int64, _, _ time.Time, _ time.Duration) (map[int64]MonitorV4GroupProjection, error) {
 	s.groupIDs = append([]int64(nil), groupIDs...)
 	return s.projection, nil
@@ -20,13 +43,18 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	rate := 75.0
 	ttft := 120.0
 	latency := 900.0
+	cacheReadTokens := 4096.5
 	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
-		7: {SuccessRate: &rate, RequestCount: 4, SuccessCount: 3, TTFTP95MS: &ttft, LatencyP95MS: &latency, TTFTSampleCount: 3, LatencySampleCount: 3},
+		7: {
+			SuccessRate: &rate, RequestCount: 4, SuccessCount: 3,
+			TTFTP95MS: &ttft, LatencyP95MS: &latency, TTFTSampleCount: 3, LatencySampleCount: 3,
+			CacheReadTokensP95: &cacheReadTokens, CacheReadTokensSampleCount: 3,
+		},
 	}}
 	svc := NewMonitorV4Service(
-		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Hybrid", Platform: PlatformOpenAI, Status: StatusActive}}},
-		&monitorV2AvailableGroupReaderStub{}, native, nil,
-		&monitorV2ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
+		&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Name: "Hybrid", Platform: PlatformOpenAI, Status: StatusActive}}},
+		&monitorV4AvailableGroupReaderStub{}, native, nil,
+		&monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
 	)
 
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
@@ -39,6 +67,9 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	if len(native.groupIDs) != 1 || native.groupIDs[0] != 7 {
 		t.Fatalf("native group IDs = %v, want [7]", native.groupIDs)
 	}
+	if snapshot.Groups[0].CacheReadTokensP95 == nil || *snapshot.Groups[0].CacheReadTokensP95 != cacheReadTokens || snapshot.Groups[0].CacheReadTokensSampleCount != 3 {
+		t.Fatalf("cache P95 projection = %#v", snapshot.Groups[0])
+	}
 }
 
 func TestMonitorV4SnapshotPreservesNullableMetrics(t *testing.T) {
@@ -46,16 +77,16 @@ func TestMonitorV4SnapshotPreservesNullableMetrics(t *testing.T) {
 		7: {RequestCount: 0, SuccessCount: 0},
 	}}
 	svc := NewMonitorV4Service(
-		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Hybrid", Platform: PlatformOpenAI, Status: StatusActive}}},
-		&monitorV2AvailableGroupReaderStub{}, native, nil,
-		&monitorV2ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
+		&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Name: "Hybrid", Platform: PlatformOpenAI, Status: StatusActive}}},
+		&monitorV4AvailableGroupReaderStub{}, native, nil,
+		&monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
 	)
 
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	if len(snapshot.Groups) != 1 || snapshot.Groups[0].SuccessRate != nil || snapshot.Groups[0].TTFTP95MS != nil || snapshot.Groups[0].LatencyP95MS != nil {
+	if len(snapshot.Groups) != 1 || snapshot.Groups[0].SuccessRate != nil || snapshot.Groups[0].TTFTP95MS != nil || snapshot.Groups[0].LatencyP95MS != nil || snapshot.Groups[0].CacheReadTokensP95 != nil || snapshot.Groups[0].CacheReadTokensSampleCount != 0 {
 		t.Fatalf("nullable metrics = %#v", snapshot.Groups)
 	}
 }
@@ -66,9 +97,9 @@ func TestMonitorV4SnapshotKeepsZeroSuccessRateForFailedRequests(t *testing.T) {
 		7: {SuccessRate: &zero, RequestCount: 3, SuccessCount: 0, RealRequestCount: 3, RealSuccessCount: 0},
 	}}
 	svc := NewMonitorV4Service(
-		&monitorV2GroupRepoStub{groups: []Group{{ID: 7, Name: "Failed", Platform: PlatformOpenAI, Status: StatusActive}}},
-		&monitorV2AvailableGroupReaderStub{}, native, nil,
-		&monitorV2ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
+		&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Name: "Failed", Platform: PlatformOpenAI, Status: StatusActive}}},
+		&monitorV4AvailableGroupReaderStub{}, native, nil,
+		&monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
 	)
 
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))

@@ -20,6 +20,8 @@ vi.mock('vue-i18n', async () => {
         'channelMonitorV2.hybrid.title': '分组性能监控',
         'channelMonitorV2.hybrid.updated': `更新于 ${args?.time ?? ''}`,
         'channelMonitorV2.hybrid.empty': '暂无可见分组',
+        'channelMonitorV2.hybrid.loadError': '该时间范围加载失败，请重试',
+        'channelMonitorV2.hybrid.retry': '重试',
         'monitorV2.window.24h': '24h',
         'monitorV2.window.7d': '7d',
         'monitorV2.window.30d': '30d',
@@ -50,6 +52,18 @@ describe('HybridPerformanceView', () => {
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.empty')
     expect(wrapper.find('[data-test="codexradar-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="hybrid-group-status"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows a retryable error while keeping the last successful window', async () => {
+    getSnapshot.mockReset()
+    getSnapshot.mockRejectedValueOnce(new Error('timeout'))
+    const wrapper = mount(HybridPerformanceView, {
+      global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
+    })
+    await vi.waitFor(() => expect(wrapper.find('[data-test="hybrid-load-error"]').exists()).toBe(true))
+    expect(wrapper.get('[data-test="hybrid-load-error"]').text()).toContain('该时间范围加载失败')
+    expect(wrapper.get('[data-test="hybrid-retry"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

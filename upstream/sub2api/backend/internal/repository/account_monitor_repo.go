@@ -416,7 +416,7 @@ WITH scopes AS (
   SELECT date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00')
   WHERE $2::timestamptz >= date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') + $3::interval - interval '1 minute'
     AND $2::timestamptz < date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') + $3::interval
-), usage_candidates AS (
+), raw_usage_candidates AS (
   SELECT u.group_id, u.account_id, u.id::bigint AS source_id, u.created_at AS observed_at,
 	         date_bin($3::interval, u.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          (COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
@@ -430,51 +430,74 @@ WITH scopes AS (
   JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
     AND u.usage_completeness IS DISTINCT FROM 'unknown'
-    AND NOT EXISTS (
-      SELECT 1
-      FROM ops_error_logs excluded
-      WHERE excluded.group_id = u.group_id
-        AND excluded.account_id IS NOT DISTINCT FROM u.account_id
-        AND excluded.created_at >= $1::timestamptz AND excluded.created_at < $2::timestamptz
-        AND COALESCE(excluded.status_code, 0) >= 400
-        AND COALESCE(excluded.is_count_tokens, FALSE) = FALSE
-        AND (
-          NULLIF(excluded.request_id, '') = NULLIF(u.request_id, '')
-          OR NULLIF(excluded.request_id, '') = NULLIF(u.logical_request_id, '')
-          OR NULLIF(excluded.client_request_id, '') = NULLIF(u.request_id, '')
-          OR NULLIF(excluded.client_request_id, '') = NULLIF(u.logical_request_id, '')
-        )
-        AND (
-          COALESCE(excluded.error_owner, '') = 'client'
-          OR (COALESCE(excluded.error_phase, '') = 'request' AND COALESCE(excluded.error_source, '') = 'client_request')
-          OR lower(CONCAT_WS(' ', excluded.error_type, excluded.error_message, excluded.error_body, excluded.upstream_error_message, excluded.upstream_error_detail)) LIKE ANY (ARRAY[
-            '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
-            '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
-            '%model_not_found%', '%本站暂不支持%'
-          ])
-        )
+), excluded_usage_keys AS (
+  SELECT o.group_id, o.account_id, NULLIF(o.request_id, '') AS request_key
+  FROM ops_error_logs o
+  JOIN groups g ON g.group_id = o.group_id
+  WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND COALESCE(o.status_code, 0) >= 400
+    AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+    AND NULLIF(o.request_id, '') IS NOT NULL
+    AND (
+      COALESCE(o.error_owner, '') = 'client'
+      OR (COALESCE(o.error_phase, '') = 'request' AND COALESCE(o.error_source, '') = 'client_request')
+      OR lower(CONCAT_WS(' ', o.error_type, o.error_message, o.error_body, o.upstream_error_message, o.upstream_error_detail)) LIKE ANY (ARRAY[
+        '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
+        '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
+        '%model_not_found%', '%本站暂不支持%'
+      ])
     )
+  UNION
+  SELECT o.group_id, o.account_id, NULLIF(o.client_request_id, '') AS request_key
+  FROM ops_error_logs o
+  JOIN groups g ON g.group_id = o.group_id
+  WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND COALESCE(o.status_code, 0) >= 400
+    AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+    AND NULLIF(o.client_request_id, '') IS NOT NULL
+    AND (
+      COALESCE(o.error_owner, '') = 'client'
+      OR (COALESCE(o.error_phase, '') = 'request' AND COALESCE(o.error_source, '') = 'client_request')
+      OR lower(CONCAT_WS(' ', o.error_type, o.error_message, o.error_body, o.upstream_error_message, o.upstream_error_detail)) LIKE ANY (ARRAY[
+        '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
+        '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
+        '%model_not_found%', '%本站暂不支持%'
+      ])
+    )
+), usage_candidates AS (
+  SELECT u.*
+  FROM raw_usage_candidates u
+  LEFT JOIN excluded_usage_keys exclusion
+    ON exclusion.group_id = u.group_id
+   AND exclusion.account_id IS NOT DISTINCT FROM u.account_id
+   AND (exclusion.request_key = u.request_id OR exclusion.request_key = u.logical_request_id)
+  WHERE exclusion.request_key IS NULL
+), usage_request_keys AS (
+  SELECT DISTINCT group_id, account_id, request_id AS request_key, request_key AS canonical_request_key
+  FROM usage_candidates
+  WHERE request_id IS NOT NULL
+  UNION
+  SELECT DISTINCT group_id, account_id, logical_request_id AS request_key, request_key AS canonical_request_key
+  FROM usage_candidates
+  WHERE logical_request_id IS NOT NULL
 ), error_candidates AS (
   SELECT o.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
          date_bin($3::interval, o.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          FALSE AS successful,
          NULL::double precision AS first_token_ms,
          NULL::double precision AS duration_ms,
-         COALESCE(matched_usage.request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
+         COALESCE(request_match.canonical_request_key, client_match.canonical_request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
          0 AS source_priority
   FROM ops_error_logs o
   JOIN groups g ON g.group_id = o.group_id
-  LEFT JOIN LATERAL (
-    SELECT u.request_key
-    FROM usage_candidates u
-    WHERE u.group_id = o.group_id AND u.account_id = o.account_id
-      AND (
-        (NULLIF(o.request_id, '') IS NOT NULL AND (u.request_id = o.request_id OR u.logical_request_id = o.request_id))
-        OR (NULLIF(o.client_request_id, '') IS NOT NULL AND (u.request_id = o.client_request_id OR u.logical_request_id = o.client_request_id))
-      )
-    ORDER BY u.observed_at DESC, u.source_id DESC
-    LIMIT 1
-  ) matched_usage ON TRUE
+  LEFT JOIN usage_request_keys request_match
+    ON request_match.group_id = o.group_id
+   AND request_match.account_id IS NOT DISTINCT FROM o.account_id
+   AND request_match.request_key = NULLIF(o.request_id, '')
+  LEFT JOIN usage_request_keys client_match
+    ON client_match.group_id = o.group_id
+   AND client_match.account_id IS NOT DISTINCT FROM o.account_id
+   AND client_match.request_key = NULLIF(o.client_request_id, '')
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND COALESCE(o.status_code, 0) >= 400

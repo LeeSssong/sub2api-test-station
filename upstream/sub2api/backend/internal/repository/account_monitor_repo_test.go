@@ -65,7 +65,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 	updatedAt := end.Add(-time.Minute)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*generate_series.*usage_candidates AS.*error_candidates AS.*COALESCE\(matched_usage\.request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*bucket_matrix AS.*selected_events AS.*request_count`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*generate_series.*usage_candidates AS.*COALESCE\(u\.usage_completeness, 'complete'\) = 'complete'.*error_candidates AS.*COALESCE\(matched_usage\.request_key.*real_candidates AS.*real_events AS.*source_priority ASC.*probe_runs AS.*probe_buckets AS.*bucket_matrix AS.*selected_events AS.*request_count`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",

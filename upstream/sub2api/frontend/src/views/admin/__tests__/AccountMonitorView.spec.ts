@@ -518,16 +518,17 @@ describe('admin account monitor view V3', () => {
     ])
   })
 
-  it('passes the committed selected range to real cards for their call disclosure', async () => {
+  it('passes the committed selected range to real cards without restoring the removed call disclosure', async () => {
     const wrapper = mountView({ useRealCard: true })
     await flushPromises()
 
     await selectRange(wrapper, '7d')
 
-    expect(wrapper.get('[data-test="calls-disclosure"]').text()).toContain('7 天调用')
+    expect(wrapper.find('[data-test="calls-disclosure"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('真实请求')
   })
 
-  it('uses API-provided global service scores and stable global rankings on the all-site tab', async () => {
+  it('keeps stable API-provided all-site ordering while the R2 card omits quality ranking panels', async () => {
     const wrapper = mountView({ useRealCard: true })
     await flushPromises()
 
@@ -538,18 +539,8 @@ describe('admin account monitor view V3', () => {
       'Rank three 24h #20',
       'Unranked 24h #30',
     ])
-    expect(cards.map((card) => card.get('[data-test="score-metric"]').text())).toEqual([
-      expect.stringContaining('质量评分'),
-      expect.stringContaining('质量评分'),
-      expect.stringContaining('质量评分'),
-      expect.stringContaining('质量评分'),
-    ])
-    expect(cards.map((card) => card.get('[data-test="rank-metric"]').text())).toEqual([
-      expect.stringContaining('全站质量排名第 1 / 3'),
-      expect.stringContaining('全站质量排名第 2 / 3'),
-      expect.stringContaining('全站质量排名第 3 / 3'),
-      expect.stringContaining('全站质量排名未排名'),
-    ])
+    expect(cards.every((card) => !card.find('[data-test="score-metric"]').exists())).toBe(true)
+    expect(cards.every((card) => !card.find('[data-test="rank-metric"]').exists())).toBe(true)
   })
 
   it('uses quality order site-wide and scheduler order only inside the selected group', async () => {

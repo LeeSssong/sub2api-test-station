@@ -153,15 +153,6 @@ func TestUsageLog_UpstreamModelMismatchFilterAndPartialIndex(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), stats.TotalRequests)
-	require.Equal(t, []usagestats.EndpointStat{{
-		Endpoint: "unknown", Requests: 1, TotalTokens: 2,
-	}}, stats.Endpoints)
-	require.Equal(t, []usagestats.EndpointStat{{
-		Endpoint: "unknown", Requests: 1, TotalTokens: 2,
-	}}, stats.UpstreamEndpoints)
-	require.Equal(t, []usagestats.EndpointStat{{
-		Endpoint: "unknown -> unknown", Requests: 1, TotalTokens: 2,
-	}}, stats.EndpointPaths)
 
 	trend, err := repo.GetUsageTrendWithUsageFilters(ctx, start, end, "hour", usagestats.UsageLogFilters{
 		UserID: user.ID, UpstreamModelMismatch: &trueValue,
@@ -172,45 +163,24 @@ func TestUsageLog_UpstreamModelMismatchFilterAndPartialIndex(t *testing.T) {
 
 	_, err = tx.ExecContext(ctx, "SET LOCAL enable_seqscan = off")
 	require.NoError(t, err)
-	assertPlanUsesIndex := func(query, indexName string, args ...any) {
-		rows, queryErr := tx.QueryContext(ctx, query, args...)
-		require.NoError(t, queryErr)
-		var planLines []string
-		for rows.Next() {
-			var line string
-			require.NoError(t, rows.Scan(&line))
-			planLines = append(planLines, line)
-		}
-		require.NoError(t, rows.Err())
-		require.NoError(t, rows.Close())
-		require.Contains(t, strings.Join(planLines, "\n"), indexName)
-	}
-	assertPlanUsesIndex(`
+	rows, err := tx.QueryContext(ctx, `
 EXPLAIN (COSTS OFF)
 SELECT id
 FROM usage_logs
 WHERE upstream_model_mismatch IS TRUE
 ORDER BY created_at DESC, id DESC
 LIMIT 100
-`, usageLogsUpstreamModelMismatchIndex)
-	assertPlanUsesIndex(`
-EXPLAIN (COSTS OFF)
-SELECT id
-FROM usage_logs
-WHERE COALESCE(NULLIF(TRIM(requested_model), ''), model) = $1
-  AND created_at >= $2 AND created_at < $3
-ORDER BY created_at DESC, id DESC
-LIMIT 100
-`, usageLogsEffectiveRequestedModelIndex, "gpt-5.5", start, end)
-	assertPlanUsesIndex(`
-EXPLAIN (COSTS OFF)
-SELECT id
-FROM usage_logs
-WHERE COALESCE(NULLIF(TRIM(upstream_model), ''), model) = $1
-  AND created_at >= $2 AND created_at < $3
-ORDER BY created_at DESC, id DESC
-LIMIT 100
-`, usageLogsEffectiveUpstreamModelIndex, "gpt-5.5", start, end)
+`)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, rows.Close()) }()
+	var planLines []string
+	for rows.Next() {
+		var line string
+		require.NoError(t, rows.Scan(&line))
+		planLines = append(planLines, line)
+	}
+	require.NoError(t, rows.Err())
+	require.Contains(t, strings.Join(planLines, "\n"), usageLogsUpstreamModelMismatchIndex)
 }
 
 func TestUsageLog_GetStatsWithFilters_AggregatesAndEndpoints(t *testing.T) {

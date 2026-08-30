@@ -6,7 +6,6 @@ import ops from './ops'
 import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
-import plugins from './plugins'
 
 export default {
   ...overview,
@@ -17,7 +16,6 @@ export default {
   ...settings,
   ...audit,
   ...promptAudit,
-  ...plugins,
   schedulerSettings: {
     title: '调度设置',
     description: '按分组设置调度运营优先级，并在保存前预览策略结果。',

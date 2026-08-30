@@ -513,8 +513,6 @@ export default {
         statusLabel: 'Status',
         selectStatus: 'Select status',
         rpmLimit: 'Requests Per Minute (RPM)',
-        concurrencyPlaceholder: '0 = unlimited',
-        concurrencyHint: 'Max concurrent requests for this user; 0 = unlimited.',
         rpmLimitPlaceholder: '0 = unlimited',
         rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.'
       },
@@ -579,7 +577,9 @@ export default {
       failedToToggle: 'Failed to update user status',
       failedToLoadApiKeys: 'Failed to load user API keys',
       emailRequired: 'Please enter email',
-      concurrencyNonNegative: 'Concurrency cannot be negative; 0 = unlimited',
+      concurrencyMin: 'Concurrency must be at least 1',
+      soraStorageQuota: 'Sora Storage Quota',
+      soraStorageQuotaHint: 'In GB, 0 means use group or system default quota',
       amountRequired: 'Please enter a valid amount',
       insufficientBalance: 'Insufficient balance',
       adjustBalance: 'Adjust Balance',
@@ -960,9 +960,6 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         grok: 'Grok',
-        kimi: 'Kimi',
-        zhipu: 'Zhipu GLM',
-        deepseek: 'DeepSeek',
         composite: 'Composite',
       },
       deleteConfirm:
@@ -1023,7 +1020,7 @@ export default {
         title: 'Per-model group pricing',
         description: 'Overrides channel and built-in prices for matching models. Long-context tiers come from official presets — do not enter custom intervals. Use per-request tiers such as realtime, tts, and stt for audio.',
         longContext: 'Enable long-context tier pricing',
-        longContextHint: 'When checked, channel intervals or official preset tiers apply. Otherwise the first tier is used unless the account explicitly enables long-context billing.',
+        longContextHint: 'When checked, official/preset long-context tiers apply. When unchecked, token models stay on the first-tier base rate.',
         add: 'Add model price'
       },
       voicePricing: {

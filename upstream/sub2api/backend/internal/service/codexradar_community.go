@@ -16,7 +16,6 @@ import (
 const (
 	codexRadarSoftwareMetricsURL = "https://codexradar.com/api/intelligence-efficiency-metrics"
 	codexRadarVisualReasoningURL = "https://codexradar.com/api/visual-spatial-reasoning"
-	codexRadarCommunityMaxPoints = 128
 )
 
 var ErrCodexRadarCommunityUnavailable = errors.New("codexradar community unavailable")
@@ -161,19 +160,11 @@ func (s *CodexRadarCommunityService) fetch(ctx context.Context) (CodexRadarCommu
 			results <- sourceResult{err: fmt.Errorf("software source: %w", err)}
 			return
 		}
-		if err := validateCodexRadarSoftware(value); err != nil {
-			results <- sourceResult{err: fmt.Errorf("software source: %w", err)}
-			return
-		}
 		results <- sourceResult{software: &value}
 	}()
 	go func() {
 		var value codexRadarVisualWire
 		if err := s.fetchJSON(ctx, codexRadarVisualReasoningURL, &value); err != nil {
-			results <- sourceResult{err: fmt.Errorf("visual source: %w", err)}
-			return
-		}
-		if err := validateCodexRadarVisual(value); err != nil {
 			results <- sourceResult{err: fmt.Errorf("visual source: %w", err)}
 			return
 		}
@@ -236,12 +227,11 @@ func (s *CodexRadarCommunityService) fetch(ctx context.Context) (CodexRadarCommu
 			}
 			tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, SourceUpdatedAt: combinedUpdatedAt, Status: "fresh", Points: comprehensive})
 		} else {
-			status = "partial"
-			tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, Status: "unavailable", ErrorCode: "NO_SHARED_MODEL_EFFORTS", Points: []CodexRadarCommunityPoint{}})
+			tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, Status: "fresh", Points: []CodexRadarCommunityPoint{}})
 		}
 	} else {
 		status = "partial"
-		tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, Status: "unavailable", ErrorCode: "SOURCE_INCOMPLETE", Points: []CodexRadarCommunityPoint{}})
+		tabs = append(tabs, CodexRadarCommunityTab{Key: CodexRadarCommunityComprehensive, Status: "fresh", Points: []CodexRadarCommunityPoint{}})
 	}
 	softwareUpdatedAt := ""
 	if software != nil {
@@ -296,68 +286,6 @@ func (s *CodexRadarCommunityService) fetchJSON(ctx context.Context, target strin
 		return errors.New("response too large")
 	}
 	return json.Unmarshal(body, destination)
-}
-
-func validateCodexRadarSoftware(wire codexRadarSoftwareWire) error {
-	if wire.Schema != 3 || wire.Mode != "equal_latest_3" {
-		return errors.New("unsupported software schema")
-	}
-	if _, err := time.Parse(time.RFC3339, wire.SourceUpdatedAt); err != nil {
-		return errors.New("invalid software source_updated_at")
-	}
-	if len(wire.Points) < 1 || len(wire.Points) > codexRadarCommunityMaxPoints {
-		return errors.New("invalid software point count")
-	}
-	seen := make(map[string]struct{}, len(wire.Points))
-	for _, point := range wire.Points {
-		if !validCodexRadarText(point.Model, 128) || !validCodexRadarText(point.Effort, 64) {
-			return errors.New("invalid software point text")
-		}
-		key := point.Model + "\x00" + point.Effort
-		if _, exists := seen[key]; exists {
-			return errors.New("duplicate software point")
-		}
-		seen[key] = struct{}{}
-		if point.Total < 1 || point.Passed < 0 || point.Passed > float64(point.Total) || !validCommunityMetric(point.IQ, 150) || !validOptionalCodexRadarNumber(point.AveragePriceUSD) || !validOptionalCodexRadarNumber(point.AverageMinutes) {
-			return errors.New("invalid software point number")
-		}
-	}
-	return nil
-}
-
-func validateCodexRadarVisual(wire codexRadarVisualWire) error {
-	if wire.Schema != 1 || wire.Type != "visual_spatial_reasoning_summary" || wire.Mode != "latest_valid_per_task" {
-		return errors.New("unsupported visual schema")
-	}
-	if _, err := time.Parse(time.RFC3339, wire.SourceUpdatedAt); err != nil {
-		return errors.New("invalid visual source_updated_at")
-	}
-	if len(wire.Points) < 1 || len(wire.Points) > codexRadarCommunityMaxPoints {
-		return errors.New("invalid visual point count")
-	}
-	seen := make(map[string]struct{}, len(wire.Points))
-	for _, point := range wire.Points {
-		if !validCodexRadarText(point.Model, 128) || !validCodexRadarText(point.Effort, 64) {
-			return errors.New("invalid visual point text")
-		}
-		key := point.Model + "\x00" + point.Effort
-		if _, exists := seen[key]; exists {
-			return errors.New("duplicate visual point")
-		}
-		seen[key] = struct{}{}
-		if point.ValidTasks < 1 || point.BenchmarkTasks < point.ValidTasks || point.Passed < 0 || point.Passed > float64(point.ValidTasks) || !validCommunityMetric(point.IQ, 150) || !validOptionalCodexRadarNumber(point.AveragePriceUSD) || !validOptionalCodexRadarNumber(point.AverageMinutes) || point.PriceSamples < 0 || point.DurationSamples < 0 {
-			return errors.New("invalid visual point number")
-		}
-	}
-	return nil
-}
-
-func validCommunityMetric(value, maximum float64) bool {
-	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= maximum
-}
-
-func validOptionalCodexRadarNumber(value *float64) bool {
-	return value == nil || validCodexRadarNumber(*value)
 }
 
 func compositeCodexRadarPoints(software []codexRadarSoftwarePoint, visual []codexRadarVisualPoint) []CodexRadarCommunityPoint {

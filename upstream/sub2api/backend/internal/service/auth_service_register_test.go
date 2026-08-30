@@ -5,7 +5,6 @@ package service
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 )
 
 type settingRepoStub struct {
-	mu               sync.Mutex
 	values           map[string]string
 	err              error
 	getValueCalls    int
@@ -27,8 +25,6 @@ func (s *settingRepoStub) Get(ctx context.Context, key string) (*Setting, error)
 }
 
 func (s *settingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.getValueCalls++
 	if s.err != nil {
 		return "", s.err
@@ -44,8 +40,6 @@ func (s *settingRepoStub) Set(ctx context.Context, key, value string) error {
 }
 
 func (s *settingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.getMultipleCalls++
 	if s.err != nil {
 		return nil, s.err

@@ -18,8 +18,6 @@ import usageAPI from './usage'
 import geminiAPI from './gemini'
 import antigravityAPI from './antigravity'
 import grokAPI from './grok'
-import cnProvidersAPI from './cnProviders'
-import pluginsAPI from './plugins'
 import userAttributesAPI from './userAttributes'
 import opsAPI from './ops'
 import errorPassthroughAPI from './errorPassthrough'
@@ -62,8 +60,6 @@ export const adminAPI = {
   gemini: geminiAPI,
   antigravity: antigravityAPI,
   grok: grokAPI,
-  cnProviders: cnProvidersAPI,
-  plugins: pluginsAPI,
   userAttributes: userAttributesAPI,
   ops: opsAPI,
   errorPassthrough: errorPassthroughAPI,
@@ -104,8 +100,6 @@ export {
   geminiAPI,
   antigravityAPI,
   grokAPI,
-  cnProvidersAPI,
-  pluginsAPI,
   userAttributesAPI,
   opsAPI,
   errorPassthroughAPI,
@@ -138,9 +132,3 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
-export type {
-  PluginInstallation,
-  PluginCompatibility,
-  PluginUISession,
-  PluginTestResult
-} from './plugins'

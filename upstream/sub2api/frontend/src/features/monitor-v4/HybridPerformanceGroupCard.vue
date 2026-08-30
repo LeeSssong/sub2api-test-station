@@ -31,6 +31,10 @@
         <span>{{ t('channelMonitorV2.hybrid.latencyP95') }}</span>
         <strong data-test="latency-p95">{{ formatSeconds(group.latency_p95_ms) }}</strong>
       </div>
+      <div class="hybrid-metric">
+        <span>{{ t('channelMonitorV2.hybrid.cacheP95') }}</span>
+        <strong data-test="cache-p95">{{ formatCacheTokens(group.cache_read_tokens_p95) }}</strong>
+      </div>
     </div>
 
     <footer class="hybrid-card__footer">
@@ -49,6 +53,7 @@ const { t } = useI18n()
 const tone = computed(() => props.group.success_rate === null ? 'amber' : props.group.success_rate >= 85 ? 'green' : props.group.success_rate >= 50 ? 'amber' : 'red')
 const successRateLabel = computed(() => props.group.success_rate === null ? '--' : `${Number.isInteger(props.group.success_rate) ? props.group.success_rate : props.group.success_rate.toFixed(1)}%`)
 const formatSeconds = (value: number | null) => value === null ? '--' : `${(value / 1000).toFixed(2)} s`
+const formatCacheTokens = (value: number | null) => value === null ? '--' : `${Math.round(value).toLocaleString()} tokens`
 </script>
 
 <style scoped>
@@ -83,7 +88,7 @@ const formatSeconds = (value: number | null) => value === null ? '--' : `${(valu
 .hybrid-ring__center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .hybrid-ring__center strong { color: var(--ring); font-size: clamp(2.65rem, 5vw, 3.7rem); line-height: 1; }
 .hybrid-ring__center span { margin-top: 10px; color: #7b8798; font-size: 0.78rem; }
-.hybrid-card__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); padding: 16px 0; }
+.hybrid-card__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); padding: 16px 0; }
 .hybrid-metric { min-width: 0; text-align: center; }
 .hybrid-metric + .hybrid-metric { border-left: 1px solid var(--divider); }
 .hybrid-metric span { display: block; color: #7b8798; font-size: 0.72rem; }

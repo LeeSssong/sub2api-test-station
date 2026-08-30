@@ -416,7 +416,7 @@ WITH scopes AS (
   SELECT date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00')
   WHERE $2::timestamptz >= date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') + $3::interval - interval '1 minute'
     AND $2::timestamptz < date_bin($3::interval, $2::timestamptz, TIMESTAMPTZ '2001-01-01 00:00:00+00') + $3::interval
-), usage_candidates AS (
+), raw_usage_candidates AS (
   SELECT u.group_id, u.account_id, u.id::bigint AS source_id, u.created_at AS observed_at,
 	         date_bin($3::interval, u.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          (COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
@@ -430,30 +430,91 @@ WITH scopes AS (
   JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
     AND u.usage_completeness IS DISTINCT FROM 'unknown'
+), excluded_usage_keys AS (
+  SELECT o.group_id, o.account_id, NULLIF(o.request_id, '') AS request_key
+  FROM ops_error_logs o
+  JOIN groups g ON g.group_id = o.group_id
+  WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND COALESCE(o.status_code, 0) >= 400
+    AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+    AND NULLIF(o.request_id, '') IS NOT NULL
+    AND (
+      COALESCE(o.error_owner, '') = 'client'
+      OR (COALESCE(o.error_phase, '') = 'request' AND COALESCE(o.error_source, '') = 'client_request')
+      OR lower(CONCAT_WS(' ', o.error_type, o.error_message, o.error_body, o.upstream_error_message, o.upstream_error_detail)) LIKE ANY (ARRAY[
+        '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
+        '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
+        '%model_not_found%', '%本站暂不支持%'
+      ])
+    )
+  UNION
+  SELECT o.group_id, o.account_id, NULLIF(o.client_request_id, '') AS request_key
+  FROM ops_error_logs o
+  JOIN groups g ON g.group_id = o.group_id
+  WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND COALESCE(o.status_code, 0) >= 400
+    AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+    AND NULLIF(o.client_request_id, '') IS NOT NULL
+    AND (
+      COALESCE(o.error_owner, '') = 'client'
+      OR (COALESCE(o.error_phase, '') = 'request' AND COALESCE(o.error_source, '') = 'client_request')
+      OR lower(CONCAT_WS(' ', o.error_type, o.error_message, o.error_body, o.upstream_error_message, o.upstream_error_detail)) LIKE ANY (ARRAY[
+        '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
+        '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
+        '%model_not_found%', '%本站暂不支持%'
+      ])
+    )
+), usage_candidates AS (
+  SELECT u.*
+  FROM raw_usage_candidates u
+  LEFT JOIN excluded_usage_keys request_exclusion
+    ON request_exclusion.group_id = u.group_id
+   AND request_exclusion.account_id IS NOT DISTINCT FROM u.account_id
+   AND request_exclusion.request_key = u.request_id
+  LEFT JOIN excluded_usage_keys logical_exclusion
+    ON logical_exclusion.group_id = u.group_id
+   AND logical_exclusion.account_id IS NOT DISTINCT FROM u.account_id
+   AND logical_exclusion.request_key = u.logical_request_id
+  WHERE request_exclusion.request_key IS NULL
+    AND logical_exclusion.request_key IS NULL
+), usage_request_keys AS (
+  SELECT DISTINCT group_id, account_id, request_id AS request_key, request_key AS canonical_request_key
+  FROM usage_candidates
+  WHERE request_id IS NOT NULL
+  UNION
+  SELECT DISTINCT group_id, account_id, logical_request_id AS request_key, request_key AS canonical_request_key
+  FROM usage_candidates
+  WHERE logical_request_id IS NOT NULL
 ), error_candidates AS (
   SELECT o.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
          date_bin($3::interval, o.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          FALSE AS successful,
          NULL::double precision AS first_token_ms,
          NULL::double precision AS duration_ms,
-         COALESCE(matched_usage.request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
+         COALESCE(request_match.canonical_request_key, client_match.canonical_request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
          0 AS source_priority
   FROM ops_error_logs o
   JOIN groups g ON g.group_id = o.group_id
-  LEFT JOIN LATERAL (
-    SELECT u.request_key
-    FROM usage_candidates u
-    WHERE u.group_id = o.group_id AND u.account_id = o.account_id
-      AND (
-        (NULLIF(o.request_id, '') IS NOT NULL AND (u.request_id = o.request_id OR u.logical_request_id = o.request_id))
-        OR (NULLIF(o.client_request_id, '') IS NOT NULL AND (u.request_id = o.client_request_id OR u.logical_request_id = o.client_request_id))
-      )
-    ORDER BY u.observed_at DESC, u.source_id DESC
-    LIMIT 1
-  ) matched_usage ON TRUE
+  LEFT JOIN usage_request_keys request_match
+    ON request_match.group_id = o.group_id
+   AND request_match.account_id IS NOT DISTINCT FROM o.account_id
+   AND request_match.request_key = NULLIF(o.request_id, '')
+  LEFT JOIN usage_request_keys client_match
+    ON client_match.group_id = o.group_id
+   AND client_match.account_id IS NOT DISTINCT FROM o.account_id
+   AND client_match.request_key = NULLIF(o.client_request_id, '')
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND COALESCE(o.status_code, 0) >= 400
+    AND NOT (
+      COALESCE(o.error_owner, '') = 'client'
+      OR (COALESCE(o.error_phase, '') = 'request' AND COALESCE(o.error_source, '') = 'client_request')
+      OR lower(CONCAT_WS(' ', o.error_type, o.error_message, o.error_body, o.upstream_error_message, o.upstream_error_detail)) LIKE ANY (ARRAY[
+        '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
+        '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
+        '%model_not_found%', '%本站暂不支持%'
+      ])
+    )
 ), real_candidates AS (
   SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, request_key, source_priority
   FROM usage_candidates
@@ -543,6 +604,27 @@ WITH scopes AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events
   ORDER BY group_id, bucket_start DESC, observed_at DESC
+), metric_arrays AS (
+  SELECT group_id,
+         array_agg(first_token_ms ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_values,
+         array_agg(duration_ms ORDER BY duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL) AS latency_values
+  FROM selected_events
+  GROUP BY group_id
+), metric_stats AS (
+  SELECT ma.group_id,
+         (SELECT AVG(value) FROM unnest(
+           (COALESCE(ma.ttft_values, ARRAY[]::double precision[]))[
+             FLOOR(CARDINALITY(COALESCE(ma.ttft_values, ARRAY[]::double precision[])) * 0.05)::int + 1:
+             CARDINALITY(COALESCE(ma.ttft_values, ARRAY[]::double precision[])) - FLOOR(CARDINALITY(COALESCE(ma.ttft_values, ARRAY[]::double precision[])) * 0.05)::int
+           ]
+         ) AS values(value)) AS ttft_trimmed_mean,
+         (SELECT AVG(value) FROM unnest(
+           (COALESCE(ma.latency_values, ARRAY[]::double precision[]))[
+             FLOOR(CARDINALITY(COALESCE(ma.latency_values, ARRAY[]::double precision[])) * 0.05)::int + 1:
+             CARDINALITY(COALESCE(ma.latency_values, ARRAY[]::double precision[])) - FLOOR(CARDINALITY(COALESCE(ma.latency_values, ARRAY[]::double precision[])) * 0.05)::int
+           ]
+         ) AS values(value)) AS latency_trimmed_mean
+  FROM metric_arrays ma
 ), aggregate AS (
   SELECT g.group_id,
          CASE WHEN COUNT(s.group_id) = 0 THEN NULL
@@ -555,17 +637,16 @@ WITH scopes AS (
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe' AND s.probe_missing)::int AS missing_probe_terminal_count,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY s.first_token_ms)
-           FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL) AS ttft_p95_ms,
+         MAX(ms.ttft_trimmed_mean) AS ttft_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY s.duration_ms)
-           FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL) AS latency_p95_ms,
+         MAX(ms.latency_trimmed_mean) AS latency_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL)::int AS latency_sample_count,
          MAX(s.observed_at) AS source_updated_at,
          COALESCE(BOOL_OR(ls.successful), FALSE) AS current_operational
   FROM groups g
   LEFT JOIN selected_events s ON s.group_id = g.group_id
   LEFT JOIN latest_selected ls ON ls.group_id = g.group_id
+  LEFT JOIN metric_stats ms ON ms.group_id = g.group_id
   GROUP BY g.group_id
 )
 	SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,

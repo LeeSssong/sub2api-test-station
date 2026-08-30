@@ -17,10 +17,10 @@ func TestAdaptResponsesClientTools_LowersDeclarationsHistoryChoiceAndNamespaces(
 		},
 		"tool_choice": map[string]any{"type": "custom", "name": "exec"},
 		"input": []any{
-			map[string]any{"type": "custom_tool_call", "call_id": "c1", "name": "exec", "input": "dir"},
-			map[string]any{"type": "custom_tool_call_output", "call_id": "c1", "output": "ok"},
-			map[string]any{"type": "tool_search_call", "call_id": "s1", "arguments": map[string]any{"query": "git"}},
-			map[string]any{"type": "tool_search_output", "call_id": "s1", "output": map[string]any{"groups": []string{"git"}}},
+			map[string]any{"type": "custom_tool_call", "id": "ctc_client", "call_id": "c1", "name": "exec", "input": "dir"},
+			map[string]any{"type": "custom_tool_call_output", "id": "ctco_client", "call_id": "c1", "output": "ok"},
+			map[string]any{"type": "tool_search_call", "id": "tsc_client", "call_id": "s1", "arguments": map[string]any{"query": "git"}},
+			map[string]any{"type": "tool_search_output", "id": "tso_client", "call_id": "s1", "output": map[string]any{"groups": []string{"git"}}},
 			map[string]any{"type": "function_call", "call_id": "n1", "namespace": "team", "name": "send", "arguments": "{}"},
 		},
 	}
@@ -48,15 +48,19 @@ func TestAdaptResponsesClientTools_LowersDeclarationsHistoryChoiceAndNamespaces(
 	input := requireResponsesClientToolValue[[]any](t, req["input"])
 	customCall := requireResponsesClientToolValue[map[string]any](t, input[0])
 	require.Equal(t, "function_call", customCall["type"])
+	require.Equal(t, "fc_client", customCall["id"])
 	require.JSONEq(t, `{"input":"dir"}`, requireResponsesClientToolValue[string](t, customCall["arguments"]))
 	customOutput := requireResponsesClientToolValue[map[string]any](t, input[1])
 	require.Equal(t, "function_call_output", customOutput["type"])
+	require.NotContains(t, customOutput, "id")
 	searchCall := requireResponsesClientToolValue[map[string]any](t, input[2])
 	require.Equal(t, "function_call", searchCall["type"])
+	require.Equal(t, "fc_client", searchCall["id"])
 	require.Equal(t, toolSearchProxyName, searchCall["name"])
 	require.JSONEq(t, `{"query":"git"}`, requireResponsesClientToolValue[string](t, searchCall["arguments"]))
 	searchOutput := requireResponsesClientToolValue[map[string]any](t, input[3])
 	require.Equal(t, "function_call_output", searchOutput["type"])
+	require.NotContains(t, searchOutput, "id")
 	require.JSONEq(t, `{"groups":["git"]}`, requireResponsesClientToolValue[string](t, searchOutput["output"]))
 	namespaceCall := requireResponsesClientToolValue[map[string]any](t, input[4])
 	require.Equal(t, "team__send", namespaceCall["name"])
@@ -98,6 +102,122 @@ func TestAdaptResponsesClientTools_RejectsAmbiguousNames(t *testing.T) {
 	for _, req := range cases {
 		_, _, err := AdaptResponsesClientTools(req)
 		require.Error(t, err)
+	}
+}
+
+func TestAdaptResponsesClientToolsWithInheritedMapping_LowersFollowupHistoryWithoutTools(t *testing.T) {
+	req := map[string]any{
+		"input": []any{
+			map[string]any{
+				"type": "custom_tool_call", "name": "exec",
+				"call_id": "call_1", "input": "pwd",
+			},
+			map[string]any{
+				"type": "custom_tool_call_output", "call_id": "call_1",
+				"id":     "ctco_client_output_1",
+				"output": []any{map[string]any{"type": "input_text", "text": "ok"}},
+			},
+		},
+	}
+	inherited := ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}}
+
+	mapping, changed, err := AdaptResponsesClientToolsWithInheritedMapping(req, inherited)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, inherited, mapping)
+	items := requireResponsesClientToolValue[[]any](t, req["input"])
+	call := requireResponsesClientToolValue[map[string]any](t, items[0])
+	require.Equal(t, "function_call", call["type"])
+	require.JSONEq(t, `{"input":"pwd"}`, requireResponsesClientToolValue[string](t, call["arguments"]))
+	require.NotContains(t, call, "input")
+	output := requireResponsesClientToolValue[map[string]any](t, items[1])
+	require.Equal(t, "function_call_output", output["type"])
+	require.NotContains(t, output, "id")
+	require.JSONEq(t, `[{"text":"ok","type":"input_text"}]`, requireResponsesClientToolValue[string](t, output["output"]))
+}
+
+func TestAdaptResponsesClientToolsWithInheritedMapping_PromotesOmittedToolsDiscoveryIntoEffectiveDeclarations(t *testing.T) {
+	req := map[string]any{
+		"input": []any{map[string]any{
+			"type": "tool_search_output", "call_id": "call_search", "status": "completed", "execution": "client",
+			"tools": []any{map[string]any{
+				"type": "namespace", "name": "multi_agent_v1", "tools": []any{map[string]any{
+					"type": "function", "name": "spawn_agent", "parameters": map[string]any{"type": "object"},
+				}},
+			}},
+		}},
+	}
+	inherited := ResponsesClientToolMapping{
+		ToolSearch: true,
+		NamespaceTools: map[string]ResponsesNamespaceName{
+			"codex_app__read_resource": {Namespace: "codex_app", Name: "read_resource"},
+		},
+	}
+	lowered := []any{
+		map[string]any{"type": "function", "name": "static_first", "parameters": map[string]any{"type": "object"}},
+		map[string]any{"type": "function", "name": "tool_search", "parameters": json.RawMessage(toolSearchProxySchema)},
+		map[string]any{"type": "function", "name": "codex_app__read_resource", "parameters": map[string]any{"type": "object"}},
+	}
+
+	mapping, changed, err := AdaptResponsesClientToolsWithInheritedMapping(req, inherited, lowered)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, mapping.ToolSearch)
+	require.Equal(t, ResponsesNamespaceName{Namespace: "codex_app", Name: "read_resource"}, mapping.NamespaceTools["codex_app__read_resource"])
+	require.Equal(t, ResponsesNamespaceName{Namespace: "multi_agent_v1", Name: "spawn_agent"}, mapping.NamespaceTools["multi_agent_v1__spawn_agent"])
+	tools := requireResponsesClientToolValue[[]any](t, req["tools"])
+	require.Equal(t, []string{
+		"static_first", "tool_search", "codex_app__read_resource", "multi_agent_v1__spawn_agent",
+	}, responsesClientToolNames(t, tools))
+	output := requireResponsesClientToolValue[map[string]any](t, requireResponsesClientToolValue[[]any](t, req["input"])[0])
+	require.Equal(t, "function_call_output", output["type"])
+	require.IsType(t, "", output["output"])
+	require.NotContains(t, output, "tools")
+	require.NotContains(t, output, "status")
+	require.NotContains(t, output, "execution")
+}
+
+func TestAdaptResponsesClientToolsWithInheritedMapping_ExplicitToolsReplaceInheritedMapping(t *testing.T) {
+	req := map[string]any{
+		"tools": []any{},
+		"input": []any{map[string]any{
+			"type": "custom_tool_call", "name": "exec", "input": "pwd",
+		}},
+	}
+
+	mapping, changed, err := AdaptResponsesClientToolsWithInheritedMapping(
+		req,
+		ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}},
+	)
+
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Empty(t, mapping)
+	items := requireResponsesClientToolValue[[]any](t, req["input"])
+	call := requireResponsesClientToolValue[map[string]any](t, items[0])
+	require.Equal(t, "custom_tool_call", call["type"])
+}
+
+func TestAdaptResponsesClientToolsWithInheritedMapping_ExplicitToolResetDoesNotPromoteDiscovery(t *testing.T) {
+	for _, reset := range []any{nil, []any{}} {
+		req := map[string]any{
+			"tools": reset,
+			"input": []any{map[string]any{
+				"type": "tool_search_output", "call_id": "call_reset", "status": "completed",
+				"tools": []any{map[string]any{"type": "function", "name": "must_not_promote"}},
+			}},
+		}
+		mapping, changed, err := AdaptResponsesClientToolsWithInheritedMapping(
+			req,
+			ResponsesClientToolMapping{ToolSearch: true},
+			[]any{map[string]any{"type": "function", "name": "tool_search"}},
+		)
+		require.NoError(t, err)
+		require.False(t, changed)
+		require.Empty(t, mapping)
+		item := requireResponsesClientToolValue[map[string]any](t, requireResponsesClientToolValue[[]any](t, req["input"])[0])
+		require.Equal(t, "tool_search_output", item["type"])
 	}
 }
 
@@ -246,4 +366,31 @@ func TestResponsesClientToolStreamRestorer_RawEventsPreserveUnknownFieldsAndOutp
 	done := restorer.Restore(ResponsesStreamEvent{Type: "response.function_call_arguments.done", SequenceNumber: 7, OutputIndex: 9})
 	require.Len(t, done, 2)
 	require.Equal(t, "pwd", done[1].Input)
+}
+
+func TestResponsesClientToolStreamRestorer_RestoresAllTerminalEvents(t *testing.T) {
+	for _, eventType := range []string{
+		"response.completed",
+		"response.done",
+		"response.incomplete",
+		"response.failed",
+		"response.cancelled",
+		"response.canceled",
+	} {
+		t.Run(eventType, func(t *testing.T) {
+			restorer := NewResponsesClientToolStreamRestorer(ResponsesClientToolMapping{CustomTools: map[string]bool{"exec": true}})
+			payload := []byte(`{"type":"` + eventType + `","sequence_number":7,"response":{"id":"resp_tools","output":[{"type":"function_call","id":"item_exec","call_id":"call_exec","name":"exec","arguments":"{\"input\":\"pwd\"}"}]}}`)
+
+			restored, changed, err := restorer.RestoreEvent(payload)
+
+			require.NoError(t, err)
+			require.True(t, changed)
+			require.Len(t, restored, 1)
+			require.Equal(t, eventType, gjson.GetBytes(restored[0], "type").String())
+			require.Equal(t, int64(7), gjson.GetBytes(restored[0], "sequence_number").Int())
+			require.Equal(t, "custom_tool_call", gjson.GetBytes(restored[0], "response.output.0.type").String())
+			require.Equal(t, "pwd", gjson.GetBytes(restored[0], "response.output.0.input").String())
+			require.False(t, gjson.GetBytes(restored[0], "response.output.0.arguments").Exists())
+		})
+	}
 }

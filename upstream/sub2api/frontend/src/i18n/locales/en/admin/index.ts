@@ -6,6 +6,7 @@ import ops from './ops'
 import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
+import plugins from './plugins'
 
 export default {
   ...overview,
@@ -16,6 +17,7 @@ export default {
   ...settings,
   ...audit,
   ...promptAudit,
+  ...plugins,
   schedulerSettings: {
     title: 'Scheduler Settings',
     description: 'Set operational scheduler priorities by group and preview the result before saving.',

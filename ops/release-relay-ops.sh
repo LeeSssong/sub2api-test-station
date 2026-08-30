@@ -56,7 +56,7 @@ else
   [[ "$archive_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'image archive checksum failed'
   remote_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" umask 077 '&&' mktemp -p /tmp ".relay-ops-$source_commit.XXXXXX" 2>/dev/null | tr -d '[:space:]') || fail 'remote staging allocation failed'
   [[ "$remote_tmp" =~ ^/tmp/\.relay-ops-$source_commit\.[A-Za-z0-9]{6}$ ]] || fail 'remote staging path is invalid'
-  perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$scp_bin" -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" "$archive" "$ssh_target:$remote_tmp" || fail 'image archive transfer failed'
+  perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$scp_bin" -C -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" "$archive" "$ssh_target:$remote_tmp" || fail 'image archive transfer failed'
   perl -e 'alarm shift @ARGV; exec @ARGV' "$timeout" "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" sudo -n install -o root -g root -m 600 "$remote_tmp" "$staged_archive" \
     '&&' sudo -n rm -f -- "$remote_tmp" || fail 'root-only image staging failed'
   requested_image="$tag"; preloaded_args=(--preloaded-archive "$staged_archive" --preloaded-archive-sha256 "$archive_sha256" --preloaded-image-id "$image_id")

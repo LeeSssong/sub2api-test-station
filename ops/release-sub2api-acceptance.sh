@@ -184,7 +184,7 @@ remote_stage=$(ssh -i "$ssh_key" -p "$ssh_port" -o BatchMode=yes -o StrictHostKe
 [[ "$remote_stage" =~ ^/var/tmp/sub2api-acceptance-release\.[A-Za-z0-9._-]+$ ]] \
   || fail 'remote staging directory is invalid'
 
-scp -q -i "$ssh_key" -P "$ssh_port" -o BatchMode=yes -o StrictHostKeyChecking=yes \
+scp -C -q -i "$ssh_key" -P "$ssh_port" -o BatchMode=yes -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile="$ssh_known_hosts" "$archive" "$archive.sha256" \
   "$bundle/compose.acceptance.yaml" "$bundle/Caddyfile.acceptance" "$bundle/.env.acceptance" \
   "$bundle/source-commit" "$bundle/source-tree" "$ssh_target:$remote_stage/" \

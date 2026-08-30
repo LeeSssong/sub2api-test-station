@@ -301,7 +301,7 @@ remote_executor_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)"
   || fail 'remote host executor staging allocation failed'
 [[ "$remote_executor_tmp" =~ ^/tmp/\.sub2api-host-executor-$source_commit\.[A-Za-z0-9]{6}$ ]] \
   || fail 'remote host executor staging path is invalid'
-run_stage executor-transfer "$scp_bin" -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes \
+run_stage executor-transfer "$scp_bin" -C -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes \
   -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" \
   "$host_executor_source" "$ssh_target:$remote_executor_tmp"
 check_budget
@@ -411,7 +411,7 @@ else
   remote_tmp=$(perl -e 'alarm shift @ARGV; exec @ARGV' "$(stage_timeout)" "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" umask 077 '&&' mktemp -p /tmp ".sub2api-$source_commit.XXXXXX" 2>/dev/null | tr -d '[:space:]') \
     || fail 'remote staging allocation failed'
   [[ "$remote_tmp" =~ ^/tmp/\.sub2api-$source_commit\.[A-Za-z0-9]{6}$ ]] || fail 'remote staging path is invalid'
-  run_stage transfer "$scp_bin" -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" "$archive" "$ssh_target:$remote_tmp"
+  run_stage transfer "$scp_bin" -C -q -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -P "$ssh_port" "$archive" "$ssh_target:$remote_tmp"
   run_stage stage "$ssh_bin" -T -i "$ssh_key" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$ssh_known_hosts" -p "$ssh_port" "$ssh_target" sudo -n install -o root -g root -m 600 "$remote_tmp" "$staged_archive" '&&' sudo -n rm -f -- "$remote_tmp"
   preloaded_args=(--preloaded-archive "$staged_archive" --preloaded-archive-sha256 "$archive_sha256" --preloaded-image-id "$image_id")
 fi

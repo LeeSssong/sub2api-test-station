@@ -10,10 +10,11 @@
           <h2 data-test="account-identity">
             <a v-if="account.homepage_url" :href="account.homepage_url" target="_blank" rel="noopener noreferrer" data-test="account-homepage-link">{{ account.name }}</a>
             <span v-else>{{ account.name }}</span>
+            <span aria-hidden="true">{{ ' ' }}</span>
             <span class="account-id">#{{ account.account_id }}</span>
           </h2>
           <div class="monitor-card-meta" data-test="account-metadata">
-            <span>当前分组：{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>基于 {{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次已持久化真实请求</span><span aria-hidden="true">·</span><span>数据累计至当前</span>
+            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次真实请求</span>
             <template v-if="recommendation">
               <span aria-hidden="true">·</span>
               <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
@@ -24,39 +25,22 @@
         <section v-if="schedulerContext" class="monitor-card-scheduler" data-test="scheduler-column" aria-label="本组调度优先级">
           <div class="scheduler-label">本组调度优先级</div>
           <div class="scheduler-rank" data-test="scheduler-rank">{{ schedulerRankLabel }}<span v-if="schedulerRanked"> / {{ schedulerRankTotalLabel }}</span></div>
-          <div v-if="schedulerEligibilityLabel" class="scheduler-hint">{{ schedulerEligibilityLabel }}</div>
-          <div class="priority-control" data-test="priority-control">
-            <span>全局优先级</span>
-            <template v-if="editingPriority">
-              <label class="sr-only" :for="`account-priority-${account.account_id}`">全局优先级</label>
-              <input :id="`account-priority-${account.account_id}`" ref="priorityInput" v-model="draftPriority" class="priority-input" data-test="priority-input" inputmode="numeric" min="1" step="1" type="number" :disabled="savingPriority" @keyup.enter="savePriority" @keyup.esc="cancelPriorityEdit">
-              <button class="priority-icon" data-test="save-priority" type="button" title="保存全局优先级" aria-label="保存全局优先级" :disabled="savingPriority" @click="savePriority"><Icon name="check" size="xs" /></button>
-              <button class="priority-icon" data-test="cancel-priority" type="button" title="取消编辑全局优先级" aria-label="取消编辑全局优先级" :disabled="savingPriority" @click="cancelPriorityEdit"><Icon name="x" size="xs" /></button>
-            </template>
-            <template v-else>
-              <strong>{{ displayedPriority }}</strong>
-              <button class="priority-icon" data-test="edit-priority" type="button" title="编辑全局优先级" aria-label="编辑全局优先级" @click="beginPriorityEdit"><Icon name="edit" size="xs" /></button>
-            </template>
-          </div>
-          <p v-if="priorityError" class="priority-error" data-test="priority-error" role="alert">{{ priorityError }}</p>
         </section>
       </header>
       <div class="monitor-card-body">
         <div class="monitor-card-main">
           <section class="monitor-card-metrics" data-test="key-metrics" aria-label="关键服务指标">
-            <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="realSuccessRate" detail="真实请求" />
-            <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="realTTFTP95" detail="真实成功请求" />
-            <MetricCell data-test="profit-rate-metric" tone="profit" label="利润率" :value="profitRateLabel" detail="当前分组" />
-            <MetricCell data-test="native-priority-metric" tone="native-priority" label="Sub 原生优先级" :value="String(account.priority ?? '--')" detail="账号原生调度字段" />
+            <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="realSuccessRate" />
+            <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="realTTFTP95" />
+            <MetricCell data-test="profit-rate-metric" tone="profit" label="利润率" :value="profitRateLabel" />
+            <MetricCell data-test="native-priority-metric" tone="native-priority" label="Sub 原生优先级" :value="String(account.priority ?? '--')" />
             <div class="service-metric multiplier-metric" data-test="upstream-multiplier-metric">
               <div class="metric-label">上游声明倍率</div>
               <button class="metric-value metric-link" type="button" title="编辑上游声明倍率" @click="emit('editCost', account)">{{ formatMultiplier(account.upstream_multiplier?.value ?? account.multiplier?.value) }}</button>
-              <p class="metric-detail">可编辑</p>
             </div>
           </section>
           <section class="monitor-card-model" data-test="model-detection-section">
             <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-pill" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span><Icon name="chevronDown" size="xs" /></button>
-            <button type="button" class="model-edit" data-test="edit-connection-probe-model" @click="openModelDetectionDialog">{{ t('admin.accounts.modelDetection.editConnectionProbeModel') }}</button>
             <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
           </section>
         </div>
@@ -78,7 +62,7 @@
       </footer>
       <AccountModelDetectionDialog :show="modelDetectionDialogOpen" :account="account" :models="modelDetectionModels" :saving="savingModelDetection" :detecting="detectingModelDetection" @close="modelDetectionDialogOpen = false" @save="emit('saveModelDetectionModels', account.account_id, $event)" @detect="emit('detectModelDetection', account.account_id)" />
     </div>
-    <div v-if="false" class="legacy-monitor-card" aria-hidden="true">
+    <template v-if="false">
       <section class="min-w-0" data-test="identity-column" aria-label="账号身份与状态">
         <div class="monitor-card-eyeline">
           <span class="monitor-card-status-dot h-2 w-2 shrink-0 rounded-full" :class="statusDotClass" aria-hidden="true" />
@@ -214,7 +198,7 @@
       </section>
 
       <footer v-if="false" class="hidden" data-test="card-footer"></footer>
-    </div>
+    </template>
   </article>
 </template>
 
@@ -222,6 +206,7 @@
 import { computed, defineComponent, h, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import type { AccountModelDetectionModelsResponse, AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
 import AccountModelDetectionDialog from './AccountModelDetectionDialog.vue'
 
@@ -601,14 +586,12 @@ const MetricCell = defineComponent({
   props: {
     label: { type: String, required: true },
     value: { type: String, required: true },
-    detail: { type: String, required: true },
     tone: { type: String, required: false, default: '' },
   },
   setup(metricProps, { attrs }) {
     return () => h('div', { ...attrs, class: ['service-metric', attrs.class] }, [
       h('div', { class: 'metric-label' }, metricProps.label),
       h('div', { class: 'metric-value', 'data-test': `${metricProps.tone || metricProps.label}-metric-value` }, metricProps.value),
-      h('p', { class: 'metric-detail' }, metricProps.detail),
     ])
   },
 })
@@ -877,13 +860,7 @@ const CostMetric = defineComponent({
   align-items: flex-start;
 }
 
-.monitor-card-shell [data-test="timeline-section"] > div:first-child > div::after {
-  display: block;
-  margin-top: 4px;
-  color: #71849c;
-  content: '近 24 个真实请求时间桶 · 柱越高表示综合表现越好';
-  font-size: 11px;
-}
+.monitor-card-shell [data-test="timeline-section"] > div:first-child > div::after { display: none; content: none; }
 
 .monitor-card-shell [data-test="edit-connection-probe-model"] {
   color: #57d8be;
@@ -1103,12 +1080,7 @@ const CostMetric = defineComponent({
   white-space: nowrap;
 }
 
-.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"]::before {
-  margin-right: auto;
-  color: var(--monitor-muted);
-  content: '事实源：持久化真实请求 · 调度策略：成功率 → TTFT P95 → 利润率';
-  font-size: 12px;
-}
+.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"]::before { display: none; content: none; }
 
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-edit"],
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-delete"],

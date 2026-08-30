@@ -407,14 +407,14 @@ type UpdateAccountInput struct {
 	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）
 	// ProcurementCost is nil when the JSON field was omitted. A non-nil value with
 	// nil Value represents explicit JSON null and clears the stored cost.
-	ProcurementCost       *ProcurementCostUpdate
-	LoadFactor            *int
-	Status                string
-	GroupIDs              *[]int64
-	ExpiresAt             *int64
-	AutoPauseOnExpired    *bool
-	ProbeEnabled          *bool
-	RateSyncEnabled       *bool
+	ProcurementCost    *ProcurementCostUpdate
+	LoadFactor         *int
+	Status             string
+	GroupIDs           *[]int64
+	ExpiresAt          *int64
+	AutoPauseOnExpired *bool
+	ProbeEnabled       *bool
+	RateSyncEnabled    *bool
 	// ActiveProbeEnabled controls automatic connection probes and scheduled model detection.
 	ActiveProbeEnabled    *bool
 	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
@@ -429,20 +429,20 @@ type ProcurementCostUpdate struct {
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
 type BulkUpdateAccountsInput struct {
-	AccountIDs     []int64
-	Filters        *BulkUpdateAccountFilters
-	Name           string
-	ProxyID        *int64
-	Concurrency    *int
-	Priority       *int
-	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）
-	LoadFactor     *int
-	Status         string
-	Schedulable    *bool
-	GroupIDs       *[]int64
-	Credentials    map[string]any
-	Extra          map[string]any
-	ProbeEnabled   *bool
+	AccountIDs         []int64
+	Filters            *BulkUpdateAccountFilters
+	Name               string
+	ProxyID            *int64
+	Concurrency        *int
+	Priority           *int
+	RateMultiplier     *float64 // 账号计费倍率（>=0，允许 0）
+	LoadFactor         *int
+	Status             string
+	Schedulable        *bool
+	GroupIDs           *[]int64
+	Credentials        map[string]any
+	Extra              map[string]any
+	ProbeEnabled       *bool
 	ActiveProbeEnabled *bool
 	// SkipMixedChannelCheck skips the mixed channel risk check when binding groups.
 	// This should only be set when the caller has explicitly confirmed the risk.
@@ -496,11 +496,12 @@ type UserGroupRPMStatus struct {
 
 // BulkUpdateAccountsResult is the aggregated response for bulk updates.
 type BulkUpdateAccountsResult struct {
-	Success    int                       `json:"success"`
-	Failed     int                       `json:"failed"`
-	SuccessIDs []int64                   `json:"success_ids"`
-	FailedIDs  []int64                   `json:"failed_ids"`
-	Results    []BulkUpdateAccountResult `json:"results"`
+	Success                   int                       `json:"success"`
+	Failed                    int                       `json:"failed"`
+	SuccessIDs                []int64                   `json:"success_ids"`
+	FailedIDs                 []int64                   `json:"failed_ids"`
+	Results                   []BulkUpdateAccountResult `json:"results"`
+	LongContextInheritedCount int                       `json:"long_context_inherited_count,omitempty"`
 }
 
 type CreateProxyInput struct {

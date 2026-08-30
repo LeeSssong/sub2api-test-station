@@ -419,7 +419,7 @@ WITH scopes AS (
 ), usage_candidates AS (
   SELECT u.group_id, u.account_id, u.id::bigint AS source_id, u.created_at AS observed_at,
 	         date_bin($3::interval, u.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
-	         (COALESCE(u.usage_completeness, 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
+         (COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
          u.first_token_ms::double precision AS first_token_ms,
          u.duration_ms::double precision AS duration_ms,
          COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key,

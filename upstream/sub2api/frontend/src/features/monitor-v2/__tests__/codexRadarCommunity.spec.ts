@@ -22,10 +22,33 @@ describe('CodexRadar community DTO', () => {
     expect(parsed.tabs[0].points[0]).toMatchObject({ samples: 422, iq: 78.29, software_samples: 336, visual_samples: 86 })
   })
 
-  it('fails closed on tab drift, duplicate points, invalid numbers, or missing composite fields', () => {
+  it('accepts an externally supplied fresh empty tab and zero-sample point', () => {
+    const parsed = parseCodexRadarCommunity({
+      ...fixture,
+      tabs: [
+        { ...fixture.tabs[0], points: [] },
+        {
+          ...fixture.tabs[1],
+          points: [{
+            model: 'hy4-preview',
+            effort: 'low',
+            samples: 0,
+            iq: 0,
+            average_cost_usd: null,
+            average_duration_minutes: null,
+          }],
+        },
+        fixture.tabs[2],
+      ],
+    })
+    expect(parsed.tabs[0].points).toEqual([])
+    expect(parsed.tabs[1].points[0].samples).toBe(0)
+  })
+
+  it('keeps structural checks while accepting externally defined point values', () => {
     expect(() => parseCodexRadarCommunity({ ...fixture, tabs: fixture.tabs.slice(0, 2) })).toThrow()
-    expect(() => parseCodexRadarCommunity({ ...fixture, tabs: fixture.tabs.map((tab, index) => index ? tab : { ...tab, points: [point, point] }) })).toThrow()
-    expect(() => parseCodexRadarCommunity({ ...fixture, tabs: fixture.tabs.map((tab, index) => index ? tab : { ...tab, points: [{ ...point, iq: -1 }] }) })).toThrow()
+    expect(parseCodexRadarCommunity({ ...fixture, tabs: fixture.tabs.map((tab, index) => index ? tab : { ...tab, points: [point, point] }) }).tabs[0].points).toHaveLength(2)
+    expect(parseCodexRadarCommunity({ ...fixture, tabs: fixture.tabs.map((tab, index) => index ? tab : { ...tab, points: [{ ...point, iq: -1 }] }) }).tabs[0].points[0].iq).toBe(-1)
     expect(() => parseCodexRadarCommunity({ ...fixture, tabs: fixture.tabs.map((tab, index) => index ? tab : { ...tab, points: [{ ...point, software_iq: undefined }] }) })).toThrow()
   })
 

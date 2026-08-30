@@ -84,11 +84,11 @@ func TestCodexRadarCommunityFallsBackToRecentSuccess(t *testing.T) {
 	require.Equal(t, first, fallback)
 }
 
-func TestCodexRadarCommunityRejectsInvalidWithoutSnapshot(t *testing.T) {
+func TestCodexRadarCommunityDoesNotRejectParseable2xxPayloadByLocalBusinessRules(t *testing.T) {
 	tests := []struct{ name, software, visual string }{
 		{"software schema", strings.Replace(validCodexRadarSoftwareFixture, `"schema":3`, `"schema":2`, 1), validCodexRadarVisualFixture},
 		{"visual schema", validCodexRadarSoftwareFixture, strings.Replace(validCodexRadarVisualFixture, `"schema":1`, `"schema":2`, 1)},
-		{"negative iq", strings.Replace(validCodexRadarSoftwareFixture, `"iq":78.12`, `"iq":-1`, 1), validCodexRadarVisualFixture},
+		{"zero sample", strings.Replace(validCodexRadarSoftwareFixture, `"passed":175,"total":336,"iq":78.12`, `"passed":0,"total":0,"iq":null`, 1), validCodexRadarVisualFixture},
 		{"duplicate point", strings.Replace(validCodexRadarSoftwareFixture, `]}`, `,{"model":"gpt-5.6-sol","effort":"low","passed":1,"total":1,"iq":1,"average_price_usd":1,"average_minutes":1}]}`, 1), validCodexRadarVisualFixture},
 	}
 	for _, tt := range tests {
@@ -103,9 +103,10 @@ func TestCodexRadarCommunityRejectsInvalidWithoutSnapshot(t *testing.T) {
 			value, stale, err := NewCodexRadarCommunityService(client, time.Now).Get(context.Background())
 			require.NoError(t, err)
 			require.False(t, stale)
-			require.Equal(t, "partial", value.SourceStatus)
-			require.Equal(t, "unavailable", value.Tabs[0].Status)
-			require.NotEqual(t, value.Tabs[1].Status, value.Tabs[2].Status)
+			require.Equal(t, "fresh", value.SourceStatus)
+			require.Equal(t, "fresh", value.Tabs[0].Status)
+			require.Equal(t, "fresh", value.Tabs[1].Status)
+			require.Equal(t, "fresh", value.Tabs[2].Status)
 		})
 	}
 }

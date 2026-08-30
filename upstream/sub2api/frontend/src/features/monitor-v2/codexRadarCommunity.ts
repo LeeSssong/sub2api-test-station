@@ -41,8 +41,8 @@ function string(value: unknown, path: string, max: number): string {
   return value
 }
 
-function number(value: unknown, path: string, maximum = Number.MAX_SAFE_INTEGER): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > maximum) throw new Error(`${path} must be a bounded non-negative number`)
+function number(value: unknown, path: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${path} must be a finite number`)
   return value
 }
 
@@ -52,7 +52,7 @@ function nullableNumber(value: unknown, path: string): number | null {
 
 function integer(value: unknown, path: string): number {
   const parsed = number(value, path)
-  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${path} must be a positive integer`)
+  if (!Number.isInteger(parsed)) throw new Error(`${path} must be an integer`)
   return parsed
 }
 
@@ -76,33 +76,28 @@ export function parseCodexRadarCommunity(value: unknown): CodexRadarCommunity {
     const tab = object(rawTab, `tabs.${tabIndex}`)
     const key = string(tab.key, `tabs.${tabIndex}.key`, 32) as CodexRadarCommunityKey
     if (key !== CODEX_RADAR_COMMUNITY_KEYS[tabIndex]) throw new Error('community tab order changed')
-    if (!Array.isArray(tab.points) || tab.points.length > 128) throw new Error('bounded points required')
+    if (!Array.isArray(tab.points)) throw new Error('points must be an array')
     const status: CodexRadarCommunityTab['status'] = tab.status === undefined ? 'fresh' : string(tab.status, `tabs.${tabIndex}.status`, 16) as CodexRadarCommunityTab['status']
     if (status !== 'fresh' && status !== 'unavailable') throw new Error('invalid tab status')
     const errorCode = tab.error_code === undefined ? undefined : string(tab.error_code, `tabs.${tabIndex}.error_code`, 64)
     if (status === 'unavailable' && !errorCode) throw new Error('unavailable tab requires error_code')
-    if (status === 'fresh' && tab.points.length === 0) throw new Error('fresh tab requires points')
-    const seen = new Set<string>()
     const points = tab.points.map((rawPoint, pointIndex) => {
       const point = object(rawPoint, `tabs.${tabIndex}.points.${pointIndex}`)
       const model = string(point.model, 'model', 128)
       const effort = string(point.effort, 'effort', 64)
-      const identity = `${model}\u0000${effort}`
-      if (seen.has(identity)) throw new Error('duplicate model effort')
-      seen.add(identity)
       const parsed: CodexRadarCommunityPoint = {
         model,
         effort,
         samples: integer(point.samples, 'samples'),
-        iq: number(point.iq, 'iq', 150),
+        iq: number(point.iq, 'iq'),
         average_cost_usd: nullableNumber(point.average_cost_usd, 'average_cost_usd'),
         average_duration_minutes: nullableNumber(point.average_duration_minutes, 'average_duration_minutes'),
       }
       if (key === 'comprehensive') {
         parsed.software_samples = integer(point.software_samples, 'software_samples')
         parsed.visual_samples = integer(point.visual_samples, 'visual_samples')
-        parsed.software_iq = number(point.software_iq, 'software_iq', 150)
-        parsed.visual_iq = number(point.visual_iq, 'visual_iq', 150)
+        parsed.software_iq = number(point.software_iq, 'software_iq')
+        parsed.visual_iq = number(point.visual_iq, 'visual_iq')
       }
       return parsed
     })

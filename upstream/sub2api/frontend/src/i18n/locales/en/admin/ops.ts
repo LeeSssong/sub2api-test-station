@@ -341,6 +341,7 @@ export default {
         originalUpstreamMessage: 'Original upstream message',
         originalUpstreamDetail: 'Original upstream detail',
         noErrorSelected: 'No error selected.',
+        backToList: 'Back to List',
         resolution: 'Resolved:',
         failedToUpdateResolvedStatus: 'Failed to update resolved status',
         classificationKeys: {
@@ -373,7 +374,16 @@ export default {
         time: 'Time',
         phase: 'Phase',
         status: 'Status',
+        upstreamStatus: 'Upstream Status',
         message: 'Message',
+        rootCause: 'Root Cause',
+        diagnosticPayloads: 'Diagnostic Payloads',
+        payloads: {
+          client: 'Client Response',
+          upstream_message: 'Upstream Message',
+          upstream_detail: 'Upstream Detail',
+          upstream_events: 'Upstream Events'
+        },
         basicInfo: 'Basic Info',
         platform: 'Platform',
         model: 'Model',

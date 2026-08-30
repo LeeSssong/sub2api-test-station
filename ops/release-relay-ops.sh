@@ -37,7 +37,7 @@ esac
 [[ "$transport" == registry || "$transport" == preloaded ]] || fail 'RELEASE_TRANSPORT must be registry or preloaded'
 [[ "$ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+$ ]] || fail 'RELEASE_SSH_TARGET is invalid'; secure_credential "$ssh_key" RELEASE_SSH_KEY; secure_credential "$ssh_known_hosts" RELEASE_SSH_KNOWN_HOSTS; [[ "$ssh_port" =~ ^[1-9][0-9]{0,4}$ && "$ssh_port" -le 65535 ]] || fail 'RELEASE_SSH_PORT is invalid'; [[ "$host_executor" =~ ^/[A-Za-z0-9._/-]+$ ]] || fail 'RELEASE_HOST_EXECUTOR_PATH is invalid'; command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker Buildx is required'; command -v "$ssh_bin" >/dev/null 2>&1 || fail 'SSH is required'; command -v perl >/dev/null 2>&1 || fail 'Perl is required'
 if [[ "$transport" == preloaded ]]; then command -v "$scp_bin" >/dev/null 2>&1 || fail 'SCP is required for preloaded transport'; fi
-tag="$image_repository:release-$source_commit"; timeout=${RELEASE_STAGE_TIMEOUT_SECONDS:-600}; [[ "$timeout" =~ ^[1-9][0-9]*$ && "$timeout" -le 600 ]] || fail 'RELEASE_STAGE_TIMEOUT_SECONDS is invalid'
+tag="$image_repository:release-$source_commit"; timeout=${RELEASE_STAGE_TIMEOUT_SECONDS:-600}; [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || fail 'RELEASE_STAGE_TIMEOUT_SECONDS must be a positive integer'
 archive=''; archive_sha256=''; image_id=''; staged_archive="/var/lib/sub2api/release-staging/relay-ops-$source_commit.tar"; remote_tmp=''
 cleanup_archive() { [[ -z "$archive" ]] || rm -f -- "$archive"; }
 trap cleanup_archive EXIT

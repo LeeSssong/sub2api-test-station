@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**发布阶段超时上限调整（2026-08-30）：** 状态：进行中（IMPLEMENTING）。按用户明确要求，取消发布链阶段预算的 600 秒上限：主站蓝绿控制器的 `RELEASE_STAGE_TIMEOUT_SECONDS` 改为正整数校验，默认使用 1800 秒总预算；relay 发布控制器及宿主阶段/回滚/健康预算同样取消 600 秒上限。保留 1800 秒总预算（主站）、阶段超时、停机授权、迁移保护、运行就绪、原子切换与失败回滚门禁。变更文件：`ops/release-sub2api-blue-green.sh`、`ops/release-relay-ops.sh`、`ops/deploy-relay-ops-host.sh`、`docs/project/native-sub-incremental-delivery-constraints.md`。已通过 shell 语法检查、relay 宿主发布测试和 `git diff --check`；尚未提交、推送或重新发布主站。
+
 **官方 Sub2API v0.1.183 构建阻断修复（2026-08-30）：** 状态：进行中（IMPLEMENTING）。用户已明确取消本轮项目并发边界，已从 `main@3c468e95c0d25a1b5a84e155591c01ff3234f06d` 创建独立 worktree `/private/tmp/sub2api-official-0183-build-fix`，分支 `codex/official-0183-build-fix`。首轮最小修复已提交 `5965362fa`：补回 token refresh 常量，接通插件 API 与中英文 locale 汇出，修复运维错误详情类型/根因字段，移除无效侧边栏声明；不改 CodexRadar 独立数据模块，不触碰生产。`pnpm typecheck` 与 `pnpm build` 已通过，尚未合并、推送或部署。
 
 **T91 星桥 Q 额度发放与真实支付来源统一（2026-08-29）：** 状态：进行中（DESIGNING，暂停实现）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 分支 `codex/t91-q-issuance-payment-source` 保留在 `84dc3c40a`，原独立 worktree 已清理且未产生业务代码变更；未修改运行时代码、未推送、未部署，测试站部署暂停，等待修订规格确认和兑换码归类决策。

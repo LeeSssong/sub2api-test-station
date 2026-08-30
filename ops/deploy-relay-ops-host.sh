@@ -54,7 +54,7 @@ docker_bin=${DOCKER_BIN:-docker}; command -v "$docker_bin" >/dev/null 2>&1 || fa
 compose_project=${RELAY_OPS_COMPOSE_PROJECT:-sub2api}; [[ "$compose_project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail 'RELAY_OPS_COMPOSE_PROJECT is invalid'
 compose=("$docker_bin" compose --project-name "$compose_project" --project-directory "$deploy_root" --env-file "$secret_env" -f "$base_compose"); export RELAY_OPS_IMAGE="$requested_image"
 stage_budget=${RELAY_OPS_STAGE_TIMEOUT_SECONDS:-120}; rollback_budget=${RELAY_OPS_ROLLBACK_TIMEOUT_SECONDS:-120}; health_budget=${RELAY_OPS_HEALTH_TIMEOUT_SECONDS:-120}; poll_seconds=${RELAY_OPS_HEALTH_POLL_SECONDS:-1}
-[[ "$stage_budget" =~ ^[1-9][0-9]*$ && "$stage_budget" -le 600 && "$rollback_budget" =~ ^[1-9][0-9]*$ && "$rollback_budget" -le 600 && "$health_budget" =~ ^[1-9][0-9]*$ && "$health_budget" -le 600 && "$poll_seconds" =~ ^[1-9][0-9]*$ && "$poll_seconds" -le 30 ]] || fail 'release timeout configuration is invalid'
+[[ "$stage_budget" =~ ^[1-9][0-9]*$ && "$rollback_budget" =~ ^[1-9][0-9]*$ && "$health_budget" =~ ^[1-9][0-9]*$ && "$poll_seconds" =~ ^[1-9][0-9]*$ && "$poll_seconds" -le 30 ]] || fail 'release timeout configuration is invalid'
 tmp=$(mktemp); state_tmp=''; trap 'rm -f -- "$tmp" "$state_tmp"' EXIT
 stage_seconds() { local remaining=$((deadline_epoch - $(date -u +%s))); (( remaining > 0 )) || return 1; (( stage_budget < remaining )) && printf '%s' "$stage_budget" || printf '%s' "$remaining"; }
 run_quiet() { local seconds; seconds=$(stage_seconds) || return 1; : >"$tmp"; perl -e 'alarm shift @ARGV; exec @ARGV' "$seconds" "$@" >"$tmp" 2>&1; }

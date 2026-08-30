@@ -170,9 +170,11 @@ monotonic_now() {
 started=$(monotonic_now)
 [[ "$started" =~ ^[0-9]+$ ]] || fail 'monotonic clock is invalid'
 budget_seconds=1800
-stage_timeout_seconds=${RELEASE_STAGE_TIMEOUT_SECONDS:-600}
-[[ "$stage_timeout_seconds" =~ ^[1-9][0-9]*$ && "$stage_timeout_seconds" -le 600 ]] \
-  || fail 'RELEASE_STAGE_TIMEOUT_SECONDS must be an integer no greater than 600'
+# A stage may consume the remaining release budget.  Slow but live preloaded
+# transfers must not be rejected by an arbitrary per-stage 600-second cap.
+stage_timeout_seconds=${RELEASE_STAGE_TIMEOUT_SECONDS:-$budget_seconds}
+[[ "$stage_timeout_seconds" =~ ^[1-9][0-9]*$ ]] \
+  || fail 'RELEASE_STAGE_TIMEOUT_SECONDS must be a positive integer'
 check_budget() {
   local now elapsed
   now=$(monotonic_now)

@@ -197,7 +197,7 @@ func TestBulkUpdateAccountsPersistsActiveProbeSetting(t *testing.T) {
 		1: {ID: 1, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
 	}}
 	result, err := (&adminServiceImpl{accountRepo: repo}).BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
-		AccountIDs:         []int64{1},
+		AccountIDs:        []int64{1},
 		ActiveProbeEnabled: &enabled,
 	})
 

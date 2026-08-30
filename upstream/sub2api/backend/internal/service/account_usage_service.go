@@ -113,14 +113,15 @@ type antigravityUsageCache struct {
 }
 
 const (
-	apiCacheTTL         = 3 * time.Minute
-	apiErrorCacheTTL    = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
-	antigravityErrorTTL = 1 * time.Minute        // Antigravity 错误缓存 TTL（可恢复错误）
-	apiQueryMaxJitter   = 800 * time.Millisecond // 用量查询最大随机延迟
-	windowStatsCacheTTL = 1 * time.Minute
-	openAIProbeCacheTTL = 10 * time.Minute
-	grokProbeRetryTTL   = 1 * time.Minute
-	grokFreeQuotaWindow = 24 * time.Hour
+	apiCacheTTL             = 3 * time.Minute
+	apiErrorCacheTTL        = 1 * time.Minute        // 负缓存 TTL：429 等错误缓存 1 分钟
+	antigravityErrorTTL     = 1 * time.Minute        // Antigravity 错误缓存 TTL（可恢复错误）
+	apiQueryMaxJitter       = 800 * time.Millisecond // 用量查询最大随机延迟
+	windowStatsCacheTTL     = 1 * time.Minute
+	openAIProbeCacheTTL     = 10 * time.Minute
+	grokProbeRetryTTL       = 1 * time.Minute
+	grokFreeQuotaWindow     = 24 * time.Hour
+	openAICodexProbeVersion = codexCLIVersion // 与网关出站身份同源，避免两处硬编码版本各自漂移
 )
 
 // UsageCache 封装账户使用量相关的缓存
@@ -532,13 +533,6 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, for
 	return s.getUsageForAccount(ctx, account, forceProbe)
 }
 
-// GetUsageForAccount 已加载账号的使用量直通入口（配额监控 fetcher 复用，
-// 避免缓存未命中时账号被加载两次——每次 GetByID 含 proxies/groups 联查）。
-func (s *AccountUsageService) GetUsageForAccount(ctx context.Context, account *Account, force ...bool) (*UsageInfo, error) {
-	forceProbe := len(force) > 0 && force[0]
-	return s.getUsageForAccount(ctx, account, forceProbe)
-}
-
 // GetUsageBatch 批量获取账号使用量。
 // Anthropic OAuth/SetupToken 统一走 passive 链路，其他账号复用现有主动查询逻辑。
 // 单个账号失败不会中断整批请求，错误会按账号返回。
@@ -758,9 +752,6 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 					if updates := buildCodexSparkWindowExtraUpdates(quotaUsage, now); len(updates) > 0 {
 						mergeAccountExtra(account, updates)
 						s.persistOpenAICodexProbeSnapshot(account.ID, updates)
-						if account.ParentAccountID != nil {
-							notifyOpenAIAutoReset(*account.ParentAccountID)
-						}
 						if usage.UpdatedAt == nil {
 							usage.UpdatedAt = &now
 						}
@@ -868,7 +859,7 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	if accessToken == "" && !account.IsOpenAIAgentIdentity() {
 		return nil, fmt.Errorf("no access token available")
 	}
-	modelID := openaipkg.CodexUsageProbeModel
+	modelID := openaipkg.DefaultTestModel
 	payload := createOpenAITestPayload(modelID, true)
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -898,10 +889,9 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	canonical := resolveCodexOutboundIdentity("")
-	req.Header.Set("Originator", canonical.originator)
-	req.Header.Set("Version", canonical.version)
-	req.Header.Set("User-Agent", canonical.userAgent)
+	req.Header.Set("Originator", openaipkg.CodexDefaultOriginator)
+	req.Header.Set("Version", openAICodexProbeVersion)
+	req.Header.Set("User-Agent", codexCLIUserAgent)
 	if s.identityCache != nil {
 		if fp, fpErr := s.identityCache.GetFingerprint(reqCtx, account.ID); fpErr == nil && fp != nil && strings.TrimSpace(fp.UserAgent) != "" {
 			req.Header.Set("User-Agent", strings.TrimSpace(fp.UserAgent))
@@ -953,9 +943,7 @@ func (s *AccountUsageService) persistOpenAICodexProbeSnapshot(accountID int64, u
 	go func() {
 		updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer updateCancel()
-		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
-			notifyOpenAIAutoReset(accountID)
-		}
+		_ = s.accountRepo.UpdateExtra(updateCtx, accountID, updates)
 	}()
 }
 

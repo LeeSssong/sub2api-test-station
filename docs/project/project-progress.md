@@ -2,7 +2,7 @@
 
 **发布阶段超时上限调整（2026-08-30）：** 状态：进行中（IMPLEMENTING）。按用户明确要求，取消发布链阶段预算的 600 秒上限：主站蓝绿控制器的 `RELEASE_STAGE_TIMEOUT_SECONDS` 改为正整数校验，默认使用 1800 秒总预算；relay 发布控制器及宿主阶段/回滚/健康预算同样取消 600 秒上限。保留 1800 秒总预算（主站）、阶段超时、停机授权、迁移保护、运行就绪、原子切换与失败回滚门禁。变更文件：`ops/release-sub2api-blue-green.sh`、`ops/release-relay-ops.sh`、`ops/deploy-relay-ops-host.sh`、`docs/project/native-sub-incremental-delivery-constraints.md`。已通过 shell 语法检查、relay 宿主发布测试和 `git diff --check`；尚未提交、推送或重新发布主站。
 
-**官方 Sub2API v0.1.183 升级（2026-08-30）：** 状态：进行中（IMPLEMENTING/DEPLOYING）。已恢复官方 v0.1.183 前端、后端、Wire 生成文件及兼容修补，并保留账号监控 R2 改动；目标 commit 为当前 `main`。主站首轮停机发布已自动回滚，失败原因是维护 Worker 未在健康窗口内就绪，现已将发布控制器传入的 Worker 健康等待提高到 240 秒并准备重试。测试站同步须在主站成功后使用同一 commit/tree 执行。
+**官方 Sub2API v0.1.183 升级（2026-08-30）：** 状态：已取消（FROZEN）。用户明确要求本轮跳过官方升级；已合入但从未部署的 `65726fb8c` 及其前端、后端和构建兼容修补通过独立反向提交候选撤回，账号卡片 R2 改动保留。当前验收站候选恢复使用既有稳定版 `0.1.177`；不继续修复、测试或部署 0.1.183，相关历史分支/worktree 仅作只读证据。
 
 **T91 星桥 Q 额度发放与真实支付来源统一（2026-08-29）：** 状态：进行中（DESIGNING，暂停实现）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 分支 `codex/t91-q-issuance-payment-source` 保留在 `84dc3c40a`，原独立 worktree 已清理且未产生业务代码变更；未修改运行时代码、未推送、未部署，测试站部署暂停，等待修订规格确认和兑换码归类决策。
 

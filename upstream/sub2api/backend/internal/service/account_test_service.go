@@ -43,9 +43,8 @@ import (
 var sseDataPrefix = regexp.MustCompile(`^data:\s*`)
 
 const (
-	testClaudeAPIURL            = "https://api.anthropic.com/v1/messages?beta=true"
-	chatgptCodexAPIURL          = "https://chatgpt.com/backend-api/codex/responses"
-	defaultAntigravityTestModel = "claude-sonnet-4-6"
+	testClaudeAPIURL   = "https://api.anthropic.com/v1/messages?beta=true"
+	chatgptCodexAPIURL = "https://chatgpt.com/backend-api/codex/responses"
 )
 
 // TestEvent represents a SSE event for account testing
@@ -102,7 +101,7 @@ const (
 	AccountTestModeGrokRealtime = "realtime"
 
 	defaultGrokRealtimeTestModel = "grok-voice-latest"
-	grokRealtimeProbeTimeout     = DefaultGrokRealtimeDialTimeout
+	grokRealtimeProbeTimeout     = 12 * time.Second
 )
 
 // isOpenAIImageModel checks if the model is an OpenAI image generation model (e.g. gpt-image-2).
@@ -147,7 +146,6 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
-	pluginManager             *PluginManager
 	probeCostRecorder         AccountProbeCostRecorder
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
@@ -159,12 +157,6 @@ type AccountTestService struct {
 func (s *AccountTestService) SetSettingService(settingService *SettingService) {
 	if s != nil {
 		s.settingService = settingService
-	}
-}
-
-func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
-	if s != nil {
-		s.pluginManager = pluginManager
 	}
 }
 
@@ -294,19 +286,6 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
-	if account.IsCNProvider() {
-		switch account.GetAPIProtocol() {
-		case APIProtocolAdaptive:
-			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)
-		case APIProtocolResponses:
-			return s.testOpenAIAccountConnection(c, account, modelID, prompt, normalizeAccountTestMode(mode))
-		case APIProtocolChatCompletions:
-			return s.testCNProviderChatCompletionsConnection(c, account, modelID, prompt)
-		case APIProtocolAnthropic:
-			return s.testCNProviderAnthropicConnection(c, account, modelID)
-		}
-	}
-
 	if account.IsOpenAI() {
 		return s.testOpenAIAccountConnection(c, account, modelID, prompt, normalizeAccountTestMode(mode))
 	}
@@ -324,23 +303,6 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
-}
-
-func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
-	testModelID := strings.TrimSpace(modelID)
-	if testModelID == "" {
-		testModelID = openai.DefaultTestModel
-	}
-	testModelID = account.GetMappedModel(testModelID)
-	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
-	if authToken == "" {
-		return s.sendErrorAndEnd(c, "No API key available")
-	}
-	normalizedBaseURL, err := s.validateUpstreamBaseURL(account.GetOpenAIBaseURL())
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
-	}
-	return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
 }
 
 // SetProbeCostRecorder attaches the isolated operational probe ledger. Keeping
@@ -752,7 +714,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		apiURL = chatgptCodexAPIURL
 	} else if credentialAccount.Type == "apikey" {
 		// API Key - use Platform API
-		authToken = credentialAccount.GetOpenAIProtocolAPIKey()
+		authToken = credentialAccount.GetOpenAIApiKey()
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
@@ -768,7 +730,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if !openai_compat.ShouldUseResponsesAPI(account.Extra) {
 			return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
 		}
-		apiURL = buildOpenAIResponsesURLForPlatform(credentialAccount.Platform, normalizedBaseURL)
+		apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
 	} else {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported account type: %s", account.Type))
 	}
@@ -826,12 +788,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
-		canonical := resolveCodexOutboundIdentity("")
-		req.Header.Set("Originator", canonical.originator)
+		req.Header.Set("Originator", openai.CodexDefaultOriginator)
 		if customUA := strings.TrimSpace(credentialAccount.GetOpenAIUserAgent()); customUA != "" {
 			req.Header.Set("User-Agent", customUA)
 		} else {
-			req.Header.Set("User-Agent", canonical.userAgent)
+			req.Header.Set("User-Agent", codexCLIUserAgent)
 		}
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 		// 与真实转发一致：账号级自定义 UA 同样作为管理员显式配置传入，否则测试用的身份
@@ -848,7 +809,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -2105,7 +2066,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		}
 		apiURL = chatgptCodexAPIURL
 	case account.Type == AccountTypeAPIKey:
-		authToken = account.GetOpenAIProtocolAPIKey()
+		authToken = account.GetOpenAIApiKey()
 		if authToken == "" {
 			return s.sendErrorAndEnd(c, "No API key available")
 		}
@@ -2117,7 +2078,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 		}
-		apiURL = buildOpenAIResponsesURLForPlatform(account.Platform, normalizedBaseURL)
+		apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
 	default:
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported account type: %s", account.Type))
 	}
@@ -2161,9 +2122,6 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
 	applyOpenAICodexProbeHeaders(req.Header)
-	if isOAuth {
-		enforceCodexIdentityHeadersWithUA(req.Header, credentialAccount.GetOpenAIUserAgent())
-	}
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
 	req.Header.Set("Conversation_ID", probeSessionID)
@@ -2187,7 +2145,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		if s.accountRepo != nil {
 			updates := buildOpenAICompactProbeExtraUpdates(nil, nil, err, false, time.Now())
@@ -2368,7 +2326,11 @@ func (s *AccountTestService) routeAntigravityTest(c *gin.Context, account *Accou
 func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()
 
-	testModelID := antigravityConnectionTestModel(modelID)
+	// 默认模型：Claude 使用 claude-sonnet-4-5，Gemini 使用 gemini-3-pro-preview
+	testModelID := modelID
+	if testModelID == "" {
+		testModelID = "claude-sonnet-4-5"
+	}
 
 	if s.antigravityGatewayService == nil {
 		return s.sendErrorAndEnd(c, "Antigravity gateway service not configured")
@@ -2397,13 +2359,6 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
-}
-
-func antigravityConnectionTestModel(modelID string) string {
-	if modelID == "" {
-		return defaultAntigravityTestModel
-	}
-	return modelID
 }
 
 // buildGeminiAPIKeyRequest builds request for Gemini API Key accounts
@@ -3077,12 +3032,11 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	canonical := resolveCodexOutboundIdentity("")
-	req.Header.Set("originator", canonical.originator)
+	req.Header.Set("originator", openai.CodexDefaultOriginator)
 	if customUA := strings.TrimSpace(credentialAccount.GetOpenAIUserAgent()); customUA != "" {
 		req.Header.Set("User-Agent", customUA)
 	} else {
-		req.Header.Set("User-Agent", canonical.userAgent)
+		req.Header.Set("User-Agent", codexCLIUserAgent)
 	}
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	// 与真实转发一致：账号级自定义 UA 同样作为管理员显式配置传入，否则测试用的身份
@@ -3093,7 +3047,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, false)
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
 	}

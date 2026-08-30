@@ -672,28 +672,36 @@ func init() {
 			return nil
 		}
 	}()
-	// channelmonitorDescCheckMode is the schema descriptor for check_mode field.
-	channelmonitorDescCheckMode := channelmonitorFields[2].Descriptor()
-	// channelmonitor.DefaultCheckMode holds the default value on creation for the check_mode field.
-	channelmonitor.DefaultCheckMode = channelmonitorDescCheckMode.Default.(string)
-	// channelmonitor.CheckModeValidator is a validator for the "check_mode" field. It is called by the builders before save.
-	channelmonitor.CheckModeValidator = channelmonitorDescCheckMode.Validators[0].(func(string) error)
 	// channelmonitorDescAPIMode is the schema descriptor for api_mode field.
-	channelmonitorDescAPIMode := channelmonitorFields[4].Descriptor()
+	channelmonitorDescAPIMode := channelmonitorFields[2].Descriptor()
 	// channelmonitor.DefaultAPIMode holds the default value on creation for the api_mode field.
 	channelmonitor.DefaultAPIMode = channelmonitorDescAPIMode.Default.(string)
 	// channelmonitor.APIModeValidator is a validator for the "api_mode" field. It is called by the builders before save.
 	channelmonitor.APIModeValidator = channelmonitorDescAPIMode.Validators[0].(func(string) error)
 	// channelmonitorDescEndpoint is the schema descriptor for endpoint field.
-	channelmonitorDescEndpoint := channelmonitorFields[5].Descriptor()
+	channelmonitorDescEndpoint := channelmonitorFields[3].Descriptor()
 	// channelmonitor.EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
-	channelmonitor.EndpointValidator = channelmonitorDescEndpoint.Validators[0].(func(string) error)
+	channelmonitor.EndpointValidator = func() func(string) error {
+		validators := channelmonitorDescEndpoint.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(endpoint string) error {
+			for _, fn := range fns {
+				if err := fn(endpoint); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// channelmonitorDescAPIKeyEncrypted is the schema descriptor for api_key_encrypted field.
-	channelmonitorDescAPIKeyEncrypted := channelmonitorFields[6].Descriptor()
+	channelmonitorDescAPIKeyEncrypted := channelmonitorFields[4].Descriptor()
 	// channelmonitor.APIKeyEncryptedValidator is a validator for the "api_key_encrypted" field. It is called by the builders before save.
 	channelmonitor.APIKeyEncryptedValidator = channelmonitorDescAPIKeyEncrypted.Validators[0].(func(string) error)
 	// channelmonitorDescPrimaryModel is the schema descriptor for primary_model field.
-	channelmonitorDescPrimaryModel := channelmonitorFields[7].Descriptor()
+	channelmonitorDescPrimaryModel := channelmonitorFields[5].Descriptor()
 	// channelmonitor.PrimaryModelValidator is a validator for the "primary_model" field. It is called by the builders before save.
 	channelmonitor.PrimaryModelValidator = func() func(string) error {
 		validators := channelmonitorDescPrimaryModel.Validators
@@ -711,11 +719,11 @@ func init() {
 		}
 	}()
 	// channelmonitorDescExtraModels is the schema descriptor for extra_models field.
-	channelmonitorDescExtraModels := channelmonitorFields[8].Descriptor()
+	channelmonitorDescExtraModels := channelmonitorFields[6].Descriptor()
 	// channelmonitor.DefaultExtraModels holds the default value on creation for the extra_models field.
 	channelmonitor.DefaultExtraModels = channelmonitorDescExtraModels.Default.([]string)
 	// channelmonitorDescGroupName is the schema descriptor for group_name field.
-	channelmonitorDescGroupName := channelmonitorFields[9].Descriptor()
+	channelmonitorDescGroupName := channelmonitorFields[7].Descriptor()
 	// channelmonitor.DefaultGroupName holds the default value on creation for the group_name field.
 	channelmonitor.DefaultGroupName = channelmonitorDescGroupName.Default.(string)
 	// channelmonitor.GroupNameValidator is a validator for the "group_name" field. It is called by the builders before save.
@@ -841,7 +849,7 @@ func init() {
 	// channelmonitorhistory.MessageValidator is a validator for the "message" field. It is called by the builders before save.
 	channelmonitorhistory.MessageValidator = channelmonitorhistoryDescMessage.Validators[0].(func(string) error)
 	// channelmonitorhistoryDescCheckedAt is the schema descriptor for checked_at field.
-	channelmonitorhistoryDescCheckedAt := channelmonitorhistoryFields[7].Descriptor()
+	channelmonitorhistoryDescCheckedAt := channelmonitorhistoryFields[6].Descriptor()
 	// channelmonitorhistory.DefaultCheckedAt holds the default value on creation for the checked_at field.
 	channelmonitorhistory.DefaultCheckedAt = channelmonitorhistoryDescCheckedAt.Default.(func() time.Time)
 	channelmonitorrequesttemplateMixin := schema.ChannelMonitorRequestTemplate{}.Mixin()

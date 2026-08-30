@@ -58,8 +58,6 @@ func (ChannelMonitor) Fields() []ent.Field {
 			Default("chat_completions").
 			MaxLen(32).
 			Comment("OpenAI request protocol: chat_completions or responses; non-OpenAI uses chat_completions"),
-		// endpoint: 探活模式必填（service 层校验）；quota 模式存空串
-		// （列保持 NOT NULL，去掉 NotEmpty 校验器即可）。
 		field.String("endpoint").
 			MaxLen(500).
 			Comment("Provider base origin, e.g. https://api.openai.com; empty for quota-only monitors"),

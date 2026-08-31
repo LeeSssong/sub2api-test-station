@@ -265,6 +265,13 @@ export interface AccountMonitorAccount {
   output_rate_tokens_per_second?: number | null
   output_rate_sample_count?: number
   multiplier: AccountMonitorMultiplier
+  effective_cost_model?: 'direct_multiplier' | 'ratio_based_upstream' | 'self_owned'
+  upstream_actual_cost?: number | null
+  upstream_obtained_quota?: number | null
+  effective_cost_a?: number | null
+  effective_cost_r?: number | null
+  effective_cost_u?: number | null
+  effective_cost_status?: string
   request_count: number
   error_count: number
   range?: AccountMonitorRange

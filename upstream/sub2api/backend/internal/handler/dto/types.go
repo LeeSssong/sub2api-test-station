@@ -214,6 +214,13 @@ type Account struct {
 	LoadFactor                 *int                           `json:"load_factor,omitempty"`
 	Priority                   int                            `json:"priority"`
 	RateMultiplier             float64                        `json:"rate_multiplier"`
+	EffectiveCostModel         string                         `json:"effective_cost_model"`
+	UpstreamActualCost         *float64                       `json:"upstream_actual_cost"`
+	UpstreamObtainedQuota      *float64                       `json:"upstream_obtained_quota"`
+	EffectiveCostA             *float64                       `json:"effective_cost_a"`
+	EffectiveCostR             *float64                       `json:"effective_cost_r"`
+	EffectiveCostU             *float64                       `json:"effective_cost_u"`
+	EffectiveCostStatus        string                         `json:"effective_cost_status"`
 	ProcurementCostCNY         *float64                       `json:"procurement_cost_cny"`
 	EstimatedUsableQuotaUSD    *float64                       `json:"estimated_usable_quota_usd"`
 	ProcurementCostEffectiveAt *time.Time                     `json:"procurement_cost_effective_at"`

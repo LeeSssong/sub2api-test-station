@@ -3586,6 +3586,10 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	procurementCostCNY := m.ProcurementCostCny
 	estimatedUsableQuotaUSD := m.EstimatedUsableQuotaUsd
 
+	extra := copyJSONMap(m.Extra)
+	model, _ := extra[service.EffectiveCostModelExtraKey].(string)
+	actual := extraFloat64(extra[service.UpstreamActualCostExtraKey])
+	quota := extraFloat64(extra[service.UpstreamObtainedQuotaExtraKey])
 	return &service.Account{
 		ID:                         m.ID,
 		Name:                       m.Name,
@@ -3599,6 +3603,9 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Concurrency:                m.Concurrency,
 		Priority:                   m.Priority,
 		RateMultiplier:             &rateMultiplier,
+		EffectiveCostModel:         model,
+		UpstreamActualCost:         actual,
+		UpstreamObtainedQuota:      quota,
 		ProcurementCostCNY:         procurementCostCNY,
 		EstimatedUsableQuotaUSD:    estimatedUsableQuotaUSD,
 		ProcurementCostEffectiveAt: m.ProcurementCostEffectiveAt,
@@ -3622,6 +3629,28 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		ParentAccountID:            m.ParentAccountID,
 		QuotaDimension:             string(m.QuotaDimension),
 	}
+}
+
+func extraFloat64(value any) *float64 {
+	switch v := value.(type) {
+	case float64:
+		return &v
+	case float32:
+		f := float64(v)
+		return &f
+	case int:
+		f := float64(v)
+		return &f
+	case int64:
+		f := float64(v)
+		return &f
+	case json.Number:
+		f, err := v.Float64()
+		if err == nil {
+			return &f
+		}
+	}
+	return nil
 }
 
 func normalizeJSONMap(in map[string]any) map[string]any {

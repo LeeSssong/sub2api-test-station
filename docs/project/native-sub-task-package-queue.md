@@ -48,11 +48,11 @@ T103 发布门禁边界补齐：`main@4ce15f896` 将 admission/slow-session 调�
 
 ## 分组账号基线与统一质量调度策略（2026-08-30）
 
-- **T96 分组账号基线与统一质量调度策略：** 状态 `DESIGNING`（正式规格已于 2026-08-31 获用户书面批准，正在编写实施计划）。正式规格：`docs/superpowers/specs/2026-08-31-t96-group-account-baseline-unified-quality-scheduling-design.md`；完整排名：`docs/superpowers/reports/2026-08-31-t96-account-quality-ranking.md`。请求先确定目标分组并只读管理员固定账号池；66 个非生图文本账号全部归入 Pro 档/Plus/特惠，Pro 与专属 Pro 镜像，7 个生图账号保持原生基础调度。普通文本统一按账号级 `成功率 DESC → P95 TTFT ASC → U ASC → ID ASC` 确定排序；`extra_retry_count` 为跨账号真实 Forward 的组级额外次数，Pro/专属 Pro=1、Plus=2、特惠=3；不可重放 attempt 立即停止并按原生账务计费。利润继续复用原生字段和 T95 的实时 U，全池不合格时可用性兜底。T100 边界固定为只使用 Sub 原生账号槽位，不得恢复任何 admission/slow-session 限制。T95 当前仍在独立 worktree 实施且未合入，T96 不得基于其未提交接口编码；实施计划完成后仍须等待 T95 合入最新干净 `main` 才可创建 T96 worktree。未修改生产分组、运行代码、配置或数据库，未部署。
+- **T96 分组账号基线与统一质量调度策略：** 状态 `FROZEN / WAITING_T95_MERGE`（正式规格和排名报告已落盘，但旧证据 worktree 仅有文档、无运行时代码，且落后当前 `main`；不得把“已实施”或历史账号排名当作实现证据）。正式规格：`docs/superpowers/specs/2026-08-31-t96-group-account-baseline-unified-quality-scheduling-design.md`；完整排名：`docs/superpowers/reports/2026-08-31-t96-account-quality-ranking.md`。请求先确定目标分组并只读管理员固定账号池；66 个非生图文本账号全部归入 Pro 档/Plus/特惠，Pro 与专属 Pro 镜像，7 个生图账号保持原生基础调度。普通文本统一按账号级 `成功率 DESC → P95 TTFT ASC → U ASC → ID ASC` 确定排序；`extra_retry_count` 为跨账号真实 Forward 的组级额外次数，Pro/专属 Pro=1、Plus=2、特惠=3；不可重放 attempt 立即停止并按原生账务计费。利润继续复用原生字段和 T95 的实时 U，全池不合格时可用性兜底。T100 边界固定为只使用 Sub 原生账号槽位，不得恢复任何 admission/slow-session 限制。T95 现已进入根总控整合候选但尚未形成新的推送 `main`；T96 必须等待 T95 提交/推送后，从新的干净 `main` 创建独立实现 worktree。未修改生产分组、运行代码、配置或数据库，未部署。
 
 ## 账号有效成本归一化与官方利润保护（2026-08-30）
 
-- **T95 账号有效成本归一化接入官方利润保护：** 状态 `IMPLEMENTING`。已确认 API Key 默认普通直接倍率、可手动切换比例型上游，OAuth 固定为无上游返回倍率的自购模型；统一计算 `U` 后交给官方利润门，继续复用原生分组最低利润率/安全缓冲与可用性优先语义。已按用户要求派生独立实现子代理开始实现字段、接口、数据库迁移、兼容和接入测试；根线程不合并、推送或部署，直到子代理交接并完成根审查。
+- **T95 账号有效成本归一化接入官方利润保护：** 状态 `INTEGRATING`（候选已无冲突合入根 `main` 暂存区，直接相关测试、构建、native-only guard 和 diff-check 已通过；待根总控提交并推送，尚未部署）。已确认 API Key 默认普通直接倍率、可手动切换比例型上游，OAuth 固定为无上游返回倍率的自购模型；统一计算 `U` 后交给官方利润门，继续复用原生分组最低利润率/安全缓冲与可用性优先语义。候选实现、规格、计划、报告和 handoff 均来自独立 worktree；根总控正在完成整合收口，未触碰生产数据或配置。
 
 ## 最终用户可见成功率与 CodexRadar 外部数据透传（2026-08-30）
 

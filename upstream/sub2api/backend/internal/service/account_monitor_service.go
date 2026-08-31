@@ -264,6 +264,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			ErrorCount:                 int64(aggregate.ErrorCount),
 			Timeline:                   append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
+		projectAccountMonitorEffectiveCost(&row, &account)
 		row.UpstreamMultiplier = &row.Multiplier
 		if s.modelDetection != nil {
 			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
@@ -645,6 +646,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
+		projectAccountMonitorEffectiveCost(&row, &account)
 		if realTimelines != nil {
 			row.RealRequestTimeline = realTimelines[account.ID]
 		}
@@ -691,6 +693,20 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
 		Health: summarizeAccountMonitorHealth(rows), Groups: groups, Accounts: rows,
 	}}, nil
+}
+
+func projectAccountMonitorEffectiveCost(row *AccountMonitorAccount, account *Account) {
+	if row == nil || account == nil {
+		return
+	}
+	cost := EffectiveCostForAccount(account)
+	row.EffectiveCostModel = cost.Model
+	row.UpstreamActualCost = account.UpstreamActualCost
+	row.UpstreamObtainedQuota = account.UpstreamObtainedQuota
+	row.EffectiveCostA = cost.A
+	row.EffectiveCostR = cost.R
+	row.EffectiveCostU = cost.U
+	row.EffectiveCostStatus = cost.Status
 }
 
 func (s *AccountMonitorService) projectGroupRecommendations(

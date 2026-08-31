@@ -137,6 +137,9 @@ type CreateAccountRequest struct {
 	Concurrency             int            `json:"concurrency"`
 	Priority                int            `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
+	EffectiveCostModel      string         `json:"effective_cost_model"`
+	UpstreamActualCost      *float64       `json:"upstream_actual_cost"`
+	UpstreamObtainedQuota   *float64       `json:"upstream_obtained_quota"`
 	LoadFactor              *int           `json:"load_factor"`
 	GroupIDs                []int64        `json:"group_ids"`
 	ExpiresAt               *int64         `json:"expires_at"`
@@ -159,6 +162,9 @@ type UpdateAccountRequest struct {
 	Concurrency             *int                   `json:"concurrency"`
 	Priority                *int                   `json:"priority"`
 	RateMultiplier          *float64               `json:"rate_multiplier"`
+	EffectiveCostModel      *string                `json:"effective_cost_model"`
+	UpstreamActualCost      *float64               `json:"upstream_actual_cost"`
+	UpstreamObtainedQuota   *float64               `json:"upstream_obtained_quota"`
 	ProcurementCostCNY      procurementCostRequest `json:"procurement_cost_cny"`
 	EstimatedUsableQuotaUSD procurementCostRequest `json:"estimated_usable_quota_usd"`
 	LoadFactor              *int                   `json:"load_factor"`
@@ -960,6 +966,9 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Concurrency:           req.Concurrency,
 			Priority:              req.Priority,
 			RateMultiplier:        req.RateMultiplier,
+			EffectiveCostModel:    req.EffectiveCostModel,
+			UpstreamActualCost:    req.UpstreamActualCost,
+			UpstreamObtainedQuota: req.UpstreamObtainedQuota,
 			LoadFactor:            req.LoadFactor,
 			GroupIDs:              req.GroupIDs,
 			ExpiresAt:             req.ExpiresAt,
@@ -1074,6 +1083,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "rate_multiplier must be >= 0")
 		return
 	}
+	if req.EffectiveCostModel != nil && *req.EffectiveCostModel != service.EffectiveCostModelDirectMultiplier && *req.EffectiveCostModel != service.EffectiveCostModelRatioBasedUpstream && *req.EffectiveCostModel != service.EffectiveCostModelSelfOwned {
+		response.BadRequest(c, "invalid effective_cost_model")
+		return
+	}
 	if req.Priority != nil && *req.Priority < 1 {
 		response.BadRequest(c, "priority must be >= 1")
 		return
@@ -1135,15 +1148,18 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		}
 	}
 	accountMutation := &service.UpdateAccountInput{
-		Name:           req.Name,
-		Notes:          req.Notes,
-		Type:           req.Type,
-		Credentials:    req.Credentials,
-		Extra:          req.Extra,
-		ProxyID:        req.ProxyID,
-		Concurrency:    req.Concurrency, // 指针类型，nil 表示未提供
-		Priority:       req.Priority,    // 指针类型，nil 表示未提供
-		RateMultiplier: req.RateMultiplier,
+		Name:                  req.Name,
+		Notes:                 req.Notes,
+		Type:                  req.Type,
+		Credentials:           req.Credentials,
+		Extra:                 req.Extra,
+		ProxyID:               req.ProxyID,
+		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
+		Priority:              req.Priority,    // 指针类型，nil 表示未提供
+		RateMultiplier:        req.RateMultiplier,
+		EffectiveCostModel:    req.EffectiveCostModel,
+		UpstreamActualCost:    req.UpstreamActualCost,
+		UpstreamObtainedQuota: req.UpstreamObtainedQuota,
 		ProcurementCost: func() *service.ProcurementCostUpdate {
 			if h.procurementProfitability == nil {
 				return procurementUpdate
@@ -1204,7 +1220,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func hasNonProcurementAccountUpdate(req UpdateAccountRequest) bool {
-	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ActiveProbeEnabled != nil || req.ConfirmMixedChannelRisk != nil
+	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.EffectiveCostModel != nil || req.UpstreamActualCost != nil || req.UpstreamObtainedQuota != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ActiveProbeEnabled != nil || req.ConfirmMixedChannelRisk != nil
 }
 
 func toServiceProcurementCostUpdate(cost, quota procurementCostRequest) *service.ProcurementCostUpdate {

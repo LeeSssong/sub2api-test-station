@@ -6,11 +6,29 @@
       </p>
 
       <template v-if="usesMultiplier">
+        <label v-if="isAPIKey" class="block text-sm text-gray-600 dark:text-slate-300">
+          成本模型
+          <select v-model="draftModel" data-test="cost-mode-select" class="input mt-1 w-full" :disabled="saving">
+            <option value="direct_multiplier">普通账号（直接倍率）</option>
+            <option value="ratio_based_upstream">比例型上游</option>
+          </select>
+        </label>
+        <div v-if="draftModel === 'ratio_based_upstream'" class="grid gap-3 sm:grid-cols-2">
+          <label class="block text-sm text-gray-600 dark:text-slate-300">
+            实际成本
+            <input v-model="draftActualCost" data-test="upstream-actual-cost-input" class="input mt-1 w-full font-mono" type="number" min="0" step="0.0001" :disabled="saving" />
+          </label>
+          <label class="block text-sm text-gray-600 dark:text-slate-300">
+            获得额度
+            <input v-model="draftObtainedQuota" data-test="upstream-obtained-quota-input" class="input mt-1 w-full font-mono" type="number" min="0.0001" step="0.0001" :disabled="saving" />
+          </label>
+        </div>
         <label class="block text-sm text-gray-600 dark:text-slate-300">
-          当前倍率（x）
+          上游返回倍率 R（x）
           <input v-model="draftMultiplier" data-test="multiplier-input" class="input mt-1 w-full font-mono" type="number" min="0" step="0.0001" :disabled="saving" />
         </label>
         <p class="text-xs text-gray-500 dark:text-slate-400">来源：{{ account.multiplier?.source === 'manual' ? '手工覆盖' : '上游托管' }}</p>
+        <p class="text-sm text-gray-600 dark:text-slate-300" data-test="effective-cost-preview">有效成本倍率 U：<span class="font-mono font-semibold">{{ effectiveCostPreview }}</span></p>
         <p v-if="multiplierError" class="text-sm text-red-600 dark:text-red-400" data-test="multiplier-error" role="alert">{{ multiplierError }}</p>
       </template>
 
@@ -61,6 +79,9 @@ type AccountMonitorCostAccount = {
   procurement_cost_cny?: number | null
   estimated_usable_quota_usd?: number | null
   multiplier?: AccountMonitorMultiplier | null
+  effective_cost_model?: 'direct_multiplier' | 'ratio_based_upstream' | 'self_owned' | string
+  upstream_actual_cost?: number | null
+  upstream_obtained_quota?: number | null
 }
 
 const props = withDefaults(defineProps<{
@@ -73,12 +94,13 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (event: 'close'): void
   (event: 'saveProcurement', cost: number, estimatedQuotaUSD: number): void
-  (event: 'saveMultiplier', value: number): void
+  (event: 'saveMultiplier', value: number, model: 'direct_multiplier' | 'ratio_based_upstream', actualCost?: number, obtainedQuota?: number): void
   (event: 'restoreAuto'): void
   (event: 'clear'): void
 }>()
 
-const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && isAPIKeyAccountType(props.account.account_type))
+const isAPIKey = computed(() => isAPIKeyAccountType(props.account.account_type))
+const isOpenAIAPIKey = computed(() => props.account.platform.toLowerCase() === 'openai' && isAPIKey.value)
 const usesProcurement = computed(() => isOAuthAccountType(props.account.account_type)
   || (props.account.platform.toLowerCase() === 'openai' ? !isOpenAIAPIKey.value : props.account.procurement_cost_cny != null))
 const usesMultiplier = computed(() => !usesProcurement.value)
@@ -86,6 +108,9 @@ const hasProcurement = computed(() => props.account.procurement_cost_cny != null
 const draftCost = ref('')
 const draftQuota = ref('60')
 const draftMultiplier = ref('')
+const draftModel = ref<'direct_multiplier' | 'ratio_based_upstream'>('direct_multiplier')
+const draftActualCost = ref('')
+const draftObtainedQuota = ref('')
 const costError = ref('')
 const multiplierError = ref('')
 
@@ -102,6 +127,9 @@ watch(() => [props.show, props.account] as const, ([show, account]) => {
   draftCost.value = account.procurement_cost_cny == null ? '' : String(account.procurement_cost_cny)
   draftQuota.value = account.estimated_usable_quota_usd == null ? '60' : String(account.estimated_usable_quota_usd)
   draftMultiplier.value = account.multiplier?.value == null ? '' : String(account.multiplier.value)
+  draftModel.value = account.effective_cost_model === 'ratio_based_upstream' ? 'ratio_based_upstream' : 'direct_multiplier'
+  draftActualCost.value = account.upstream_actual_cost == null ? '' : String(account.upstream_actual_cost)
+  draftObtainedQuota.value = account.upstream_obtained_quota == null ? '' : String(account.upstream_obtained_quota)
   costError.value = ''
   multiplierError.value = ''
 }, { immediate: true, deep: true })
@@ -112,6 +140,15 @@ const derivedMultiplier = computed(() => {
   return Number.isFinite(cost) && Number.isFinite(quota) && cost >= 0 && quota > 0 ? (cost / quota).toFixed(4) + '×' : '--'
 })
 
+const effectiveCostPreview = computed(() => {
+  const rate = Number(draftMultiplier.value)
+  if (!Number.isFinite(rate) || rate < 0) return '--'
+  if (draftModel.value === 'direct_multiplier') return rate.toFixed(4) + '×'
+  const actual = Number(draftActualCost.value)
+  const quota = Number(draftObtainedQuota.value)
+  return Number.isFinite(actual) && actual >= 0 && Number.isFinite(quota) && quota > 0 ? ((actual / quota) * rate).toFixed(4) + '×' : '--'
+})
+
 function save() {
   if (props.saving) return
   if (usesMultiplier.value) {
@@ -120,7 +157,17 @@ function save() {
       multiplierError.value = '请输入大于或等于 0 的账号倍率'
       return
     }
-    emit('saveMultiplier', value)
+    if (draftModel.value === 'ratio_based_upstream') {
+      const actual = Number(draftActualCost.value)
+      const quota = Number(draftObtainedQuota.value)
+      if (!String(draftActualCost.value).trim() || !Number.isFinite(actual) || actual < 0 || !Number.isFinite(quota) || quota <= 0) {
+        multiplierError.value = '比例型上游需要有效的实际成本和获得额度'
+        return
+      }
+      emit('saveMultiplier', value, draftModel.value, actual, quota)
+      return
+    }
+    emit('saveMultiplier', value, draftModel.value)
     return
   }
   const cost = Number(draftCost.value)

@@ -4,6 +4,8 @@
 - Workspace: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t105-openai-429-account-cooldown`
 - Branch: `codex/t105-openai-429-account-cooldown`
 - Baseline: `main@5e6ccee143f07ee34017c25e75979b74b6bcfc77`
+- Implementation commit: `7afeccae221e47bc9e6ebc537e02ba7cffd5136b`
+- Implementation tree: `1ff0f56bf78fdf68e6477a8b287b2f0fa0bf0321`
 - Status: `READY_FOR_ROOT_REVIEW`
 - Scope: account-level OpenAI OAuth/SetupToken only; no model-level cooldown.
 
@@ -27,5 +29,6 @@
 - No production data or credentials touched.
 - Must refresh this candidate to the latest `main` before root review if `main` advances.
 - Root merge, push, deployment, and online verification remain pending root-controller authorization.
+- Candidate working tree is clean after the implementation commit; this handoff update is the only subsequent documentation change.
 - T98 currently occupies the sole `DEPLOYING` lane and is stopped at `downtime_required=true` / `migration_set_changed`; T105 cannot deploy until that lane is resolved and any required downtime authorization is obtained.
 - Rollback: use the release chain's previous validated slot after a root `main` revert or forward-fix commit.

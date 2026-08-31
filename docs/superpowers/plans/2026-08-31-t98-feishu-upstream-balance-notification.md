@@ -32,12 +32,12 @@
 - Consumes: `Account`, `AccountMonitorBalance`, `AccountMonitorAccountRepository.ListAllWithFilters`, `AccountMonitorService.resolveBalance` semantics.
 - Produces: `NormalizeNotificationBaseURL(string) (string, error)`, `EvaluateUpstreamBaseURLBalance([]UpstreamBalanceAccount) ([]UpstreamBalanceEvaluation, error)` and internal `validNotificationSnapshot` used by repository and sender tasks.
 
-- [ ] **Step 1: Write failing tests** for URL normalization (trim trailing slash, lowercase host, reject non-HTTP(S)/userinfo/query/fragment), eligibility filtering, latest `observed_at` selection, failed snapshot rejection, equal-time conflicting values, and low/zero/healthy boundaries.
-- [ ] **Step 2: Run the focused service test**:
+- [x] **Step 1: Write failing tests** for URL normalization (trim trailing slash, lowercase host, reject non-HTTP(S)/userinfo/query/fragment), eligibility filtering, latest `observed_at` selection, failed snapshot rejection, equal-time conflicting values, and low/zero/healthy boundaries.
+- [x] **Step 2: Run the focused service test**:
   `cd upstream/sub2api/backend && go test -run 'Test(NormalizeNotificationBaseURL|EvaluateUpstreamBaseURLBalance)' ./internal/service`
   Expected: FAIL because the new functions do not exist.
-- [ ] **Step 3: Implement minimal pure functions** with hand-derived status values and no database or HTTP calls; preserve failed snapshots as ineligible even when they retain old values.
-- [ ] **Step 4: Re-run the focused tests** and confirm all boundary cases pass.
+- [x] **Step 3: Implement minimal pure functions** with hand-derived status values and no database or HTTP calls; preserve failed snapshots as ineligible even when they retain old values.
+- [x] **Step 4: Re-run the focused tests** and confirm all boundary cases pass. The repository's two unrelated broken test files are excluded only via `/tmp/t98_service_test_overlay.json`; production package sources and T98 tests compile and pass.
 - [ ] **Step 5: Commit** `feat: add baseurl balance notification evaluation`.
 
 ### Task 2: Load protected Feishu and login-registry secrets

@@ -61,6 +61,17 @@ type OpsRepository interface {
 	GetLatestDailyBucketDate(ctx context.Context) (time.Time, bool, error)
 }
 
+type UpstreamBalanceEventRepository interface {
+	GetRuleID(ctx context.Context) (int64, error)
+	Claim(ctx context.Context, input UpstreamBalanceClaimInput) (UpstreamBalanceDeliveryLease, bool, error)
+	GetCurrent(ctx context.Context, eventID int64) (*UpstreamBalanceEvent, error)
+	ConfirmDelivery(ctx context.Context, result UpstreamBalanceDeliveryResult) (bool, error)
+	RecordFailure(ctx context.Context, failure UpstreamBalanceDeliveryFailure) (bool, error)
+	Resolve(ctx context.Context, ruleID int64, scopeKey string, observedAt time.Time) (bool, error)
+	ListActive(ctx context.Context, limit int) ([]UpstreamBalanceEvent, error)
+	WithScopeLock(ctx context.Context, ruleID int64, scopeKey string, fn func(context.Context) error) (bool, error)
+}
+
 type OpsInsertErrorLogInput struct {
 	RequestID       string
 	ClientRequestID string

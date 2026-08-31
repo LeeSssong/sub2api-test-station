@@ -72,7 +72,7 @@
 - [x] **Step 2: Run** `go test -run 'Test(RenderUpstreamBalanceCard|FeishuSender)' ./internal/notify` and verify expected FAIL.
 - [x] **Step 3: Implement the card model and sender using 10-second timeout, tenant-token refresh-once behavior, HTTP/business-code validation, and no response-body propagation.
 - [x] **Step 4: Re-run tests**, including a fake HTTP transport that confirms zero calls to `urgent_app` for P1. Added a red-green regression for tiny positive balances so display precision cannot cross the zero/low boundary.
-- [ ] **Step 5: Commit** `feat: add upstream balance feishu cards`.
+- [x] **Step 5: Commit** `feat: add upstream balance feishu cards` (`20f672d30`).
 
 ### Task 4: Extend native event ledger for BaseURL-scoped claims
 
@@ -88,10 +88,10 @@
 - Consumes: `ops_alert_events`, `ops_alert_rules`, existing `hashAdvisoryLockID`/advisory-lock helpers.
 - Produces: `UpstreamBalanceEventRepository.Claim`, `ConfirmDelivery`, `RecordFailure`, `Resolve`, with event fields limited to scope, state, timestamps, generation, lease token and non-sensitive error code.
 
-- [ ] **Step 1: Write failing migration/repository tests** for columns, partial unique index on `(rule_id, scope_type, scope_key)` while firing, and CAS rejection when generation/token changed.
-- [ ] **Step 2: Run** `go test -run 'Test(UpstreamBalanceEventMigration|UpstreamBalanceEventRepository)' ./migrations ./internal/repository` and verify expected FAIL.
-- [ ] **Step 3: Add the migration and repository methods**; use one transaction for row lock/claim, `pg_try_advisory_xact_lock` for scope serialization, and never accept card JSON or credentials as repository inputs.
-- [ ] **Step 4: Re-run tests** and verify two competing claims produce one active lease while different BaseURLs remain independent.
+- [x] **Step 1: Write failing migration/repository tests** for columns, partial unique index on `(rule_id, scope_type, scope_key)` while firing, and CAS rejection when generation/token changed.
+- [x] **Step 2: Run** `go test -run 'Test(UpstreamBalanceEventMigration|UpstreamBalanceEventRepository)' ./migrations ./internal/repository` and verify expected FAIL.
+- [x] **Step 3: Add the migration and repository methods**; use one transaction for row lock/claim, `pg_try_advisory_xact_lock` for scope serialization, and never accept card JSON or credentials as repository inputs.
+- [x] **Step 4: Re-run tests** and verify two competing claims produce one active lease while different BaseURLs remain independent. Repository tests require `-vet=off` because the package has a pre-existing unrelated `fmt.Sprintf` vet failure in `usage_log_repo_stats.go:1004`.
 - [ ] **Step 5: Commit** `feat: add baseurl scoped native alert ledger`.
 
 ### Task 5: Implement native evaluator and due-delivery worker

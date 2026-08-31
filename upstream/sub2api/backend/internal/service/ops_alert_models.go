@@ -2,6 +2,13 @@ package service
 
 import "time"
 
+const (
+	UpstreamBalanceAlertRuleName         = "upstream_baseurl_balance_usd_v1"
+	UpstreamBalanceScopeTypeBaseURL      = "base_url"
+	UpstreamBalanceNotificationStateLow  = "low"
+	UpstreamBalanceNotificationStateZero = "zero"
+)
+
 // Ops alert rule/event models.
 //
 // NOTE: These are admin-facing DTOs and intentionally keep JSON naming aligned
@@ -92,4 +99,60 @@ type OpsAlertEventFilter struct {
 	// Dimensions filters (best-effort).
 	Platform string
 	GroupID  *int64
+}
+
+// UpstreamBalanceEvent contains only non-sensitive delivery state. Card
+// content and upstream login credentials must never cross this boundary.
+type UpstreamBalanceEvent struct {
+	ID                    int64
+	RuleID                int64
+	Status                string
+	ScopeType             string
+	ScopeKey              string
+	NotificationState     string
+	LastObservedAt        time.Time
+	LastDeliveredAt       *time.Time
+	DeliveryGeneration    int64
+	DeliveryAttemptCount  int
+	NextAttemptAt         *time.Time
+	DeliveryLeaseToken    string
+	DeliveryLeaseUntil    *time.Time
+	LastDeliveryErrorCode string
+	CreatedAt             time.Time
+}
+
+type UpstreamBalanceClaimInput struct {
+	RuleID            int64
+	ScopeKey          string
+	NotificationState string
+	ObservedAt        time.Time
+	Now               time.Time
+	RepeatInterval    time.Duration
+	LeaseDuration     time.Duration
+}
+
+type UpstreamBalanceDeliveryLease struct {
+	EventID           int64
+	RuleID            int64
+	ScopeKey          string
+	NotificationState string
+	ObservedAt        time.Time
+	Generation        int64
+	Token             string
+	LeaseUntil        time.Time
+}
+
+type UpstreamBalanceDeliveryResult struct {
+	EventID    int64
+	Generation int64
+	LeaseToken string
+	At         time.Time
+}
+
+type UpstreamBalanceDeliveryFailure struct {
+	EventID       int64
+	Generation    int64
+	LeaseToken    string
+	NextAttemptAt time.Time
+	ErrorCode     string
 }

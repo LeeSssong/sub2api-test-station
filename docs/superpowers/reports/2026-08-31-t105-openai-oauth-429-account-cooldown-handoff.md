@@ -3,9 +3,9 @@
 - Task: T105 OpenAI OAuth 429 account-level native cooldown
 - Workspace: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t105-openai-429-account-cooldown`
 - Branch: `codex/t105-openai-429-account-cooldown`
-- Baseline: `main@5e6ccee143f07ee34017c25e75979b74b6bcfc77`
+- Refreshed baseline: `origin/main@aa2727fa710a785ec3f27a07e0329336524d968d`
 - Prior implementation commit: `d267d298abd2dbdb5ba50f48948dc9d6a58dbcd6`
-- Review-fix candidate: committed after official-five-second fallback correction and review fixes
+- Review-fix candidate: `18fd637af384086785b1cf557edd4e81426b7aa0` (tree `38b515b3a48d6967def81ab844be6f17dad0bc24`), refreshed from latest `origin/main`
 - Status: `READY_FOR_ROOT_REVIEW`
 - Scope: account-level OpenAI OAuth/SetupToken only; no model-level cooldown.
 

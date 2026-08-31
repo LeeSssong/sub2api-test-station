@@ -58,3 +58,10 @@
 - 清表前：关闭新 sender、回退 T98 代码并走既有发布链；migration 231 的附加列可保留，不影响旧业务。
 - 清表后：按批准规格不恢复旧通知历史或旧 sender；回滚只关闭/修复新 sender，并保留非敏感原生事件账本供后续处理。
 - 任何通知失败不得回滚余额刷新、调度、计费或网关业务路径。
+
+## Recovery Delta (2026-08-31)
+
+- 候选已刷新到当前根 `main@43ffa2353ed96da668d0846753f472fea922d07d`，刷新合并提交为 `34aed9938f4d4cc7c375c56057e8bc143b82db5b`，候选 tree `8f7da9accdee563ea61ad4f229ac9d8c6a0764ea`；候选相对根 `main` ahead 6、behind 0，工作树干净。
+- 新增修复提交 `d0a4c9a1b`：`Resolve` 使用严格 `last_observed_at` 单调 CAS；活动 claim 只接受更新观测或同时间同状态同数值续租；stale `RETURNING` 空行提交事务并返回未 claim；无活动行时以最新 resolved 非空观测水位阻止旧观测重开事件。`b3b4be899` 的冲突 BaseURL scope 隔离保持不变。
+- 刷新后直接验证：service、notify、repository（`-vet=off`）、migration、converter 目标测试通过；`go build ./cmd/server` 通过；relay-ops `go test ./...`、三个二进制构建、退休/配置/secret 合同测试通过；`git diff --check` 通过。
+- 本候选未执行且不得自行执行：根合并授权、推送、部署、停机、迁移 231、旧表清理、secret/开关生产写入、验收/主站真实消息。根总控必须先按发布来源门禁和主站明确授权路径处理；“推送部署”不能授权功能 worktree 直接发布。

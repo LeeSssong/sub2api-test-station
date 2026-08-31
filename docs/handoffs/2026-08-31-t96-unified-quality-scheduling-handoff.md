@@ -160,3 +160,14 @@ Commit the four T96 baseline artifacts, then begin Task 2 with RED tests for `ex
 - Dependency: T95 effective-cost contract is present in this candidate history. T103 is abandoned; native Sub account-slot-only semantics remain mandatory.
 - Pending: commit the five-file OAuth compatibility patch, safely merge the current root `main` into this candidate, rerun the narrowed functional coverage, create the verification report, and mark this handoff `READY_FOR_ROOT_REVIEW`. Do not modify root `main`, global queue, project ledger, deploy, push, or production.
 - Stop/rollback: if refresh conflicts or root moves, stop and record the new SHA; preserve all candidate commits and local changes. Code rollback remains the existing scheduler feature switch/previous verified commit.
+
+## Recovery checkpoint (2026-09-01, before latest-main refresh)
+
+- Authoritative worktree: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t96-unified-quality-scheduling`.
+- Branch/HEAD/tree: `codex/t96-unified-quality-scheduling` / `c381f30d8637e31896e680ec9013a8e519a726b8` / `06acb868a4369cfdb7e220ddbd39691053e6d6fa`.
+- Root refs: clean `main == origin/main == aa2727fa710a785ec3f27a07e0329336524d968d`, tree `b7b5cbeb4e8d6e146244149f669b1792462c312e`. Candidate is behind the current main by three root commits and must be refreshed in this worktree before READY_FOR_ROOT_REVIEW.
+- Worktree state: clean; no staged or untracked files. The preserved old evidence worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t96-group-account-baseline` remains untouched. No release, deploy, migration, or production command is running.
+- Confirmed goal/decisions: T96 unified ordinary-text quality routing, native profit availability-first fallback, group `extra_retry_count`, safe cross-account replay only, native Sub slots only, image path unchanged, no automatic account-pool or priority mutation, no T103 revival.
+- Confirmed implementation: T96 commits `be31cd869`, `6182893a8`, `c4c81662f`, `072e0674e`, plus the latest-main merge `c381f30d8`; current refresh must preserve T96 and T104/T105 root changes. The helper keeps T105 OAuth cooldown/stop semantics, and unified paths skip the legacy one-shot group reset.
+- Direct test evidence: focused service, repository, server build, helper/budget, scheduler-settings Vitest 4/4, frontend typecheck, source guard, gofmt and diff-check passed after the previous refresh. Full handler package remains blocked by baseline test compile defects (`ProvideHandlers` arity and missing `openAIAccountScheduleModel`), not by the T96 helper.
+- Pending: merge current root `main` into this candidate, resolve only T96/T104/T105 source overlap, rerun narrowed functional coverage, write the T96 verification report, and update this handoff to `READY_FOR_ROOT_REVIEW`. Do not modify root `main`, queue, project ledger, push, deploy, or production.

@@ -54,7 +54,7 @@
 - [x] **Step 2: Run** `go test -run 'TestLoadUpstreamBalanceSecrets|TestLoginRegistry' ./internal/notify` and verify expected FAIL.
 - [x] **Step 3: Implement secure file checks, bounded decoding, normalization and zeroing of temporary byte buffers; do not log file content.
 - [x] **Step 4: Re-run tests** and verify malformed files fail without preventing unrelated service construction.
-- [ ] **Step 5: Commit** `feat: add protected upstream balance secret loader`.
+- [x] **Step 5: Commit** `feat: add protected upstream balance secret loader` (`80667fbe5`).
 
 ### Task 3: Render and send P1/P2 cards with existing Feishu transport contracts
 
@@ -68,10 +68,10 @@
 - Consumes: `UpstreamBalanceEvaluation`, `LoginRegistry`, existing wide-screen card conventions, `http.Client`.
 - Produces: `RenderUpstreamBalanceCard(UpstreamBalanceCardInput) ([]byte, error)`, `FeishuSender.Send(context.Context, UpstreamBalanceCardInput) (messageID string, error)`.
 
-- [ ] **Step 1: Write failing tests** asserting P2 orange/no mention/title, P1 red/recipient mention/no urgent call, one balance and credential block, all active accounts/ranks in stable order, “未登记”/“未排名”, exact 30 KiB rejection, and no API key or raw snapshot fields.
-- [ ] **Step 2: Run** `go test -run 'Test(RenderUpstreamBalanceCard|FeishuSender)' ./internal/notify` and verify expected FAIL.
-- [ ] **Step 3: Implement the card model and sender using 10-second timeout, tenant-token refresh-once behavior, HTTP/business-code validation, and no response-body propagation.
-- [ ] **Step 4: Re-run tests**, including a fake HTTP transport that confirms zero calls to `urgent_app` for P1.
+- [x] **Step 1: Write failing tests** asserting P2 orange/no mention/title, P1 red/recipient mention/no urgent call, one balance and credential block, all active accounts/ranks in stable order, “未登记”/“未排名”, exact 30 KiB rejection, and no API key or raw snapshot fields.
+- [x] **Step 2: Run** `go test -run 'Test(RenderUpstreamBalanceCard|FeishuSender)' ./internal/notify` and verify expected FAIL.
+- [x] **Step 3: Implement the card model and sender using 10-second timeout, tenant-token refresh-once behavior, HTTP/business-code validation, and no response-body propagation.
+- [x] **Step 4: Re-run tests**, including a fake HTTP transport that confirms zero calls to `urgent_app` for P1. Added a red-green regression for tiny positive balances so display precision cannot cross the zero/low boundary.
 - [ ] **Step 5: Commit** `feat: add upstream balance feishu cards`.
 
 ### Task 4: Extend native event ledger for BaseURL-scoped claims

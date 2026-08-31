@@ -24,6 +24,8 @@ type openAISharedHealthStoreStub struct {
 	completeCalls     int
 	lastEvent         OpenAISharedHealthEvent
 	admissions        map[string]OpenAISharedAdmissionRequest
+	admissionCalls    int
+	releaseCalls      int
 	slowGuard         map[int64]time.Time
 	recordContextErr  error
 	renewCalls        int
@@ -151,6 +153,7 @@ func openAIAdmissionStubKey(request OpenAISharedAdmissionRequest) string {
 func (s *openAISharedHealthStoreStub) AcquireAdmission(_ context.Context, request OpenAISharedAdmissionRequest) (OpenAISharedAdmissionDecision, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.admissionCalls++
 	if s.getErr != nil {
 		return OpenAISharedAdmissionDecision{}, s.getErr
 	}
@@ -177,11 +180,34 @@ func (s *openAISharedHealthStoreStub) RenewAdmission(_ context.Context, request 
 func (s *openAISharedHealthStoreStub) ReleaseAdmission(_ context.Context, request OpenAISharedAdmissionRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.releaseCalls++
 	if s.getErr != nil {
 		return s.getErr
 	}
 	delete(s.admissions, openAIAdmissionStubKey(request))
 	return nil
+}
+
+func TestOpenAIAdmissionIsPermanentlyDisabled(t *testing.T) {
+	store := newOpenAISharedHealthStoreStub()
+	store.admissionDecision = &OpenAISharedAdmissionDecision{Allowed: false, Reason: "slow_session_guard"}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAISharedHealth = DefaultOpenAISharedHealthConfig()
+	cfg.Gateway.OpenAISharedHealth.Enabled = true
+	cfg.Gateway.OpenAISharedHealth.AdmissionEnabled = true
+	svc := &OpenAIGatewayService{cfg: cfg}
+	svc.SetOpenAISharedHealthStore(store)
+
+	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeLong)
+	release()
+
+	require.True(t, decision.Allowed)
+	require.Equal(t, "disabled", decision.Reason)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Zero(t, store.admissionCalls)
+	require.Zero(t, store.releaseCalls)
+	require.Empty(t, store.admissions)
 }
 
 func (s *openAISharedHealthStoreStub) RecordSlowSessionGuard(_ context.Context, accountID int64, observedAt time.Time) error {
@@ -203,7 +229,7 @@ func (s *openAISharedHealthStoreStub) HasSlowSessionGuard(_ context.Context, acc
 	return s.slowGuard[accountID].After(time.Now()), nil
 }
 
-func TestOpenAISlowSessionGuardRequiresTrustedCompletedStream(t *testing.T) {
+func TestOpenAISlowSessionGuardIsPermanentlyDisabled(t *testing.T) {
 	store := newOpenAISharedHealthStoreStub()
 	svc := &OpenAIGatewayService{}
 	svc.SetOpenAISharedHealthStore(store)
@@ -216,9 +242,8 @@ func TestOpenAISlowSessionGuardRequiresTrustedCompletedStream(t *testing.T) {
 		wantGuard     bool
 	}{
 		{
-			name:      "trusted slow completed stream",
-			result:    &OpenAIForwardResult{Stream: true, FirstTokenMs: &firstToken},
-			wantGuard: true,
+			name:   "trusted slow completed stream",
+			result: &OpenAIForwardResult{Stream: true, FirstTokenMs: &firstToken},
 		},
 		{
 			name:          "half open probe",
@@ -266,23 +291,25 @@ func TestOpenAISlowSessionGuardRequiresTrustedCompletedStream(t *testing.T) {
 	}
 }
 
-func TestOpenAIAdmissionRejectDoesNotFailOpen(t *testing.T) {
+func TestOpenAIAdmissionRejectDecisionIsIgnored(t *testing.T) {
 	store := newOpenAISharedHealthStoreStub()
 	store.admissionDecision = &OpenAISharedAdmissionDecision{Allowed: false, Reason: "slow_session_guard"}
 	svc := &OpenAIGatewayService{}
 	svc.SetOpenAISharedHealthStore(store)
 
 	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
-	require.False(t, decision.Allowed)
-	require.Equal(t, "slow_session_guard", decision.Reason)
+	require.True(t, decision.Allowed)
+	require.Equal(t, "disabled", decision.Reason)
 	release()
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	require.Zero(t, store.admissionCalls)
+	require.Zero(t, store.releaseCalls)
 	require.Empty(t, store.admissions)
 }
 
-func TestOpenAIAdmissionSafetyIsIndependentOfGroupPolicy(t *testing.T) {
+func TestOpenAIAdmissionIgnoresGroupPolicy(t *testing.T) {
 	store := newOpenAISharedHealthStoreStub()
 	store.admissionDecision = &OpenAISharedAdmissionDecision{Allowed: false, Reason: "slow_session_guard"}
 	svc := &OpenAIGatewayService{}
@@ -295,17 +322,16 @@ func TestOpenAIAdmissionSafetyIsIndependentOfGroupPolicy(t *testing.T) {
 
 	for _, policy := range policies {
 		t.Run(string(policy.Preset), func(t *testing.T) {
-			// Policy still determines post-filter ranking elsewhere. Admission has no
-			// group or policy input, so it must reject the same guarded account.
+			// Group policy must not affect the provider-native-only concurrency path.
 			release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
-			require.False(t, decision.Allowed)
-			require.Equal(t, "slow_session_guard", decision.Reason)
+			require.True(t, decision.Allowed)
+			require.Equal(t, "disabled", decision.Reason)
 			release()
 		})
 	}
 }
 
-func TestOpenAIAdmissionStoreFailureFailsOpen(t *testing.T) {
+func TestOpenAIAdmissionDoesNotReadStore(t *testing.T) {
 	store := newOpenAISharedHealthStoreStub()
 	store.getErr = errors.New("redis unavailable")
 	svc := &OpenAIGatewayService{}
@@ -313,8 +339,12 @@ func TestOpenAIAdmissionStoreFailureFailsOpen(t *testing.T) {
 
 	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
 	require.True(t, decision.Allowed)
-	require.Equal(t, "store_degraded", decision.Reason)
+	require.Equal(t, "disabled", decision.Reason)
 	release()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	require.Zero(t, store.admissionCalls)
+	require.Zero(t, store.releaseCalls)
 }
 
 func TestOpenAIAdmissionFirstSemanticOutputReleasesIdempotently(t *testing.T) {
@@ -334,7 +364,7 @@ func TestOpenAIAdmissionFirstSemanticOutputReleasesIdempotently(t *testing.T) {
 	require.Empty(t, store.admissions)
 }
 
-func TestOpenAIAdmissionRenewalStopsAfterRelease(t *testing.T) {
+func TestOpenAIAdmissionDoesNotStartRenewal(t *testing.T) {
 	store := newOpenAISharedHealthStoreStub()
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAISharedHealth = DefaultOpenAISharedHealthConfig()
@@ -345,20 +375,12 @@ func TestOpenAIAdmissionRenewalStopsAfterRelease(t *testing.T) {
 
 	release, decision := svc.AcquireOpenAIAdmission(153, OpenAIAdmissionShapeNormal)
 	require.True(t, decision.Allowed)
-	require.Eventually(t, func() bool {
-		store.mu.Lock()
-		defer store.mu.Unlock()
-		return store.renewCalls > 0
-	}, 7*time.Second, 100*time.Millisecond)
-
 	release()
 	store.mu.Lock()
-	renewCalls := store.renewCalls
-	store.mu.Unlock()
-	time.Sleep(5500 * time.Millisecond)
-	store.mu.Lock()
 	defer store.mu.Unlock()
-	require.Equal(t, renewCalls, store.renewCalls)
+	require.Zero(t, store.renewCalls)
+	require.Zero(t, store.admissionCalls)
+	require.Zero(t, store.releaseCalls)
 	require.Empty(t, store.admissions)
 }
 

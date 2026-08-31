@@ -10,7 +10,6 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -466,89 +465,17 @@ func logOpenAISharedHealthMutationFailure(operation string, accountID int64, err
 	)
 }
 
-func (s *OpenAIGatewayService) AcquireOpenAIAdmission(accountID int64, shape OpenAIAdmissionRequestShape) (func(), OpenAISharedAdmissionDecision) {
-	cfg := s.openAISharedHealthConfig()
-	if s == nil || !cfg.Enabled || !cfg.AdmissionEnabled || (shape != OpenAIAdmissionShapeNormal && shape != OpenAIAdmissionShapeLong) {
-		return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "disabled"}
-	}
-	s.sharedHealthSnapshotMu.Lock()
-	store, owner := s.sharedHealthStore, s.sharedHealthOwner
-	s.sharedHealthSnapshotMu.Unlock()
-	if store == nil {
-		return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "store_unavailable"}
-	}
-	leaseID := openAISharedHealthLeaseID(fmt.Sprintf("%s:%d", owner, openAISharedHealthOwnerSequence.Add(1)))
-	request := OpenAISharedAdmissionRequest{AccountID: accountID, LeaseID: leaseID, Shape: shape, ObservedAt: time.Now().UTC()}
-	writeCtx, cancel := s.openAISharedHealthWriteContext()
-	decision, err := store.AcquireAdmission(writeCtx, request)
-	cancel()
-	if err != nil {
-		logOpenAISharedHealthMutationFailure("acquire_admission", accountID, err)
-		return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "store_degraded"}
-	}
-	if !decision.Allowed {
-		return func() {}, decision
-	}
-	var once atomic.Bool
-	var stopOnce sync.Once
-	stopRenewal := make(chan struct{})
-	renewEvery := time.Duration(cfg.AdmissionRenewSeconds) * time.Second
-	if renewEvery <= 0 || renewEvery >= time.Duration(cfg.AdmissionLeaseTTLSeconds)*time.Second {
-		renewEvery = 25 * time.Second
-	}
-	go func() {
-		ticker := time.NewTicker(renewEvery)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				ctx, cancel := s.openAISharedHealthWriteContext()
-				err := store.RenewAdmission(ctx, request)
-				cancel()
-				if err != nil {
-					logOpenAISharedHealthMutationFailure("renew_admission", accountID, err)
-				}
-			case <-stopRenewal:
-				return
-			}
-		}
-	}()
-	release := func() {
-		if !once.CompareAndSwap(false, true) {
-			return
-		}
-		stopOnce.Do(func() { close(stopRenewal) })
-		ctx, cancel := s.openAISharedHealthWriteContext()
-		defer cancel()
-		if err := store.ReleaseAdmission(ctx, request); err != nil {
-			logOpenAISharedHealthMutationFailure("release_admission", accountID, err)
-		}
-	}
-	return release, decision
+// AcquireOpenAIAdmission intentionally remains a no-op. Account concurrency is
+// owned exclusively by the provider's native subscription limits; this service
+// must never add a second admission gate, even if stale configuration enables it.
+func (s *OpenAIGatewayService) AcquireOpenAIAdmission(_ int64, _ OpenAIAdmissionRequestShape) (func(), OpenAISharedAdmissionDecision) {
+	return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Reason: "disabled"}
 }
 
-// RecordOpenAISlowSessionGuard records only a trusted, real completed stream.
-// The account-only guard is deliberately independent from group and model so a
-// slow account cannot be refilled through another scheduler path.
-func (s *OpenAIGatewayService) RecordOpenAISlowSessionGuard(accountID int64, result *OpenAIForwardResult, halfOpenProbe bool) {
-	if s == nil || accountID <= 0 || halfOpenProbe || result == nil || !result.Stream || result.ClientDisconnect || !result.SucceededForScheduling() || result.FirstTokenMs == nil {
-		return
-	}
-	cfg := s.openAISharedHealthConfig()
-	if !cfg.Enabled || cfg.SlowTTFTMS <= 0 || *result.FirstTokenMs < cfg.SlowTTFTMS {
-		return
-	}
-	s.sharedHealthSnapshotMu.Lock()
-	store := s.sharedHealthStore
-	s.sharedHealthSnapshotMu.Unlock()
-	if store == nil {
-		return
-	}
-	ctx, cancel := s.openAISharedHealthWriteContext()
-	defer cancel()
-	if err := store.RecordSlowSessionGuard(ctx, accountID, time.Now().UTC()); err != nil {
-		logOpenAISharedHealthMutationFailure("record_slow_session_guard", accountID, err)
-	}
+// RecordOpenAISlowSessionGuard is retained for source compatibility but is
+// deliberately disabled with AcquireOpenAIAdmission. Provider-native account
+// limits are the sole concurrency control.
+func (s *OpenAIGatewayService) RecordOpenAISlowSessionGuard(_ int64, _ *OpenAIForwardResult, _ bool) {
 }
 
 func openAISharedHealthLeaseID(value string) string {

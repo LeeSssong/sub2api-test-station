@@ -145,6 +145,8 @@ func TestScanCCStreamNotifiesAfterEmittingFirstSemanticChunk(t *testing.T) {
 	ctx := WithOpenAIFirstSemanticOutputCallback(context.Background(), func() {
 		order = append(order, "callback")
 	})
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
 	resp := &http.Response{
 		Body: http.NoBody,
 	}

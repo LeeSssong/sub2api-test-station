@@ -771,6 +771,45 @@ func TestAccountMonitorRepositoryListsRecentTimelinesInOneBatch(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	timelineRepo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorRealRequestTimelineRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement real request timelines")
+	}
+	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
+	until := since.Add(24 * time.Hour)
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*bucket_index.*ORDER BY account_id, bucket_index`).
+		WithArgs(sqlmock.AnyArg(), since, until, 3600.0).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
+			AddRow(7, 3, 5, 4, 1, 6200.0).
+			AddRow(7, 22, 2, 2, 0, 900.0))
+
+	timelines, err := timelineRepo.ListRealRequestTimelines(context.Background(), []int64{7, 8}, since, until, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(timelines[7]) != 24 || len(timelines[8]) != 24 {
+		t.Fatalf("timeline lengths = %d/%d, want 24/24", len(timelines[7]), len(timelines[8]))
+	}
+	if timelines[7][0].RequestCount != 0 || timelines[7][0].TTFTP95MS != nil {
+		t.Fatalf("empty bucket = %#v", timelines[7][0])
+	}
+	if timelines[7][3].RequestCount != 5 || timelines[7][3].FailureCount != 1 || timelines[7][3].TTFTP95MS == nil || *timelines[7][3].TTFTP95MS != 6200 {
+		t.Fatalf("filled bucket = %#v", timelines[7][3])
+	}
+	if !timelines[7][23].EndAt.Equal(until) {
+		t.Fatalf("last bucket end = %s, want %s", timelines[7][23].EndAt, until)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryGroupWindowAggregatesIncludeRequestedGroupID(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

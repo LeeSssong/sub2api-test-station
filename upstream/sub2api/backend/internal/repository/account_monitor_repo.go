@@ -982,6 +982,14 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		bucketCount = service.AccountMonitorTimelineLimit
 	}
 	bucketSeconds := until.Sub(since).Seconds() / float64(bucketCount)
+	for _, id := range accountIDs {
+		points := make([]service.AccountMonitorRealRequestTimelinePoint, bucketCount)
+		for index := range points {
+			points[index].StartAt = since.Add(time.Duration(float64(index)*bucketSeconds) * time.Second).UTC()
+			points[index].EndAt = since.Add(time.Duration(float64(index+1)*bucketSeconds) * time.Second).UTC()
+		}
+		result[id] = points
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		WITH usage_events AS (
 			SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms,
@@ -1014,9 +1022,13 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		if err := rows.Scan(&id, &index, &p.RequestCount, &p.SuccessCount, &p.FailureCount, &p.TTFTP95MS); err != nil {
 			return nil, err
 		}
-		p.StartAt = since.Add(time.Duration(float64(index)*bucketSeconds) * time.Second).UTC()
-		p.EndAt = since.Add(time.Duration(float64(index+1)*bucketSeconds) * time.Second).UTC()
-		result[id] = append(result[id], p)
+		points, exists := result[id]
+		if !exists || index < 0 || index >= len(points) {
+			continue
+		}
+		p.StartAt = points[index].StartAt
+		p.EndAt = points[index].EndAt
+		result[id][index] = p
 	}
 	return result, rows.Err()
 }

@@ -11,7 +11,7 @@ import (
 
 const (
 	openAIAccountStateUpdateTimeout       = 5 * time.Second
-	openAIOAuth429FallbackCooldown        = 5 * time.Second
+	openAIOAuth429FallbackCooldown        = 5 * time.Minute
 	openAIOAuth429RetryWindow             = 2 * time.Minute
 	openAIOAuth429RetryDelay              = 500 * time.Millisecond
 	openAIOAuth429MaxRetryDelay           = 8 * time.Second
@@ -220,13 +220,132 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	cooldownUntil := time.Now().Add(openAIOAuth429FallbackCooldown)
 	if resetAt != nil && resetAt.After(time.Now()) {
 		cooldownUntil = *resetAt
-	} else if s.rateLimitService != nil {
-		if cooldown, ok := s.rateLimitService.get429FallbackCooldown(ctx, account); ok && cooldown > 0 {
-			cooldownUntil = time.Now().Add(cooldown)
-		}
+	} else if retryAfter := parseRetryAfterResetTime(headers, time.Now()); retryAfter != nil && retryAfter.After(time.Now()) {
+		cooldownUntil = *retryAfter
 	}
 	s.BlockAccountScheduling(account, cooldownUntil, "429")
 	s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+}
+
+// PersistOpenAIOAuth429Cooldown parks an OAuth account after the request-local
+// same-account retry budget is exhausted or a failover transition is about to
+// happen. The first transient 429 remains retryable and is intentionally not
+// persisted by this method's callers until that transition point.
+func (s *OpenAIGatewayService) PersistOpenAIOAuth429Cooldown(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
+	if s == nil || account == nil || !isOpenAIOAuthAccount(account) || account.IsShadow() {
+		return
+	}
+	if classify, resetAt := classifyOpenAIOAuth429(headers, responseBody); classify != openAIOAuth429Transient {
+		return
+	} else if resetAt != nil && resetAt.After(time.Now()) {
+		s.persistOpenAIOAuth429Cooldown(ctx, account, *resetAt)
+		return
+	} else if retryAfter := parseRetryAfterResetTime(headers, time.Now()); retryAfter != nil && retryAfter.After(time.Now()) {
+		s.persistOpenAIOAuth429Cooldown(ctx, account, *retryAfter)
+		return
+	}
+	s.persistOpenAIOAuth429Cooldown(ctx, account, time.Now().Add(openAIOAuth429FallbackCooldown))
+}
+
+type openAIAccountRateLimitExtender interface {
+	SetRateLimitedIfLater(ctx context.Context, id int64, resetAt time.Time) error
+}
+
+func (s *OpenAIGatewayService) persistOpenAIOAuth429Cooldown(ctx context.Context, account *Account, resetAt time.Time) {
+	if s == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	s.BlockAccountScheduling(account, resetAt, "429")
+	if s.accountRepo == nil {
+		return
+	}
+	stateCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	var err error
+	if extender, ok := s.accountRepo.(openAIAccountRateLimitExtender); ok {
+		err = extender.SetRateLimitedIfLater(stateCtx, account.ID, resetAt)
+	} else {
+		err = s.accountRepo.SetRateLimited(stateCtx, account.ID, resetAt)
+	}
+	if err != nil {
+		slog.Warn("openai_oauth_429_rate_limit_persist_failed", "account_id", account.ID, "reset_at", resetAt.UTC(), "error", err)
+		return
+	}
+	s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+}
+
+// RefreshOpenAIOAuth429Group clears one request's stale OAuth 429 exclusions
+// so a group can make one fresh scheduling pass after its candidate pool is
+// exhausted. Only short T105 cooldowns are cleared; native 7d quota pauses,
+// disabled accounts, credential failures, and other durable state remain.
+func (s *OpenAIGatewayService) RefreshOpenAIOAuth429Group(ctx context.Context, groupID int64, excludedIDs map[int64]struct{}) (int, error) {
+	if s == nil || s.accountRepo == nil || groupID <= 0 || len(excludedIDs) == 0 {
+		return 0, nil
+	}
+	stateCtx, cancel := openAIAccountStateContext(ctx)
+	defer cancel()
+	accounts, err := s.accountRepo.ListByGroup(stateCtx, groupID)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now()
+	cleared := 0
+	for i := range accounts {
+		account := &accounts[i]
+		if account == nil || !isOpenAIOAuthAccount(account) {
+			continue
+		}
+		if _, excluded := excludedIDs[account.ID]; !excluded {
+			continue
+		}
+		if !account.IsActive() || !account.Schedulable || account.ErrorMessage != "" {
+			continue
+		}
+		if account.TempUnschedulableUntil != nil && account.TempUnschedulableUntil.After(now) {
+			continue
+		}
+		if openAINative7dQuotaBlocked(stateCtx, account, now) {
+			continue
+		}
+		changed := false
+		if openAIShortOAuth429Cooldown(account, now) {
+			if err := s.accountRepo.ClearRateLimit(stateCtx, account.ID); err != nil {
+				return cleared, err
+			}
+			changed = true
+		}
+		if s.isOpenAIAccountRuntimeBlocked(account) {
+			s.ClearAccountSchedulingBlock(account.ID)
+			changed = true
+		}
+		if changed {
+			cleared++
+		}
+	}
+	return cleared, nil
+}
+
+func openAIShortOAuth429Cooldown(account *Account, now time.Time) bool {
+	if account == nil || account.RateLimitedAt == nil || account.RateLimitResetAt == nil || !account.RateLimitResetAt.After(now) {
+		return false
+	}
+	startedAt := *account.RateLimitedAt
+	if startedAt.After(now) {
+		return false
+	}
+	duration := account.RateLimitResetAt.Sub(startedAt)
+	return duration >= openAIOAuth429FallbackCooldown-time.Second && duration <= openAIOAuth429FallbackCooldown+time.Second
+}
+
+func openAINative7dQuotaBlocked(ctx context.Context, account *Account, now time.Time) bool {
+	if account == nil {
+		return false
+	}
+	if paused, decision := shouldAutoPauseOpenAIAccountByQuotaAt(ctx, account, now); paused && decision.window == "7d" {
+		return true
+	}
+	utilization, ok := resolveOpenAIQuotaUtilization(account.Extra, "7d", now)
+	return ok && utilization >= 1
 }
 
 func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *Account, statusCode int, shouldDisable bool) bool {

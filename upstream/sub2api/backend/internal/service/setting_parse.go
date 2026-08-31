@@ -1375,6 +1375,7 @@ func normalizeOpenAISchedulerFairnessOverridesForRead(values map[int64]OpenAISch
 func normalizeOpenAISchedulerGroupPoliciesForRead(policies map[int64]OpenAISchedulerGroupPolicy) map[int64]OpenAISchedulerGroupPolicy {
 	result := make(map[int64]OpenAISchedulerGroupPolicy, len(policies))
 	for id, policy := range policies {
+		policy.ExtraRetryCount = normalizeOpenAIExtraRetryCountForRead(policy.ExtraRetryCount)
 		if policy.TopK != nil {
 			value := *policy.TopK
 			if value < 1 {
@@ -1443,6 +1444,11 @@ func parseOpenAISchedulerGroupPolicies(raw string) (map[int64]OpenAISchedulerGro
 		if isLegacy {
 			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
 			policy.LegacyFairness = legacy
+			value, err := parseOpenAIExtraRetryCount(rawFields["extra_retry_count"])
+			if err != nil {
+				return nil, err
+			}
+			policy.ExtraRetryCount = value
 		} else {
 			dec := json.NewDecoder(bytes.NewReader(blob))
 			dec.DisallowUnknownFields()
@@ -1450,9 +1456,56 @@ func parseOpenAISchedulerGroupPolicies(raw string) (map[int64]OpenAISchedulerGro
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy contains unknown or invalid fields")
 			}
 		}
+		normalizedExtraRetryCount, err := normalizeOpenAIExtraRetryCount(policy.ExtraRetryCount)
+		if err != nil {
+			return nil, err
+		}
+		policy.ExtraRetryCount = normalizedExtraRetryCount
 		result[id] = policy
 	}
 	return result, nil
+}
+
+func parseOpenAIExtraRetryCount(raw json.RawMessage) (*int, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var value int
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "extra_retry_count must be an integer between 0 and 3")
+	}
+	return normalizeOpenAIExtraRetryCount(&value)
+}
+
+func normalizeOpenAIExtraRetryCount(value *int) (*int, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if *value < 0 || *value > 3 {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "extra_retry_count must be between 0 and 3")
+	}
+	normalized := *value
+	return &normalized, nil
+}
+
+func normalizeOpenAIExtraRetryCountForRead(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	normalized := *value
+	if normalized < 0 {
+		normalized = 0
+	} else if normalized > 3 {
+		normalized = 3
+	}
+	return &normalized
+}
+
+func resolveOpenAIExtraRetryCount(policy OpenAISchedulerGroupPolicy) int {
+	if policy.ExtraRetryCount == nil {
+		return 0
+	}
+	return *policy.ExtraRetryCount
 }
 
 func parseOpenAISchedulerCustomPresets(raw string) (map[string]OpenAISchedulerCustomPreset, error) {
@@ -1653,6 +1706,11 @@ func ValidateOpenAISchedulerPresetUpdate(previous, next map[string]OpenAISchedul
 func normalizeOpenAISchedulerGroupPoliciesWithPresets(policies map[int64]OpenAISchedulerGroupPolicy, global OpenAISchedulerPolicyValues, knownGroups map[int64]struct{}, custom map[string]OpenAISchedulerCustomPreset) (map[int64]OpenAISchedulerGroupPolicy, error) {
 	result := make(map[int64]OpenAISchedulerGroupPolicy, len(policies))
 	for id, policy := range policies {
+		var err error
+		policy.ExtraRetryCount, err = normalizeOpenAIExtraRetryCount(policy.ExtraRetryCount)
+		if err != nil {
+			return nil, err
+		}
 		if id <= 0 {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy group id must be positive")
 		}
@@ -1789,6 +1847,11 @@ func schedulerPresetValuesByID(id string, custom map[string]OpenAISchedulerCusto
 func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGroupPolicy, global OpenAISchedulerPolicyValues, knownGroups map[int64]struct{}) (map[int64]OpenAISchedulerGroupPolicy, error) {
 	result := make(map[int64]OpenAISchedulerGroupPolicy, len(policies))
 	for id, policy := range policies {
+		var err error
+		policy.ExtraRetryCount, err = normalizeOpenAIExtraRetryCount(policy.ExtraRetryCount)
+		if err != nil {
+			return nil, err
+		}
 		if id <= 0 {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy group id must be positive")
 		}

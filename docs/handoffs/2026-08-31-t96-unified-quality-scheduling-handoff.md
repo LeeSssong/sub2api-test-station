@@ -64,3 +64,35 @@ Not complete:
 ## Next executable action
 
 Commit the four T96 baseline artifacts, then begin Task 2 with RED tests for `extra_retry_count`.
+
+## Recovery checkpoint (post-interruption, 2026-08-31)
+
+- The previous settings inspection was interrupted before any source edit. No command is running and no release/deploy/migration action was started.
+- Candidate remains clean except for the committed baseline; `HEAD=3b6a657d8b4485a9f17921ff8a23a14847527f1a`, tree `303c71fcd957ad1d7faf395c6e5d083718cef86a`, branch `codex/t96-unified-quality-scheduling`.
+- Root `main` and `origin/main` still both resolve to `5e6ccee143f07ee34017c25e75979b74b6bcfc77`, tree `42dda8e317725a710340b5624bbda887cd1f6a50`; candidate is one local baseline commit ahead and has no divergence from the root base.
+- The current queue records T105 as an independent `IMPLEMENTING` candidate and T103 as `ABANDONED`; neither permits changes to this worktree's scope. Native-only account-slot semantics remain mandatory.
+- T95 dependency is confirmed in the candidate source (`EffectiveCostForAccount`, `EffectiveCost`, and `EffectiveCostStatusReady`). No T96 runtime tests or implementation files exist yet.
+- Next action: add only the planned Task 2 RED tests, run the focused test command to capture the expected failure, then implement the minimal settings field/validation. Stop and update this handoff before any later task or interruption.
+
+## Recovery checkpoint (post-test interruption, 2026-08-31)
+
+- The two first RED test sessions were interrupted while the Go toolchain was running; both session IDs are now gone and `ps` shows no matching `go test` process. Their output was not retained, so no RED result is claimed.
+- Current candidate remains on branch `codex/t96-unified-quality-scheduling`, `HEAD=3b6a657d8b4485a9f17921ff8a23a14847527f1a`, tree `303c71fcd957ad1d7faf395c6e5d083718cef86a`, with only the intended RED-test edits plus this handoff modification.
+- Root `main`/`origin/main` remain `5e6ccee143f07ee34017c25e75979b74b6bcfc77` / `42dda8e317725a710340b5624bbda887cd1f6a50`; no root or release state was changed.
+- Task 2 tests now cover parser/JSON round-trip, legacy policy field preservation, and invalid `-1/4/1.5` values. Production settings code has not been changed.
+- Next action: rerun the two focused RED commands one at a time with a bounded wait, capture the actual expected compile/test failure, then make the minimal implementation. No later task or publish action is authorized from this worktree.
+
+## Task 2 RED evidence (2026-08-31)
+
+- `go test ./internal/service -run 'TestOpenAISchedulerGroupPolicyExtraRetryCountRoundTripAndValidation' -count=1` failed at compile time because `OpenAISchedulerGroupPolicy.ExtraRetryCount` is not defined.
+- `go test ./internal/handler/admin -run 'TestSettingHandlerSchedulerExtraRetryCountRoundTripsWithLegacyPolicyFields' -count=1` failed because the stored policy omitted `extra_retry_count` (`actual <nil>`), confirming the handler/parser path does not yet persist the field.
+- No production settings code has been edited yet. Next action is the minimal struct/parser/normalization/frontend contract implementation for Task 2.
+
+## Task 2 completion checkpoint (2026-08-31)
+
+- Implemented `OpenAISchedulerGroupPolicy.ExtraRetryCount` as an optional JSON `extra_retry_count` integer.
+- Added strict `0..3` validation for parser and both normalized write paths, legacy JSON parsing support, a read-side bound normalizer, and `resolveOpenAIExtraRetryCount` with a missing-value default of `0`.
+- Preserved existing priority, operations, compiled snapshot, weights, fairness, presets, and unrelated policy keys through the native custom JSON round-trip.
+- Added frontend `OPENAI_SCHEDULER_LIMITS.extraRetryCount` (`0..3`, step `1`) and API type coverage.
+- RED/GREEN evidence: service Task 2 tests pass; handler round-trip/invalid-input tests pass; existing scheduler normalization focused tests pass; frontend `pnpm typecheck` passes. `git diff --check` passes. The first typecheck generated a lockfile-only dependency rewrite, which was removed after verification; no lockfile change remains.
+- Task 2 changes are uncommitted at this checkpoint. Next action is commit the Task 2 files, then start Task 3 with the quality SQL RED test.

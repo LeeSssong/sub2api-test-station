@@ -718,6 +718,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
+	recordedSwitchCount := 0
 	firstOutputTimeoutSwitchCount := 0
 	profitVetoCount := 0
 	recoveryScope := openAIRecoveryScope(apiKey, sessionHash)
@@ -786,6 +787,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			!imageIntent,
 			requestPlatform,
 		)
+		retryBudget = adoptOpenAIUnifiedRetryBudget(retryBudget, scheduleDecision, h.gatewayService, c.Request.Context(), apiKey.GroupID)
 		if sharedHealthTracker.Degraded() {
 			retryBudget.NarrowForSharedHealthDegraded()
 		}
@@ -889,6 +891,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
+			if scheduleDecision.UnifiedQuality {
+				failedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
@@ -896,9 +902,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			if slotResult == openAISlotAcquireRetryNext && scheduleDecision.UnifiedQuality {
+				failedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
 			return
 		}
-		if !retryBudget.consumeAccountAttempt(account) {
+		if !retryBudget.unified && !retryBudget.consumeAccountAttempt(account) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
@@ -928,6 +938,21 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
+		if retryBudget.unified && !retryBudget.RecordForwardStarted(account.ID) {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
+			return
+		}
+		if retryBudget.unified {
+			switchCount = retryBudget.ExtraUsed()
+			for recordedSwitchCount < switchCount {
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				recordedSwitchCount++
+			}
+		}
+		annotateOpenAIUnifiedDecision(&scheduleDecision, retryBudget, imageIntent, switchCount)
 		service.RecordOpenAISchedulerSelection(attemptCtx, requestPlatform, apiKey.GroupID, scheduleDecision)
 		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
 			service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
@@ -1062,6 +1087,26 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				ImmediateCooldown: failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable,
 				Platform:          requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
+			if retryBudget.unified {
+				retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, channelMapping.ChannelID))
+				if classifiedFailoverErr == nil || !openAIUnifiedFailureSafeToReplay(failure, classifiedFailoverErr, attemptMetadata.UsageProduced) {
+					if classifiedFailoverErr == nil {
+						h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
+					} else {
+						h.handleFailoverExhausted(c, classifiedFailoverErr, streamStarted)
+					}
+					return
+				}
+				failedAccountIDs[account.ID] = struct{}{}
+				forcedRetryAccountID = 0
+				attemptCachePreservationMode = openAICachePreservationModeFailoverAfterFailure
+				lastFailoverErr = classifiedFailoverErr
+				if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
+					h.handleFailoverExhausted(c, classifiedFailoverErr, streamStarted)
+					return
+				}
+				continue
+			}
 			if (failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable) || (responseFailedOnly && openAIResponsesFailoverAllowed(openAIResponsesFailoverState{
 				ResponseFailedOnly: true,
 				UsageProduced:      attemptMetadata.UsageProduced,
@@ -1638,6 +1683,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
+	recordedSwitchCount := 0
 	profitVetoCount := 0
 	recoveryScope := openAIRecoveryScope(apiKey, sessionHash)
 	failedAccountIDs := h.gatewayService.OpenAIRecoveryExcludedAccountIDs(recoveryScope, time.Now())
@@ -1694,6 +1740,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			true,
 			requestPlatform,
 		)
+		retryBudget = adoptOpenAIUnifiedRetryBudget(retryBudget, scheduleDecision, h.gatewayService, c.Request.Context(), apiKey.GroupID)
 		if sharedHealthTracker.Degraded() {
 			retryBudget.NarrowForSharedHealthDegraded()
 		}
@@ -1763,6 +1810,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
+			if scheduleDecision.UnifiedQuality {
+				failedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
@@ -1770,9 +1821,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			if slotResult == openAISlotAcquireRetryNext && scheduleDecision.UnifiedQuality {
+				failedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
 			return
 		}
-		if !retryBudget.consumeAccountAttempt(account) {
+		if !retryBudget.unified && !retryBudget.consumeAccountAttempt(account) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
 			}
@@ -1799,6 +1854,21 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
+		if retryBudget.unified && !retryBudget.RecordForwardStarted(account.ID) {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+			return
+		}
+		if retryBudget.unified {
+			switchCount = retryBudget.ExtraUsed()
+			for recordedSwitchCount < switchCount {
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				recordedSwitchCount++
+			}
+		}
+		annotateOpenAIUnifiedDecision(&scheduleDecision, retryBudget, false, switchCount)
 		service.RecordOpenAISchedulerSelection(attemptCtx, requestPlatform, apiKey.GroupID, scheduleDecision)
 		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
 			service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
@@ -1893,12 +1963,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			outputStarted := result != nil && result.OutputStarted || c.Writer.Size() != writerSizeBeforeForward
 			failure := classifyOpenAIAttemptFailure(err, classifiedFailoverErr, outputStarted, requestHasSideEffects)
 			attemptMetadata.OutputStarted = failure.OutputStarted
-			attemptMetadata.UsageProduced = result != nil && result.UsageKnown
+			attemptMetadata.UsageProduced = (result != nil && result.UsageKnown) || (classifiedFailoverErr != nil && classifiedFailoverErr.UsageKnown)
 			if result != nil {
 				result.AttemptMetadata = attemptMetadata
 			}
 			h.recordFailedOpenAIUsageAttempt(attemptCtx, result, apiKey, account, subscription, reqModel, attemptMetadata, failure)
 			if classifiedFailoverErr != nil {
+				classifiedFailoverErr.UnsafeToReplay = failure.HasSideEffect || failure.OutputStarted || attemptMetadata.UsageProduced || classifiedFailoverErr.UnsafeToReplay
 				classifiedFailoverErr.LogicalRequestID = attemptMetadata.LogicalRequestID
 				classifiedFailoverErr.AttemptID = attemptMetadata.AttemptID
 				classifiedFailoverErr.AttemptMetadata = attemptMetadata
@@ -1911,6 +1982,26 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				ImmediateCooldown: failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable,
 				Platform:          requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
+			if retryBudget.unified {
+				retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, channelMappingMsg.ChannelID))
+				if classifiedFailoverErr == nil || !openAIUnifiedFailureSafeToReplay(failure, classifiedFailoverErr, attemptMetadata.UsageProduced) {
+					if classifiedFailoverErr == nil {
+						h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+					} else {
+						h.handleAnthropicFailoverExhausted(c, classifiedFailoverErr, streamStarted)
+					}
+					return
+				}
+				failedAccountIDs[account.ID] = struct{}{}
+				forcedRetryAccountID = 0
+				attemptCachePreservationMode = openAICachePreservationModeFailoverAfterFailure
+				lastFailoverErr = classifiedFailoverErr
+				if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
+					h.handleAnthropicFailoverExhausted(c, classifiedFailoverErr, streamStarted)
+					return
+				}
+				continue
+			}
 			if failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable {
 				runtimeDecision.CurrentRequestRetry = false
 			}
@@ -2313,6 +2404,9 @@ const (
 	// 未写任何响应；调用方应经 recordOpenAIProfitVeto 把该账号加入本请求排除集
 	// 后重新选号，全池耗尽由下一轮选号返回标准 no available accounts。
 	openAISlotAcquireProfitVetoed
+	// openAISlotAcquireRetryNext is used only by T96 unified text routing. No
+	// response was written; callers exclude the account and select the next one.
+	openAISlotAcquireRetryNext
 )
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
@@ -2446,6 +2540,9 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	)
 	if err != nil {
 		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if selection.UnifiedQualityActive() {
+			return nil, openAISlotAcquireRetryNext
+		}
 		status, errType, message := concurrencyErrorResponse(err, "account")
 		writeError(status, errType, message)
 		return nil, openAISlotAcquireFailed
@@ -2477,6 +2574,9 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
+		if selection.UnifiedQualityActive() {
+			return nil, openAISlotAcquireRetryNext
+		}
 		writeError(http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
 		return nil, openAISlotAcquireFailed
 	}
@@ -2500,6 +2600,9 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	)
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if selection.UnifiedQualityActive() {
+			return nil, openAISlotAcquireRetryNext
+		}
 		status, errType, message := concurrencyErrorResponse(err, "account")
 		writeError(status, errType, message)
 		return nil, openAISlotAcquireFailed

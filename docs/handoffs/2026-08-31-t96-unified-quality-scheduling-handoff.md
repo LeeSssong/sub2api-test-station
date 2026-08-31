@@ -112,3 +112,39 @@ Commit the four T96 baseline artifacts, then begin Task 2 with RED tests for `ex
 - RED/GREEN evidence: repository focused tests pass with `-vet=off`; service provider tests pass with `-vet=off`. The normal repository command is currently blocked by a pre-existing `fmt.Sprintf` vet diagnostic in `usage_log_repo_stats.go:1004`, unrelated to this change. `git diff --check` passes.
 - Root `main` advanced from the T96 base to `43ffa2353` (T105 OAuth 429 account cooldown) while this task was in progress; candidate must be refreshed to that latest main before READY_FOR_ROOT_REVIEW. T105 handler changes must be preserved.
 - Next action: commit Task 3, fast-forward/merge the latest root main into this candidate without discarding local commits, resolve only real T96/T105 overlap, then continue Task 4.
+
+## Post-refresh checkpoint (2026-08-31)
+
+- Task 3 is committed as `6182893a8`; the candidate was safely merged with the latest root `main@43ffa2353` using a local merge commit `52dc7a0e6`. No conflicts occurred and all T105 changes were retained.
+- Candidate HEAD/tree: `52dc7a0e69a007bb957c46c3980a23716d89adaa` / `663446a656cad0468818dce26afce29aa68fd62a`; branch `codex/t96-unified-quality-scheduling`; worktree is clean.
+- Root `main`/`origin/main` at refresh: `43ffa2353ed96da668d0846753f472fea922d07d`, clean and equal. Candidate is ahead only by its T96 commits/merge and is not pushed.
+- T105 is an independent root task now in the candidate history; T96 must preserve its native rate-limit block behavior while changing only approved unified text ordering/recovery later.
+- Task 3 focused tests pass with `-vet=off`; the repository package's ordinary vet command remains blocked by the pre-existing `usage_log_repo_stats.go:1004` format diagnostic.
+- Next action: begin Task 4 RED tests for the pure deterministic comparator and image-path bypass, then implement only after observing failure.
+
+## Task 4 RED checkpoint (2026-08-31)
+
+- Pure comparator tests initially failed because the unified candidate type/sort function did not exist; after the minimal comparator was added, all comparator tests pass with `-vet=off`.
+- Selector/image routing tests now fail at compile time because the unified selection layer constant is not yet defined; this is the expected pre-integration RED state.
+- No existing scheduler behavior has been changed yet. Next action is to implement the unified ordinary-text selector using native account listing, eligibility, live T95 U, and native slot acquisition, then wire it after protocol bindings and before ordinary sticky.
+
+## Context recovery checkpoint (2026-08-31, resumed)
+
+- Authoritative worktree: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t96-unified-quality-scheduling`.
+- Branch/HEAD/tree: `codex/t96-unified-quality-scheduling` / `52dc7a0e69a007bb957c46c3980a23716d89adaa` / `663446a656cad0468818dce26afce29aa68fd62a`.
+- Root refs observed: local `main=b13980c980354739bf2a5feaecfd2664f6bf88a4`, `origin/main=1827057cb9dc1f9266da9b4f659af6045fa88e2e`; root has one local T98 integration commit and is not to be modified by this task. The candidate is intentionally based on an earlier main and must be refreshed only in this worktree before READY_FOR_ROOT_REVIEW, preserving all local changes.
+- Worktree state: modified tracked files are this handoff plus the Task 4-6 handler/service files; untracked files are `upstream/sub2api/backend/internal/service/openai_unified_quality_scheduler.go` and its test. No staged files, no resets/cleanups, and no files outside this worktree were changed by this checkpoint.
+- Runtime/implementation truth: Tasks 2 and 3 are committed (`be31cd869`, `6182893a8`); Task 4-5 selector/profit changes and Task 6 retry-budget/handler changes are present but uncommitted. Task 7 UI/events and Task 8 report/final handoff remain unfinished.
+- Direct evidence already available: comparator/selector/image, profit partition/fallback, live-U slot recheck, and retry-budget focused tests passed in prior local runs; the normal handler package still has unrelated baseline compile failures, so only narrow feature coverage will be rerun. No claim is made for a full package or full-repository pass.
+- Dependency: merged T95 `EffectiveCostForAccount`, `EffectiveCost`, and `EffectiveCostStatusReady` are present in the candidate history. T103 is abandoned; native-only Sub account-slot semantics remain permanent.
+- Concurrent command check: one independent `tests/operations/deploy_sub2api_blue_green_host_test.sh` fixture process was observed from the root thread; no T96 release/deploy/migration command is running. This worktree will not stop or alter that process.
+- Next executable action: inspect the uncommitted Task 4-6 diff against the approved spec, add only the missing direct functional coverage (especially handler safety/slot semantics), then run bounded focused tests and finish Task 7/8. Stop before any merge, push, deployment, production, queue, or project-ledger change.
+
+## Implementation checkpoint (2026-08-31, focused validation)
+
+- Task 4-6 implementation is now present in the candidate: deterministic account-level text selector, native-profit availability fallback, live-U post-slot check, group extra-retry budget, native-slot retry-next handling, and no ordinary same-account replay in unified text paths (Responses, Messages, Chat Completions, Embeddings).
+- Task 7 direct surface is present: scheduler settings page exposes only `extra_retry_count` 0–3, preserves legacy policy JSON on save, and the existing bounded resilience event ledger carries unified selection/profit/quality/recovery fields without credentials.
+- Additional correctness fix: quality SQL physical-attempt deduplication now includes `account_id` before `api_key_id` and the attempt identity, preventing cross-account request IDs from collapsing.
+- Fresh direct evidence: service T96 focused tests passed; repository quality SQL/scan tests passed; all handler production Go files compile with `go test <production files> -run '^$'`; frontend `SchedulerSettingsView.spec.ts` passed 4/4; `vue-tsc --noEmit` passed; `git diff --check` passed. The isolated handler budget test command is currently environment-blocked by a missing `go.opentelemetry.io/otel/metric@v1.43.0` download timeout, not a reported code failure.
+- Root release state has since settled at clean `main == origin/main == fde3ece1b6e20a9e0b6a7ff47bf1e0be03213178` (tree `3c7a8c6d85d18d9c3ecb1a40dd3efaeab95315ad`). Candidate remains intentionally unrefreshed until its implementation commit is recorded; no root files, queue, project ledger, deployment, or production state were changed here.
+- Next executable action: commit the candidate implementation/UI/tests, then run the smallest remaining direct handler budget check and prepare the T96 verification report. Before `READY_FOR_ROOT_REVIEW`, refresh this worktree to the then-current clean root `main` while preserving all commits and rerun only direct coverage.

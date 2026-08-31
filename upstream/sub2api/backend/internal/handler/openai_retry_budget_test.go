@@ -153,6 +153,67 @@ func TestOpenAISameAccountRetryLimitCaps502503ToOne(t *testing.T) {
 	require.Equal(t, 3, openAISameAccountRetryLimit(http.StatusTooManyRequests, 3))
 }
 
+func TestOpenAIUnifiedRetryBudgetCountsOnlyDifferentForwardStarts(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	for extra, wantAttempts := range map[int]int{0: 1, 1: 2, 2: 3, 3: 4} {
+		budget := newOpenAIUnifiedRetryBudget(extra, func() time.Time { return now })
+		for attempt := 0; attempt < wantAttempts; attempt++ {
+			require.True(t, budget.CanStartForward(int64(attempt+1)), "extra=%d attempt=%d", extra, attempt)
+			require.True(t, budget.RecordForwardStarted(int64(attempt+1)))
+		}
+		require.False(t, budget.CanStartForward(99))
+		require.Equal(t, extra, budget.ExtraUsed())
+	}
+}
+
+func TestOpenAIUnifiedRetryBudgetRejectsSameAccountAndIgnoresDomains(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	budget := newOpenAIUnifiedRetryBudget(3, func() time.Time { return now })
+	require.True(t, budget.RecordForwardStarted(11))
+	require.False(t, budget.RecordForwardStarted(11), "ordinary text must never replay the same account")
+	budget.RecordObservedDomains([]service.OpenAIFailureDomain{{Type: service.OpenAIFailureDomainProviderChannel, ID: "a"}})
+	budget.RecordObservedDomains([]service.OpenAIFailureDomain{{Type: service.OpenAIFailureDomainQuotaPool, ID: "b"}})
+	budget.RecordObservedDomains([]service.OpenAIFailureDomain{{Type: service.OpenAIFailureDomainUnknown, ID: "unknown"}})
+	for _, id := range []int64{12, 13, 14} {
+		require.True(t, budget.RecordForwardStarted(id))
+	}
+	require.Equal(t, 4, budget.Attempts())
+	require.Len(t, budget.ObservedDomains(), 3)
+}
+
+func TestOpenAIUnifiedRetryBudgetHasNoIndependentDeadlineOrFailureDomainLimit(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	budget := newOpenAIUnifiedRetryBudget(3, func() time.Time { return now })
+	now = now.Add(24 * time.Hour)
+	require.False(t, budget.DeadlineReached())
+	require.True(t, budget.CanSwitch(12, false, false))
+	delay, ok := budget.RetryDelay(&service.UpstreamFailoverError{StatusCode: http.StatusTooManyRequests, ResponseHeaders: http.Header{"Retry-After": []string{"300"}}}, 1)
+	require.True(t, ok)
+	require.Equal(t, time.Duration(0), delay)
+}
+
+func TestOpenAIUnifiedFailureSafetyBlocksNonReplayableAttempts(t *testing.T) {
+	base := service.OpenAIUpstreamFailureClass{Transient: true, SafeToReplay: true}
+	allowed := &service.UpstreamFailoverError{NextAccountAction: service.NextAccountRetry}
+	require.True(t, openAIUnifiedFailureSafeToReplay(base, allowed, false))
+	for _, tc := range []struct {
+		name    string
+		failure service.OpenAIUpstreamFailureClass
+		usage   bool
+		err     *service.UpstreamFailoverError
+	}{
+		{name: "output", failure: service.OpenAIUpstreamFailureClass{Transient: true, SafeToReplay: true, OutputStarted: true}, err: allowed},
+		{name: "side effect", failure: service.OpenAIUpstreamFailureClass{Transient: true, SafeToReplay: true, HasSideEffect: true}, err: allowed},
+		{name: "usage", failure: base, usage: true, err: allowed},
+		{name: "unknown billing", failure: base, err: &service.UpstreamFailoverError{NextAccountAction: service.NextAccountRetry, UsageKnown: true}},
+		{name: "stop action", failure: base, err: &service.UpstreamFailoverError{NextAccountAction: service.NextAccountStop}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.False(t, openAIUnifiedFailureSafeToReplay(tc.failure, tc.err, tc.usage))
+		})
+	}
+}
+
 func minDuration(left, right time.Duration) time.Duration {
 	if left < right {
 		return left

@@ -17,6 +17,7 @@ import (
 const openAIAccountQualityQuery = `
 WITH physical_attempts AS (
     SELECT DISTINCT ON (
+        u.account_id,
         u.api_key_id,
         COALESCE(NULLIF(u.attempt_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text)
     )
@@ -35,6 +36,7 @@ WITH physical_attempts AS (
       AND COALESCE(NULLIF(u.usage_completeness, ''), 'complete') <> 'unknown'
       AND COALESCE(NULLIF(u.billing_mode, ''), 'token') NOT IN ('image', 'video')
     ORDER BY
+        u.account_id,
         u.api_key_id,
         COALESCE(NULLIF(u.attempt_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text),
         u.id DESC

@@ -111,18 +111,20 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
 	switchCount := 0
+	recordedSwitchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
 	if maxAccountSwitches <= 0 {
 		maxAccountSwitches = openAIMaxAccountSwitches
 	}
 	routingStart := time.Now()
+	retryBudget := newOpenAIRetryBudget(openAIRetryBudgetConfigFromConfig(h.cfg), time.Now)
 
 	// 分组利润控制：embeddings 文本入口请求级装门并固定 pricingAt。
 	embPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
 	c.Request = c.Request.WithContext(embPricingCtx)
 
 	for {
-		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 			c.Request.Context(),
 			apiKey.GroupID,
 			"",
@@ -135,6 +137,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			false,
 			true,
 		)
+		retryBudget = adoptOpenAIUnifiedRetryBudget(retryBudget, scheduleDecision, h.gatewayService, c.Request.Context(), apiKey.GroupID)
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("openai_embeddings.account_select_aborted_client_disconnected", zap.Error(err))
@@ -173,6 +176,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
+			if scheduleDecision.UnifiedQuality {
+				failedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
@@ -180,8 +187,28 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
+			if slotResult == openAISlotAcquireRetryNext && scheduleDecision.UnifiedQuality {
+				failedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
 			return
 		}
+		if retryBudget.unified && !retryBudget.RecordForwardStarted(account.ID) {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
+			return
+		}
+		if retryBudget.unified {
+			switchCount = retryBudget.ExtraUsed()
+			for recordedSwitchCount < switchCount {
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				recordedSwitchCount++
+			}
+		}
+		annotateOpenAIUnifiedDecision(&scheduleDecision, retryBudget, false, switchCount)
+		service.RecordOpenAISchedulerSelection(c.Request.Context(), service.PlatformOpenAI, apiKey.GroupID, scheduleDecision)
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
@@ -211,6 +238,21 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
+				if retryBudget.unified {
+					failure := classifyOpenAIAttemptFailure(err, failoverErr, c.Writer.Size() != writerSizeBeforeForward, false)
+					retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, 0))
+					if !openAIUnifiedFailureSafeToReplay(failure, failoverErr, result != nil && result.UsageKnown) {
+						h.handleFailoverExhausted(c, failoverErr, false)
+						return
+					}
+					failedAccountIDs[account.ID] = struct{}{}
+					lastFailoverErr = failoverErr
+					if !retryBudget.CanSwitch(0, false, false) {
+						h.handleFailoverExhausted(c, failoverErr, false)
+						return
+					}
+					continue
+				}
 				if c.Writer.Size() != writerSizeBeforeForward {
 					h.handleFailoverExhausted(c, failoverErr, true)
 					return

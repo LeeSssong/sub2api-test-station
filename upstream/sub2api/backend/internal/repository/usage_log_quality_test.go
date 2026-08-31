@@ -59,6 +59,7 @@ func TestOpenAIAccountQualityQueryContainsPhysicalAttemptAndTrimmedMeanContract(
 	for _, fragment := range []string{
 		"with physical_attempts as",
 		"distinct on",
+		"u.account_id,\n        u.api_key_id",
 		"attempt_id",
 		"logical_request_id",
 		"usage_completeness",

@@ -28,6 +28,8 @@ setup_case() {
   printf '\nCREATE TABLE example ();\n' >"$CASE_DIR/repo/upstream/sub2api/backend/migrations/001_init.sql"
   printf '#!/usr/bin/env bash\nprintf "host executor\\n"\n' >"$CASE_DIR/repo/ops/deploy-sub2api-blue-green-host.sh"
   chmod 0755 "$CASE_DIR/repo/ops/deploy-sub2api-blue-green-host.sh"
+  cp "$ROOT/ops/assert-sub2api-release-source.sh" "$CASE_DIR/repo/ops/assert-sub2api-release-source.sh"
+  chmod 0755 "$CASE_DIR/repo/ops/assert-sub2api-release-source.sh"
   printf 'private key\n' >"$CASE_DIR/id_ed25519"
   printf 'example.invalid ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest\n' >"$CASE_DIR/known_hosts"
   chmod 0600 "$CASE_DIR/id_ed25519" "$CASE_DIR/known_hosts"
@@ -36,6 +38,10 @@ setup_case() {
   git -C "$CASE_DIR/repo" config user.email test@example.invalid
   git -C "$CASE_DIR/repo" add .
   git -C "$CASE_DIR/repo" commit -qm initial
+  git -C "$CASE_DIR" init -q --bare remote.git
+  git -C "$CASE_DIR/repo" remote add origin "$CASE_DIR/remote.git"
+  git -C "$CASE_DIR/repo" branch -M main
+  git -C "$CASE_DIR/repo" push -q -u origin main
 
   cat >"$CASE_DIR/bin/docker" <<'SH'
 #!/usr/bin/env bash
@@ -71,14 +77,20 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'ssh %s\n' "$*" >>"${FAKE_SSH_LOG:?}"
-if [[ "$*" == *'verify_executor_directory_chain'* && "${FAKE_UNSAFE_EXECUTOR_PARENT:-false}" == true ]]; then
+stdin_payload=''
+if [[ "$*" == *'sudo -n bash -s -- '* ]]; then
+  stdin_payload=$(cat)
+  printf '%s\n' "$stdin_payload" >>"${FAKE_SSH_LOG:?}"
+fi
+invocation="$* $stdin_payload"
+if [[ "$invocation" == *'verify_executor_directory_chain'* && "${FAKE_UNSAFE_EXECUTOR_PARENT:-false}" == true ]]; then
   exit 1
 fi
-if [[ "$*" == *'verify_executor_path_chain'* && "${FAKE_EXECUTOR_ABSENT:-false}" == true \
+if [[ "$invocation" == *'verify_executor_path_chain'* && "${FAKE_EXECUTOR_ABSENT:-false}" == true \
     && ! -e "${FAKE_EXECUTOR_INSTALLED_FILE:?}" ]]; then
   exit 1
 fi
-if [[ "$*" == *'verify_executor_directory_chain'* || "$*" == *'verify_executor_path_chain'* ]]; then
+if [[ "$invocation" == *'verify_executor_directory_chain'* || "$invocation" == *'verify_executor_path_chain'* ]]; then
   exit 0
 fi
 case "$*" in
@@ -121,7 +133,8 @@ case "$*" in
     exit 0
     ;;
 esac
-if [[ "${FAKE_HOST_RESULT:-success}" == downtime ]]; then
+if [[ "${FAKE_HOST_RESULT:-success}" == downtime &&
+      "$*" == *'bash /usr/local/libexec/deploy-sub2api-blue-green-host.sh --mode production'* ]]; then
   printf '{"schema_version":1,"downtime_required":true,"reason_code":"migration_set_changed"}\n'
   exit 2
 fi

@@ -1,5 +1,9 @@
 # 项目全局进度总账
 
+**全局 `main` 部署来源门禁（2026-08-31）：** 状态：准备完成（发布控制器和直接测试已完成；本任务不触发服务部署）。用户明确要求所有部署必须基于根目录 `main`。范围固定为：验收站、主站、预演、relay-ops、旧 admin lab 与官方更新均在构建或联系宿主前 fail-closed 验证当前分支为 `main`、工作树干净且 `HEAD` commit/tree 与已推送 `origin/main` 一致；候选 worktree、功能分支、临时 checkout 和 detached HEAD 均禁止部署。常规路径改为“候选验证 -> 合入/推送 main -> 从 main 部署验收站 -> 人工验收 -> 从同一 main commit 部署主站”。来源新鲜度、验收站、蓝绿发布和 relay-ops 直接测试及脚本语法、diff-check 已通过；旧 admin lab 合同中新增的来源门禁断言通过，完整合同仍被与本次无关的现存 Caddy 路由断言阻断。本任务未执行任何部署或业务数据写入。
+
+**紧急回归排查与 T101 发布状态（2026-08-31）：** 状态：已完成（`DONE`）。根因为 T101 之前从未进入根 `main`/`origin/main`，后续发布继续使用旧 `main@3c5b9710a`，不是代码回滚。T101 与并发覆盖防护已合入并推送根 `main@d4baeaf983d852ea139d75552f03f2b77bfb0871`（tree `8d4f2f141835681c2c552dbc5c8eb422f00bb944`）：主站发布强制来自已推送且与 `origin/main` commit/tree 一致的干净 `main`，验收站发布增加宿主互斥锁；发布来源新鲜度和控制器直接测试、语法与 diff 检查通过。用户明确授权“快速部署到主站”后，首次本地构建因 GitHub detector ZIP TLS 提前断开失败，未进入宿主切换；原样重试成功并以固定 SHA-256 校验制品。主站记录 `/var/lib/sub2api/release-records/20260831T030214Z-production-3293493.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API/worker/detector 均运行同 commit/tree 且 healthy；不可变镜像为 `release-d4baeaf983d852ea139d75552f03f2b77bfb0871-255717f785f644efe280c9462aa44c6742b2f507b4a95aa79a10f5a8fda7ea48`。验收站随后不再访问 GitHub，复用上述已校验 ZIP 作为本地构建输入，同步同 commit/tree 成功，六项服务 healthy；主站/验收站发布锁均已释放，公开 `/healthz`、`/readyz`、`/admin/lab/health` 均通过。无迁移、配置、凭据或生产业务数据写入。
+
 **T98 实施授权更新（2026-08-31）：** 状态：进行中（`IMPLEMENTING`）。用户已批准 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md` 并要求进入实现；当前只允许在独立 worktree 完成本地实现与直接相关验证。该批准不构成主站部署、生产清库、生产配置修改或真实飞书发送授权。
 
 **T98 实施工作区登记（2026-08-31）：** 已从本地 `main@06695141f` 创建 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t98-feishu-upstream-balance-notification`，分支 `codex/t98-feishu-upstream-balance-notification`。计划、实现和直接相关验证均在该候选中进行；当前未改生产配置、生产数据或真实飞书投递。

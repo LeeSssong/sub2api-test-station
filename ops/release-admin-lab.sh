@@ -10,6 +10,8 @@ worktree=$(pwd -P)
 source_commit=$(git rev-parse HEAD) || fail 'not a git worktree'
 source_tree=$(git rev-parse 'HEAD^{tree}') || fail 'source tree unavailable'
 [[ -z "$(git status --porcelain)" ]] || fail 'worktree is dirty'
+"$worktree/ops/assert-sub2api-release-source.sh" --mode rehearsal --worktree "$worktree" \
+  || fail 'release source freshness check failed'
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail 'invalid git identity'
 
 ssh_target=${RELEASE_SSH_TARGET:-sub2api-prod}

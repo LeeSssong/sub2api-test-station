@@ -8,9 +8,9 @@
 
 常规固定流程：
 
-本地直接验证 -> 部署验收站 -> 管理员真实验收 -> 人工合入 main -> 人工部署主站
+本地直接验证 -> 合入并推送根 main -> 从同一 main commit 部署验收站 -> 管理员真实验收 -> 从同一 main commit 部署主站
 
-上述串行边界中的“管理员真实验收”必须完成并明确通过后，才允许人工合入 main、推送并部署主站；主站成功后仍须用同一 commit 同步/核对验收站。
+候选只在功能 worktree 中实现和本地验证；任何环境部署前必须先合入并推送根 `main`。上述串行边界中的“管理员真实验收”必须完成并明确通过后，才允许从验收过的同一 `main` commit 部署主站；主站成功后仍须用同一 commit 同步/核对验收站。
 
 紧急流程仅在用户明确授权“快速部署到主站”时启用：
 
@@ -44,7 +44,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 ## 发布验收站
 
-在本地当前干净的候选 worktree 完成直接相关验证后，确认 ACCEPTANCE_ENV_FILE 指向 0600 env，再执行唯一的验收发布控制器：
+在候选 worktree 完成直接相关验证后，先合入并推送根 `main`。回到根工作区，确认当前分支为 `main`、工作树干净、`HEAD` commit/tree 与 `origin/main` 一致，并确认 ACCEPTANCE_ENV_FILE 指向 0600 env，再执行唯一的验收发布控制器：
 
     ACCEPTANCE_ENV_FILE=/secure/sub2api/acceptance.env \
       RELEASE_WORKTREE="$PWD" \
@@ -52,7 +52,7 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 控制器会构建一个 Linux/amd64 候选镜像、计算归档 SHA-256，经 SSH/SCP 传输到验收宿主，并只调用 deploy-sub2api-acceptance-host.sh。它会在建立 SSH 连接前拒绝脏 worktree、生产身份、mock provider、错误 project/network、非 0600 env 或缺少真实消费确认。控制器输出不包含密码、token、cookie 或支付/上游密钥。控制器和宿主执行器都会尝试删除远程 staging 中的 env、镜像归档及临时 bundle；若 SSH 失联导致清理失败，控制器会明确告警，operator 必须立即在宿主清理该目录。正常情况下仅保留脱敏失败证据和运行日志，不把真实凭据作为故障证据留在 /var/tmp。
 
-严禁从候选分支直接运行主站发布脚本，严禁调用生产蓝绿链，严禁把验收 env 复制进仓库。
+控制器会在 Docker 构建或 SSH/SCP 之前 fail-closed 拒绝候选分支、功能 worktree、detached HEAD、脏工作树或未推送/不匹配 `origin/main` 的来源。严禁从候选分支发布验收站或主站，严禁调用生产蓝绿链代替验收站控制器，严禁把验收 env 复制进仓库。
 
 ## 部署后检查
 
@@ -87,17 +87,11 @@ ACCEPTANCE_PROJECT_NAME 必须为 sub2api-acceptance，ACCEPTANCE_NETWORK_NAME �
 
 宿主执行器在替换 compose/Caddy/env 前会保存上一份运行配置。镜像加载、bootstrap、健康检查或 URL 检查失败时，会自动恢复上一份配置并重新拉起上一版本；named volumes 和验收数据不会删除。首次安装失败则停止本次服务并保留 volumes；远程 staging 会被删除，失败原因只保留在脱敏日志中。
 
-需要人工恢复上一版本时，在本地保留或创建上一已验证提交的干净 worktree，并使用同一份验收站 0600 env 重新运行发布控制器：
-
-    ACCEPTANCE_ENV_FILE=/secure/sub2api/acceptance.env \
-      RELEASE_WORKTREE=/path/to/previous-verified-worktree \
-      /path/to/previous-verified-worktree/ops/release-sub2api-acceptance.sh
-
-这会构建并部署上一已验证提交，同时继续使用当前验收站的独立数据库和 named volumes。不要执行 docker compose down -v、删除 sub2api-acceptance-* volumes、重置数据库或把验收数据导入主站。若没有上一份配置，先停止服务并保留数据，修正候选后重新发布。
+人工回退时必须先在根 `main` 上形成明确的 revert 或前向修复提交，完成必要直接验证并推送 `origin/main`，然后从根 `main` 重新运行验收站发布控制器。不得从上一提交的临时 worktree、detached HEAD 或候选分支人工发布。发布链在当次部署失败时自动恢复上一已验证配置/槽位，仍属于原子失败保护，不是从非 `main` 发起新部署。不要执行 docker compose down -v、删除 sub2api-acceptance-* volumes、重置数据库或把验收数据导入主站。若没有上一份配置，先停止服务并保留数据，修正后以新的 `main` 提交重新发布。
 
 ## 通过后的主站边界
 
-管理员验收记录必须明确通过、候选 commit/tree、验收范围和未验证项。常规路径只有在用户明确说“测试站验收通过，部署主站”后，发布负责人才能人工合入并推送 main，再按主站既有发布链部署主站并做线上专项验证；主站成功后必须立即同步/核对验收站同一 commit。紧急路径只有在用户明确说“快速部署到主站”后，才可先部署主站，但主站成功后必须立即同步/核对验收站同一 commit；同步失败时标记“主站已生效、验收站同步失败”，阻止下一次主站发布。验收发布控制器不会合入、推送或部署主站，也不会因验收站成功而触发任何自动晋级。
+管理员验收记录必须明确通过、根 `main` commit/tree、验收范围和未验证项。常规路径只有在用户明确说“测试站验收通过，部署主站”后，发布负责人才能从验收过的同一根 `main` commit 按主站既有发布链部署主站并做线上专项验证；若 `main` 已前进，必须重新部署验收站并验收。主站成功后必须立即同步/核对验收站同一 commit。紧急路径只有在用户明确说“快速部署到主站”后，才可从已推送的根 `main` 先部署主站，但主站成功后必须立即从同一根 `main` commit 同步/核对验收站；同步失败时标记“主站已生效、验收站同步失败”，阻止下一次主站发布。验收发布控制器不会合入、推送或部署主站，也不会因验收站成功而触发任何自动晋级。
 
 ## 退役旧 admin lab
 

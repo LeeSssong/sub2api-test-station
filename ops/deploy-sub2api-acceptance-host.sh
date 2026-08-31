@@ -135,6 +135,29 @@ case "$payment_provider:$upstream_provider:$notification_transport" in
 esac
 [[ "${ACCEPTANCE_REAL_FLOW_ACK:-}" == I_UNDERSTAND_REAL_CHARGES ]] || fail 'ACCEPTANCE_REAL_FLOW_ACK is required'
 
+lock_dir="/var/lib/sub2api/acceptance-release.lock"
+lock_owner_path="$lock_dir/owner"
+lock_owned=false
+cleanup_lock() {
+  if [[ "$lock_owned" == true ]]; then
+    if rm -f -- "$lock_owner_path" && rmdir "$lock_dir"; then
+      lock_owned=false
+    fi
+  fi
+}
+if mkdir "$lock_dir" 2>/dev/null; then
+  lock_owned=true
+  if ! { printf 'pid=%s\nsource_commit=%s\nsource_tree=%s\n' "$$" "$source_commit" "$source_tree" >"$lock_owner_path" &&
+         chmod 0600 "$lock_owner_path"; }; then
+    cleanup_lock
+    fail 'could not persist acceptance release lock ownership'
+  fi
+else
+  [[ -f "$lock_owner_path" && ! -L "$lock_owner_path" ]] || fail 'acceptance release lock owner is missing; manual recovery is required'
+  fail 'another acceptance release is in progress'
+fi
+trap 'cleanup_staging; cleanup_lock' EXIT
+
 grep -Fq 'name: sub2api-acceptance' "$compose_source" || fail 'staged compose is not an acceptance topology'
 grep -Fq 'sub2api-acceptance-network' "$compose_source" || fail 'staged compose network is invalid'
 if grep -En 'sub2api_default|sub2api-blue|sub2api-green|mock-upstream|lab-outbox' "$compose_source" "$caddy_source"; then
@@ -194,6 +217,7 @@ cleanup() {
   rm -rf "$extraction_root"
   [[ -z "$previous_root" ]] || rm -rf "$previous_root"
   rm -rf -- "$staging_root"
+  cleanup_lock
 }
 trap cleanup EXIT
 

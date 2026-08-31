@@ -28,6 +28,7 @@ for needle in \
   'mock_server.py' \
   'ADMIN_LAB_IMAGE' \
   'ADMIN_LAB_FRONTEND_IMAGE' \
+  'assert-sub2api-release-source.sh' \
   'admin-lab-bundle' \
   'sha256'; do
   grep -Fq "$needle" "$controller" || fail "release controller missing contract: $needle"

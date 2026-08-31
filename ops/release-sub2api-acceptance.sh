@@ -43,6 +43,8 @@ worktree=$(cd "$worktree" && pwd -P)
 
 # All local refusal checks happen before command construction or SSH/SCP.
 [[ -z "$(git -C "$worktree" status --porcelain)" ]] || fail 'worktree is dirty'
+"$worktree/ops/assert-sub2api-release-source.sh" --mode rehearsal --worktree "$worktree" \
+  || fail 'acceptance release source freshness check failed'
 
 acceptance_env=${ACCEPTANCE_ENV_FILE:-}
 [[ "$acceptance_env" == /* && -f "$acceptance_env" && ! -L "$acceptance_env" ]] \

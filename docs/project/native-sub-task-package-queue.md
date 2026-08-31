@@ -1,10 +1,12 @@
 # 原生 Sub 小步发布任务包队列
 
-**T101：** 状态 `DESIGNING`。范围为管理员账号监控卡片的证据语义修复：真实请求性能时间线固定投影为 24 个等宽桶并保留空桶，避免少量有数据桶被放大为整块；全站范围不再把缺失的分组利润字段显示为“待确认”，改为“按分组查看”，选择具体分组后才显示该分组利润率；同时澄清“刷新主动探测”不会生成真实请求时间线样本。任务从已推送 `main@3c5b9710a807904b8449708c71e3931b7f838490` 创建独立 worktree，按 `$impeccable` 的运营产品界面准则与 TDD 实施。无利润公式、调度、计费、探测执行、迁移、配置或生产数据写入变化；尚未实现、合并、部署或验证。
+**全局 `main` 部署来源门禁（2026-08-31）：** 状态 `READY_FOR_ROOT_REVIEW`。用户明确要求所有环境只能基于根目录 `main` 部署。候选必须先合入并推送 `main`；发布入口在构建或 SSH/SCP 前统一验证当前分支为 `main`、工作树干净且 `HEAD` commit/tree 与 `origin/main` 一致。验收站常规路径调整为先合 main、再部署验收；候选 worktree、临时 checkout 和 detached HEAD 均禁止部署。来源新鲜度、验收站、蓝绿发布和 relay-ops 直接测试、脚本语法与 diff-check 已通过；旧 admin lab 新增来源门禁合同已满足，其完整合同仍被既有 Caddy 路由断言阻断。本变更不触发服务部署、不写入业务数据。
+
+**T101：** 状态 `DONE`。紧急回归排查确认 T101 之前从未进入根 `main`/`origin/main`，后续发布继续使用旧 `main@3c5b9710a`，不是代码回滚。T101 与并发覆盖防护已合入并推送根 `main@d4baeaf983d852ea139d75552f03f2b77bfb0871`（tree `8d4f2f141835681c2c552dbc5c8eb422f00bb944`）；主站发布现强制干净 `main == origin/main` commit/tree，验收站发布有宿主互斥锁。直接相关 Go 1.27 repository/server、前端 56/56、typecheck、1094 modules build、发布来源/控制器测试、语法和 diff-check 均通过。主站记录 `/var/lib/sub2api/release-records/20260831T030214Z-production-3293493.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API/worker/detector 均运行同 commit/tree 且 healthy；验收站已同步同 commit/tree，六项服务 healthy，两端发布锁均释放且公开健康端点通过。首次本地构建因 GitHub detector ZIP TLS 断开而在切换前失败；后续主站原样重试成功，验收站按用户要求不再访问 GitHub，复用已按固定 SHA-256 校验的本地 ZIP 完成构建。功能修复固定 24 个真实请求桶、全站“按分组查看”和主动探测文案语义；无利润公式、调度、计费、探测执行、迁移、配置、依赖或生产数据写入变化。
 
 **T100：** 状态 `DONE`。紧急修复已删除 OpenAI 请求路径上的自定义 admission/slow-session 并发控制，包括“单个长请求尚未首输出即拒绝同账号后续请求”的规则；账号并发只保留 Sub 原生账号并发槽。`main@5d77271b32990076b8b0344a3f1909c62192abc6`（tree `0b7ff53f1081be5684486b31c1ee7a3e3377e329`）已推送；源合同与 diff-check 通过，发布链 Linux/amd64 构建成功。主站记录 `/var/lib/sub2api/release-records/20260830T180509Z-production-2673285.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；验收站随后以同一 commit/tree 同步成功，六个服务全部 healthy。无迁移、账号/分组数据、凭据或业务数据写入。
 
-**T99：** 状态 `INTEGRATING`。根总控已完成候选差异与交接证据审查，未发现阻断问题；候选已合入并推送为 `main@3c5b9710a807904b8449708c71e3931b7f838490`。新增 Monitor V4 分组 `cache_read_tokens_p95` 与样本数字段，复用 `usage_logs.cache_read_tokens`；仅统计所选窗口内最终成功真实请求，包含 0 值，失败请求和主动探测排除。候选原有 Go 1.27.0 repository/service/handler 定向测试和完整 server 编译通过；根审重新执行前端 11/11、typecheck、production build 与 diff-check 通过，本机 Go 1.27 工具链下载因网络 EOF 未重复完成。无迁移、配置、依赖或事实源变化；尚未部署，且没有 T99 主站发布授权。
+**T99：** 状态 `DONE`。根总控已合入并推送 `main@3c5b9710a807904b8449708c71e3931b7f838490`；宿主发布记录 `/var/lib/sub2api/release-records/20260831T013736Z-production-3191472.json` 为 `succeeded/promoted`、`rolled_back=false`，主站与验收站均运行同一 `3c5b9710a` tree `cb944525481f65df25ef66e29c0681f3c471e60c`，六项验收服务 healthy，公网 `/healthz` 与验收 `/admin/lab/health` 均 HTTP 200。T99 直接相关测试、构建、范围检查和线上同步已完成；无迁移、配置、依赖、账号/分组或事实源变化。
 
 **T98 方案选择补充（2026-08-31）：** 用户确认新通知在 Sub2API 原生账号监控链路内按 BaseURL 判定并直接复用飞书传输/凭据/卡片样式；relay-ops 不再作为新体系运行时主路径，不新增余额探测、轮询或业务事实源。
 

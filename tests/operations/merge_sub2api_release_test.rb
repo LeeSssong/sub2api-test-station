@@ -19,6 +19,11 @@ class MergeSub2APIReleaseTest < Minitest::Test
     assert_includes File.read(MERGER), 'commit -q --allow-empty -m'
   end
 
+  def test_checks_native_account_concurrency_after_official_overlay
+    assert_includes File.read(MERGER), 'assert-native-openai-concurrency-only.sh'
+    assert_includes File.read(MERGER), 'native_guard'
+  end
+
   def test_accepts_a_clean_git_worktree_as_the_release_root
     with_repositories do |fixture|
       worktree = File.join(fixture.fetch(:dir), "release-worktree")

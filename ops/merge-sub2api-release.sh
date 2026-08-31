@@ -152,6 +152,11 @@ GIT_AUTHOR_DATE="$published_at" GIT_COMMITTER_DATE="$published_at" \
 
 root_modified=1
 rsync -a --delete --exclude=.git/ "$official/" "$root/upstream/sub2api/"
+if [[ -f "$root/upstream/sub2api/backend/go.mod" && -d "$root/upstream/sub2api/backend/internal/service" ]]; then
+  native_guard="$root/ops/assert-native-openai-concurrency-only.sh"
+  [[ -x "$native_guard" && ! -L "$native_guard" ]] || fail
+  "$native_guard" --worktree "$root" || fail
+fi
 "$(dirname "$0")/sub2api-release-metadata.rb" advance-provenance \
   --metadata "$metadata" \
   --provenance "$root/upstream/sub2api/XINGQIAO_UPSTREAM.md" \

@@ -14,6 +14,7 @@
 - Added `PersistOpenAIOAuth429Cooldown`, using reliable upstream reset when present and a fixed five-minute fallback otherwise.
 - Uses optional `SetRateLimitedIfLater` when available, preserving a later existing reset; synchronizes the runtime blocker and clears the request retry marker after persistence.
 - Calls the helper at same-account retry exhaustion and account-switch transitions across Responses, Messages, Chat Completions, WebSocket, Images, Alpha Search, and Grok media handlers.
+- Adds one bounded group recovery pass after transient-429 candidate exhaustion. It refreshes the authoritative group account list, clears only excluded short T105 cooldowns (including the current account) and request-local exclusions, while retaining native 7d quota, disabled accounts, credential failures, and other durable state.
 - Kept capacity-shed, image-specific rate limit, model-not-found, non-OAuth 429, Spark shadow, and request-scoped `failedAccountIDs` behavior unchanged.
 
 ## Verification
@@ -21,6 +22,7 @@
 - `gofmt` passed on all changed Go files.
 - `git diff --check` passed.
 - `go build ./cmd/server` passed from `upstream/sub2api/backend`.
+- Isolated T105 service tests passed with production source files plus the existing Gemini repository test helper: `TestPersistOpenAIOAuth429Cooldown*` and `TestRefreshOpenAIOAuth429Group*`.
 - Full `go test -tags=unit ./internal/service ./internal/handler` is blocked by pre-existing test compilation errors unrelated to T105: missing `context` imports in `gateway_forward_as_chat_completions_test.go`, stale `ProvideHandlers` arguments in `handler_wiring_test.go`, and missing `openAIAccountScheduleModel` symbols in `openai_gateway_handler_test.go`.
 
 ## Release gate

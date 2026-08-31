@@ -120,6 +120,27 @@ type openAIAccountScheduleDecisionDetails struct {
 
 type openAIForcedAccountContextKey struct{}
 
+type openAIUnifiedQualitySchedulingContextKey struct{}
+
+// WithOpenAIUnifiedQualityScheduling explicitly opts an ordinary HTTP text
+// request into T96's unified quality selector. Special protocol paths (for
+// example Responses WebSocket and alpha-search) intentionally omit this
+// marker so their existing scheduler/recovery semantics remain aligned.
+func WithOpenAIUnifiedQualityScheduling(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIUnifiedQualitySchedulingContextKey{}, true)
+}
+
+func OpenAIUnifiedQualitySchedulingRequested(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	requested, _ := ctx.Value(openAIUnifiedQualitySchedulingContextKey{}).(bool)
+	return requested
+}
+
 // WithOpenAIForcedAccount pins one retry attempt to the account that just
 // failed. The scheduler still validates its current availability and capacity.
 func WithOpenAIForcedAccount(ctx context.Context, accountID int64) context.Context {
@@ -3383,7 +3404,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		CacheMode:               openAIResilienceCacheModeFromContext(ctx),
 		ExcludedIDs:             excludedIDs,
 		ForcedAccountID:         openAIForcedAccountFromContext(ctx),
-		unifiedQuality:          requiredImageCapability == "" && platform == PlatformOpenAI && s.openaiQuality != nil,
+		unifiedQuality:          OpenAIUnifiedQualitySchedulingRequested(ctx) && requiredImageCapability == "" && platform == PlatformOpenAI && s.openaiQuality != nil,
 	})
 }
 

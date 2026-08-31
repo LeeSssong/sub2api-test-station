@@ -10,6 +10,10 @@ package handler
 import (
 	"context"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -146,4 +150,35 @@ func TestOpenAIResponsesRequiredCapabilityForRequest(t *testing.T) {
 	require.Equal(t, service.OpenAIEndpointCapabilityChatCompletions, openAIResponsesRequiredCapability(true, service.PlatformGrok))
 	require.Equal(t, service.OpenAIEndpointCapabilityResponses, openAIResponsesRequiredCapabilityForRequest(false, true, service.PlatformOpenAI))
 	require.Equal(t, service.OpenAIEndpointCapabilityChatCompletions, openAIResponsesRequiredCapabilityForRequest(false, true, service.PlatformGrok))
+}
+
+func TestOpenAIResponsesImageIntentDoesNotOptIntoUnifiedQuality(t *testing.T) {
+	base := context.Background()
+	require.False(t, service.OpenAIUnifiedQualitySchedulingRequested(openAIUnifiedQualityContextForResponses(base, true)))
+	require.True(t, service.OpenAIUnifiedQualitySchedulingRequested(openAIUnifiedQualityContextForResponses(base, false)))
+}
+
+func TestOpenAIUnifiedQualityOptInCoversOnlyOrdinaryHTTPTextEntrypoints(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	root := filepath.Dir(filename)
+	read := func(name string) string {
+		body, err := os.ReadFile(filepath.Join(root, name))
+		require.NoError(t, err)
+		return string(body)
+	}
+
+	for _, name := range []string{"openai_chat_completions.go", "openai_embeddings.go", "openai_gateway_handler.go"} {
+		source := read(name)
+		require.Contains(t, source, "WithOpenAIUnifiedQualityScheduling", name)
+	}
+	require.Contains(t, read("openai_gateway_handler.go"), "selectionCtx := openAIUnifiedQualityContextForResponses(c.Request.Context(), imageIntent)")
+	require.NotContains(t, read("openai_gateway_handler.go"), "selectionCtx := service.WithOpenAIUnifiedQualityScheduling(c.Request.Context())")
+
+	alpha := read("openai_alpha_search.go")
+	require.NotContains(t, alpha, "WithOpenAIUnifiedQualityScheduling")
+	gateway := read("openai_gateway_handler.go")
+	websocketStart := strings.Index(gateway, "func (h *OpenAIGatewayHandler) ResponsesWebSocket")
+	require.NotEqual(t, -1, websocketStart)
+	require.NotContains(t, gateway[websocketStart:], "WithOpenAIUnifiedQualityScheduling")
 }

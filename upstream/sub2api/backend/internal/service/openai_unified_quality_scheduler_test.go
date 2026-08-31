@@ -36,6 +36,12 @@ func TestOpenAIUnifiedQualityComparatorUsesDeterministicLexicographicOrder(t *te
 	}
 }
 
+func TestOpenAIUnifiedQualityRequiresExplicitRequestOptIn(t *testing.T) {
+	ctx := context.Background()
+	require.False(t, OpenAIUnifiedQualitySchedulingRequested(ctx))
+	require.True(t, OpenAIUnifiedQualitySchedulingRequested(WithOpenAIUnifiedQualityScheduling(ctx)))
+}
+
 func TestOpenAIUnifiedQualityComparatorKeepsNullsLastAtEachPosition(t *testing.T) {
 	value := func(v float64) *float64 { return &v }
 	candidates := []openAIUnifiedQualityCandidate{

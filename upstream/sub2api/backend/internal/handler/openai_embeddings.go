@@ -126,8 +126,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	c.Request = c.Request.WithContext(embPricingCtx)
 
 	for {
+		selectionCtx := service.WithOpenAIUnifiedQualityScheduling(c.Request.Context())
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			c.Request.Context(),
+			selectionCtx,
 			apiKey.GroupID,
 			"",
 			"",

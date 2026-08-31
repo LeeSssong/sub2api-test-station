@@ -404,6 +404,13 @@ func openAIResponsesRequiredCapabilityForRequest(imageIntent bool, needsResponse
 	return openAIResponsesRequiredCapability(imageIntent, platform)
 }
 
+func openAIUnifiedQualityContextForResponses(ctx context.Context, imageIntent bool) context.Context {
+	if imageIntent {
+		return ctx
+	}
+	return service.WithOpenAIUnifiedQualityScheduling(ctx)
+}
+
 func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKey) bool {
 	if apiKey == nil || apiKey.Group == nil {
 		return true
@@ -767,7 +774,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selectionCtx := c.Request.Context()
+		selectionCtx := openAIUnifiedQualityContextForResponses(c.Request.Context(), imageIntent)
 		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		selectionCtx = service.WithOpenAIResilienceCorrelationID(selectionCtx, attemptSequence.logicalRequestID)
 		selectionCtx = service.WithOpenAIFailureDomainPreference(selectionCtx, retryBudget.ObservedDomains(), channelMapping.ChannelID)
@@ -1728,7 +1735,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			currentRoutingModel = effectiveMappedModel
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selectionCtx := c.Request.Context()
+		selectionCtx := service.WithOpenAIUnifiedQualityScheduling(c.Request.Context())
 		selectionCtx = service.WithOpenAIResilienceCacheMode(selectionCtx, attemptCachePreservationMode)
 		selectionCtx = service.WithOpenAIResilienceCorrelationID(selectionCtx, attemptSequence.logicalRequestID)
 		selectionCtx = service.WithOpenAIFailureDomainPreference(selectionCtx, retryBudget.ObservedDomains(), channelMappingMsg.ChannelID)

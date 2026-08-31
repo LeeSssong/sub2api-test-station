@@ -113,7 +113,7 @@
 - [x] **Step 3: Implement evaluator/worker with at-least-once semantics: claim non-sensitive lease, reacquire current data, hold scoped lock through final review/send/CAS, clear or advance generation on state change, and isolate all errors from account refresh and gateway paths.
 - [x] **Step 4: Re-run service tests** and add a concurrency test with two goroutines sharing one repository stub.
 - [x] **Step 5: Wire construction into native worker lifecycle** with sender disabled by default unless explicit runtime enablement is present; ensure cleanup stops it. The cached Wire generator could not resolve an unrelated OpenTelemetry module because `proxy.golang.org` returned EOF, so `wire_gen.go` was synchronized manually and verified with `go build ./cmd/server`.
-- [ ] **Step 6: Commit** `feat: wire native upstream balance notification worker`.
+- [x] **Step 6: Commit** `feat: wire native upstream balance notification worker` (`57fa4ebb8`).
 
 ### Task 6: Convert protected workbook and add deployment-only secret contract
 
@@ -127,11 +127,11 @@
 - Consumes: protected workbook `outputs/feishu-balance-account-map-20260830/sub2api-account-login-map-20260830.xlsx` in local operator environment.
 - Produces: deterministic normalized JSON registry at a host-provided path, never committed or printed.
 
-- [ ] **Step 1: Write failing converter tests** with an in-memory XLSX fixture for C-column BaseURL and final two credential columns, duplicate BaseURL conflict and blank credential behavior.
-- [ ] **Step 2: Run converter tests** and verify expected FAIL.
-- [ ] **Step 3: Implement conversion using the repository’s spreadsheet runtime/parser, exact output schema and `0600` output permission; refuse non-regular or world-readable output targets.
-- [ ] **Step 4: Run converter tests** and a local conversion only to a `0700` temporary directory; verify output path and file content are not emitted to logs.
-- [ ] **Step 5: Commit** `feat: add protected upstream login registry conversion` without adding the workbook or generated JSON.
+- [x] **Step 1: Write failing converter tests** with an in-memory XLSX fixture for C-column BaseURL and final two credential columns, duplicate BaseURL conflict and blank credential behavior.
+- [x] **Step 2: Run converter tests** and verify expected FAIL.
+- [x] **Step 3: Implement conversion using a narrow standard-library OOXML parser, exact output schema and atomic `0600` output permission; refuse non-regular or world-readable input/output targets.
+- [x] **Step 4: Run converter and deployment-contract tests, then convert the protected workbook only inside a temporary `0700` directory. Verified version 1, 35 entries, `0600` output, no path/content logging, and immediate temporary-file removal.
+- [x] **Step 5: Commit** `feat: add protected upstream login registry conversion` without adding the workbook or generated JSON.
 
 ### Task 7: Retire relay-ops notification runtime and migration replay
 

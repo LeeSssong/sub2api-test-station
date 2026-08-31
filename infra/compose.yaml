@@ -131,10 +131,22 @@ services:
     environment:
       <<: *sub2api-environment
       SERVER_PROCESS_ROLE: worker
+      SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED: ${SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED:-false}
+      SUB2API_UPSTREAM_BALANCE_FEISHU_APP_ID_FILE: /run/secrets/upstream-balance/feishu-app-id
+      SUB2API_UPSTREAM_BALANCE_FEISHU_APP_SECRET_FILE: /run/secrets/upstream-balance/feishu-app-secret
+      SUB2API_UPSTREAM_BALANCE_FEISHU_CHAT_ID_FILE: /run/secrets/upstream-balance/feishu-alert-chat-id
+      SUB2API_UPSTREAM_BALANCE_FEISHU_RECIPIENTS_FILE: /run/secrets/upstream-balance/feishu-alert-recipients.json
+      SUB2API_UPSTREAM_BALANCE_LOGIN_REGISTRY_FILE: /run/secrets/upstream-balance/upstream-login-registry.json
     volumes:
       - type: bind
         source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
         target: /app/data
+      - type: bind
+        source: ${SUB2API_UPSTREAM_BALANCE_SECRET_HOST_DIR:-./secrets/upstream-balance}
+        target: /run/secrets/upstream-balance
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}

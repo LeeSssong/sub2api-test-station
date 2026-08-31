@@ -29,7 +29,7 @@
 - Consumes: `ListRealRequestTimelines(ctx context.Context, accountIDs []int64, since, until time.Time, bucketCount int)`.
 - Produces: `map[int64][]service.AccountMonitorRealRequestTimelinePoint` with exactly `bucketCount` ordered points for every requested account.
 
-- [ ] **Step 1: Write the failing repository test**
+- [x] **Step 1: Write the failing repository test**
 
 Add `TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets` with two requested account IDs. Return SQL rows only for account 7 at bucket indexes 3 and 22, then assert both accounts have 24 points, bucket 0 is empty, bucket 3 contains the first aggregate, and bucket 23 ends at `until`.
 
@@ -48,13 +48,13 @@ if got[7][3].RequestCount != 5 || got[7][3].FailureCount != 1 { t.Fatalf("filled
 if !got[7][23].EndAt.Equal(until) { t.Fatalf("last end = %s", got[7][23].EndAt) }
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `go test -vet=off -p 1 -run '^TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets$' -count=1 ./internal/repository`
 
 Expected: FAIL because account 7 has only two points and account 8 has no entry.
 
-- [ ] **Step 3: Implement fixed bucket initialization and indexed overlay**
+- [x] **Step 3: Implement fixed bucket initialization and indexed overlay**
 
 Before the query, initialize `result[id]` for every account. Reuse `bucketSeconds` for boundaries and scanned-index placement. Ignore an impossible out-of-range row instead of panicking.
 
@@ -74,13 +74,13 @@ p.EndAt = result[id][index].EndAt
 result[id][index] = p
 ```
 
-- [ ] **Step 4: Run focused repository verification**
+- [x] **Step 4: Run focused repository verification**
 
 Run: `go test -vet=off -p 1 -run '^(TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets|TestAccountMonitorRepositoryProjectMonitorV4)' -count=1 ./internal/repository`
 
 Expected: PASS.
 
-- [ ] **Step 5: Format and commit the repository slice**
+- [x] **Step 5: Format and commit the repository slice**
 
 Run: `gofmt -w internal/repository/account_monitor_repo.go internal/repository/account_monitor_repo_test.go && git diff --check`
 
@@ -91,13 +91,13 @@ Commit: `git add upstream/sub2api/backend/internal/repository/account_monitor_re
 **Files:**
 - Modify: `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.spec.ts`
 - Modify: `upstream/sub2api/frontend/src/components/admin/account-monitor/AccountMonitorCard.vue:33-53,429-443`
-- Modify: `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
+- Verify unchanged coverage: `upstream/sub2api/frontend/src/views/admin/__tests__/AccountMonitorView.spec.ts`
 
 **Interfaces:**
 - Consumes: existing `rankingScope: 'group' | 'global'` and `account.group_profitability`.
 - Produces: all-site label `按分组查看`; group-specific percentage behavior; 24 empty fallback bars; chart/probe copy with distinct semantics.
 
-- [ ] **Step 1: Write failing card behavior tests**
+- [x] **Step 1: Write failing card behavior tests**
 
 ```ts
 it('routes all-site profitability to group views', () => {
@@ -114,9 +114,9 @@ it('renders 24 empty real-request buckets and labels probe refresh separately', 
 })
 ```
 
-- [ ] **Step 2: Extend the view stub and write a failing scope propagation test**
+- [x] **Step 2: Verify existing view scope propagation coverage**
 
-Declare `rankingScope` on `AccountMonitorCardStub`, mount the view, assert the initial card receives `global`, click `group-tab-3`, then assert the card receives `group`.
+The existing view already passes `rankingScope` to the real card and its 48-test suite covers global/group switching. The proposed stub-only assertion passed without a production change, so no duplicate View test or View edit was added.
 
 ```ts
 expect(wrapper.findAllComponents(AccountMonitorCardStub)[0].props('rankingScope')).toBe('global')
@@ -125,13 +125,13 @@ await flushPromises()
 expect(wrapper.findAllComponents(AccountMonitorCardStub)[0].props('rankingScope')).toBe('group')
 ```
 
-- [ ] **Step 3: Run the two test files and verify RED**
+- [x] **Step 3: Run the two test files and verify RED/GREEN boundaries**
 
 Run: `./node_modules/.bin/vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`
 
-Expected: FAIL because global cards still show `group_profitability`, old chart copy remains, and the stub does not expose `rankingScope`.
+Observed RED was limited to the new card behavior assertions: the old card showed group profitability in global scope and used the old chart/probe copy. The existing View scope behavior was already green and required no implementation change.
 
-- [ ] **Step 4: Implement the minimal Vue changes**
+- [x] **Step 4: Implement the minimal Vue changes**
 
 ```ts
 const profitRateLabel = computed(() => {
@@ -146,7 +146,7 @@ const profitRateLabel = computed(() => {
 
 Use heading `真实性能 · 真实请求`, button text `刷新探测状态`, and accessible text `刷新主动探测状态，不生成真实请求样本`. Keep the existing event and disabled/loading behavior.
 
-- [ ] **Step 5: Run focused frontend tests and commit the UI slice**
+- [x] **Step 5: Run focused frontend tests and commit the UI slice**
 
 Run: `./node_modules/.bin/vitest run src/components/admin/account-monitor/AccountMonitorCard.spec.ts src/views/admin/__tests__/AccountMonitorView.spec.ts`
 
@@ -165,7 +165,7 @@ Commit: `git add upstream/sub2api/frontend/src/components/admin/account-monitor/
 - Consumes: completed backend and frontend slices.
 - Produces: reproducible verification evidence and root-integration handoff.
 
-- [ ] **Step 1: Run focused and static verification**
+- [x] **Step 1: Run focused and static verification**
 
 Backend commands:
 
@@ -182,28 +182,28 @@ Frontend commands:
 ./node_modules/.bin/vite build
 ```
 
-- [ ] **Step 2: Run scope and diff checks**
+- [x] **Step 2: Run scope and diff checks**
 
 Run: `git diff --check && git status --short && git diff main...HEAD --stat && git diff main...HEAD -- .github/workflows upstream/sub2api/backend/migrations`
 
 Expected: clean diff check and no workflow or migration delta.
 
-- [ ] **Step 3: Perform browser visual checks**
+- [x] **Step 3: Perform browser visual checks**
 
-Verify desktop 1440x900 and mobile 390x844. Confirm 24 stable bars, no text overlap, no full-page horizontal overflow, global/group profitability labels, keyboard focus, and probe action copy. Save screenshots under `outputs/t101-account-monitor/` as local evidence; do not commit sensitive sessions or credentials.
+Verify desktop 1440x900 and mobile 390x844. Confirm 24 stable bars, no text overlap, no full-page horizontal overflow, global/group profitability labels, keyboard focus, and probe action copy. Save screenshots under `output/playwright/t101/` as local evidence; do not commit sensitive sessions or credentials.
 
-- [ ] **Step 4: Record verification and handoff**
+- [x] **Step 4: Record verification and handoff**
 
 The report must list exact commands, results, screenshots, known baseline failures, scope exclusions, and release preflight status. The handoff must identify branch/HEAD, base commit, commits, rollback, no-migration/no-config status, and the production authorization gate.
 
-- [ ] **Step 5: Mark plan checkboxes and commit documentation**
+- [x] **Step 5: Mark plan checkboxes and commit documentation**
 
 Run: `git add docs/superpowers/plans/2026-08-31-t101-account-monitor-evidence-semantics.md docs/superpowers/reports/2026-08-31-t101-account-monitor-evidence-semantics-verification.md docs/handoffs/2026-08-31-t101-account-monitor-evidence-semantics-handoff.md && git commit -m 'docs: record t101 verification handoff'`
 
 ## Acceptance
 
-- [ ] Repository and UI both preserve 24 fixed timeline positions.
-- [ ] All-site cards show `按分组查看`; group cards retain correct rate semantics.
-- [ ] Probe refresh copy no longer implies that it creates real-request evidence.
-- [ ] Focused tests, typecheck, production build, diff check, and visual checks pass.
-- [ ] No migration, configuration, dependency, GitHub Actions, or production data delta exists.
+- [x] Repository and UI both preserve 24 fixed timeline positions.
+- [x] All-site cards show `按分组查看`; group cards retain correct rate semantics.
+- [x] Probe refresh copy no longer implies that it creates real-request evidence.
+- [x] Focused tests, typecheck, production build, diff check, and visual checks pass.
+- [x] No migration, configuration, dependency, GitHub Actions, or production data delta exists.

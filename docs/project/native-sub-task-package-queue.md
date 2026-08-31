@@ -24,7 +24,7 @@
 
 **T98 正式规格草案（2026-08-31）：** 已完成旧通知表/外键/wiring、原生余额与排名、原生事件账本、飞书传输/重试和 secret 挂载的只读盘点；正式草案为 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md`。草案固定 `scheduler_rank`、严格有效快照、原生非敏感 event claim、at-least-once 重试、整份配置 fail-closed、单 BaseURL 未登记仍发送，以及“停旧 writer -> 无备份清库 -> 启新 sender”的切换顺序。匿名 P2/P1 对照稿已完成桌面/移动检查。当前待用户批准，未进入实现、清库、生产配置或真实投递。
 
-**T98：** 状态 `INTEGRATING`。候选 `codex/t98-feishu-upstream-balance-notification@bee0ded9b` 已刷新到并快进合入根 `main`；用户已于 2026-08-31 明确回复“快速部署到主站”，授权按紧急路径完成合并后直接验证、推送、主站发布及同 commit 验收站同步。飞书通知重构移除旧通知业务内容与判定规则，仅保留飞书 App Bot/凭据、传输适配和卡片样式等可复用能力；首个事件为 BaseURL 维度的 API Key 上游余额不足预警，消费 Sub2API 既有 `account_monitor_balance`、管理员页现行账号元数据和当前调度排名，不新增监控、探测、事实源或业务写入。规范化 BaseURL 是事件/去重主键，一个 BaseURL 只有一个最新有效 USD 余额；卡片列出全部活跃账号及 `scheduler_rank`，并按用户授权显示登记簿登录账号和明文密码。发布顺序固定为“先停旧 relay-ops writer → 无备份清理九张授权旧表 → 部署 migration 231 与新 worker sender”；若预检返回 `downtime_required=true`，仍须停在单独停机授权门禁。
+**T98：** 状态 `FROZEN`（停机授权门禁）。候选已合入并推送根 `main@12aea434e2c8d42b70437bb60a5e6d8565d1a6d6`（tree `de422b739f01a59c0e8f1ab1718016f084ea909c`），并已从该 `main` 成功发布移除旧通知 writer/retry/scheduler 的 relay-ops；旧镜像保留为回滚目标，PostgreSQL、Redis、Caddy、API 两槽和 worker 身份未改变。count-only 核对后，按用户既有无备份授权和双门禁删除九张旧通知表（共 1940 行），复核均不存在；飞书传输凭据保留，新 worker-only secret 目录已准备为 `0700/0600`，通知开关仍关闭。Sub2API 候选镜像已从同一 `main` 构建，但宿主预检返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒；尚未停服、迁移、重启、槽位切换或启用 sender。除非用户另行明确“允许停机部署”，不得恢复 T98 发布；当前仅保留证据，不占用后续实现车道。
 
 **T98 计划与实现工作区（2026-08-31）：** 已从 `main@06695141f` 创建 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t98-feishu-upstream-balance-notification`，分支 `codex/t98-feishu-upstream-balance-notification`。实施计划即将在该 worktree 编写；当前不改生产、不清库、不发送真实飞书消息。
 

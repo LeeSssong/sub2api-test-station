@@ -21,17 +21,14 @@ done
 worktree=$(cd "$worktree" && pwd -P)
 [[ -d "$worktree/.git" || -f "$worktree/.git" ]] || fail '--worktree is not a Git worktree'
 
-# Acceptance can intentionally publish a reviewed candidate before root integration.
-[[ "$mode" == production ]] || exit 0
-
 branch=$(git -C "$worktree" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-[[ "$branch" == main ]] || fail 'production releases must use the main branch'
+[[ "$branch" == main ]] || fail 'releases must use the main branch'
 remote_commit=$(git -C "$worktree" rev-parse --verify refs/remotes/origin/main 2>/dev/null) \
-  || fail 'origin/main is unavailable; fetch the remote before production release'
+  || fail 'origin/main is unavailable; fetch the remote before release'
 source_commit=$(git -C "$worktree" rev-parse HEAD) || fail 'could not resolve worktree HEAD'
 source_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}') || fail 'could not resolve worktree tree'
 remote_tree=$(git -C "$worktree" rev-parse 'refs/remotes/origin/main^{tree}') \
   || fail 'could not resolve origin/main tree'
-[[ "$source_commit" == "$remote_commit" ]] || fail 'production release source is not the pushed origin/main commit'
-[[ "$source_tree" == "$remote_tree" ]] || fail 'production release tree does not match origin/main'
+[[ "$source_commit" == "$remote_commit" ]] || fail 'release source is not the pushed origin/main commit'
+[[ "$source_tree" == "$remote_tree" ]] || fail 'release source tree does not match origin/main'
 printf 'release_source status=passed branch=main commit=%s tree=%s\n' "$source_commit" "$source_tree"

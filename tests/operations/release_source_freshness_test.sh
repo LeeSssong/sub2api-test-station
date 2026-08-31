@@ -19,14 +19,18 @@ git -C "$FIXTURE/repo" commit -qm initial
 git -C "$FIXTURE/repo" branch -M main
 git -C "$FIXTURE/repo" push -q -u origin main
 
-"$CHECKER" --mode production --worktree "$FIXTURE/repo" >/dev/null
+for mode in rehearsal production; do
+  "$CHECKER" --mode "$mode" --worktree "$FIXTURE/repo" >/dev/null
+done
 
 git -C "$FIXTURE/repo" switch -q -c candidate
 printf 'candidate\n' >>"$FIXTURE/repo/file.txt"
 git -C "$FIXTURE/repo" add file.txt
 git -C "$FIXTURE/repo" commit -qm candidate
-if "$CHECKER" --mode production --worktree "$FIXTURE/repo" >/dev/null 2>&1; then
-  fail 'candidate branch was accepted for production release'
-fi
+for mode in rehearsal production; do
+  if "$CHECKER" --mode "$mode" --worktree "$FIXTURE/repo" >/dev/null 2>&1; then
+    fail "candidate branch was accepted for $mode release"
+  fi
+done
 
 printf 'PASS: release source freshness\n'

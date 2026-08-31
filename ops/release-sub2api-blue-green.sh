@@ -63,10 +63,8 @@ worktree_physical=$(cd "$worktree" && pwd -P)
 source_commit=$(git -C "$worktree" rev-parse HEAD) || fail 'could not resolve source commit'
 source_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}') || fail 'could not resolve source tree'
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail 'Git identity is invalid'
-if [[ "$mode" == production ]]; then
-  "$worktree/ops/assert-sub2api-release-source.sh" --mode production --worktree "$worktree" \
-    || fail 'production release source freshness check failed'
-fi
+"$worktree/ops/assert-sub2api-release-source.sh" --mode "$mode" --worktree "$worktree" \
+  || fail 'release source freshness check failed'
 
 migrations_dir="$worktree/upstream/sub2api/backend/migrations"
 [[ -d "$migrations_dir" && ! -L "$migrations_dir" ]] || fail 'migration directory is invalid'

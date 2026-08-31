@@ -14,10 +14,11 @@ var (
 )
 
 type AccountMonitorRunner struct {
-	svc      *AccountMonitorService
-	detector *AccountModelDetectionService
-	ctx      context.Context
-	cancel   context.CancelFunc
+	svc                 *AccountMonitorService
+	detector            *AccountModelDetectionService
+	balanceNotification upstreamBalanceNotificationTrigger
+	ctx                 context.Context
+	cancel              context.CancelFunc
 
 	mu       sync.Mutex
 	interval time.Duration
@@ -29,9 +30,19 @@ type AccountMonitorRunner struct {
 	runMu    sync.Mutex
 }
 
+type upstreamBalanceNotificationTrigger interface {
+	TriggerEvaluate()
+}
+
 func (r *AccountMonitorRunner) SetModelDetectionService(detector *AccountModelDetectionService) {
 	if r != nil {
 		r.detector = detector
+	}
+}
+
+func (r *AccountMonitorRunner) SetUpstreamBalanceNotificationTrigger(trigger upstreamBalanceNotificationTrigger) {
+	if r != nil {
+		r.balanceNotification = trigger
 	}
 }
 
@@ -189,6 +200,9 @@ func (r *AccountMonitorRunner) runOnce() {
 		return
 	}
 	defer r.runMu.Unlock()
+	if r.balanceNotification != nil {
+		defer r.balanceNotification.TriggerEvaluate()
+	}
 	if _, err := r.svc.RunAll(r.ctx, 0); err != nil {
 		slog.Warn("account_monitor: run failed", "error", err)
 	}

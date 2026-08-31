@@ -183,6 +183,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorUserHandler := handler.NewChannelMonitorUserHandler(channelMonitorService, settingService)
 	channelMonitorV2Repository := repository.NewChannelMonitorV2Repository(db)
 	accountMonitorRepository := repository.NewAccountMonitorRepositoryWithOutbox(db)
+	upstreamBalanceEventRepository := repository.NewUpstreamBalanceEventRepository(db)
 	accountMonitorAccountRepository := service.ProvideAccountMonitorAccountRepository(accountRepository)
 	accountProbeCostRepository := repository.NewAccountProbeCostRepository(db)
 	accountProbeCostService := service.ProvideAccountProbeCostService(billingService, accountProbeCostRepository)
@@ -201,6 +202,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	accountModelDetectionSidecar := service.ProvideAccountModelDetectionSidecar()
 	accountModelDetectionService := service.ProvideAccountModelDetectionService(accountModelDetectionRepository, accountModelDetectionAccountReader, accountModelDetectionSidecar, accountUsageService)
 	accountMonitorService := service.ProvideAccountMonitorService(accountMonitorRepository, accountMonitorAccountRepository, accountRepository, accountTestService, accountUsageService, billingService, upstreamBillingProbeService, accountModelDetectionService, openAIGatewayService, concurrencyService)
+	upstreamBalanceNotificationService := service.ProvideUpstreamBalanceNotificationService(upstreamBalanceEventRepository, accountMonitorService, configConfig)
 	monitorV2Service := service.ProvideMonitorV2Service(groupRepository, apiKeyService, channelMonitorV2Repository, accountMonitorService, settingService)
 	monitorV2Handler := handler.ProvideMonitorV2Handler(monitorV2Service)
 	monitorV4Service := service.ProvideMonitorV4Service(groupRepository, apiKeyService, channelMonitorV2Repository, accountMonitorService, settingService)
@@ -293,7 +295,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRequestTemplateRepository := repository.NewChannelMonitorRequestTemplateRepository(client, db)
 	channelMonitorRequestTemplateService := service.NewChannelMonitorRequestTemplateService(channelMonitorRequestTemplateRepository)
 	channelMonitorRequestTemplateHandler := admin.NewChannelMonitorRequestTemplateHandler(channelMonitorRequestTemplateService)
-	accountMonitorRunner := service.ProvideAccountMonitorRunner(accountMonitorService, accountModelDetectionService, configConfig)
+	accountMonitorRunner := service.ProvideAccountMonitorRunner(accountMonitorService, accountModelDetectionService, upstreamBalanceNotificationService, configConfig)
 	accountMonitorHandler := handler.ProvideAccountMonitorHandler(accountMonitorService, accountMonitorRunner, accountRepository, concurrencyService, openAIGatewayService, accountModelDetectionService)
 	contentModerationRepository := repository.NewContentModerationRepository(db)
 	contentModerationHashCache := repository.NewContentModerationHashCache(redisClient)
@@ -377,7 +379,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRunner := service.ProvideChannelMonitorRunner(channelMonitorService, settingService, configConfig, accountUsageService)
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService, configConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v2 := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, contentModerationService, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, accountMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	v2 := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, contentModerationService, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, accountMonitorRunner, upstreamBalanceNotificationService, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -455,6 +457,7 @@ func provideCleanup(
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	accountMonitorRunner *service.AccountMonitorRunner,
+	upstreamBalanceNotification *service.UpstreamBalanceNotificationService,
 	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
@@ -705,6 +708,12 @@ func provideCleanup(
 			{"AccountMonitorRunner", func() error {
 				if accountMonitorRunner != nil {
 					accountMonitorRunner.Stop()
+				}
+				return nil
+			}},
+			{"UpstreamBalanceNotificationService", func() error {
+				if upstreamBalanceNotification != nil {
+					upstreamBalanceNotification.Stop()
 				}
 				return nil
 			}},

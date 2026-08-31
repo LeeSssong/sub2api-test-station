@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ var upstreamBalanceEventColumns = []string{
 	"scope_type",
 	"scope_key",
 	"notification_state",
+	"metric_value",
 	"last_observed_at",
 	"last_delivered_at",
 	"delivery_generation",
@@ -44,6 +46,7 @@ const upstreamBalanceEventSelectColumns = `
   scope_type,
   scope_key,
   notification_state,
+  metric_value,
   last_observed_at,
   last_delivered_at,
   delivery_generation,
@@ -320,15 +323,15 @@ func insertUpstreamBalanceEvent(ctx context.Context, tx *sql.Tx, input service.U
 	row := tx.QueryRowContext(ctx, `
 INSERT INTO ops_alert_events (
   rule_id, severity, status, scope_type, scope_key, notification_state,
-  last_observed_at, fired_at, delivery_generation, delivery_attempt_count,
+  metric_value, last_observed_at, fired_at, delivery_generation, delivery_attempt_count,
   delivery_lease_token, delivery_lease_until, created_at
 ) VALUES (
   $1, CASE WHEN $4 = 'zero' THEN 'P1' ELSE 'P2' END, 'firing', $2, $3, $4,
-  $5, $6, 1, 0, $7, $8, $6
+  $5, $6, $7, 1, 0, $8, $9, $7
 )
 RETURNING`+upstreamBalanceEventSelectColumns,
 		input.RuleID, service.UpstreamBalanceScopeTypeBaseURL, input.ScopeKey,
-		input.NotificationState, input.ObservedAt, input.Now, token, leaseUntil)
+		input.NotificationState, input.ValueUSD, input.ObservedAt, input.Now, token, leaseUntil)
 	return scanUpstreamBalanceEvent(row)
 }
 
@@ -338,16 +341,17 @@ func updateUpstreamBalanceEventClaim(ctx context.Context, tx *sql.Tx, event *ser
 UPDATE ops_alert_events
 SET severity = CASE WHEN $2 = 'zero' THEN 'P1' ELSE 'P2' END,
     notification_state = $2,
-    last_observed_at = $3,
+    metric_value = $3,
+    last_observed_at = $4,
     delivery_generation = delivery_generation + 1,
-    delivery_attempt_count = CASE WHEN $4 THEN 0 ELSE delivery_attempt_count END,
-    next_attempt_at = CASE WHEN $4 THEN NULL ELSE next_attempt_at END,
-    last_delivery_error_code = CASE WHEN $4 THEN NULL ELSE last_delivery_error_code END,
-    delivery_lease_token = $5,
-    delivery_lease_until = $6
+    delivery_attempt_count = CASE WHEN $5 THEN 0 ELSE delivery_attempt_count END,
+    next_attempt_at = CASE WHEN $5 THEN NULL ELSE next_attempt_at END,
+    last_delivery_error_code = CASE WHEN $5 THEN NULL ELSE last_delivery_error_code END,
+    delivery_lease_token = $6,
+    delivery_lease_until = $7
 WHERE id = $1
 RETURNING`+upstreamBalanceEventSelectColumns,
-		event.ID, input.NotificationState, input.ObservedAt, stateChanged, token, leaseUntil)
+		event.ID, input.NotificationState, input.ValueUSD, input.ObservedAt, stateChanged, token, leaseUntil)
 	return scanUpstreamBalanceEvent(row)
 }
 
@@ -383,6 +387,7 @@ func scanUpstreamBalanceEvent(row upstreamBalanceEventScanner) (*service.Upstrea
 		&event.ScopeType,
 		&event.ScopeKey,
 		&event.NotificationState,
+		&event.ValueUSD,
 		&event.LastObservedAt,
 		&lastDeliveredAt,
 		&event.DeliveryGeneration,
@@ -411,6 +416,7 @@ func upstreamBalanceDeliveryLease(event service.UpstreamBalanceEvent) service.Up
 	lease := service.UpstreamBalanceDeliveryLease{
 		EventID: event.ID, RuleID: event.RuleID, ScopeKey: event.ScopeKey,
 		NotificationState: event.NotificationState, ObservedAt: event.LastObservedAt,
+		ValueUSD:   event.ValueUSD,
 		Generation: event.DeliveryGeneration, Token: event.DeliveryLeaseToken,
 	}
 	if event.DeliveryLeaseUntil != nil {
@@ -426,7 +432,8 @@ func validateUpstreamBalanceClaimInput(input service.UpstreamBalanceClaimInput) 
 	if input.NotificationState != service.UpstreamBalanceNotificationStateLow && input.NotificationState != service.UpstreamBalanceNotificationStateZero {
 		return errors.New("invalid upstream balance notification state")
 	}
-	if input.ObservedAt.IsZero() || input.Now.IsZero() || input.RepeatInterval <= 0 || input.LeaseDuration <= 0 {
+	if input.ValueUSD < 0 || input.ValueUSD >= 5 || math.IsNaN(input.ValueUSD) || math.IsInf(input.ValueUSD, 0) ||
+		input.ObservedAt.IsZero() || input.Now.IsZero() || input.RepeatInterval <= 0 || input.LeaseDuration <= 0 {
 		return errors.New("invalid upstream balance claim timing")
 	}
 	return nil

@@ -92,7 +92,7 @@
 - [x] **Step 2: Run** `go test -run 'Test(UpstreamBalanceEventMigration|UpstreamBalanceEventRepository)' ./migrations ./internal/repository` and verify expected FAIL.
 - [x] **Step 3: Add the migration and repository methods**; use one transaction for row lock/claim, `pg_try_advisory_xact_lock` for scope serialization, and never accept card JSON or credentials as repository inputs.
 - [x] **Step 4: Re-run tests** and verify two competing claims produce one active lease while different BaseURLs remain independent. Repository tests require `-vet=off` because the package has a pre-existing unrelated `fmt.Sprintf` vet failure in `usage_log_repo_stats.go:1004`.
-- [ ] **Step 5: Commit** `feat: add baseurl scoped native alert ledger`.
+- [x] **Step 5: Commit** `feat: add baseurl scoped native alert ledger` (`51c9ca2fd`).
 
 ### Task 5: Implement native evaluator and due-delivery worker
 
@@ -108,11 +108,11 @@
 - Consumes: Task 1 evaluator, Task 2 loader, Task 3 sender, Task 4 repository, existing account-monitor runner.
 - Produces: `UpstreamBalanceNotificationService.Evaluate(ctx)`, `RunDue(ctx)`, `Stop()`; runner hook invoked after an existing balance refresh and a due-only worker tick that never refreshes balances.
 
-- [ ] **Step 1: Write failing service tests** for healthy/low/zero transitions, 30/5-minute cadence from successful delivery time, retry backoff `1,2,5,10m`, no state mutation on no active account/invalid snapshot/read error, current-data re-render before send, and stale-generation cancellation.
-- [ ] **Step 2: Run** `go test -run 'TestUpstreamBalanceNotificationService' ./internal/service` and verify expected FAIL.
-- [ ] **Step 3: Implement evaluator/worker with at-least-once semantics: claim non-sensitive lease, reacquire current data, hold scoped lock through final review/send/CAS, clear or advance generation on state change, and isolate all errors from account refresh and gateway paths.
-- [ ] **Step 4: Re-run service tests** and add a concurrency test with two goroutines sharing one repository stub.
-- [ ] **Step 5: Wire construction into native worker lifecycle** with sender disabled by default unless explicit runtime enablement is present; ensure cleanup stops it.
+- [x] **Step 1: Write failing service tests** for healthy/low/zero transitions, 30/5-minute cadence from successful delivery time, retry backoff `1,2,5,10m`, no state mutation on no active account/invalid snapshot/read error, current-data re-render before send, and stale-generation cancellation.
+- [x] **Step 2: Run** `go test -run 'TestUpstreamBalanceNotificationService' ./internal/service` and verify expected FAIL.
+- [x] **Step 3: Implement evaluator/worker with at-least-once semantics: claim non-sensitive lease, reacquire current data, hold scoped lock through final review/send/CAS, clear or advance generation on state change, and isolate all errors from account refresh and gateway paths.
+- [x] **Step 4: Re-run service tests** and add a concurrency test with two goroutines sharing one repository stub.
+- [x] **Step 5: Wire construction into native worker lifecycle** with sender disabled by default unless explicit runtime enablement is present; ensure cleanup stops it. The cached Wire generator could not resolve an unrelated OpenTelemetry module because `proxy.golang.org` returned EOF, so `wire_gen.go` was synchronized manually and verified with `go build ./cmd/server`.
 - [ ] **Step 6: Commit** `feat: wire native upstream balance notification worker`.
 
 ### Task 6: Convert protected workbook and add deployment-only secret contract

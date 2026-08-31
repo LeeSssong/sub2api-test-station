@@ -110,6 +110,7 @@ type UpstreamBalanceEvent struct {
 	ScopeType             string
 	ScopeKey              string
 	NotificationState     string
+	ValueUSD              float64
 	LastObservedAt        time.Time
 	LastDeliveredAt       *time.Time
 	DeliveryGeneration    int64
@@ -125,6 +126,7 @@ type UpstreamBalanceClaimInput struct {
 	RuleID            int64
 	ScopeKey          string
 	NotificationState string
+	ValueUSD          float64
 	ObservedAt        time.Time
 	Now               time.Time
 	RepeatInterval    time.Duration
@@ -136,6 +138,7 @@ type UpstreamBalanceDeliveryLease struct {
 	RuleID            int64
 	ScopeKey          string
 	NotificationState string
+	ValueUSD          float64
 	ObservedAt        time.Time
 	Generation        int64
 	Token             string

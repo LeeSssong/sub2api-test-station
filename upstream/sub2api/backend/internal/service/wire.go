@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	upstreamnotify "github.com/Wei-Shaw/sub2api/internal/notify"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -1160,6 +1162,7 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorRunner,
 	ProvideAccountMonitorAccountRepository,
 	ProvideAccountMonitorService,
+	ProvideUpstreamBalanceNotificationService,
 	ProvideAccountMonitorRunner,
 	ProvideAccountModelDetectionSidecar,
 	ProvideAccountModelDetectionAccountReader,
@@ -1296,9 +1299,50 @@ func ProvideAccountMonitorAccountRepository(repo AccountRepository) AccountMonit
 	return repo
 }
 
-func ProvideAccountMonitorRunner(svc *AccountMonitorService, detector *AccountModelDetectionService, cfg *config.Config) *AccountMonitorRunner {
+func ProvideUpstreamBalanceNotificationService(
+	repo UpstreamBalanceEventRepository,
+	reader *AccountMonitorService,
+	cfg *config.Config,
+) *UpstreamBalanceNotificationService {
+	disabled := NewUpstreamBalanceNotificationService(nil, nil, nil, nil, nil)
+	enabledValue := strings.TrimSpace(os.Getenv("SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED"))
+	if (enabledValue != "1" && !strings.EqualFold(enabledValue, "true")) || !shouldStartSingleton(cfg) {
+		return disabled
+	}
+	secrets, err := upstreamnotify.LoadUpstreamBalanceSecrets(upstreamnotify.UpstreamBalanceSecretPaths{
+		AppID:      os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_APP_ID_FILE"),
+		AppSecret:  os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_APP_SECRET_FILE"),
+		ChatID:     os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_CHAT_ID_FILE"),
+		Recipients: os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_RECIPIENTS_FILE"),
+		Registry:   os.Getenv("SUB2API_UPSTREAM_BALANCE_LOGIN_REGISTRY_FILE"),
+	})
+	if err != nil {
+		code := upstreamnotify.SecretErrorCode(err)
+		if code == "" {
+			code = "secret_unavailable"
+		}
+		logger.LegacyPrintf("service.upstream_balance_notification", "notification subsystem disabled: code=%s", code)
+		return disabled
+	}
+	baseURL := strings.TrimSpace(os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_API_BASE_URL"))
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+	sender := upstreamnotify.NewFeishuSender(baseURL, secrets)
+	svc := NewUpstreamBalanceNotificationService(repo, reader, sender, secrets.Registry, secrets.RecipientOpenIDs)
+	svc.Start()
+	return svc
+}
+
+func ProvideAccountMonitorRunner(
+	svc *AccountMonitorService,
+	detector *AccountModelDetectionService,
+	balanceNotification *UpstreamBalanceNotificationService,
+	cfg *config.Config,
+) *AccountMonitorRunner {
 	runner := NewAccountMonitorRunner(svc)
 	runner.SetModelDetectionService(detector)
+	runner.SetUpstreamBalanceNotificationTrigger(balanceNotification)
 	if shouldStartSingleton(cfg) {
 		runner.Start()
 	}

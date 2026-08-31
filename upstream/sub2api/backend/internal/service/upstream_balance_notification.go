@@ -26,6 +26,12 @@ type UpstreamBalanceAccount struct {
 	Status    string
 	BaseURL   string
 	Snapshot  *AccountMonitorBalance
+	Ranks     []UpstreamBalanceAccountRank
+}
+
+type UpstreamBalanceAccountRank struct {
+	GroupName string
+	Rank      *int
 }
 
 type UpstreamBalanceEvaluation struct {

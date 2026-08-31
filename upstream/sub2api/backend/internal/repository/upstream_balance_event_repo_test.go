@@ -32,12 +32,12 @@ func TestUpstreamBalanceEventRepositoryClaimSerializesScopeAndCreatesLease(t *te
 	mock.ExpectQuery(`(?s)INSERT INTO ops_alert_events.*RETURNING`).
 		WithArgs(
 			int64(17), service.UpstreamBalanceScopeTypeBaseURL, "https://upstream.invalid",
-			service.UpstreamBalanceNotificationStateLow, observedAt, now,
+			service.UpstreamBalanceNotificationStateLow, 4.5, observedAt, now,
 			"lease-test-token", leaseUntil,
 		).
 		WillReturnRows(upstreamBalanceEventRows().AddRow(
 			int64(41), int64(17), service.OpsAlertStatusFiring, service.UpstreamBalanceScopeTypeBaseURL,
-			"https://upstream.invalid", service.UpstreamBalanceNotificationStateLow, observedAt,
+			"https://upstream.invalid", service.UpstreamBalanceNotificationStateLow, 4.5, observedAt,
 			nil, int64(1), 0, nil, "lease-test-token", leaseUntil, "", now,
 		))
 	mock.ExpectCommit()
@@ -46,6 +46,7 @@ func TestUpstreamBalanceEventRepositoryClaimSerializesScopeAndCreatesLease(t *te
 		RuleID:            17,
 		ScopeKey:          "https://upstream.invalid",
 		NotificationState: service.UpstreamBalanceNotificationStateLow,
+		ValueUSD:          4.5,
 		ObservedAt:        observedAt,
 		Now:               now,
 		RepeatInterval:    30 * time.Minute,
@@ -73,7 +74,7 @@ func TestUpstreamBalanceEventRepositoryClaimRejectsCompetingScopeLock(t *testing
 	mock.ExpectRollback()
 
 	lease, claimed, err := repo.Claim(context.Background(), service.UpstreamBalanceClaimInput{
-		RuleID: 17, ScopeKey: "https://upstream.invalid", NotificationState: service.UpstreamBalanceNotificationStateZero,
+		RuleID: 17, ScopeKey: "https://upstream.invalid", NotificationState: service.UpstreamBalanceNotificationStateZero, ValueUSD: 0,
 		ObservedAt: time.Now(), Now: time.Now(), RepeatInterval: 5 * time.Minute, LeaseDuration: time.Minute,
 	})
 
@@ -105,13 +106,13 @@ func TestUpstreamBalanceEventRepositoryClaimNotDueDoesNotAllocateLease(t *testin
 		WithArgs(int64(17), service.UpstreamBalanceScopeTypeBaseURL, "https://upstream.invalid", service.OpsAlertStatusFiring).
 		WillReturnRows(upstreamBalanceEventRows().AddRow(
 			int64(41), int64(17), service.OpsAlertStatusFiring, service.UpstreamBalanceScopeTypeBaseURL,
-			"https://upstream.invalid", service.UpstreamBalanceNotificationStateLow, observedAt,
+			"https://upstream.invalid", service.UpstreamBalanceNotificationStateLow, 4.5, observedAt,
 			lastDeliveredAt, int64(1), 0, nil, "", nil, "", now.Add(-time.Hour),
 		))
 	mock.ExpectCommit()
 
 	lease, claimed, err := repo.Claim(context.Background(), service.UpstreamBalanceClaimInput{
-		RuleID: 17, ScopeKey: "https://upstream.invalid", NotificationState: service.UpstreamBalanceNotificationStateLow,
+		RuleID: 17, ScopeKey: "https://upstream.invalid", NotificationState: service.UpstreamBalanceNotificationStateLow, ValueUSD: 4.5,
 		ObservedAt: observedAt, Now: now, RepeatInterval: 30 * time.Minute, LeaseDuration: time.Minute,
 	})
 
@@ -154,7 +155,7 @@ func TestUpstreamBalanceEventRepositoryGetCurrentReturnsLeaseStateForFinalReview
 		WithArgs(int64(41)).
 		WillReturnRows(upstreamBalanceEventRows().AddRow(
 			int64(41), int64(17), service.OpsAlertStatusFiring, service.UpstreamBalanceScopeTypeBaseURL,
-			"https://upstream.invalid", service.UpstreamBalanceNotificationStateZero, now.Add(-time.Minute),
+			"https://upstream.invalid", service.UpstreamBalanceNotificationStateZero, 0.0, now.Add(-time.Minute),
 			nil, int64(4), 1, now.Add(time.Minute), "lease-token", leaseUntil, "", now.Add(-time.Hour),
 		))
 

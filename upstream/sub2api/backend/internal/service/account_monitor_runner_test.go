@@ -82,3 +82,21 @@ func TestAccountMonitorRunnerSettleOnceRunsTerminalWatchdog(t *testing.T) {
 		t.Fatalf("watchdog group id = %d, want 7", repo.probeBucketTerminals[0].groupID)
 	}
 }
+
+func TestAccountMonitorRunnerTriggersBalanceEvaluationAfterNativeRun(t *testing.T) {
+	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 60}}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	runner := NewAccountMonitorRunner(svc)
+	trigger := &upstreamBalanceNotificationTriggerStub{}
+	runner.SetUpstreamBalanceNotificationTrigger(trigger)
+
+	runner.runOnce()
+
+	if trigger.calls != 1 {
+		t.Fatalf("balance evaluation triggers = %d, want 1", trigger.calls)
+	}
+}
+
+type upstreamBalanceNotificationTriggerStub struct{ calls int }
+
+func (s *upstreamBalanceNotificationTriggerStub) TriggerEvaluate() { s.calls++ }

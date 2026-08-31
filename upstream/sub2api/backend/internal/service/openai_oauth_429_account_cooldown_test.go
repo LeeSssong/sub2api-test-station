@@ -40,7 +40,7 @@ func TestPersistOpenAIOAuth429CooldownUsesFiveMinuteFallback(t *testing.T) {
 
 	require.Equal(t, 0, repo.setCalls)
 	require.Equal(t, 1, repo.extendCalls)
-	require.InDelta(t, float64(openAIOAuth429PersistentCooldown), float64(repo.lastResetAt.Sub(before)), float64(2*time.Second))
+	require.InDelta(t, float64(openAIOAuth429FallbackCooldown), float64(repo.lastResetAt.Sub(before)), float64(2*time.Second))
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 

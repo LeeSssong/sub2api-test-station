@@ -4,8 +4,9 @@
 - Workspace: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t105-openai-429-account-cooldown`
 - Branch: `codex/t105-openai-429-account-cooldown`
 - Baseline: `main@5e6ccee143f07ee34017c25e75979b74b6bcfc77`
-- Implementation commit: `7afeccae221e47bc9e6ebc537e02ba7cffd5136b`
-- Implementation tree: `1ff0f56bf78fdf68e6477a8b287b2f0fa0bf0321`
+- Implementation commit: `d267d298abd2dbdb5ba50f48948dc9d6a58dbcd6`
+- Refreshed candidate HEAD: `dc47db3e4b9f4add3d35d6e86b43fc3264aa51d6`
+- Refreshed candidate tree: `b03790d4b22f1062efd01636a8403a27ca43f883`
 - Status: `READY_FOR_ROOT_REVIEW`
 - Scope: account-level OpenAI OAuth/SetupToken only; no model-level cooldown.
 
@@ -23,6 +24,7 @@
 - `git diff --check` passed.
 - `go build ./cmd/server` passed from `upstream/sub2api/backend`.
 - Isolated T105 service tests passed with production source files plus the existing Gemini repository test helper: `TestPersistOpenAIOAuth429Cooldown*` and `TestRefreshOpenAIOAuth429Group*`.
+- Added a single bounded recovery pass at group candidate exhaustion for transient 429, clearing excluded short T105 cooldowns and request-local exclusions while retaining native 7d quota and durable account failures.
 - Full `go test -tags=unit ./internal/service ./internal/handler` is blocked by pre-existing test compilation errors unrelated to T105: missing `context` imports in `gateway_forward_as_chat_completions_test.go`, stale `ProvideHandlers` arguments in `handler_wiring_test.go`, and missing `openAIAccountScheduleModel` symbols in `openai_gateway_handler_test.go`.
 
 ## Release gate

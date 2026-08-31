@@ -33,7 +33,7 @@ func (s *monitorV4SnapshotterStub) Snapshot(
 
 func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cacheHitRate := 40.0
+	cacheHitRate := 0.4
 	stub := &monitorV4SnapshotterStub{snapshot: &service.MonitorV4Snapshot{
 		ContractVersion:        service.MonitorV4ContractVersion,
 		Window:                 service.MonitorV4Window30D,
@@ -67,7 +67,11 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 
 	withSamples := groups[0].(map[string]any)
 	require.Equal(t, cacheHitRate, withSamples["cache_hit_rate"])
+	require.Nil(t, withSamples["cache_read_tokens_p95"])
+	require.Equal(t, float64(0), withSamples["cache_read_tokens_sample_count"])
 
 	withoutSamples := groups[1].(map[string]any)
 	require.Nil(t, withoutSamples["cache_hit_rate"])
+	require.Nil(t, withoutSamples["cache_read_tokens_p95"])
+	require.Equal(t, float64(0), withoutSamples["cache_read_tokens_sample_count"])
 }

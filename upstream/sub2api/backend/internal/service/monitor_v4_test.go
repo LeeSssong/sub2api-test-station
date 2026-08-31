@@ -43,7 +43,7 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	rate := 75.0
 	ttft := 120.0
 	latency := 900.0
-	cacheHitRate := 40.0
+	cacheHitRate := 0.4
 	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
 		7: {
 			SuccessRate: &rate, RequestCount: 4, SuccessCount: 3,
@@ -69,6 +69,9 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	}
 	if snapshot.Groups[0].CacheHitRate == nil || *snapshot.Groups[0].CacheHitRate != cacheHitRate {
 		t.Fatalf("cache hit rate projection = %#v", snapshot.Groups[0])
+	}
+	if *snapshot.Groups[0].CacheHitRate < 0 || *snapshot.Groups[0].CacheHitRate > 1 {
+		t.Fatalf("cache hit rate must be a 0..1 ratio, got %v", *snapshot.Groups[0].CacheHitRate)
 	}
 }
 

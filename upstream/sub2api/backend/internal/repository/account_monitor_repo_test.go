@@ -90,6 +90,9 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	if row.CacheHitRate == nil || *row.CacheHitRate != 0.4 {
 		t.Fatalf("cache hit rate projection = %#v", row)
 	}
+	if *row.CacheHitRate < 0 || *row.CacheHitRate > 1 {
+		t.Fatalf("cache hit rate must be a 0..1 ratio, got %v", *row.CacheHitRate)
+	}
 	if !row.CurrentOperational || row.SourceUpdatedAt == nil || !row.SourceUpdatedAt.Equal(updatedAt) {
 		t.Fatalf("status projection = %#v", row)
 	}

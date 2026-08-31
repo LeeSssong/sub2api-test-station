@@ -65,3 +65,15 @@
 - 新增修复提交 `d0a4c9a1b`：`Resolve` 使用严格 `last_observed_at` 单调 CAS；活动 claim 只接受更新观测或同时间同状态同数值续租；stale `RETURNING` 空行提交事务并返回未 claim；无活动行时以最新 resolved 非空观测水位阻止旧观测重开事件。`b3b4be899` 的冲突 BaseURL scope 隔离保持不变。
 - 刷新后直接验证：service、notify、repository（`-vet=off`）、migration、converter 目标测试通过；`go build ./cmd/server` 通过；relay-ops `go test ./...`、三个二进制构建、退休/配置/secret 合同测试通过；`git diff --check` 通过。
 - 本候选未执行且不得自行执行：根合并授权、推送、部署、停机、迁移 231、旧表清理、secret/开关生产写入、验收/主站真实消息。根总控必须先按发布来源门禁和主站明确授权路径处理；“推送部署”不能授权功能 worktree 直接发布。
+
+## Production Result (2026-08-31)
+
+- 维护发布已成功生效于主站：生产 release record 绑定 source commit `c651bcb7078b085905384a7782c29c2d23404858`、source tree `79144c1c56676a1e975237371a0c826c21f6275e`、migration hash `0bda54bbf75076c03bbd780603ccdca20c5b09e46ca7e2b4d2a1717c90e5dc57`，活动槽 `green`；`/healthz`、`/readyz`、`/health` 均 200。
+- 验收站 API/worker/detector 当前运行同一 `c651bcb7` 镜像且 healthy，`/admin/lab/health` 与登录页 200；同 commit/tree 对账以容器镜像标签和主站 release record 为证据。未发送真实飞书消息。
+- migration 231 的非敏感 schema/rule 已随该迁移集合生效；旧通知历史清理/退役仍是已执行历史，不得重放。
+
+## Notification Secret Permission Blocker
+
+- 主站 worker 环境开关为启用态，但启动日志记录 `secret_unavailable`，sender 按规格 fail-closed。
+- `/opt/sub2api/production/secrets/upstream-balance` 目录及五个文件均存在，目录 `0700 root:root`、文件 `0600 root:root`；worker 实际降权 UID `1000:1000` 对五个文件均不可读，root 可读。内容未被读取或写入聊天/仓库。
+- 要激活新通知，需单独明确授权：将该目录所有权改为 `1000:1000` 并保持 `0700`，将五个文件所有权改为 `1000:1000` 并保持 `0600`，只重启 `sub2api-worker`，随后做脱敏日志/健康核对。此动作不改文件内容、不改 API/数据库、不发送测试消息；未获授权前保持当前 fail-closed。

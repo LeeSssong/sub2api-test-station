@@ -26,8 +26,11 @@ func validateMonitorV4StoredWindow(snapshot service.MonitorV4StoredWindow, snaps
 		return errors.New("invalid monitor v4 snapshot metadata")
 	}
 	for groupID, projection := range snapshot.Groups {
-		if groupID <= 0 || projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 {
+		if groupID <= 0 {
 			return fmt.Errorf("invalid monitor v4 snapshot counts for group %d", groupID)
+		}
+		if err := service.ValidateMonitorV4Projection(projection); err != nil {
+			return fmt.Errorf("invalid monitor v4 snapshot counts for group %d: %w", groupID, err)
 		}
 	}
 	return nil
@@ -118,6 +121,9 @@ func (r *accountMonitorRepository) LoadLatestMonitorV4Snapshot(ctx context.Conte
 		}
 		if source.Valid {
 			p.SourceUpdatedAt = &source.Time
+		}
+		if err := service.ValidateMonitorV4Projection(p); err != nil {
+			return service.MonitorV4StoredWindow{}, fmt.Errorf("invalid monitor v4 snapshot counts for group %d: %w", groupID, err)
 		}
 		result.Groups[groupID] = p
 	}

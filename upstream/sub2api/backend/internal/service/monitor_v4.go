@@ -46,6 +46,16 @@ type MonitorV4SnapshotRefresher interface {
 	RefreshMonitorV4Snapshots(context.Context, time.Time) error
 }
 
+func ValidateMonitorV4Projection(projection MonitorV4GroupProjection) error {
+	if projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 {
+		return fmt.Errorf("monitor v4 projection contains negative counts")
+	}
+	if projection.SuccessCount > projection.RequestCount || projection.RealSuccessCount > projection.RealRequestCount || projection.ProbeFallbackRequestCount != projection.ProbeFallbackBucketCount || projection.RealRequestCount+projection.ProbeFallbackRequestCount != projection.RequestCount || projection.RealSuccessCount > projection.SuccessCount || projection.SuccessCount > projection.RealSuccessCount+projection.ProbeFallbackRequestCount {
+		return fmt.Errorf("monitor v4 projection count invariants violated")
+	}
+	return nil
+}
+
 type MonitorV4Metric struct {
 	Value       float64
 	SampleCount int
@@ -141,8 +151,11 @@ func (s *MonitorV4Service) Snapshot(ctx context.Context, userID int64, window Mo
 		return nil, fmt.Errorf("invalid persisted monitor v4 snapshot metadata")
 	}
 	for groupID, projection := range stored.Groups {
-		if groupID <= 0 || projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 {
+		if groupID <= 0 {
 			return nil, fmt.Errorf("invalid persisted monitor v4 snapshot counts for group %d", groupID)
+		}
+		if err := ValidateMonitorV4Projection(projection); err != nil {
+			return nil, fmt.Errorf("invalid persisted monitor v4 snapshot counts for group %d: %w", groupID, err)
 		}
 	}
 	return s.snapshotWithGroups(ctx, window, stored.GeneratedAt, stored.WindowStart, visibleGroups, stored.Groups)

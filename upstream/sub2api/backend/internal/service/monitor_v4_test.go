@@ -10,6 +10,7 @@ type monitorV4NativeReaderStub struct {
 	projection map[int64]MonitorV4GroupProjection
 	groupIDs   []int64
 	calls      []monitorV4ProjectionCall
+	err        error
 }
 
 type monitorV4ProjectionCall struct {
@@ -44,6 +45,9 @@ func (s *monitorV4ConfiguredGroupReaderStub) GetConfig(context.Context) (*Channe
 func (s *monitorV4NativeReaderStub) ProjectMonitorV4Groups(_ context.Context, groupIDs []int64, start, end time.Time, _ time.Duration) (map[int64]MonitorV4GroupProjection, error) {
 	s.groupIDs = append([]int64(nil), groupIDs...)
 	s.calls = append(s.calls, monitorV4ProjectionCall{groupIDs: append([]int64(nil), groupIDs...), start: start, end: end})
+	if s.err != nil {
+		return nil, s.err
+	}
 	return s.projection, nil
 }
 
@@ -54,7 +58,7 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	cacheHitRate := 0.4
 	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
 		7: {
-			SuccessRate: &rate, RequestCount: 4, SuccessCount: 3,
+			SuccessRate: &rate, RequestCount: 4, SuccessCount: 3, RealRequestCount: 4, RealSuccessCount: 3,
 			TTFTP95MS: &ttft, LatencyP95MS: &latency, TTFTSampleCount: 3, LatencySampleCount: 3,
 			CacheHitRate: &cacheHitRate,
 		},

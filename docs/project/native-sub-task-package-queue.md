@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**T102：** 状态 `IMPLEMENTING`。生产根因已确认：Monitor V4 的 `EnsureProbeBucketTerminal` 在结果集为空时把 `BOOL_OR` 空值折算为失败，GPT-Pro 截图窗口因此包含 `183` 个没有原始探测结果的伪失败桶；`/admin/ops` 又按原生口径排除主动探测并把业务限制与 SLA 请求错误分列。修复范围固定为：无实际探测执行结果不得写失败终态；真实请求继续优先，空桶探测必须产生明确终态；最终逻辑请求跨账号只计一次；缓存 P95 原位替换为成功最终真实请求的 Sub 原生 Token 命中率 `cache_read / (input + cache_creation + cache_read)`，失败请求和主动探测排除、零分母显示空值。用户已明确“确认，快速部署到主站”；完成 TDD 和直接相关 Go/Vitest、必要 typecheck/build、diff/迁移检查后，从已推送干净 `main` 执行主站蓝绿链，成功后立即以同 commit 同步验收站。无迁移、配置、账号/分组、计费、调度或生产数据写入。
+**T102：** 状态 `INTEGRATING`。修复已快进合入根 `main@d0236e0f7`：无实际探测结果的桶不再写伪失败或进入分母，缺失数仍独立告警；实际探测失败仍按 `0/1`；共享账号按分组判断真实流量，任一空分组仍执行一次探测；最终逻辑请求按 `group_id + request_key` 跨账号去重；缓存 P95 原位替换为成功最终真实请求的 Sub 原生 Token 命中率 `cache_read / (input + cache_creation + cache_read)`，失败请求和主动探测排除、零分母显示空值。API v2 保留旧缓存字段 `null/0` 以兼容蓝绿窗口中的旧 SPA，新页面不额外展示指标。候选仓储三项定向测试、共享账号行为用例、Monitor V4 前端 14 项、类型检查、完整 server 构建、diff/迁移范围检查通过，独立审查未发现 P0/P1。用户已明确“确认，快速部署到主站”；待合并后主线门禁、证据和推送完成后执行主站蓝绿链，成功后立即以同 commit 同步验收站。无迁移、配置、账号/分组、计费或生产数据写入。
 
 **全局 `main` 部署来源门禁（2026-08-31）：** 状态 `READY_FOR_ROOT_REVIEW`。用户明确要求所有环境只能基于根目录 `main` 部署。候选必须先合入并推送 `main`；发布入口在构建或 SSH/SCP 前统一验证当前分支为 `main`、工作树干净且 `HEAD` commit/tree 与 `origin/main` 一致。验收站常规路径调整为先合 main、再部署验收；候选 worktree、临时 checkout 和 detached HEAD 均禁止部署。来源新鲜度、验收站、蓝绿发布和 relay-ops 直接测试、脚本语法与 diff-check 已通过；旧 admin lab 新增来源门禁合同已满足，其完整合同仍被既有 Caddy 路由断言阻断。本变更不触发服务部署、不写入业务数据。
 

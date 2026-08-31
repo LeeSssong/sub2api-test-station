@@ -444,7 +444,7 @@ func logMonitorV4ProbeCompleteness(ctx context.Context, projection map[int64]Mon
 		if group.MissingProbeTerminalCount <= 0 {
 			continue
 		}
-		slog.WarnContext(ctx, "monitor_v4_probe_terminal_missing_fail_closed", "group_id", groupID, "bucket_count", group.MissingProbeTerminalCount)
+		slog.WarnContext(ctx, "monitor_v4_probe_terminal_missing", "group_id", groupID, "bucket_count", group.MissingProbeTerminalCount)
 	}
 }
 
@@ -2396,6 +2396,13 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 	if err != nil {
 		return 0, err
 	}
+	groupAccounts := monitorGroupAccountIDs(allAccounts)
+	accountGroups := make(map[int64][]int64)
+	for groupID, accountIDs := range groupAccounts {
+		for _, accountID := range accountIDs {
+			accountGroups[accountID] = append(accountGroups[accountID], groupID)
+		}
+	}
 	runID := uuid.NewString()
 	ids := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
@@ -2421,14 +2428,26 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			reader := s.activeProbeUsageReader()
 			if reader != nil {
 				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
-				used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
+				allGroupsUsed := len(accountGroups[account.ID]) > 0
+				var usageErr error
+				for _, groupID := range accountGroups[account.ID] {
+					used, err := reader.HasGroupUsageInWindow(gctx, groupID, bucketStart, bucketEnd)
+					if err != nil {
+						usageErr = err
+						break
+					}
+					if !used {
+						allGroupsUsed = false
+						break
+					}
+				}
 				if usageErr != nil {
 					// A usage-read failure must not silently turn into a skipped
 					// probe. Real requests still win in the projection; when the
 					// reader is unavailable, execute the probe and let persistence
 					// or the read-side fail-closed path record the failure.
 					slog.WarnContext(gctx, "account_monitor.active_probe_usage_read_failed", "account_id", account.ID, "error", usageErr)
-				} else if used {
+				} else if allGroupsUsed {
 					return nil
 				}
 			}

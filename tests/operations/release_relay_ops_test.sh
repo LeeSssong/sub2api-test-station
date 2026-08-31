@@ -16,10 +16,12 @@ SHA256=$(printf 'a%.0s' {1..64})
 setup_case() {
   CASE_DIR="$FIXTURE/$1"
   rm -rf -- "$CASE_DIR"
-  mkdir -p "$CASE_DIR/bin" "$CASE_DIR/repo/infra" "$CASE_DIR/repo/relay-ops-service/internal/store/migrations"
+  mkdir -p "$CASE_DIR/bin" "$CASE_DIR/repo/infra" "$CASE_DIR/repo/ops" "$CASE_DIR/repo/relay-ops-service/internal/store/migrations"
   : >"$CASE_DIR/docker.log"; : >"$CASE_DIR/ssh.log"
   printf 'FROM scratch\n' >"$CASE_DIR/repo/infra/Dockerfile.relay-ops"
   printf 'CREATE TABLE example ();\n' >"$CASE_DIR/repo/relay-ops-service/internal/store/migrations/001_init.sql"
+  cp "$ROOT/ops/assert-sub2api-release-source.sh" "$CASE_DIR/repo/ops/assert-sub2api-release-source.sh"
+  chmod 0755 "$CASE_DIR/repo/ops/assert-sub2api-release-source.sh"
   printf 'private key\n' >"$CASE_DIR/id_ed25519"
   printf 'example.invalid ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItest\n' >"$CASE_DIR/known_hosts"
   chmod 0600 "$CASE_DIR/id_ed25519" "$CASE_DIR/known_hosts"
@@ -28,6 +30,10 @@ setup_case() {
   git -C "$CASE_DIR/repo" config user.email test@example.invalid
   git -C "$CASE_DIR/repo" add .
   git -C "$CASE_DIR/repo" commit -qm initial
+  git -C "$CASE_DIR" init -q --bare remote.git
+  git -C "$CASE_DIR/repo" remote add origin "$CASE_DIR/remote.git"
+  git -C "$CASE_DIR/repo" branch -M main
+  git -C "$CASE_DIR/repo" push -q -u origin main
   cat >"$CASE_DIR/bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -98,6 +104,12 @@ test_rejects_dirty_tree() {
   expect_failure_before_transport dirty_tree
 }
 
+test_rejects_candidate_branch() {
+  setup_case candidate_branch; write_evidence
+  git -C "$CASE_DIR/repo" switch -q -c candidate
+  expect_failure_before_transport candidate_branch
+}
+
 test_bounds_host_ssh_stage() {
   setup_case ssh_timeout; write_evidence
   if run_controller RELEASE_STAGE_TIMEOUT_SECONDS=3 FAKE_SSH_SLEEP=6 >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr"; then fail 'hung SSH unexpectedly succeeded'; fi
@@ -133,6 +145,7 @@ test_rejects_unapproved_build_goproxy_before_transport() {
 
 test_writer_and_build
 test_rejects_dirty_tree
+test_rejects_candidate_branch
 test_bounds_host_ssh_stage
 test_preloaded_transport_uploads_verified_archive
 test_default_build_goproxy_reaches_buildx

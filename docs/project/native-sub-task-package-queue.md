@@ -1,10 +1,42 @@
 # 原生 Sub 小步发布任务包队列
 
+**T102：** 状态 `INTEGRATING`。修复已快进合入根 `main@d0236e0f7`：无实际探测结果的桶不再写伪失败或进入分母，缺失数仍独立告警；实际探测失败仍按 `0/1`；共享账号按分组判断真实流量，任一空分组仍执行一次探测；最终逻辑请求按 `group_id + request_key` 跨账号去重；缓存 P95 原位替换为成功最终真实请求的 Sub 原生 Token 命中率 `cache_read / (input + cache_creation + cache_read)`，失败请求和主动探测排除、零分母显示空值。API v2 保留旧缓存字段 `null/0` 以兼容蓝绿窗口中的旧 SPA，新页面不额外展示指标。候选仓储三项定向测试、共享账号行为用例、Monitor V4 前端 14 项、类型检查、完整 server 构建、diff/迁移范围检查通过，独立审查未发现 P0/P1。用户已明确“确认，快速部署到主站”；待合并后主线门禁、证据和推送完成后执行主站蓝绿链，成功后立即以同 commit 同步验收站。无迁移、配置、账号/分组、计费或生产数据写入。
+
+**全局 `main` 部署来源门禁（2026-08-31）：** 状态 `READY_FOR_ROOT_REVIEW`。用户明确要求所有环境只能基于根目录 `main` 部署。候选必须先合入并推送 `main`；发布入口在构建或 SSH/SCP 前统一验证当前分支为 `main`、工作树干净且 `HEAD` commit/tree 与 `origin/main` 一致。验收站常规路径调整为先合 main、再部署验收；候选 worktree、临时 checkout 和 detached HEAD 均禁止部署。来源新鲜度、验收站、蓝绿发布和 relay-ops 直接测试、脚本语法与 diff-check 已通过；旧 admin lab 新增来源门禁合同已满足，其完整合同仍被既有 Caddy 路由断言阻断。本变更不触发服务部署、不写入业务数据。
+
+**T101：** 状态 `DONE`。紧急回归排查确认 T101 之前从未进入根 `main`/`origin/main`，后续发布继续使用旧 `main@3c5b9710a`，不是代码回滚。T101 与并发覆盖防护已合入并推送根 `main@d4baeaf983d852ea139d75552f03f2b77bfb0871`（tree `8d4f2f141835681c2c552dbc5c8eb422f00bb944`）；主站发布现强制干净 `main == origin/main` commit/tree，验收站发布有宿主互斥锁。直接相关 Go 1.27 repository/server、前端 56/56、typecheck、1094 modules build、发布来源/控制器测试、语法和 diff-check 均通过。主站记录 `/var/lib/sub2api/release-records/20260831T030214Z-production-3293493.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`，API/worker/detector 均运行同 commit/tree 且 healthy；验收站已同步同 commit/tree，六项服务 healthy，两端发布锁均释放且公开健康端点通过。首次本地构建因 GitHub detector ZIP TLS 断开而在切换前失败；后续主站原样重试成功，验收站按用户要求不再访问 GitHub，复用已按固定 SHA-256 校验的本地 ZIP 完成构建。功能修复固定 24 个真实请求桶、全站“按分组查看”和主动探测文案语义；无利润公式、调度、计费、探测执行、迁移、配置、依赖或生产数据写入变化。
+
+**T100：** 状态 `DONE`。紧急修复已删除 OpenAI 请求路径上的自定义 admission/slow-session 并发控制，包括“单个长请求尚未首输出即拒绝同账号后续请求”的规则；账号并发只保留 Sub 原生账号并发槽。`main@5d77271b32990076b8b0344a3f1909c62192abc6`（tree `0b7ff53f1081be5684486b31c1ee7a3e3377e329`）已推送；源合同与 diff-check 通过，发布链 Linux/amd64 构建成功。主站记录 `/var/lib/sub2api/release-records/20260830T180509Z-production-2673285.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；验收站随后以同一 commit/tree 同步成功，六个服务全部 healthy。无迁移、账号/分组数据、凭据或业务数据写入。
+
+**T99：** 状态 `DONE`。根总控已合入并推送 `main@3c5b9710a807904b8449708c71e3931b7f838490`；宿主发布记录 `/var/lib/sub2api/release-records/20260831T013736Z-production-3191472.json` 为 `succeeded/promoted`、`rolled_back=false`，主站与验收站均运行同一 `3c5b9710a` tree `cb944525481f65df25ef66e29c0681f3c471e60c`，六项验收服务 healthy，公网 `/healthz` 与验收 `/admin/lab/health` 均 HTTP 200。T99 直接相关测试、构建、范围检查和线上同步已完成；无迁移、配置、依赖、账号/分组或事实源变化。
+
+**T98 方案选择补充（2026-08-31）：** 用户确认新通知在 Sub2API 原生账号监控链路内按 BaseURL 判定并直接复用飞书传输/凭据/卡片样式；relay-ops 不再作为新体系运行时主路径，不新增余额探测、轮询或业务事实源。
+
+**T98 清理授权补充（2026-08-31）：** 用户明确授权旧通知生产历史记录全部删除且不备份，旧策略和旧通知业务路径一并移除；飞书 App/群/接收人及传输凭据保留供新体系复用。不可逆删除仅在正式规格批准并进入实施阶段后执行，当前不改生产。
+
+**T98 规则确认补充（2026-08-31）：** 用户确认一个 BaseURL 只有一个上游余额；同一 BaseURL 下任一账号的有效 USD 余额低于 5 即触发一条 BaseURL 预警，余额取该 BaseURL 下 `observed_at` 最新的有效快照，卡片只显示一次余额并列出全部现行账号。
+
+**T98 通知节奏与活跃账号规则补充（2026-08-31）：** 用户确认采用方案 1 的 BaseURL 去重实现；仅 `status=active` 的现行 API Key 账号参与聚合，非活跃账号不纳入通知，某 BaseURL 下无活跃账号时跳过评估且不改变通知状态。`0 < value_usd < 5` 为普通低余额通知，同一 BaseURL 同一状态每 30 分钟最多发送一次；`value_usd = 0` 为零余额警告，同一 BaseURL 同一状态每 5 分钟最多发送一次。低余额与零余额之间发生状态跃迁时立即发送一次对应级别；恢复到 `value_usd >= 5` 只清除该 BaseURL 的去重状态，不发送恢复消息。方案 1 的活动事件去重键为 `rule_id + normalized_base_url`，重复节奏在同一活动事件上记录，不创建新的余额事实源。
+
+**T98 卡片主题与等级补充（2026-08-31）：** 用户确认复用现有飞书卡片主题体系：`0 < value_usd < 5` 使用 P2 橙色普通通知，标题为“上游账号余额不足”，不 `@` 接收人；`value_usd = 0` 使用 P1 红色警告，标题为“上游账号余额为 0”，`@` 现有接收人但不调用 P0 飞书加急。两类卡片均复用现有宽屏结构、主题、接收人和 30 KiB 限制；专用卡片可原样展示用户要求的上游登录账号与经明确授权的明文密码，两者均不得进入数据库、日志、错误、trace、测试真实值、发布证据或 API，API Key、飞书密钥及其他敏感内容继续脱敏。
+
+**T98 字段、排名与凭据挂载补充（2026-08-31）：** 用户确认卡片顶部仅显示一次当前余额、BaseURL、上游登录账号和上游登录密码；下方列出该 BaseURL 的全部活跃账号，每个账号显示名称、ID及其在各所属分组中的原生当前排名。一个账号属于多个分组时全部列出；原生投影无排名则显示“未排名”，不得自行计算或伪造；账号按最佳分组排名升序、再按账号 ID 升序。登记簿未匹配或字段为空时显示“未登记”。运行时不解析 Excel，而将登记簿转换成以规范化 BaseURL 为键的受保护 JSON，权限 `0600`，只读挂载到 Sub2API worker；文件不提交 Git、不写 API、普通日志或事件表。现有飞书 App、群与接收人凭据同样只读挂载到 worker，新通知不经过 relay-ops 运行时主路径。
+
+**T98 正式规格草案（2026-08-31）：** 已完成旧通知表/外键/wiring、原生余额与排名、原生事件账本、飞书传输/重试和 secret 挂载的只读盘点；正式草案为 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md`。草案固定 `scheduler_rank`、严格有效快照、原生非敏感 event claim、at-least-once 重试、整份配置 fail-closed、单 BaseURL 未登记仍发送，以及“停旧 writer -> 无备份清库 -> 启新 sender”的切换顺序。匿名 P2/P1 对照稿已完成桌面/移动检查。当前待用户批准，未进入实现、清库、生产配置或真实投递。
+
+**T98：** 状态 `IMPLEMENTING`。用户已批准正式规格 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md` 并授权进入实现；实施从最新本地 `main` 创建独立 worktree。飞书通知重构移除旧通知业务内容与判定规则，仅保留飞书 App Bot/凭据、传输适配和卡片样式等可复用能力；首个事件为 BaseURL 维度的 API Key 上游余额不足预警，消费 Sub2API 既有 `account_monitor_balance`、管理员页现行账号元数据和当前调度排名，不新增监控、探测、事实源或业务写入。规范化 BaseURL 是事件/去重主键，一个 BaseURL 只有一个最新有效 USD 余额；卡片列出全部活跃账号及 `scheduler_rank`，并按用户授权显示登记簿登录账号和明文密码。规格批准不构成主站部署、生产清库、生产配置修改或真实飞书发送授权；当前只允许本地实现与直接相关验证。
+
+**T98 计划与实现工作区（2026-08-31）：** 已从 `main@06695141f` 创建 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t98-feishu-upstream-balance-notification`，分支 `codex/t98-feishu-upstream-balance-notification`。实施计划即将在该 worktree 编写；当前不改生产、不清库、不发送真实飞书消息。
+
+## Monitor V4 有效失败与截尾平均口径修正（2026-08-30）
+
+- **T97：** 状态 `DONE`。`main@e9db36d4b`（tree `6558ff15c6892cc613b021b23b02a1a7fc926abb`）已通过主站无停机蓝绿链发布，`succeeded/promoted`、`downtime_required=false`、活动槽 `green`；主站健康端点、首页与 Monitor V4 页面均 HTTP 200。验收站已核对运行同一 commit，六服务 healthy。明确模型不支持和客户端责任错误从本站服务成功率分母排除；TTFT/耗时保持 P95 页面文案、计算为成功样本前后 5% 截尾平均；7 天/30 天查询和页面切换已恢复。宿主记录 `/var/lib/sub2api/release-records/20260830T172030Z-production-2618226.json`，0600 证据 `/private/tmp/sub2api-release-evidence/t97-fast-prod-e9db36d4b5cf789ac85bbabdfb82aa2c4beb7479.json`。
+
 **T93/T94 根整合状态（2026-08-30）：** 两个候选已串行合入并推送根 `main@93dbbd9dbc95e9e4181f028e394fdd40b3187231`（tree `a456d0a2274021f38f2368f73a9bdc933b836764`）。前端直接相关测试 18/18 与 `git diff --check` 通过；Go 后端定向测试因本机 Go 1.26.5 不满足仓库 Go 1.27.0，环境阻断已记录。主站预加载蓝绿记录 `20260830T120126Z-production-2220463.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`；随后验收站同 commit/tree 同步成功，线上主站与验收站健康检查均 HTTP 200。状态 `DONE`。
 
 ## 分组账号基线与统一质量调度策略（2026-08-30）
 
-- **T96 分组账号基线与统一质量调度策略：** 状态 `DESIGNING`。本主题按用户最新确认收敛为：先确定目标分组，再读取该分组由管理员手工维护的固定账号池；非生图账号统一按账号级 `成功率 → P95 TTFT → 倍率差` 排序，取消模型层排名、总耗时主排序、分组自定义权重、随机探索和动态自动归组；生图继续使用 Sub 原生基础调度。当前仅基于最近 7 天只读证据给出各分组名单、硬门槛和故障切换语义，不写生产分组、不部署，等待用户确认后再形成正式规格书与实现任务。
+- **T96 分组账号基线与统一质量调度策略：** 状态 `DESIGNING`（正式规格已于 2026-08-31 获用户书面批准，正在编写实施计划）。正式规格：`docs/superpowers/specs/2026-08-31-t96-group-account-baseline-unified-quality-scheduling-design.md`；完整排名：`docs/superpowers/reports/2026-08-31-t96-account-quality-ranking.md`。请求先确定目标分组并只读管理员固定账号池；66 个非生图文本账号全部归入 Pro 档/Plus/特惠，Pro 与专属 Pro 镜像，7 个生图账号保持原生基础调度。普通文本统一按账号级 `成功率 DESC → P95 TTFT ASC → U ASC → ID ASC` 确定排序；`extra_retry_count` 为跨账号真实 Forward 的组级额外次数，Pro/专属 Pro=1、Plus=2、特惠=3；不可重放 attempt 立即停止并按原生账务计费。利润继续复用原生字段和 T95 的实时 U，全池不合格时可用性兜底。T100 边界固定为只使用 Sub 原生账号槽位，不得恢复任何 admission/slow-session 限制。T95 当前仍在独立 worktree 实施且未合入，T96 不得基于其未提交接口编码；实施计划完成后仍须等待 T95 合入最新干净 `main` 才可创建 T96 worktree。未修改生产分组、运行代码、配置或数据库，未部署。
 
 ## 账号有效成本归一化与官方利润保护（2026-08-30）
 
@@ -17,7 +49,7 @@
 
 ## 运营日报、错误生命周期、模型准入与调度质量治理（2026-08-29）
 
-- **T91 星桥 Q 额度发放与真实支付来源统一：** 状态 `DESIGNING`（暂停实现，等待修订规格确认及兑换码归类决策）。用户已明确：系统只保留 `paid_q/gift_q` 两类额度和 `paid_consumed_q/gift_consumed_q` 两类扣费；实收入=`paid_consumed_q`；预收入只统计选定期间真实支付订单已确认收款人民币；页面 `$` 仅为 Q 标记，不代表 USD。兑换码暂不确定归入 paid 或 gift，禁止先行实现、计入预收入、实收入或退款。T91 分支 `codex/t91-q-issuance-payment-source` 保留在 `84dc3c40a`，原独立 worktree 已清理且未产生业务代码变更；测试站部署暂停。
+- **T91 星桥额度与账务规则：** 状态 `DESIGNING`（等待用户批准 2026-08-31 修订规格）。用户明确《星桥额度与账务规则实施方案》是冲突内容的最高事实源；修订规格要求管理员代充值创建 `admin_recharge` 订单，`payment_orders` 保存 paid/gift/total 额度及规则快照，`payment_audit_logs` 保存管理员 ID，`billing_usage_entries` 保存 paid/gift 拆分扣费，`user_wallets` 结构不变并保持付费优先、赠送其次，历史订单与使用流水须先 dry-run 后仅迁移可确认事实。当前只改规格和总账登记，未改运行时代码、迁移、生产数据或双站；原 T91 分支 `codex/t91-q-issuance-payment-source@84dc3c40a` 未产生业务代码变更，不能在新规格批准前恢复实现。
 
 - **T90 账号监控卡片真实请求证据、利润率与性能柱状图：** 状态 `DONE`。用户已撤销此前“仅验收站、不部署主站”的过时指令，并明确继续本轮“全部非 main 改动合入 main、快速部署主站、同 commit 同步测试站”的发布动作。修订已保留在官方 `0.1.183` 主线：验收站 72 个账号均无真实请求样本，主动探测成功/TTFT 样本各 4611 次且未冒充真实请求；101 条分组账号投影中 88 条已按分组售卖倍率与上游声明倍率返回预估利润率，13 条缺少有效倍率保持待确认。账号详情使用 Sub 原生账号管理字段白名单，不渲染 `credentials`、`extra`、API Key 或完整对象。前端直接相关测试 55/55、类型检查、冻结锁文件生产构建、Go 1.27 Linux/amd64 构建及发布链健康检查通过；最终 `main` 由根发布总控同步主站和测试站并完成公网健康核对。
 
@@ -233,7 +265,7 @@
 - 2026-08-10—2026-08-14 周复盘已纳入后续排序：P0 先修账号质量监控器 `203/EXEC Permission denied` 的可执行链路并完成真实运行验收；P0 将终端完成率作为 Pro 调度/经营硬门槛，不能只看排除业务失败后的平台 SLO；P1 继续处理余额/资格失败的账号准入否决和特惠账号稳定性风险；P1 规划卡片双口径（终端完成率、平台 SLO、排除量）；P2 为延时排名补充窗口、样本、模型构成、用户集中度和缓存命中上下文。以上是任务边界和验收约束，不代表本次 T08 顺带改动。
 - 冻结项：S1 旧候选 `codex/upstream-resilience-s1-native-isolation@69a93343c` 因落后主线、Task 5 复审未闭合及迁移编号 `220` 冲突而 `FROZEN_FOR_REBASE`；T05 旧 detached `a71c675b1` 只作启动审计，轮到时从届时最新干净 `main` 重建。
 - 流程偏差：T01、T02 虽有独立 worktree、规格书、计划和复审证据，但未建立用户可见的独立顶层 Codex 任务；T03 是纠偏前已在途并由根任务内部代理完成的任务。三者均不得宣称符合新增顶层任务门禁，已验证技术成果继续保留。
-- 执行方式：最多两个互不依赖的功能 worktree 可并行准备；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
+- 执行方式：互不依赖的功能 worktree 可并行准备，数量不设上限；合并、推送、部署和线上验收严格单车道串行。每个新任务包必须从当时最新干净 `main` 创建用户可见独立顶层任务和独立 worktree。
 - 模型规则：所有用户可见顶层任务统一使用 `GPT-5.6 Sol / medium`；任务内部 implementer/reviewer 子代理继续使用既定设置，不随顶层模型统一调整。
 - 根任务职责：排队、创建顶层任务、读取交接、授权合并、合并后快速门禁、推送、部署和线上验收；不得用根任务内部 `spawn_agent` 代替整个任务包。
 - 顶层任务职责：完整 brainstorming、书面规格书及用户批准、实施计划、实施与直接相关验证，并在 `READY_FOR_ROOT_REVIEW` 等待根任务授权合并 `main`；自 2026-08-16 起不再为形式增加额外复审或全分支终审。

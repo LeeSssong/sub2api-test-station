@@ -52,10 +52,9 @@ function group(value: unknown, path: string): MonitorV4Group {
   const latencyP95 = nullableNumber(source.latency_p95_ms, `${path}.latency_p95_ms`)
   const ttftSampleCount = number(source.ttft_sample_count, `${path}.ttft_sample_count`, true)
   const latencySampleCount = number(source.latency_sample_count, `${path}.latency_sample_count`, true)
-  const cacheReadTokensP95 = nullableNumber(source.cache_read_tokens_p95, `${path}.cache_read_tokens_p95`)
-  const cacheReadTokensSampleCount = number(source.cache_read_tokens_sample_count, `${path}.cache_read_tokens_sample_count`, true)
+  const cacheHitRate = nullableNumber(source.cache_hit_rate, `${path}.cache_hit_rate`)
   if ((ttftP95 === null) !== (ttftSampleCount === 0) || (latencyP95 === null) !== (latencySampleCount === 0)) throw new MonitorV4ContractError(`${path} P95 values do not match sample counts`)
-  if ((cacheReadTokensP95 === null) !== (cacheReadTokensSampleCount === 0)) throw new MonitorV4ContractError(`${path} cache P95 values do not match sample counts`)
+  if (cacheHitRate !== null && cacheHitRate > 1) throw new MonitorV4ContractError(`${path}.cache_hit_rate must be <= 1`)
   const sourceUpdatedAt = source.source_updated_at == null || source.source_updated_at === '' ? null : text(source.source_updated_at, `${path}.source_updated_at`)
   if (typeof source.current_operational !== 'boolean') throw new MonitorV4ContractError(`${path} status flags are invalid`)
   return {
@@ -66,7 +65,7 @@ function group(value: unknown, path: string): MonitorV4Group {
     probe_fallback_bucket_count: probeFallbackBucketCount, probe_fallback_request_count: probeFallbackRequestCount,
     ttft_p95_ms: ttftP95, ttft_sample_count: ttftSampleCount,
     latency_p95_ms: latencyP95, latency_sample_count: latencySampleCount,
-    cache_read_tokens_p95: cacheReadTokensP95, cache_read_tokens_sample_count: cacheReadTokensSampleCount,
+    cache_hit_rate: cacheHitRate,
     source_updated_at: sourceUpdatedAt,
     current_operational: source.current_operational,
   }

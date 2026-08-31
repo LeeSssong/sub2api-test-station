@@ -109,6 +109,20 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('25%')
   })
 
+  it('routes all-site profitability to group views', () => {
+    expect(mountCard({ rankingScope: 'global' }).get('[data-test="profit-rate-metric"]').text()).toContain('按分组查看')
+    expect(mountCard({ rankingScope: 'group' }).get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')
+  })
+
+  it('renders 24 empty real-request buckets and labels probe refresh separately', () => {
+    const wrapper = mountCard({ account: { ...account, real_request_timeline: [] } })
+
+    expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(24)
+    expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('真实性能 · 真实请求')
+    expect(wrapper.get('[data-test="refresh-account"]').text()).toContain('刷新探测状态')
+    expect(wrapper.get('[data-test="refresh-account"]').attributes('title')).toContain('不生成真实请求样本')
+  })
+
   it('keeps manual model detection and account action entry points', async () => {
     const detect = vi.fn()
     const info = vi.fn()

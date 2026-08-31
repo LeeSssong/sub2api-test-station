@@ -133,6 +133,7 @@ INSERT INTO account_monitor_bucket_terminals (
 	WHERE r.account_id = ANY($4::bigint[])
 	  AND r.checked_at >= $2
 	  AND r.checked_at < $2 + $5::interval
+	HAVING COUNT(r.account_id) > 0
 	ON CONFLICT (group_id, bucket_start) DO UPDATE
 	SET status = EXCLUDED.status,
 	    ttft_ms = EXCLUDED.ttft_ms,
@@ -422,6 +423,8 @@ WITH scopes AS (
          (COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
          u.first_token_ms::double precision AS first_token_ms,
          u.duration_ms::double precision AS duration_ms,
+	         COALESCE(u.input_tokens, 0)::double precision AS input_tokens,
+	         COALESCE(u.cache_creation_tokens, 0)::double precision AS cache_creation_tokens,
          COALESCE(u.cache_read_tokens, 0)::double precision AS cache_read_tokens,
          COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key,
          NULLIF(u.logical_request_id, '') AS logical_request_id,
@@ -492,6 +495,8 @@ WITH scopes AS (
          FALSE AS successful,
          NULL::double precision AS first_token_ms,
          NULL::double precision AS duration_ms,
+	         NULL::double precision AS input_tokens,
+	         NULL::double precision AS cache_creation_tokens,
          NULL::double precision AS cache_read_tokens,
          COALESCE(request_match.canonical_request_key, client_match.canonical_request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
          0 AS source_priority
@@ -518,16 +523,16 @@ WITH scopes AS (
       ])
     )
 ), real_candidates AS (
-  SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, cache_read_tokens, request_key, source_priority
+  SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, input_tokens, cache_creation_tokens, cache_read_tokens, request_key, source_priority
   FROM usage_candidates
   UNION ALL
-  SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, cache_read_tokens, request_key, source_priority
+  SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, input_tokens, cache_creation_tokens, cache_read_tokens, request_key, source_priority
   FROM error_candidates
 ), real_events AS (
-  SELECT group_id, account_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, cache_read_tokens, request_key, 'real'::text AS source
+  SELECT group_id, account_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, input_tokens, cache_creation_tokens, cache_read_tokens, request_key, 'real'::text AS source
   FROM (
     SELECT rc.*, ROW_NUMBER() OVER (
-      PARTITION BY rc.group_id, rc.account_id, rc.request_key
+      PARTITION BY rc.group_id, rc.request_key
       ORDER BY rc.source_priority ASC, rc.observed_at DESC, rc.source_id DESC
     ) AS position
     FROM real_candidates rc
@@ -589,7 +594,7 @@ WITH scopes AS (
   LEFT JOIN real_buckets rb ON rb.group_id = g.group_id AND rb.bucket_start = b.bucket_start
   LEFT JOIN probe_buckets p ON p.group_id = g.group_id AND p.bucket_start = b.bucket_start
 ), selected_events AS (
-  SELECT r.group_id, r.bucket_start, r.observed_at, r.successful, r.first_token_ms, r.duration_ms, r.cache_read_tokens, r.source,
+  SELECT r.group_id, r.bucket_start, r.observed_at, r.successful, r.first_token_ms, r.duration_ms, r.input_tokens, r.cache_creation_tokens, r.cache_read_tokens, r.source,
          FALSE AS probe_missing
   FROM real_events r
   UNION ALL
@@ -599,10 +604,12 @@ WITH scopes AS (
          CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN bm.probe_first_token_ms END,
 		CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN bm.probe_duration_ms END,
 		NULL::double precision,
+		NULL::double precision,
+		NULL::double precision,
 		'probe'::text AS source,
 		bm.probe_missing
   FROM bucket_matrix bm
-  WHERE bm.has_real IS NOT TRUE
+  WHERE bm.has_real IS NOT TRUE AND bm.probe_missing IS FALSE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events
@@ -628,6 +635,11 @@ WITH scopes AS (
            ]
          ) AS values(value)) AS latency_trimmed_mean
   FROM metric_arrays ma
+), missing_probe_counts AS (
+  SELECT group_id, COUNT(*)::int AS missing_probe_terminal_count
+  FROM bucket_matrix
+  WHERE has_real IS NOT TRUE AND probe_missing
+  GROUP BY group_id
 ), aggregate AS (
   SELECT g.group_id,
          CASE WHEN COUNT(s.group_id) = 0 THEN NULL
@@ -639,26 +651,26 @@ WITH scopes AS (
          COUNT(*) FILTER (WHERE s.source = 'real' AND s.successful)::int AS real_success_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
-			COUNT(*) FILTER (WHERE s.source = 'probe' AND s.probe_missing)::int AS missing_probe_terminal_count,
+			COALESCE(MAX(mpc.missing_probe_terminal_count), 0)::int AS missing_probe_terminal_count,
          MAX(ms.ttft_trimmed_mean) AS ttft_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
          MAX(ms.latency_trimmed_mean) AS latency_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL)::int AS latency_sample_count,
-         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY s.cache_read_tokens)
-           FILTER (WHERE s.successful AND s.source = 'real' AND s.cache_read_tokens IS NOT NULL) AS cache_read_tokens_p95,
-         COUNT(*) FILTER (WHERE s.successful AND s.source = 'real' AND s.cache_read_tokens IS NOT NULL)::int AS cache_read_tokens_sample_count,
+         SUM(s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real')
+           / NULLIF(SUM(s.input_tokens + s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0) AS cache_hit_rate,
          MAX(s.observed_at) AS source_updated_at,
          COALESCE(BOOL_OR(ls.successful), FALSE) AS current_operational
   FROM groups g
   LEFT JOIN selected_events s ON s.group_id = g.group_id
   LEFT JOIN latest_selected ls ON ls.group_id = g.group_id
   LEFT JOIN metric_stats ms ON ms.group_id = g.group_id
+	LEFT JOIN missing_probe_counts mpc ON mpc.group_id = g.group_id
   GROUP BY g.group_id
 )
 	SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,
 	       probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count,
 	       ttft_p95_ms, ttft_sample_count,
-       latency_p95_ms, latency_sample_count, cache_read_tokens_p95, cache_read_tokens_sample_count, source_updated_at, current_operational
+       latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational
 FROM aggregate
 ORDER BY group_id
 `, start.UTC(), end.UTC(), bucketSize.String(), pq.Array(scopeGroupIDs), pq.Array(accountIDs), pq.Array(uniqueGroupIDs))
@@ -670,15 +682,15 @@ ORDER BY group_id
 		var (
 			groupID, requestCount, successCount, realRequestCount, realSuccessCount int
 			probeFallbackBuckets, probeFallbackRequests, missingProbeTerminals      int
-			ttftSampleCount, latencySampleCount, cacheReadTokensSampleCount         int
-			successRate, ttftP95, latencyP95, cacheReadTokensP95                    sql.NullFloat64
+			ttftSampleCount, latencySampleCount                                     int
+			successRate, ttftP95, latencyP95, cacheHitRate                          sql.NullFloat64
 			currentOperational                                                      bool
 			sourceUpdatedAt                                                         sql.NullTime
 		)
-		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &missingProbeTerminals, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &cacheReadTokensP95, &cacheReadTokensSampleCount, &sourceUpdatedAt, &currentOperational); err != nil {
+		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &missingProbeTerminals, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &cacheHitRate, &sourceUpdatedAt, &currentOperational); err != nil {
 			return nil, fmt.Errorf("scan hybrid monitor v4 groups: %w", err)
 		}
-		var successRatePtr, ttftP95Ptr, latencyP95Ptr, cacheReadTokensP95Ptr *float64
+		var successRatePtr, ttftP95Ptr, latencyP95Ptr, cacheHitRatePtr *float64
 		if successRate.Valid {
 			value := successRate.Float64
 			successRatePtr = &value
@@ -691,27 +703,26 @@ ORDER BY group_id
 			value := latencyP95.Float64
 			latencyP95Ptr = &value
 		}
-		if cacheReadTokensP95.Valid {
-			value := cacheReadTokensP95.Float64
-			cacheReadTokensP95Ptr = &value
+		if cacheHitRate.Valid {
+			value := cacheHitRate.Float64
+			cacheHitRatePtr = &value
 		}
 		out[int64(groupID)] = service.MonitorV4GroupProjection{
-			SuccessRate:                successRatePtr,
-			RequestCount:               requestCount,
-			SuccessCount:               successCount,
-			RealRequestCount:           realRequestCount,
-			RealSuccessCount:           realSuccessCount,
-			ProbeFallbackBucketCount:   probeFallbackBuckets,
-			ProbeFallbackRequestCount:  probeFallbackRequests,
-			MissingProbeTerminalCount:  missingProbeTerminals,
-			TTFTP95MS:                  ttftP95Ptr,
-			TTFTSampleCount:            ttftSampleCount,
-			LatencyP95MS:               latencyP95Ptr,
-			LatencySampleCount:         latencySampleCount,
-			CacheReadTokensP95:         cacheReadTokensP95Ptr,
-			CacheReadTokensSampleCount: cacheReadTokensSampleCount,
-			SourceUpdatedAt:            accountMonitorNullableTime(sourceUpdatedAt),
-			CurrentOperational:         currentOperational,
+			SuccessRate:               successRatePtr,
+			RequestCount:              requestCount,
+			SuccessCount:              successCount,
+			RealRequestCount:          realRequestCount,
+			RealSuccessCount:          realSuccessCount,
+			ProbeFallbackBucketCount:  probeFallbackBuckets,
+			ProbeFallbackRequestCount: probeFallbackRequests,
+			MissingProbeTerminalCount: missingProbeTerminals,
+			TTFTP95MS:                 ttftP95Ptr,
+			TTFTSampleCount:           ttftSampleCount,
+			LatencyP95MS:              latencyP95Ptr,
+			LatencySampleCount:        latencySampleCount,
+			CacheHitRate:              cacheHitRatePtr,
+			SourceUpdatedAt:           accountMonitorNullableTime(sourceUpdatedAt),
+			CurrentOperational:        currentOperational,
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -982,6 +993,14 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		bucketCount = service.AccountMonitorTimelineLimit
 	}
 	bucketSeconds := until.Sub(since).Seconds() / float64(bucketCount)
+	for _, id := range accountIDs {
+		points := make([]service.AccountMonitorRealRequestTimelinePoint, bucketCount)
+		for index := range points {
+			points[index].StartAt = since.Add(time.Duration(float64(index)*bucketSeconds) * time.Second).UTC()
+			points[index].EndAt = since.Add(time.Duration(float64(index+1)*bucketSeconds) * time.Second).UTC()
+		}
+		result[id] = points
+	}
 	rows, err := r.db.QueryContext(ctx, `
 		WITH usage_events AS (
 			SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms,
@@ -1014,9 +1033,13 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		if err := rows.Scan(&id, &index, &p.RequestCount, &p.SuccessCount, &p.FailureCount, &p.TTFTP95MS); err != nil {
 			return nil, err
 		}
-		p.StartAt = since.Add(time.Duration(float64(index)*bucketSeconds) * time.Second).UTC()
-		p.EndAt = since.Add(time.Duration(float64(index+1)*bucketSeconds) * time.Second).UTC()
-		result[id] = append(result[id], p)
+		points, exists := result[id]
+		if !exists || index < 0 || index >= len(points) {
+			continue
+		}
+		p.StartAt = points[index].StartAt
+		p.EndAt = points[index].EndAt
+		result[id][index] = p
 	}
 	return result, rows.Err()
 }

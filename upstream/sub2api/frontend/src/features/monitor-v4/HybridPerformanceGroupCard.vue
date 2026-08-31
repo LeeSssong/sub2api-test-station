@@ -32,8 +32,8 @@
         <strong data-test="latency-p95">{{ formatSeconds(group.latency_p95_ms) }}</strong>
       </div>
       <div class="hybrid-metric">
-        <span>{{ t('channelMonitorV2.hybrid.cacheP95') }}</span>
-        <strong data-test="cache-p95">{{ formatCacheTokens(group.cache_read_tokens_p95) }}</strong>
+        <span>{{ t('channelMonitorV2.hybrid.cacheHitRate') }}</span>
+        <strong data-test="cache-hit-rate">{{ formatCacheHitRate(group.cache_hit_rate) }}</strong>
       </div>
     </div>
 
@@ -53,7 +53,7 @@ const { t } = useI18n()
 const tone = computed(() => props.group.success_rate === null ? 'amber' : props.group.success_rate >= 85 ? 'green' : props.group.success_rate >= 50 ? 'amber' : 'red')
 const successRateLabel = computed(() => props.group.success_rate === null ? '--' : `${Number.isInteger(props.group.success_rate) ? props.group.success_rate : props.group.success_rate.toFixed(1)}%`)
 const formatSeconds = (value: number | null) => value === null ? '--' : `${(value / 1000).toFixed(2)} s`
-const formatCacheTokens = (value: number | null) => value === null ? '--' : `${Math.round(value).toLocaleString()} tokens`
+const formatCacheHitRate = (value: number | null) => value === null ? '--' : `${(value * 100).toFixed(1)}%`
 </script>
 
 <style scoped>

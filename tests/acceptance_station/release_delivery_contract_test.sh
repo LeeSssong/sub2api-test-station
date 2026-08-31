@@ -8,22 +8,24 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 
 controller=ops/release-sub2api-acceptance.sh
 executor=ops/deploy-sub2api-acceptance-host.sh
+source_checker=ops/assert-sub2api-release-source.sh
 runbook=docs/runbooks/sub2api-acceptance-station.md
 
 [[ -f "$controller" ]] || fail "$controller is missing"
 [[ -x "$controller" ]] || fail "$controller is not executable"
 [[ -f "$executor" ]] || fail "$executor is missing"
 [[ -x "$executor" ]] || fail "$executor is not executable"
+[[ -x "$source_checker" ]] || fail "$source_checker is missing or not executable"
 [[ -f "$runbook" ]] || fail 'acceptance runbook is missing'
-grep -Fq '本地直接验证 -> 部署验收站 -> 管理员真实验收 -> 人工合入 main -> 人工部署主站' "$runbook" \
+grep -Fq '本地直接验证 -> 合入并推送根 main -> 从同一 main commit 部署验收站 -> 管理员真实验收 -> 从同一 main commit 部署主站' "$runbook" \
   || fail 'acceptance runbook is missing serial promotion boundary'
 grep -Fq '不自动晋级' "$runbook" || fail 'acceptance runbook is missing no-auto-promotion boundary'
 grep -Fq '/admin/lab/' "$runbook" || fail 'acceptance runbook is missing admin lab retirement boundary'
 grep -Fq 'https://api.xingqiaolab.top/admin/lab/' "$runbook" \
   || fail 'acceptance runbook is missing the shared-domain lab address'
 grep -Fq '仅保留脱敏失败证据' "$runbook" || fail 'acceptance runbook is missing failed-staging retention boundary'
-grep -Fq 'RELEASE_WORKTREE=/path/to/previous-verified-worktree' "$runbook" \
-  || fail 'acceptance runbook is missing executable manual rollback path'
+grep -Fq '人工回退时必须先在根 `main` 上形成明确的 revert 或前向修复提交' "$runbook" \
+  || fail 'acceptance runbook is missing main-only manual rollback path'
 ! grep -Fq 'sudo -n bash ops/deploy-sub2api-acceptance-host.sh' "$runbook" \
   || fail 'acceptance runbook documents an executor path unavailable on the host'
 
@@ -34,12 +36,18 @@ trap 'rm -rf "$tmp_root"' EXIT
 mkdir -p "$fixture" "$scratch"
 mkdir -p "$fixture/upstream/sub2api" "$fixture/ops"
 cp "$controller" "$fixture/ops/release-sub2api-acceptance.sh"
+cp "$source_checker" "$fixture/ops/assert-sub2api-release-source.sh"
 chmod +x "$fixture/ops/release-sub2api-acceptance.sh"
+chmod +x "$fixture/ops/assert-sub2api-release-source.sh"
 git -C "$fixture" init -q
 git -C "$fixture" config user.email contract@example.invalid
 git -C "$fixture" config user.name contract
 git -C "$fixture" add .
 git -C "$fixture" commit -qm fixture
+git -C "$tmp_root" init -q --bare remote.git
+git -C "$fixture" remote add origin "$tmp_root/remote.git"
+git -C "$fixture" branch -M main
+git -C "$fixture" push -q -u origin main
 
 env_file="$scratch/acceptance.env"
 write_env() {
@@ -70,6 +78,11 @@ assert_refusal() {
   [[ $status -ne 0 ]] || fail "controller unexpectedly accepted: $expected"
   [[ "$output" == *"$expected"* ]] || fail "expected refusal '$expected', got: $output"
 }
+
+write_env
+git -C "$fixture" switch -q -c candidate
+assert_refusal 'releases must use the main branch'
+git -C "$fixture" switch -q main
 
 write_env
 sed -i.bak 's/^ACCEPTANCE_PROJECT_NAME=.*/ACCEPTANCE_PROJECT_NAME=other-project/' "$env_file"

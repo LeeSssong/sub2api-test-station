@@ -161,12 +161,12 @@
 - Create: `docs/superpowers/reports/2026-08-31-t98-feishu-upstream-balance-notification-verification.md`
 - Create: `docs/handoffs/2026-08-31-t98-feishu-upstream-balance-notification-handoff.md`
 
-- [ ] **Step 1:** Run focused Go tests for service, notify, repository and migrations; run `go build ./cmd/server` and relay-ops build/tests.
-- [ ] **Step 2:** Run `gofmt -w` on changed Go files and `git diff --check`.
-- [ ] **Step 3:** Run repository-wide secret scans that exclude the protected local `outputs` directory and prove no card payload/password/API key enters code, tests, logs, event schema or API types.
-- [ ] **Step 4:** Run disabled/fake-transport smoke tests proving zero real Feishu egress and zero new upstream balance HTTP requests.
-- [ ] **Step 5:** Record exact commands, pass/fail counts, known baseline failures and release boundary; mark handoff `READY_FOR_ROOT_REVIEW`, with no push, production clear, deployment or real message.
-- [ ] **Step 6: Commit** `docs: record t98 implementation verification and handoff`.
+- [x] **Step 1:** Run focused Go tests for service, notify, repository and migrations; run `go build ./cmd/server` and relay-ops build/tests.
+- [x] **Step 2:** Run `gofmt -w` on changed Go files and `git diff --check`.
+- [x] **Step 3:** Run repository-wide secret scans that exclude the protected local `outputs` directory and prove no card payload/password/API key enters code, tests, logs, event schema or API types.
+- [x] **Step 4:** Run disabled/fake-transport smoke tests proving zero real Feishu egress and zero new upstream balance HTTP requests.
+- [x] **Step 5:** Record exact commands, pass/fail counts, known baseline failures and release boundary; mark handoff `READY_FOR_ROOT_REVIEW`, with no push, production clear, deployment or real message.
+- [x] **Step 6: Commit** `docs: record t98 implementation verification and handoff`.
 
 ## Execution Notes
 

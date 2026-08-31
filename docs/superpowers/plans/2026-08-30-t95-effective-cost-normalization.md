@@ -8,12 +8,12 @@
 
 ## Tasks
 
-- [ ] 1. Add RED tests for cost-model formulas, OAuth locking, invalid input, and profit-gate consumption.
-- [ ] 2. Add backward-compatible account `extra` projection and preservation tests (no schema columns or Ent regeneration).
-- [ ] 3. Implement the service-level effective-cost provider and admin request/response wiring.
-- [ ] 4. Extend the existing Account Monitor cost dialog and API types for model selection and ratio inputs.
-- [ ] 5. Run focused backend/frontend tests, typecheck/build where available, and diff checks.
-- [ ] 6. Review the diff, commit the candidate, and write handoff evidence.
+- [x] 1. Add RED tests for cost-model formulas, OAuth locking, invalid input, and profit-gate consumption.
+- [x] 2. Add backward-compatible account `extra` projection and preservation tests (no schema columns or Ent regeneration).
+- [x] 3. Implement the service-level effective-cost provider and admin request/response wiring.
+- [x] 4. Extend the existing Account Monitor cost dialog and API types for model selection and ratio inputs.
+- [x] 5. Run focused backend/frontend tests, typecheck/build where available, and diff checks.
+- [x] 6. Review the diff, commit the candidate, and write handoff evidence.
 
 ## Verification Commands
 
@@ -25,9 +25,9 @@
 
 ## Acceptance
 
-- [ ] All three models produce the documented `A/R/U` values.
-- [ ] Profit gate uses the computed `U` and stays fail-open on unknown cost.
-- [ ] Admin can configure API Key direct/ratio models in the existing cost dialog; OAuth stays self-owned.
+- [x] All three models produce the documented `A/R/U` values.
+- [x] Profit gate uses computed `U`; unknown U remains in the native invalid-cost partition for T96 availability fallback.
+- [x] Admin can configure API Key direct/ratio models in the existing cost dialog; OAuth-family accounts stay self-owned.
 
 ## Risks
 

@@ -35,13 +35,13 @@ The self-owned model treats the stored cost and quota as the same 1:1 settlement
 
 ## Acceptance Criteria
 
-- [ ] Direct API Key defaults to `direct_multiplier`, computes `U=rate_multiplier`.
-- [ ] Ratio API Key computes `U=(actual/obtained)*rate_multiplier` and rejects incomplete/invalid values.
-- [ ] OAuth and setup-token always compute `U=procurement/estimated_quota`, ignoring legacy `rate_multiplier` and upstream ratio fields.
-- [ ] Official profit control gates on `U` without a second profit gate.
-- [ ] Existing Groups profit fields and fail-open behavior remain unchanged.
-- [ ] Admin cost dialog can choose the API Key model and enter ratio parameters; OAuth remains self-owned.
-- [ ] No history rows, production data, SQL migration, or deployment are changed in this task.
+- [x] Direct API Key defaults to `direct_multiplier`, computes `U=rate_multiplier`.
+- [x] Ratio API Key computes `U=(actual/obtained)*rate_multiplier` and rejects incomplete/invalid values.
+- [x] OAuth and setup-token always compute `U=procurement/estimated_quota`, ignoring legacy `rate_multiplier` and upstream ratio fields.
+- [x] Official profit control gates on `U` without a second profit gate.
+- [x] Existing Groups profit fields and fail-open behavior remain unchanged.
+- [x] Admin cost dialog can choose the API Key model and enter ratio parameters; OAuth remains self-owned.
+- [x] No history rows, production data, SQL migration, or deployment are changed in this task.
 
 ## Risks
 

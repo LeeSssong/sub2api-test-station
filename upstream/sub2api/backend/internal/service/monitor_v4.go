@@ -106,7 +106,11 @@ func (s *MonitorV4Service) SetSnapshotStore(store MonitorV4SnapshotStore) {
 }
 
 func NewMonitorV4Service(groupRepo GroupRepository, available MonitorV2AvailableGroupReader, native MonitorV4ProjectionReader, settings MonitorV2SettingsReader, configured MonitorV2ConfiguredGroupReader) *MonitorV4Service {
-	return &MonitorV4Service{groupRepo: groupRepo, available: available, native: native, settings: settings, configured: configured}
+	svc := &MonitorV4Service{groupRepo: groupRepo, available: available, native: native, settings: settings, configured: configured}
+	if nativeService, ok := native.(*AccountMonitorService); ok {
+		svc.store = nativeService
+	}
+	return svc
 }
 
 func (s *MonitorV4Service) Snapshot(ctx context.Context, userID int64, window MonitorV4Window, now time.Time) (*MonitorV4Snapshot, error) {

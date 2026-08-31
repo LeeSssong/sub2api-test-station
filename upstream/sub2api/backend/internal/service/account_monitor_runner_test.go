@@ -3,9 +3,118 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type monitorV4SnapshotRefresherStub struct {
+	calls   atomic.Int32
+	started chan struct{}
+	block   <-chan struct{}
+}
+
+func (s *monitorV4SnapshotRefresherStub) RefreshMonitorV4Snapshots(context.Context, time.Time) error {
+	s.calls.Add(1)
+	if s.started != nil {
+		select {
+		case s.started <- struct{}{}:
+		default:
+		}
+	}
+	if s.block != nil {
+		<-s.block
+	}
+	return nil
+}
+
+type monitorV4LeaderLockStub struct {
+	held atomic.Bool
+	mu   sync.Mutex
+}
+
+func (s *monitorV4LeaderLockStub) TryAcquireLeaderLock(context.Context, string, string, time.Duration) (bool, error) {
+	return !s.held.Load(), nil
+}
+func (s *monitorV4LeaderLockStub) ReleaseLeaderLock(context.Context, string, string) error {
+	return nil
+}
+
+func TestMonitorV4SnapshotRunnerLifecycle(t *testing.T) {
+	previous := accountMonitorV4SnapshotRefreshInterval
+	accountMonitorV4SnapshotRefreshInterval = 5 * time.Millisecond
+	defer func() { accountMonitorV4SnapshotRefreshInterval = previous }()
+	refresher := &monitorV4SnapshotRefresherStub{started: make(chan struct{}, 8)}
+	runner := NewAccountMonitorRunner(nil)
+	runner.SetMonitorV4SnapshotRefresher(refresher)
+	runner.Start()
+	defer runner.Stop()
+	select {
+	case <-refresher.started:
+	case <-time.After(time.Second):
+		t.Fatal("immediate snapshot refresh did not run")
+	}
+	select {
+	case <-refresher.started:
+	case <-time.After(time.Second):
+		t.Fatal("ticker snapshot refresh did not run")
+	}
+	if got := refresher.calls.Load(); got < 2 {
+		t.Fatalf("snapshot refresh calls = %d, want at least 2", got)
+	}
+}
+
+func TestMonitorV4SnapshotRunnerDoesNotOverlapAndStops(t *testing.T) {
+	previous := accountMonitorV4SnapshotRefreshInterval
+	accountMonitorV4SnapshotRefreshInterval = time.Millisecond
+	defer func() { accountMonitorV4SnapshotRefreshInterval = previous }()
+	block := make(chan struct{})
+	refresher := &monitorV4SnapshotRefresherStub{started: make(chan struct{}, 4), block: block}
+	runner := NewAccountMonitorRunner(nil)
+	runner.SetMonitorV4SnapshotRefresher(refresher)
+	runner.Start()
+	select {
+	case <-refresher.started:
+	case <-time.After(time.Second):
+		t.Fatal("refresh did not start")
+	}
+	time.Sleep(10 * time.Millisecond)
+	if got := refresher.calls.Load(); got != 1 {
+		t.Fatalf("overlapping refresh calls = %d, want 1", got)
+	}
+	close(block)
+	runner.Stop()
+	calls := refresher.calls.Load()
+	time.Sleep(10 * time.Millisecond)
+	if refresher.calls.Load() != calls {
+		t.Fatal("snapshot refresh occurred after Stop")
+	}
+}
+
+func TestMonitorV4SnapshotRunnerSkipsPeerLeader(t *testing.T) {
+	refresher := &monitorV4SnapshotRefresherStub{started: make(chan struct{}, 1)}
+	lock := &monitorV4LeaderLockStub{}
+	lock.held.Store(true)
+	runner := NewAccountMonitorRunner(nil)
+	runner.SetMonitorV4SnapshotRefresher(refresher)
+	runner.SetMonitorV4SnapshotCoordination(lock, nil)
+	runner.Start()
+	defer runner.Stop()
+	time.Sleep(20 * time.Millisecond)
+	if got := refresher.calls.Load(); got != 0 {
+		t.Fatalf("peer-held lock refresh calls = %d, want 0", got)
+	}
+}
+
+func TestMonitorV4SnapshotRunnerNilRefresherHasNoLoop(t *testing.T) {
+	runner := NewAccountMonitorRunner(nil)
+	runner.Start()
+	runner.Stop()
+	if !runner.started {
+		t.Fatal("runner did not start")
+	}
+}
 
 func TestAccountMonitorRunnerReloadSettingsResetsCadenceWithoutTriggeringProbe(t *testing.T) {
 	runner := NewAccountMonitorRunner(nil)

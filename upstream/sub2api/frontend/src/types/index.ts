@@ -1172,6 +1172,13 @@ export interface Account {
   scheduler_scores?: AccountSchedulerGroupScore[] | null
   priority: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
+  effective_cost_model?: 'direct_multiplier' | 'ratio_based_upstream' | 'self_owned'
+  upstream_actual_cost?: number | null
+  upstream_obtained_quota?: number | null
+  effective_cost_a?: number | null
+  effective_cost_r?: number | null
+  effective_cost_u?: number | null
+  effective_cost_status?: 'ready' | 'unknown' | string
   status: 'active' | 'inactive' | 'error'
   error_message: string | null
   last_used_at: string | null
@@ -1443,6 +1450,9 @@ export interface CreateAccountRequest {
   load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
+  effective_cost_model?: 'direct_multiplier' | 'ratio_based_upstream' | 'self_owned'
+  upstream_actual_cost?: number | null
+  upstream_obtained_quota?: number | null
   group_ids?: number[]
   expires_at?: number | null
   auto_pause_on_expired?: boolean
@@ -1463,6 +1473,9 @@ export interface UpdateAccountRequest {
   load_factor?: number | null
   priority?: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
+  effective_cost_model?: 'direct_multiplier' | 'ratio_based_upstream' | 'self_owned'
+  upstream_actual_cost?: number | null
+  upstream_obtained_quota?: number | null
   schedulable?: boolean
   status?: 'active' | 'inactive' | 'error'
   group_ids?: number[]

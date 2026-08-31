@@ -800,7 +800,7 @@ async function saveProcurementCost(cost: number, estimatedQuotaUSD: number) {
   }
 }
 
-async function saveAccountMultiplier(multiplier: number) {
+async function saveAccountMultiplier(multiplier: number, model: 'direct_multiplier' | 'ratio_based_upstream' = 'direct_multiplier', actualCost?: number, obtainedQuota?: number) {
   const account = selectedCostAccount.value
   if (!account || savingCost.value) return
   savingCost.value = true
@@ -808,6 +808,9 @@ async function saveAccountMultiplier(multiplier: number) {
   try {
     await adminAPI.accounts.update(account.account_id, {
       rate_multiplier: multiplier,
+      effective_cost_model: model,
+      upstream_actual_cost: model === 'ratio_based_upstream' ? actualCost : null,
+      upstream_obtained_quota: model === 'ratio_based_upstream' ? obtainedQuota : null,
       upstream_billing_rate_sync_enabled: false,
     })
     const reloaded = await load(activeRange.value, { notifyError: false })

@@ -9,6 +9,17 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+var (
+	ErrInvalidEffectiveCostModel = infraerrors.BadRequest(
+		"INVALID_EFFECTIVE_COST_MODEL",
+		"effective_cost_model must match the account type",
+	)
+	ErrInvalidEffectiveCostRatio = infraerrors.BadRequest(
+		"INVALID_EFFECTIVE_COST_RATIO",
+		"ratio inputs must be a finite non-negative cost and a finite positive quota, and are not allowed for OAuth accounts",
+	)
+)
+
 // AdminService interface defines admin management operations
 type AdminService interface {
 	// User management
@@ -360,22 +371,25 @@ type UpdateGroupInput struct {
 }
 
 type CreateAccountInput struct {
-	Name               string
-	Notes              *string
-	Platform           string
-	Type               string
-	Credentials        map[string]any
-	Extra              map[string]any
-	ProxyID            *int64
-	Concurrency        int
-	Priority           int
-	RateMultiplier     *float64 // 账号计费倍率（>=0，允许 0）
-	LoadFactor         *int
-	GroupIDs           []int64
-	ExpiresAt          *int64
-	AutoPauseOnExpired *bool
-	ProbeEnabled       *bool
-	RateSyncEnabled    *bool
+	Name                  string
+	Notes                 *string
+	Platform              string
+	Type                  string
+	Credentials           map[string]any
+	Extra                 map[string]any
+	ProxyID               *int64
+	Concurrency           int
+	Priority              int
+	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
+	EffectiveCostModel    string
+	UpstreamActualCost    *float64
+	UpstreamObtainedQuota *float64
+	LoadFactor            *int
+	GroupIDs              []int64
+	ExpiresAt             *int64
+	AutoPauseOnExpired    *bool
+	ProbeEnabled          *bool
+	RateSyncEnabled       *bool
 	// ActiveProbeEnabled controls automatic connection probes and scheduled model detection.
 	// Nil preserves the backward-compatible enabled default.
 	ActiveProbeEnabled *bool
@@ -396,15 +410,18 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
-	Name           string
-	Notes          *string
-	Type           string // Account type: oauth, setup-token, apikey
-	Credentials    map[string]any
-	Extra          map[string]any
-	ProxyID        *int64
-	Concurrency    *int     // 使用指针区分"未提供"和"设置为0"
-	Priority       *int     // 使用指针区分"未提供"和"设置为0"
-	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）
+	Name                  string
+	Notes                 *string
+	Type                  string // Account type: oauth, setup-token, apikey
+	Credentials           map[string]any
+	Extra                 map[string]any
+	ProxyID               *int64
+	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
+	Priority              *int     // 使用指针区分"未提供"和"设置为0"
+	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）
+	EffectiveCostModel    *string
+	UpstreamActualCost    *float64
+	UpstreamObtainedQuota *float64
 	// ProcurementCost is nil when the JSON field was omitted. A non-nil value with
 	// nil Value represents explicit JSON null and clears the stored cost.
 	ProcurementCost    *ProcurementCostUpdate

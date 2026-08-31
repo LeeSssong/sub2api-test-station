@@ -323,6 +323,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 							continue
 						}
 					}
+					h.gatewayService.PersistOpenAIOAuth429Cooldown(requestCtx, account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr

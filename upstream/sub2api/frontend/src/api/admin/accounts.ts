@@ -32,6 +32,14 @@ export interface AccountProcurementCostUpdate {
   estimated_usable_quota_usd: number | null
 }
 
+export type EffectiveCostModel = 'direct_multiplier' | 'ratio_based_upstream' | 'self_owned'
+
+export interface EffectiveCostUpdate {
+  effective_cost_model?: EffectiveCostModel
+  upstream_actual_cost?: number | null
+  upstream_obtained_quota?: number | null
+}
+
 export interface AccountWithProcurementCost extends Account {
   procurement_cost_cny?: number | null
   estimated_usable_quota_usd?: number | null

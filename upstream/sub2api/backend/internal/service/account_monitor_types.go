@@ -477,6 +477,13 @@ type AccountMonitorAccount struct {
 	OutputRateTokensPerSecond  *float64                                 `json:"output_rate_tokens_per_second,omitempty"`
 	OutputRateSampleCount      int                                      `json:"output_rate_sample_count,omitempty"`
 	Multiplier                 AccountMonitorMultiplier                 `json:"multiplier"`
+	EffectiveCostModel         string                                   `json:"effective_cost_model"`
+	UpstreamActualCost         *float64                                 `json:"upstream_actual_cost"`
+	UpstreamObtainedQuota      *float64                                 `json:"upstream_obtained_quota"`
+	EffectiveCostA             *float64                                 `json:"effective_cost_a"`
+	EffectiveCostR             *float64                                 `json:"effective_cost_r"`
+	EffectiveCostU             *float64                                 `json:"effective_cost_u"`
+	EffectiveCostStatus        string                                   `json:"effective_cost_status"`
 	Balance                    *AccountMonitorBalance                   `json:"balance,omitempty"`
 	ProcurementCostCNY         *float64                                 `json:"procurement_cost_cny"`
 	EstimatedUsableQuotaUSD    *float64                                 `json:"estimated_usable_quota_usd"`

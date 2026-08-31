@@ -37,6 +37,12 @@ func profitControlTestAccountWithRate(account *Account, rate float64) *Account {
 	return account
 }
 
+func profitControlTestSelfOwnedAccount(account *Account, cost, quota float64) *Account {
+	account.ProcurementCostCNY = &cost
+	account.EstimatedUsableQuotaUSD = &quota
+	return account
+}
+
 func TestResolveOpenAIProfitControlGate(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	groupID := int64(7)
@@ -152,14 +158,14 @@ func TestOpenAIProfitControlVetoReason(t *testing.T) {
 		require.Equal(t, openAIProfitFilterReasonThreshold, reason)
 	})
 
-	t.Run("missing account rate is invalid", func(t *testing.T) {
+	t.Run("missing effective cost is invalid", func(t *testing.T) {
 		vetoed, reason := openAIProfitControlVetoReason(gateCtx(0.7), upstreamCostTestOAuthAccount(1))
 		require.True(t, vetoed)
 		require.Equal(t, openAIProfitFilterReasonInvalidAccountRate, reason)
 	})
 
-	t.Run("oauth account with manual rate is priceable", func(t *testing.T) {
-		account := profitControlTestAccountWithRate(upstreamCostTestOAuthAccount(1), 0.2)
+	t.Run("oauth account with procurement cost is priceable", func(t *testing.T) {
+		account := profitControlTestSelfOwnedAccount(upstreamCostTestOAuthAccount(1), 20, 100)
 		vetoed, _ := openAIProfitControlVetoReason(gateCtx(0.7), account)
 		require.False(t, vetoed)
 	})
@@ -172,7 +178,7 @@ func TestOpenAIProfitControlVetoReason(t *testing.T) {
 
 	t.Run("negative and non-finite rates are invalid", func(t *testing.T) {
 		for _, rate := range []float64{-1, math.NaN(), math.Inf(1)} {
-			account := profitControlTestAccountWithRate(upstreamCostTestOAuthAccount(1), rate)
+			account := profitControlTestAccountWithRate(upstreamCostTestAccount(1, UpstreamBillingProbeStatusOK, 99, now.Add(-time.Minute), 30*time.Minute), rate)
 			vetoed, reason := openAIProfitControlVetoReason(gateCtx(0.7), account)
 			require.True(t, vetoed)
 			require.Equal(t, openAIProfitFilterReasonInvalidAccountRate, reason)
@@ -234,9 +240,9 @@ func TestProfitControlSchedulerFiltersCandidates(t *testing.T) {
 		require.Contains(t, err.Error(), openAIProfitFilterReasonInvalidAccountRate+"=1")
 	})
 
-	t.Run("manually rated oauth account is admitted", func(t *testing.T) {
-		// 阈值 0.2 排除两个 API Key；OAuth 手工倍率 0.1 可参与调度。
-		profitControlTestAccountWithRate(oauth, 0.1)
+	t.Run("oauth account with procurement cost is admitted", func(t *testing.T) {
+		// 阈值 0.2 排除两个 API Key；OAuth 自购有效成本 U=0.1 可参与调度。
+		profitControlTestSelfOwnedAccount(oauth, 10, 100)
 		svc.accountRepo = schedulerTestOpenAIAccountRepo{accounts: []Account{*cheap, *expensive, *oauth}}
 		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.7, 0.1))
 		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)

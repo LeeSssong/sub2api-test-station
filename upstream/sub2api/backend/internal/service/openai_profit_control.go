@@ -315,14 +315,13 @@ func openAIProfitControlVetoReasonReadOnly(ctx context.Context, account *Account
 	if gate == nil || account == nil {
 		return false, ""
 	}
-	if account.RateMultiplier == nil ||
-		math.IsNaN(*account.RateMultiplier) ||
-		math.IsInf(*account.RateMultiplier, 0) ||
-		*account.RateMultiplier < 0 {
+	cost := EffectiveCostForAccount(account)
+	if cost.Status != EffectiveCostStatusReady || cost.U == nil || math.IsNaN(*cost.U) || math.IsInf(*cost.U, 0) || *cost.U < 0 {
+		// Preserve the native invalid-cost partition. T96 owns the separate
+		// availability-first full-pool fallback when no profitable account exists.
 		return true, openAIProfitFilterReasonInvalidAccountRate
 	}
-	upstream := *account.RateMultiplier
-	if profitControlOverThreshold(upstream, gate.threshold) {
+	if profitControlOverThreshold(*cost.U, gate.threshold) {
 		return true, openAIProfitFilterReasonThreshold
 	}
 	return false, ""

@@ -1,65 +1,94 @@
-# T104 Monitor V4 持久化快照恢复检查点
+# T104 Monitor V4 持久化快照交接
 
-日期：2026-08-31（Asia/Shanghai），CONTEXT_RECOVERY checkpoint（本轮）
+日期：2026-08-31（Asia/Shanghai）
+状态：`READY_FOR_ROOT_REVIEW`（候选本地完成；未合并根 main、未推送、未部署）
 
-## 任务目标
+## 目标与最终口径
 
-- 将 Monitor V4 的分组统计从页面/调度切换时的即时全窗口 SQL，改为约每 5 分钟定时计算并持久化；页面和调度切换只读取最近一次成功快照。
-- 保持已确认的指标口径：最终用户可见逻辑请求计数；5 分钟桶有真实请求时只用真实请求，当前桶最后一分钟仍无真实请求时用同桶一次主动探测兜底；成功率为选中成功逻辑请求数除以选中总逻辑请求数；TTFT/完整耗时只从成功样本计算，保留当前 P95 文案和前后 5% 截尾平均实现；缓存命中率沿用 T102 的成功真实请求 Sub 原生 Token 口径。
+- Monitor V4 不再在页面打开、轮询或切换 `24h/7d/30d` 时执行全窗口统计 SQL；singleton worker 每 5 分钟以同一 `as_of` 计算三窗口并持久化，页面只读最近一次成功快照。
+- 每个 5 分钟桶真实逻辑请求优先；无真实请求时使用一次主动探测逻辑请求。同桶多账号探测不放大分母，任一成功为 `1/1`，全部失败为 `0/1`。
+- 已结算但缺少探测终态的桶按最新用户决定 fail-closed 为 `0/1`，进入失败分母，并保留内部 `missing_probe_terminal_count`。
+- 成功率为最终成功逻辑请求数 / 有效逻辑请求总数；明确模型不支持、客户端责任错误和最终成功请求的中间切号失败不计本站失败，最终用户可见失败必须进入分母。
+- `ttft_p95_ms` 与 `latency_p95_ms` 仍只使用成功请求，保持 P95 字段和页面文案，数值为各自前后 5% 截尾平均；`cache_hit_rate` 仍只使用成功真实请求的 Sub 原生 Token 口径。
 
-## 范围与硬边界
+## 候选指针
 
-- 本任务只处理持久化统计读取路径和实际成功率统计问题；不恢复或新增 admission、slow-session、账号级额外并发控制。
-- 不修改根 `main`、`docs/project/project-progress.md` 或 `docs/project/native-sub-task-package-queue.md`；不合并、推送、部署、停机、迁移、重启、切槽或触碰生产。
-- T103 已废弃；已进入根 `main` 的 native-only guard 仅作为永久发布门禁，不属于 T104 实现范围。
-
-## Git 与工作区事实
-
-- 根目录：`/Users/gongtengxinwen/Documents/sub2api搭建`
-- 根分支：`main`
-- 根基线（当前事实）：`main@5e6ccee143f07ee34017c25e75979b74b6bcfc77`，tree `42dda8e317725a710340b5624bbda887cd1f6a50`
-- 根 `main` 与 `origin/main`：commit/tree 一致，工作区干净；根最近提交为 `docs: register T105 OAuth rate-limit recovery`。根目录另有用户/总控正在维护的全局文档现场，未触碰。
-- 本任务候选：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t104-monitor-v4-persisted-snapshot`
+- Worktree：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t104-monitor-v4-persisted-snapshot`
 - 分支：`codex/t104-monitor-v4-persisted-snapshot`
-- 候选 HEAD：`5e6ccee143f07ee34017c25e75979b74b6bcfc77`，tree `42dda8e317725a710340b5624bbda887cd1f6a50`
-- 候选工作区：仅有未跟踪本恢复文件；候选已安全快进到根 `main`，`git rev-list --left-right --count HEAD...main` 为 `0 0`；尚无 T104 独有代码提交。
-- 其他 worktree、未提交内容和保护窗口均保持原状，未执行 reset/clean/checkout/删除。
+- 初始基线：`main@5e6ccee143f07ee34017c25e75979b74b6bcfc77`，tree `42dda8e317725a710340b5624bbda887cd1f6a50`
+- 刷新基线：`main@fde3ece1b6e20a9e0b6a7ff47bf1e0be03213178`，tree `3c7a8c6d85d18d9c3ecb1a40dd3efaeab95315ad`
+- 刷新合并提交：`09942e3f6a43222b46833db1d5ac1a9caa364dd7`，tree `bb07534c9200d6d4bccefcb6a2ceaa674f74abe2`
+- 刷新无冲突，包含根总控已完成的 T105 主线；T104 未修改 T105 文件。最终文档收口提交在本交接之后生成，根总控应以分支最终 HEAD 作为候选 SHA。
 
-## 已读取与已确认
+## 已交付
 
-- 已完整读取根 `AGENTS.md`、`docs/project/native-sub-incremental-delivery-constraints.md`、`docs/project/native-sub-task-package-queue.md`、`docs/project/acceptance-station-global-constraints.md`。
-- 已读取现有 T85、T97、T99、T101 规格/计划/报告/交接及当前代码目录；当前分支携带 T99 的规格/计划/报告/交接，但 T104 尚无独立实现规格/计划/报告。T99 文档仅作为已部署字段口径证据，不视为 T104 规格或实现。
-- 现有调用链：`routes/user.go` 注册 `/monitor-v4` -> `monitor_v4_handler.go` -> `MonitorV4Service.Snapshot` -> `ProjectMonitorV4GroupsForGroups`；该路径每次 HTTP 请求计算窗口并扫描事实表。
-- 现有运行器 `account_monitor_runner.go` 负责账号监控轮次、主动探测和桶终态 watchdog；没有 Monitor V4 快照仓储或 5 分钟快照刷新 ticker。
-- 现有原始事实源仍为 `usage_logs`、`ops_error_logs`、`account_monitor_results`、`account_monitor_bucket_terminals`；快照只能作为派生缓存，不能替代这些事实源。
-- 无发布、合并、部署、迁移、重启或切槽命令正在运行；未发现 Git 发布锁。根/候选及已登记 worktree 均保留，未执行 reset、clean、checkout、删除或覆盖。
+- 新增 expand-only `232_monitor_v4_snapshots.sql`，保存 `(window, group_id)` 最新派生快照；原始事实仍为 `usage_logs`、`ops_error_logs`、`account_monitor_results` 和 `account_monitor_bucket_terminals`。
+- 新增快照 repository：三窗口/多分组在一个事务内 `DELETE + INSERT` 原子替换；任一步失败回滚并保留旧成功快照；读取校验 UUID、窗口、时间、版本、计数和跨行一致性。
+- `MonitorV4Service.Snapshot` 保留当前用户 active/config/available/exclusive 分组裁剪和当前组元数据，但只读取快照；没有快照或损坏快照时 fail-closed，不回退实时全窗口 SQL。
+- `RefreshMonitorV4Snapshots` 以同一 UTC 分钟截点计算 `24h/7d/30d`，全部投影合法后才以一个 UUID 发布。
+- `AccountMonitorRunner` 增加可选 snapshot loop：启动立即刷新，之后每 5 分钟刷新；本地防重入、4 分钟超时、固定 leader key、10 分钟 TTL、Redis/PG advisory 协调，Stop 取消并等待 goroutine。
+- API 字段和前端布局不变；`generated_at` 现在表示快照生成时间。新增直接合同测试覆盖三窗口、原快照字段和失败时保留上次成功窗口。
+- T103 已废弃；本任务未新增或恢复 admission、slow-session 或账号级自定义并发控制，native-only guard 通过。
 
-## 未确认与证据缺口
+## 提交序列
 
-- T104 尚未登记到全局队列/总账；本线程无权修改根总控文档，登记状态待根总控确认。
-- 候选已在本轮安全快进到根 `main`，尚未开始 T104 运行时代码实现或直接测试；后续任何实现提交都必须留在此候选，且在 READY_FOR_ROOT_REVIEW 前保留该基线证据。
-- T104 专属规格已写入 `docs/superpowers/specs/2026-08-31-t104-monitor-v4-persisted-snapshot-design.md` 并完成自审，待根总控依据用户既有确认书面批准；批准前不写实施计划、测试或运行时代码。
-- 快照方案、worker 生命周期、窗口边界和可见分组权限策略已在规格中固定；迁移编号 `232` 仍需根总控整合时核对是否与其他候选冲突。
-- Task 4 当前指针：候选 `codex/t104-monitor-v4-persisted-snapshot`，基线 `5e6ccee143f07ee34017c25e75979b74b6bcfc77`，已在 `monitor_v4_handler_test.go`、`api.spec.ts` 和 `HybridPerformanceView.spec.ts` 增加直接合同覆盖；验证报告为 `docs/superpowers/reports/2026-08-31-t104-monitor-v4-persisted-snapshot-verification.md`。
-- Task 4 focused backend verification：repository/service 通过；handler 因既有 `handler_wiring_test.go` 参数数量错误及 `openAIAccountScheduleModel` 未定义编译阻塞。Frontend Vitest 因候选无 `node_modules` 阻塞，离线 pnpm 安装又被既有 lockfile/override mismatch 拒绝。`git diff --check` 与 native-only guard 通过。
-- 当前边界：`READY_FOR_ROOT_REVIEW`。本线程不合并、不推送、不部署、不迁移、不修改根总账；根总控下一动作是审阅报告与候选 diff，并决定是否授权合并。无运行时、迁移、配置或生产数据变化。
+- `23997a946`：持久化快照表和 repository
+- `f2bf70309`：快照 repository/adapter 证据补强
+- `3040f6901`：页面改读持久化快照，缺失探测终态进入 `0/1`
+- `969d87fa3`：快照计数不变量
+- `e134d50bf`：刷新前投影校验和失败边界
+- `65d6fc97a`：五分钟 singleton worker 与 wiring
+- `b547f0c56`：API/UI 直接合同测试
+- `f01d09898`：刷新前恢复检查点
+- `09942e3f6`：无冲突合入最新根 main
 
-## 恢复后的唯一第一步
+## 功能验证
 
-等待根总控书面批准已自审的 T104 规格；获批后调用 `writing-plans`，再按计划先写失败测试、实现快照仓储/刷新循环/读取路径和缺失探测分母修正。
+刷新到 `main@fde3ece1b` 后执行：
 
-## 停止条件与恢复方式
+```text
+go test -vet=off -count=1 -run 'TestMonitorV4|TestAccountMonitorRepositoryProjectMonitorV4|TestMonitorV4Snapshots' ./internal/repository ./internal/service
+PASS: repository 0.975s; service 2.098s
 
-- 发现根 `main`、其他 worktree 或生产状态发生未授权变化，立即停止并更新本文件。
-- 任一实现/测试阶段再次中断，先在本文件追加当前 HEAD、changed files、测试命令/结果、未验证项和下一唯一动作，再暂停。
-- 回滚仅通过保留候选分支/提交并由根总控在干净 `main` 上决定；本线程不执行回退或发布。
+go test -vet=off -count=1 -run 'TestAccountMonitorRunner|TestMonitorV4SnapshotRunner' ./internal/service
+PASS: service 2.819s
 
-## Latest Checkpoint (2026-08-31 22:46 Asia/Shanghai)
+go test -vet=off -count=1 -run '^TestMonitorV4SnapshotsMigration$' ./migrations
+PASS: migrations 0.476s
 
-- Candidate: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t104-monitor-v4-persisted-snapshot`, branch `codex/t104-monitor-v4-persisted-snapshot`.
-- Candidate HEAD/tree: `b547f0c56a8b34200c7be73cfe4bd09353300428` / `eaee664a4ea23f6657dabab0162890203e132fe7`; working tree has only the intentionally untracked T104 spec and plan.
-- Root `main`/`origin/main` advanced independently to `fde3ece1b6e20a9e0b6a7ff47bf1e0be03213178` / `3c7a8c6d85d18d9c3ecb1a40dd3efaeab95315ad` while T105 was deployed. Candidate is ahead by the seven T104 commits and behind that root by 19 commits; no root content was overwritten.
-- Completed candidate commits: `23997a946`, `f2bf70309`, `3040f6901`, `969d87fa3`, `e134d50bf`, `65d6fc97a`, `b547f0c56`. They implement the expand-only snapshot table, atomic load/replace, strict read/refresh semantics, missing-probe `0/1` denominator, five-minute singleton worker/wiring, and direct contract tests.
-- Functional evidence: repository/service/runner focused Go tests passed; `git diff --check` and native-only guard passed. Handler tests are blocked by pre-existing `ProvideHandlers`/`openAIAccountScheduleModel` compile errors; frontend Vitest is blocked by absent `node_modules` and offline lockfile override mismatch. No full builds/typechecks were run by user instruction.
-- Current state: `READY_FOR_ROOT_REVIEW` pending a safe candidate refresh to the latest root `main`, rerun only the direct functional tests, and final handoff. No merge, push, deployment, migration execution, or production access is authorized in this worktree.
-- Recovery next step: verify no release command is running, fast-forward/merge `main@fde3ece1` into this candidate without dropping T104 commits or the two untracked docs, resolve only genuine T104/T105 file conflicts, rerun focused functional tests, then report the refreshed candidate SHA to root.
+git diff --check
+PASS
+
+bash ops/assert-native-openai-concurrency-only.sh --worktree "$PWD"
+PASS: native_concurrency_guard status=passed mode=native_account_concurrency_only
+```
+
+## 未验证与环境阻断
+
+- Handler 聚焦测试在执行目标测试前被仓库既有编译错误阻断：`handler_wiring_test.go` 的 `ProvideHandlers` 参数数量不匹配，以及 `openai_gateway_handler_test.go` 引用未定义 `openAIAccountScheduleModel`。T104 未修改这些文件。
+- 前端候选没有 `node_modules`；离线 frozen install 被现有 lockfile/override mismatch 拒绝，因此新增 Vitest 未执行。测试代码已提交，但不能宣称通过。
+- 按用户最新要求，本轮不运行全包回归、完整 server/frontend build、typecheck 或性能压测。
+- 未在真实 PostgreSQL 执行迁移两次；幂等性由 `CREATE TABLE/INDEX IF NOT EXISTS` 静态合同覆盖。
+- 未做生产数据固定截点复算或线上 API 验收；这些属于根合并/部署后的验证车道。
+
+## 迁移、配置与停机
+
+- 迁移：新增 `232_monitor_v4_snapshots.sql`，expand-only，无历史回填、删除或事实表改写。
+- 配置：无新增配置项；快照周期固定 5 分钟，复用现有 singleton role 和 leader-lock 能力。
+- 依赖：无新增依赖或锁文件变化。
+- `downtime_required=unverified`：必须由根总控在合并后的干净 `main == origin/main` 上运行发布预检。任何 `true` 结果都必须停在停机授权门禁。
+
+## 回滚与风险
+
+- 候选尚未上线，当前回滚是根总控不合入该分支。
+- 上线后应用回滚只能在根 `main` 形成明确 revert/前向修复并走受控发布链；迁移表可保留为空，不能从功能 worktree 执行人工 DROP。
+- 首次 worker 生成完成前 API 会返回可重试不可用，不执行请求路径实时补算；刷新失败继续保留旧快照。
+- 每 5 分钟执行三次全窗口投影，真实数据规模下的耗时和 DB 负载未在候选验证；根上线前/后需观察生成时长不得超过 4 分钟预算。
+- 迁移编号 `232` 在刷新基线中未冲突；根整合时仍需重新核对最新 migration set。
+
+## 根总控下一步
+
+1. 确认本候选仍基于最新根 `main`；若根指针再次前进，在候选内安全刷新并只重跑上述功能测试。
+2. 登记 T104 到全局队列/总账并审阅最终分支 diff、迁移编号与来源边界。
+3. 若决定整合，发送带目标 main SHA 的 `AUTHORIZE_MERGE_TO_MAIN`；本线程不自行合并、推送或部署。
+4. 合并后的根 `main` 只跑用户批准的最小功能门禁和必要迁移/来源预检。主站发布仍需验收站约束定义的明确授权，发布成功后同 commit 对账验收站。

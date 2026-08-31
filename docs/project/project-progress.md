@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T104 Monitor V4 持久化分组快照（2026-08-31）：** 状态：进行中（`DEPLOYING`）。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入并推送根 `main@d2d26208d0b14e2f9db8308c9f799a84c5275aa9`（tree `f8065bb8a3b599cfa28272645224a79a956c6a36`），根工作区干净且与 `origin/main` 一致。范围为 expand-only migration `232_monitor_v4_snapshots`、原子 DELETE+INSERT 快照仓储及完整性校验、Monitor V4 只读最近快照与实时可见组裁剪、singleton worker 每 5 分钟刷新三窗口并复用 Sub 原生协调。repository/service/runner/migration 直接测试、`git diff --check` 与 native-only guard 已通过；handler/frontend 测试及完整构建按快速验证范围保留已记录环境阻断，尚未完成生产发布或线上验收。
+**T104 Monitor V4 持久化分组快照（2026-08-31）：** 状态：进行中（`VERIFYING`）。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入并推送根 `main@aa2727fa710a785ec3f27a07e0329336524d968d`（tree `b7b5cbeb4e8d6e146244149f669b1792462c312e`），根工作区干净且与 `origin/main` 一致。验收站已从该根 `main` 成功部署并完成基础线上核对：源 commit/tree 为 `aa2727fa7/b7b5cbeb`，镜像归档 SHA-256 `683c6fa1d5a2a6698944799e0630180d6346d5a66591e5f682aa4f54533b4ec5`，六项服务均 healthy，`/admin/lab/health` 与登录页均 HTTP 200。此前验收失败已记录：迁移 232 未引用 PostgreSQL 保留字 `window`，以及构建阶段 GitHub detector 下载失败；现已通过候选修复并复用同 SHA-256 的本地 detector 制品解决。范围为 expand-only migration `232_monitor_v4_snapshots`、原子 DELETE+INSERT 快照仓储及完整性校验、Monitor V4 只读最近快照与实时可见组裁剪、singleton worker 每 5 分钟刷新三窗口并复用 Sub 原生协调。主站尚未部署，等待用户明确“测试站验收通过，部署主站”或“快速部署到主站”。
 
 **T103 最新处置（2026-08-31）：`ABANDONED / 已废弃`。** 用户明确废弃 T103，不再要求其单独部署，不再占用或阻塞整合、部署和验证车道。当前生产请求 handler 已不调用自定义账号 admission/slow-session，仅保留 Sub 原生账号槽位；已进入 `main` 的 native-only 发布硬门禁继续作为全局永久约束保留，不因任务废弃而删除。T103 历史排查、提交和停机门禁记录只作审计证据，不得再据此启动 T103 发布。
 

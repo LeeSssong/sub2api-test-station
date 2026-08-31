@@ -50,7 +50,7 @@ func ValidateMonitorV4Projection(projection MonitorV4GroupProjection) error {
 	if projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 {
 		return fmt.Errorf("monitor v4 projection contains negative counts")
 	}
-	if projection.SuccessCount > projection.RequestCount || projection.RealSuccessCount > projection.RealRequestCount || projection.ProbeFallbackRequestCount != projection.ProbeFallbackBucketCount || projection.RealRequestCount+projection.ProbeFallbackRequestCount != projection.RequestCount || projection.RealSuccessCount > projection.SuccessCount || projection.SuccessCount > projection.RealSuccessCount+projection.ProbeFallbackRequestCount {
+	if projection.SuccessCount > projection.RequestCount || projection.RealSuccessCount > projection.RealRequestCount || projection.ProbeFallbackRequestCount != projection.ProbeFallbackBucketCount || projection.MissingProbeTerminalCount > projection.ProbeFallbackBucketCount || projection.RealRequestCount+projection.ProbeFallbackRequestCount != projection.RequestCount || projection.RealSuccessCount > projection.SuccessCount || projection.SuccessCount > projection.RealSuccessCount+projection.ProbeFallbackRequestCount {
 		return fmt.Errorf("monitor v4 projection count invariants violated")
 	}
 	return nil
@@ -201,6 +201,14 @@ func (s *MonitorV4Service) RefreshMonitorV4Snapshots(ctx context.Context, asOf t
 		projections, err := s.native.ProjectMonitorV4Groups(ctx, groupIDs, start, end, MonitorV4BucketSize)
 		if err != nil {
 			return fmt.Errorf("project monitor v4 snapshot %s: %w", window, err)
+		}
+		for groupID, projection := range projections {
+			if groupID <= 0 {
+				return fmt.Errorf("project monitor v4 snapshot %s: invalid group id %d", window, groupID)
+			}
+			if err := ValidateMonitorV4Projection(projection); err != nil {
+				return fmt.Errorf("project monitor v4 snapshot %s group %d: %w", window, groupID, err)
+			}
 		}
 		snapshots = append(snapshots, MonitorV4StoredWindow{Window: window, SnapshotID: "pending", WindowStart: start, WindowEnd: end, GeneratedAt: end, ContractVersion: MonitorV4ContractVersion, Groups: projections})
 	}

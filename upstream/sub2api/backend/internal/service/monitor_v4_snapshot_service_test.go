@@ -58,7 +58,7 @@ func TestMonitorV4SnapshotReadsPersistedProjectionWithoutNativeProjection(t *tes
 }
 
 func TestMonitorV4RefreshUsesOneAsOfAndPublishesOnce(t *testing.T) {
-	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1}}}
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, RealRequestCount: 1, RealSuccessCount: 1}}}
 	store := &monitorV4RefreshStoreStub{}
 	svc := NewMonitorV4Service(&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Status: StatusActive}, {ID: 8, Status: "inactive"}}}, &monitorV4AvailableGroupReaderStub{}, native, nil, &monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{GroupIDs: []int64{7}}})
 	svc.SetSnapshotStore(store)
@@ -109,6 +109,52 @@ func TestMonitorV4RefreshErrorDoesNotPublish(t *testing.T) {
 	}
 	if len(store.replaced) != 0 {
 		t.Fatalf("replacement after projection error = %#v", store.replaced)
+	}
+}
+
+func TestMonitorV4RefreshRejectsInvalidNativeProjectionBeforePublish(t *testing.T) {
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, ProbeFallbackBucketCount: 0, ProbeFallbackRequestCount: 0, MissingProbeTerminalCount: 1}}}
+	store := &monitorV4RefreshStoreStub{}
+	svc := NewMonitorV4Service(&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Status: StatusActive}}}, &monitorV4AvailableGroupReaderStub{}, native, nil, &monitorV4ConfiguredGroupReaderStub{})
+	svc.SetSnapshotStore(store)
+	if err := svc.RefreshMonitorV4Snapshots(context.Background(), time.Now()); err == nil {
+		t.Fatal("expected invalid projection error")
+	}
+	if len(store.replaced) != 0 {
+		t.Fatalf("replacement after invalid projection = %#v", store.replaced)
+	}
+}
+
+func TestMonitorV4RefreshStoreErrorDoesNotPublish(t *testing.T) {
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, RealRequestCount: 1, RealSuccessCount: 1}}}
+	store := &monitorV4RefreshStoreStub{err: errors.New("store failed")}
+	svc := NewMonitorV4Service(&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Status: StatusActive}}}, &monitorV4AvailableGroupReaderStub{}, native, nil, &monitorV4ConfiguredGroupReaderStub{})
+	svc.SetSnapshotStore(store)
+	if err := svc.RefreshMonitorV4Snapshots(context.Background(), time.Now()); err == nil {
+		t.Fatal("expected store error")
+	}
+	if len(store.replaced) != 0 {
+		t.Fatalf("successful publish after store error = %#v", store.replaced)
+	}
+}
+
+type monitorV4ExclusiveAvailableStub struct{}
+
+func (*monitorV4ExclusiveAvailableStub) GetAvailableGroups(context.Context, int64) ([]Group, error) {
+	return nil, nil
+}
+
+func TestMonitorV4SnapshotHidesExclusiveGroupWithoutUserAvailability(t *testing.T) {
+	generated := time.Date(2026, 8, 31, 4, 12, 0, 0, time.UTC)
+	store := &monitorV4SnapshotStoreStub{loaded: MonitorV4StoredWindow{Window: MonitorV4Window7D, SnapshotID: "snapshot", WindowStart: generated.Add(-7 * 24 * time.Hour), WindowEnd: generated, GeneratedAt: generated, ContractVersion: MonitorV4ContractVersion, Groups: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, RealRequestCount: 1, RealSuccessCount: 1}}}}
+	svc := NewMonitorV4Service(&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Status: StatusActive, IsExclusive: true}}}, &monitorV4ExclusiveAvailableStub{}, nil, nil, &monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{GroupIDs: []int64{7}}})
+	svc.SetSnapshotStore(store)
+	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, generated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Groups) != 0 {
+		t.Fatalf("exclusive groups exposed = %#v", snapshot.Groups)
 	}
 }
 

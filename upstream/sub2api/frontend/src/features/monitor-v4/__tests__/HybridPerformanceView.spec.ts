@@ -67,6 +67,22 @@ describe('HybridPerformanceView', () => {
     wrapper.unmount()
   })
 
+  it('keeps the last successful window when a selected window read fails', async () => {
+    getSnapshot.mockReset()
+    getSnapshot.mockResolvedValueOnce({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })
+    getSnapshot.mockRejectedValueOnce(new Error('timeout'))
+    const wrapper = mount(HybridPerformanceView, {
+      global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
+    })
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal)))
+    await wrapper.get('[data-test="hybrid-window-7d"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.find('[data-test="hybrid-load-error"]').exists()).toBe(true))
+    expect(getSnapshot).toHaveBeenLastCalledWith('7d', expect.any(AbortSignal))
+    expect(wrapper.get('[data-test="hybrid-window-24h"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.get('[data-test="hybrid-window-7d"]').attributes('aria-selected')).toBe('false')
+    wrapper.unmount()
+  })
+
   it('requests the 30-day window when its tab is selected', async () => {
     getSnapshot.mockReset()
     getSnapshot.mockResolvedValue({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })

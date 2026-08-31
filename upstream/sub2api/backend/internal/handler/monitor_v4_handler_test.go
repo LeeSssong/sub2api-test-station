@@ -61,6 +61,14 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 		Data map[string]any `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
+	require.Equal(t, "2026-08-31T12:00:00Z", envelope.Data["generated_at"])
+	require.Equal(t, map[string]any{
+		"contract_version":         "2",
+		"window":                   "30d",
+		"refresh_interval_seconds": float64(300),
+		"generated_at":             "2026-08-31T12:00:00Z",
+		"groups":                   envelope.Data["groups"],
+	}, envelope.Data)
 	groups, ok := envelope.Data["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 2)

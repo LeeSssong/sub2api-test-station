@@ -2,26 +2,20 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/adminauth"
-	"example.invalid/relay-ops-service/internal/agent"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/config"
 	"example.invalid/relay-ops-service/internal/domain"
-	"example.invalid/relay-ops-service/internal/feishuapi"
 	httpserver "example.invalid/relay-ops-service/internal/http"
-	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/qualityreports"
 )
@@ -57,19 +51,6 @@ func TestConfiguredTrustedProxyResolvesAtStartupAndForEveryTrustCheck(t *testing
 	})
 	if err == nil || !strings.Contains(err.Error(), "resolve trusted proxy") {
 		t.Fatalf("startup error = %v", err)
-	}
-}
-
-func TestAcceptanceAnalysisRunnerDoesNotWrapAnUnconfiguredAgentAsANonNilInterface(t *testing.T) {
-	runner := acceptanceAnalysisRunner(nil)
-	if runner != nil {
-		t.Fatalf("unconfigured runner must stay nil: acceptance=%T", runner)
-	}
-
-	service := &agent.Service{}
-	runner = acceptanceAnalysisRunner(service)
-	if runner == nil {
-		t.Fatal("configured agent must be wired into acceptance analysis")
 	}
 }
 
@@ -209,39 +190,6 @@ func (*accountingVerificationRepository) ListCashEvents(context.Context, time.Ti
 	return nil, nil
 }
 
-func TestNotificationClientUsesExistingFeishuAppForConfiguredAlertChat(t *testing.T) {
-	chatFile := filepath.Join(t.TempDir(), "feishu-alert-chat-id")
-	if err := os.WriteFile(chatFile, []byte("oc_alert_group\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	recipientsFile := filepath.Join(t.TempDir(), "feishu-alert-recipients.json")
-	if err := os.WriteFile(recipientsFile, []byte(`{"open_ids":["operator-a"]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sender := &appTestMessageSender{}
-	client, err := notificationClient(config.Config{
-		FeishuAlertChatIDFile: chatFile, FeishuAlertRecipientsFile: recipientsFile,
-	}, sender)
-	if err != nil {
-		t.Fatal(err)
-	}
-	message := notify.RenderFeishu(notify.IncidentView{Title: "合成告警", Severity: "P1"})
-	if err := client.Send(context.Background(), message); err != nil {
-		t.Fatal(err)
-	}
-	if sender.chatID != "oc_alert_group" || sender.payload.MsgType != "interactive" {
-		t.Fatalf("sender=%#v", sender)
-	}
-	var card notify.Card
-	if err := json.Unmarshal(sender.payload.Content, &card); err != nil {
-		t.Fatal(err)
-	}
-	if len(card.Elements) == 0 || card.Elements[0].Text == nil ||
-		!strings.Contains(card.Elements[0].Text.Content, "<at id=operator-a></at>") {
-		t.Fatal("configured alert recipient was not mentioned")
-	}
-}
-
 func TestExecuteFastCandidatePersistsQualityReportWithoutNotificationDependencies(t *testing.T) {
 	now := time.Date(2026, 7, 22, 3, 0, 0, 0, time.UTC)
 	record := []byte(`{"schema_version":1,"run_id":"fast-1","channel_id":"candidate-17","profile_id":"quality-first-fast-v1","job_kind":"health_pulse","recorded_at":"2026-07-22T03:00:00Z","status":"passed","metrics":{"selected_models":["gpt-a"],"direct":{"request_count":2,"success_count":2,"success_rate":1,"latency":{"p95_ms":1200},"ttft":{"p95_ms":500}},"gateway":{"status":"unknown"}},"errors":[]}`)
@@ -307,14 +255,3 @@ func (f *fakeQualityRepository) Get(context.Context, string) (qualityreports.Rep
 	return f.report, true, nil
 }
 func (f *fakeQualityRepository) Put(context.Context, qualityreports.Report) error { return nil }
-
-type appTestMessageSender struct {
-	chatID  string
-	payload feishuapi.OutboundMessage
-}
-
-func (s *appTestMessageSender) SendMessage(_ context.Context, chatID string, payload feishuapi.OutboundMessage) (string, error) {
-	s.chatID = chatID
-	s.payload = payload
-	return "om_alert", nil
-}

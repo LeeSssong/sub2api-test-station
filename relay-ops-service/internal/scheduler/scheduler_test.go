@@ -18,7 +18,6 @@ func TestTickUsesFixedProductionCandidateAndDailySchedules(t *testing.T) {
 	store := newFakeJobStore()
 	productionCalls := 0
 	candidateCalls := map[domain.UpstreamID][]bool{}
-	reportCalls := 0
 	s := Scheduler{Mode: config.ModeProbe, Store: store, Timezone: shanghai, Clock: func() time.Time { return now },
 		Production: func(context.Context) error { productionCalls++; return nil },
 		Candidates: func(context.Context) ([]domain.UpstreamID, error) { return []domain.UpstreamID{17}, nil },
@@ -26,15 +25,14 @@ func TestTickUsesFixedProductionCandidateAndDailySchedules(t *testing.T) {
 			candidateCalls[id] = append(candidateCalls[id], probe)
 			return nil
 		},
-		DailyReport: func(context.Context) error { reportCalls++; return nil },
 	}
 	if err := s.Tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(4 * time.Minute)
 	_ = s.Tick(context.Background())
-	if productionCalls != 1 || len(candidateCalls[17]) != 1 || !candidateCalls[17][0] || reportCalls != 1 {
-		t.Fatalf("calls production=%d candidate=%v report=%d", productionCalls, candidateCalls, reportCalls)
+	if productionCalls != 1 || len(candidateCalls[17]) != 1 || !candidateCalls[17][0] {
+		t.Fatalf("calls production=%d candidate=%v", productionCalls, candidateCalls)
 	}
 	now = now.Add(time.Minute)
 	_ = s.Tick(context.Background())
@@ -43,8 +41,8 @@ func TestTickUsesFixedProductionCandidateAndDailySchedules(t *testing.T) {
 	}
 	now = time.Date(2026, 7, 19, 7, 0, 0, 0, time.UTC)
 	_ = s.Tick(context.Background())
-	if len(candidateCalls[17]) != 2 || reportCalls != 1 {
-		t.Fatalf("six hour calls candidate=%v report=%d", candidateCalls, reportCalls)
+	if len(candidateCalls[17]) != 2 {
+		t.Fatalf("six hour calls candidate=%v", candidateCalls)
 	}
 }
 
@@ -148,137 +146,6 @@ func TestReadOnlyNeverRunsPaidFastCandidateJobs(t *testing.T) {
 	}
 	if fastCalls != 0 || legacyCalls != 1 {
 		t.Fatalf("fast=%d legacy=%d", fastCalls, legacyCalls)
-	}
-}
-
-func TestTickRunsSiteMonitorEveryFifteenMinutesInReadOnlyMode(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
-	store := newFakeJobStore()
-	calls := 0
-	s := Scheduler{
-		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
-		SiteMonitor: func(context.Context) error { calls++; return nil },
-	}
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(14 * time.Minute)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(time.Minute)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 2 {
-		t.Fatalf("site monitor calls = %d, want 2", calls)
-	}
-}
-
-func TestTickRunsGroupAvailabilityEveryFiveMinutesInReadOnlyMode(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
-	store := newFakeJobStore()
-	calls := 0
-	s := Scheduler{
-		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
-		GroupAvailability: func(context.Context) error { calls++; return nil },
-	}
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(4 * time.Minute)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(time.Minute)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 2 {
-		t.Fatalf("group availability calls = %d, want 2", calls)
-	}
-}
-
-func TestTickRunsIncidentEscalationEveryMinute(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 28, 4, 0, 0, 0, time.UTC)
-	store := newFakeJobStore()
-	calls := 0
-	s := Scheduler{
-		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
-		IncidentEscalation: func(context.Context) error { calls++; return nil },
-	}
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(30 * time.Second)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(30 * time.Second)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 2 || !store.due["incident-escalation"].Equal(now.Add(time.Minute)) {
-		t.Fatalf("calls=%d due=%v", calls, store.due)
-	}
-}
-
-func TestTickRunsNotificationRetryEveryMinute(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 28, 4, 0, 0, 0, time.UTC)
-	store := newFakeJobStore()
-	calls := 0
-	s := Scheduler{
-		Mode: config.ModeReadOnly, Store: store, Clock: func() time.Time { return now },
-		NotificationRetry: func(context.Context) error { calls++; return nil },
-	}
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(30 * time.Second)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(30 * time.Second)
-	if err := s.Tick(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 2 || !store.due["notification-retry"].Equal(now.Add(time.Minute)) {
-		t.Fatalf("calls=%d due=%v", calls, store.due)
-	}
-}
-
-func TestSiteMonitorDoesNotChangeClosedOrExistingJobScheduling(t *testing.T) {
-	t.Parallel()
-	now := time.Date(2026, 7, 23, 0, 0, 0, 0, time.UTC)
-	for _, test := range []struct {
-		name           string
-		mode           string
-		wantSiteCalls  int
-		wantProduction int
-	}{
-		{name: "closed", mode: config.ModeClosed, wantSiteCalls: 0, wantProduction: 0},
-		{name: "read_only", mode: config.ModeReadOnly, wantSiteCalls: 1, wantProduction: 1},
-	} {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			siteCalls := 0
-			productionCalls := 0
-			s := Scheduler{
-				Mode: test.mode, Store: newFakeJobStore(), Clock: func() time.Time { return now },
-				Production:  func(context.Context) error { productionCalls++; return nil },
-				SiteMonitor: func(context.Context) error { siteCalls++; return nil },
-			}
-			if err := s.Tick(context.Background()); err != nil {
-				t.Fatal(err)
-			}
-			if siteCalls != test.wantSiteCalls || productionCalls != test.wantProduction {
-				t.Fatalf("site=%d production=%d", siteCalls, productionCalls)
-			}
-		})
 	}
 }
 

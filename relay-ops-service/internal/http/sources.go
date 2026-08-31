@@ -129,11 +129,6 @@ type ProductionRepository interface {
 	ListProduction(context.Context) ([]upstreams.Source, error)
 }
 
-type OpsEvidenceRepository interface {
-	ListIncidentSummaries(context.Context, int) ([]string, error)
-	ListAgentSummaries(context.Context, int) ([]string, error)
-}
-
 type AccountQualitySource interface {
 	Read(time.Time) (accountquality.Result, error)
 }
@@ -150,8 +145,7 @@ type DatabaseOpsSource struct {
 	Pricing    interface {
 		LatestPricingSnapshot(context.Context, domain.UpstreamID) (store.PricingSnapshot, bool, error)
 	}
-	Evidence OpsEvidenceRepository
-	Quality  interface {
+	Quality interface {
 		ListQualityReports(context.Context, int) ([]qualityreports.Report, error)
 	}
 	Native         NativeOpsReader
@@ -190,20 +184,7 @@ func (s DatabaseOpsSource) Snapshot(ctx context.Context) (OpsView, error) {
 			accountQualityView = accountquality.View{Available: true, Stale: true}
 		}
 	}
-	incidents := []string{}
-	agentReports := []string{}
 	qualityViews := []QualityReportView{}
-	if s.Evidence != nil {
-		var err error
-		incidents, err = s.Evidence.ListIncidentSummaries(ctx, 10)
-		if err != nil {
-			return OpsView{}, err
-		}
-		agentReports, err = s.Evidence.ListAgentSummaries(ctx, 10)
-		if err != nil {
-			return OpsView{}, err
-		}
-	}
 	if s.Quality != nil {
 		reports, err := s.Quality.ListQualityReports(ctx, 20)
 		if err != nil {
@@ -219,9 +200,9 @@ func (s DatabaseOpsSource) Snapshot(ctx context.Context) (OpsView, error) {
 	}
 	return OpsView{
 		PublicGroups: publicGroups, NativeMonitorURL: "/monitor", QualityReports: qualityViews,
-		Incidents: incidents, AgentReports: agentReports, AccountQuality: accountQualityView,
-		SiteRuntime: siteRuntime,
-		RefreshedAt: now.Format("2006-01-02 15:04 UTC"),
+		AccountQuality: accountQualityView,
+		SiteRuntime:    siteRuntime,
+		RefreshedAt:    now.Format("2006-01-02 15:04 UTC"),
 	}, nil
 }
 

@@ -34,14 +34,8 @@ type Scheduler struct {
 	FastCandidate       func(context.Context, domain.UpstreamID, string, bool) error
 	UsageSessions       func(context.Context) ([]billing.SessionConfig, error)
 	Usage               func(context.Context, billing.SessionConfig) error
-	SiteMonitor         func(context.Context) error
-	DailyReport         func(context.Context) error
 	AccountingDaily     func(context.Context) error
-	IncidentEscalation  func(context.Context) error
-	NotificationRetry   func(context.Context) error
 	ReconciliationSweep func(context.Context) error
-
-	GroupAvailability func(context.Context) error
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
@@ -71,18 +65,8 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		now = s.Clock().UTC()
 	}
 	var failures []error
-	if s.NotificationRetry != nil {
-		if err := s.runDue(ctx, "notification-retry", now, time.Minute, s.NotificationRetry); err != nil {
-			failures = append(failures, err)
-		}
-	}
 	if s.ReconciliationSweep != nil {
 		if err := s.runDue(ctx, "reconciliation-sweep", now, time.Minute, s.ReconciliationSweep); err != nil {
-			failures = append(failures, err)
-		}
-	}
-	if s.IncidentEscalation != nil {
-		if err := s.runDue(ctx, "incident-escalation", now, time.Minute, s.IncidentEscalation); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -137,24 +121,9 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 			}
 		}
 	}
-	if s.SiteMonitor != nil {
-		if err := s.runDue(ctx, "site-monitor", now, 15*time.Minute, s.SiteMonitor); err != nil {
-			failures = append(failures, err)
-		}
-	}
-	if s.GroupAvailability != nil {
-		if err := s.runDue(ctx, "group-availability", now, 5*time.Minute, s.GroupAvailability); err != nil {
-			failures = append(failures, err)
-		}
-	}
 	location := s.Timezone
 	if location == nil {
 		location = time.FixedZone("Asia/Shanghai", 8*60*60)
-	}
-	if s.DailyReport != nil && now.In(location).Hour() >= 9 {
-		if err := s.runDue(ctx, "daily-report", now, 24*time.Hour, s.DailyReport); err != nil {
-			failures = append(failures, err)
-		}
 	}
 	local := now.In(location)
 	if s.AccountingDaily != nil &&

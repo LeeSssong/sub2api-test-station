@@ -43,7 +43,6 @@ type UsageEvidence struct {
 type SessionExpiredError struct {
 	UpstreamID domain.UpstreamID
 	LoginURL   string
-	Notify     bool
 }
 
 func (e *SessionExpiredError) Error() string {
@@ -51,7 +50,7 @@ func (e *SessionExpiredError) Error() string {
 }
 
 type SessionReporter interface {
-	RecordExpired(context.Context, domain.UpstreamID, string, time.Time) (bool, error)
+	RecordExpired(context.Context, domain.UpstreamID, string, time.Time) error
 	RecordHealthy(context.Context, domain.UpstreamID, time.Time) error
 }
 
@@ -99,11 +98,10 @@ func (s SessionReader) ReadUsage(ctx context.Context, cfg SessionConfig) (UsageE
 			if attempt == 0 {
 				continue
 			}
-			notify := false
 			if s.Reporter != nil {
-				notify, _ = s.Reporter.RecordExpired(ctx, cfg.UpstreamID, cfg.LoginURL, now)
+				_ = s.Reporter.RecordExpired(ctx, cfg.UpstreamID, cfg.LoginURL, now)
 			}
-			return UsageEvidence{}, &SessionExpiredError{UpstreamID: cfg.UpstreamID, LoginURL: cfg.LoginURL, Notify: notify}
+			return UsageEvidence{}, &SessionExpiredError{UpstreamID: cfg.UpstreamID, LoginURL: cfg.LoginURL}
 		}
 		if status < 200 || status >= 300 {
 			return UsageEvidence{}, fmt.Errorf("upstream usage page returned HTTP %d", status)

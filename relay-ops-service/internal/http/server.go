@@ -7,22 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
-	"log"
 	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/accountquality"
 	"example.invalid/relay-ops-service/internal/adminauth"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/controlplane"
-	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/opsmetrics"
 	"example.invalid/relay-ops-service/internal/reconciliation"
@@ -64,8 +60,6 @@ type OpsView struct {
 	Production       []ProductionSourceView
 	Candidates       []CandidateView
 	QualityReports   []QualityReportView
-	Incidents        []string
-	AgentReports     []string
 	SiteRuntime      opsmetrics.Snapshot
 	AccountQuality   accountquality.View
 	RefreshedAt      string
@@ -90,14 +84,6 @@ type ProductionUpstreamService interface {
 type BillingSessionService interface {
 	Configure(context.Context, domain.AdminActor, billing.SessionInput) (billing.SessionConfig, error)
 }
-type SyntheticAcceptanceService interface {
-	Run(context.Context) (acceptance.Result, error)
-}
-
-type DailyReportAcceptanceService interface {
-	Run(context.Context) (dailyreport.Result, error)
-}
-
 type QualityPreviewInput struct {
 	ReportID   string `json:"report_id"`
 	ReportHash string `json:"report_hash"`
@@ -144,8 +130,6 @@ type Dependencies struct {
 	Candidates       CandidateService
 	Upstreams        ProductionUpstreamService
 	Billing          BillingSessionService
-	Acceptance       SyntheticAcceptanceService
-	DailyReport      DailyReportAcceptanceService
 	QualityReview    QualityReviewService
 	Accounting       AccountingService
 	Reconciliation   ReconciliationService
@@ -260,55 +244,6 @@ func lowerHex(value string, length int) bool {
 		}
 	}
 	return true
-}
-
-func (s *server) syntheticAcceptance(w http.ResponseWriter, request *http.Request) {
-	if !s.validMutation(request) {
-		writeAPIError(w, http.StatusForbidden, "ORIGIN_REJECTED")
-		return
-	}
-	// The endpoint accepts no user-controlled event data. An empty JSON object
-	// is allowed so browser clients can use the same mutation helper.
-	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, 256))
-	var input map[string]any
-	if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
-		writeAPIError(w, http.StatusBadRequest, "INVALID_SYNTHETIC_ACCEPTANCE")
-		return
-	}
-	if len(input) > 0 {
-		writeAPIError(w, http.StatusBadRequest, "SYNTHETIC_INPUT_NOT_ALLOWED")
-		return
-	}
-	result, err := s.dependencies.Acceptance.Run(request.Context())
-	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "SYNTHETIC_ACCEPTANCE_FAILED")
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *server) dailyReportAcceptance(w http.ResponseWriter, request *http.Request) {
-	if !s.validMutation(request) {
-		writeAPIError(w, http.StatusForbidden, "ORIGIN_REJECTED")
-		return
-	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, request.Body, 256))
-	var input map[string]any
-	if err := decoder.Decode(&input); err != nil && !errors.Is(err, io.EOF) {
-		writeAPIError(w, http.StatusBadRequest, "INVALID_DAILY_REPORT_ACCEPTANCE")
-		return
-	}
-	if len(input) > 0 {
-		writeAPIError(w, http.StatusBadRequest, "DAILY_REPORT_INPUT_NOT_ALLOWED")
-		return
-	}
-	result, err := s.dependencies.DailyReport.Run(request.Context())
-	if err != nil {
-		log.Printf("daily report acceptance failed: %v", err)
-		writeAPIError(w, http.StatusInternalServerError, "DAILY_REPORT_ACCEPTANCE_FAILED")
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *server) configureBillingSession(w http.ResponseWriter, request *http.Request) {

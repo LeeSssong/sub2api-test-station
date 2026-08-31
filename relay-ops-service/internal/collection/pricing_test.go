@@ -14,8 +14,6 @@ import (
 
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/domain"
-	"example.invalid/relay-ops-service/internal/notificationpolicy"
-	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/pricing"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/store"
@@ -28,19 +26,12 @@ func TestProductionCollectionDetectsMultiplierOnceWithoutPaidProbe(t *testing.T)
 		`{"multiplier":"0.10x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`,
 	}}
 	repository := &fakeRepository{}
-	notifier := &fakeNotifier{}
 	probe := &fakeProbe{}
 	collector := Collector{
 		Repository: repository,
 		Fetcher:    pricing.Fetcher{Client: &http.Client{Transport: pages}, Resolver: publicResolver{}},
 		Extractor:  pricing.CompositeExtractor{},
-		Notifier:   notifier,
-		Decisions:  &fakeDecisionRecorder{},
-		Policy: notificationpolicy.Policy{
-			Version: 1, Mode: notificationpolicy.ModeEnabled,
-			Feishu: notificationpolicy.FeishuPolicy{PricingNoticeEnabled: true},
-		},
-		Probes: probe,
+		Probes:     probe,
 	}
 	source := Source{ID: 7, Name: "Neko", Role: RoleProduction, PricingURL: "https://neko.example/pricing", Enabled: true}
 	ctx := context.Background()
@@ -52,18 +43,6 @@ func TestProductionCollectionDetectsMultiplierOnceWithoutPaidProbe(t *testing.T)
 	if len(repository.snapshots) != 2 {
 		t.Fatalf("snapshots = %d, want 2 changed hashes", len(repository.snapshots))
 	}
-	if len(notifier.messages) != 1 {
-		t.Fatalf("notifications = %d, want one semantic change", len(notifier.messages))
-	}
-	if len(notifier.identities) != 1 ||
-		notifier.identities[0].Family != "pricing_notice" ||
-		notifier.identities[0].SourceKind != "public_pricing" ||
-		!strings.HasPrefix(notifier.identities[0].Key, "pricing:7:") {
-		t.Fatalf("delivery identity=%#v", notifier.identities)
-	}
-	if notifier.messages[0].OccurrenceNo != 0 || notifier.messages[0].Transition != "" {
-		t.Fatalf("one-shot gained incident identity=%#v", notifier.messages[0])
-	}
 	if probe.calls != 0 {
 		t.Fatalf("production probe calls = %d, want 0", probe.calls)
 	}
@@ -72,7 +51,6 @@ func TestProductionCollectionDetectsMultiplierOnceWithoutPaidProbe(t *testing.T)
 func TestCandidateCollectionOnlyProbesWhenExplicitlyAllowed(t *testing.T) {
 	repository := &fakeRepository{}
 	probe := &fakeProbe{}
-	notifier := &fakeNotifier{}
 	collector := Collector{
 		Repository: repository,
 		Fetcher: pricing.Fetcher{Client: &http.Client{Transport: &sequenceTransport{bodies: []string{
@@ -80,11 +58,6 @@ func TestCandidateCollectionOnlyProbesWhenExplicitlyAllowed(t *testing.T) {
 			`{"multiplier":"0.10x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`,
 		}}}, Resolver: publicResolver{}},
 		Extractor: pricing.CompositeExtractor{}, Probes: probe,
-		Notifier: notifier, Decisions: &fakeDecisionRecorder{},
-		Policy: notificationpolicy.Policy{
-			Version: 1, Mode: notificationpolicy.ModeEnabled,
-			Feishu: notificationpolicy.FeishuPolicy{PricingNoticeEnabled: true},
-		},
 	}
 	source := Source{ID: 8, Name: "Candidate", Role: RoleCandidate, BaseURL: "https://candidate.example/v1", PricingURL: "https://candidate.example/pricing", ProbeSecretRef: "file:/run/secrets/candidate", Enabled: true}
 	if err := collector.Run(context.Background(), source, false); err != nil {
@@ -98,75 +71,6 @@ func TestCandidateCollectionOnlyProbesWhenExplicitlyAllowed(t *testing.T) {
 	}
 	if probe.calls != 1 {
 		t.Fatalf("explicit probe calls = %d, want 1", probe.calls)
-	}
-	if len(notifier.messages) != 0 {
-		t.Fatalf("candidate pricing entered active notification system: %#v", notifier.messages)
-	}
-}
-
-func TestProductionCollectionDoesNotNotifyForHTMLOnlyChange(t *testing.T) {
-	pages := &sequenceTransport{
-		contentType: "text/html",
-		bodies: []string{
-			`<html><body><p>倍率：0.07x</p><small>页面版本一</small></body></html>`,
-			`<html><body><p>倍率：0.07x</p><small>页面版本二</small></body></html>`,
-		},
-	}
-	notifier := &fakeNotifier{}
-	collector := pricingCollector(pages, notifier, &fakeDecisionRecorder{}, notificationpolicy.ModeEnabled)
-	source := Source{ID: 7, Name: "Neko", Role: RoleProduction, PricingURL: "https://neko.example/pricing", Enabled: true}
-	if err := collector.Run(context.Background(), source, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := collector.Run(context.Background(), source, false); err != nil {
-		t.Fatal(err)
-	}
-	if len(notifier.messages) != 0 {
-		t.Fatalf("HTML-only change sent pricing event: %#v", notifier.messages)
-	}
-}
-
-func TestProductionCollectionDoesNotNotifyWhenEvidenceBecomesUnparseable(t *testing.T) {
-	pages := &sequenceTransport{bodies: []string{
-		`{"multiplier":"0.07x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`,
-		`<html><body>pricing temporarily unavailable</body></html>`,
-	}}
-	notifier := &fakeNotifier{}
-	collector := pricingCollector(pages, notifier, &fakeDecisionRecorder{}, notificationpolicy.ModeEnabled)
-	source := Source{ID: 7, Name: "Neko", Role: RoleProduction, PricingURL: "https://neko.example/pricing", Enabled: true}
-	if err := collector.Run(context.Background(), source, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := collector.Run(context.Background(), source, false); err != nil {
-		t.Fatal(err)
-	}
-	if len(notifier.messages) != 0 {
-		t.Fatalf("unparseable evidence sent pricing event: %#v", notifier.messages)
-	}
-}
-
-func TestProductionCollectionShadowRecordsWithoutSending(t *testing.T) {
-	pages := &sequenceTransport{bodies: []string{
-		`{"multiplier":"0.07x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`,
-		`{"multiplier":"0.10x","models":[{"model":"gpt-a","input":"1","output":"8"}]}`,
-	}}
-	notifier := &fakeNotifier{}
-	decisions := &fakeDecisionRecorder{}
-	collector := pricingCollector(pages, notifier, decisions, notificationpolicy.ModeShadow)
-	source := Source{ID: 7, Name: "Neko", Role: RoleProduction, PricingURL: "https://neko.example/pricing", Enabled: true}
-	if err := collector.Run(context.Background(), source, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := collector.Run(context.Background(), source, false); err != nil {
-		t.Fatal(err)
-	}
-	if len(notifier.messages) != 0 {
-		t.Fatalf("shadow mode sent pricing event: %#v", notifier.messages)
-	}
-	if len(decisions.records) != 1 ||
-		decisions.records[0].Decision != "shadow_would_deliver" ||
-		!strings.HasPrefix(decisions.records[0].Reason, "pricing:7:") {
-		t.Fatalf("decisions = %#v", decisions.records)
 	}
 }
 
@@ -201,26 +105,6 @@ func TestCollectionReparsesLegacySnapshotAndRecordsUnparseableEvidence(t *testin
 	}
 	if _, exists := evidence["advertised_multiplier_bps"]; exists || evidence["models"] != nil {
 		t.Fatalf("unparseable page produced pricing evidence: %#v", evidence)
-	}
-}
-
-func pricingCollector(
-	pages *sequenceTransport,
-	notifier *fakeNotifier,
-	decisions *fakeDecisionRecorder,
-	mode notificationpolicy.DeliveryMode,
-) Collector {
-	return Collector{
-		Repository: &fakeRepository{},
-		Fetcher: pricing.Fetcher{
-			Client: &http.Client{Transport: pages}, Resolver: publicResolver{},
-		},
-		Extractor: pricing.CompositeExtractor{},
-		Notifier:  notifier, Decisions: decisions,
-		Policy: notificationpolicy.Policy{
-			Version: 1, Mode: mode,
-			Feishu: notificationpolicy.FeishuPolicy{PricingNoticeEnabled: true},
-		},
 	}
 }
 
@@ -265,33 +149,6 @@ func (r *fakeRepository) AppendPricingSnapshot(_ context.Context, snapshot store
 }
 func (r *fakeRepository) AppendProbeRun(context.Context, domain.UpstreamID, probes.ProbeRun, time.Time) error {
 	r.runs++
-	return nil
-}
-
-type fakeNotifier struct {
-	identities []notify.OneShotIdentity
-	messages   []notify.FeishuMessage
-}
-
-func (n *fakeNotifier) SendOneShot(
-	_ context.Context,
-	identity notify.OneShotIdentity,
-	message notify.FeishuMessage,
-) error {
-	n.identities = append(n.identities, identity)
-	n.messages = append(n.messages, message)
-	return nil
-}
-
-type fakeDecisionRecorder struct {
-	records []store.DecisionRecord
-}
-
-func (recorder *fakeDecisionRecorder) RecordNotificationDecision(
-	_ context.Context,
-	record store.DecisionRecord,
-) error {
-	recorder.records = append(recorder.records, record)
 	return nil
 }
 

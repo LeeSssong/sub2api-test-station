@@ -10,29 +10,19 @@ import (
 	"os"
 	"time"
 
-	"example.invalid/relay-ops-service/internal/acceptance"
 	"example.invalid/relay-ops-service/internal/accounting"
 	"example.invalid/relay-ops-service/internal/adapter"
 	"example.invalid/relay-ops-service/internal/adminauth"
-	"example.invalid/relay-ops-service/internal/agent"
-	"example.invalid/relay-ops-service/internal/alerting"
 	"example.invalid/relay-ops-service/internal/billing"
 	"example.invalid/relay-ops-service/internal/candidates"
 	"example.invalid/relay-ops-service/internal/collection"
 	"example.invalid/relay-ops-service/internal/compare"
 	"example.invalid/relay-ops-service/internal/config"
 	"example.invalid/relay-ops-service/internal/controlplane"
-	"example.invalid/relay-ops-service/internal/dailyreport"
 	"example.invalid/relay-ops-service/internal/domain"
 	"example.invalid/relay-ops-service/internal/events"
-	"example.invalid/relay-ops-service/internal/feishuapi"
-	"example.invalid/relay-ops-service/internal/groupimpact"
 	httpserver "example.invalid/relay-ops-service/internal/http"
-	"example.invalid/relay-ops-service/internal/incidents"
-	"example.invalid/relay-ops-service/internal/nativealerts"
-	"example.invalid/relay-ops-service/internal/notify"
 	"example.invalid/relay-ops-service/internal/pricing"
-	"example.invalid/relay-ops-service/internal/pricingevents"
 	"example.invalid/relay-ops-service/internal/probes"
 	"example.invalid/relay-ops-service/internal/projection"
 	"example.invalid/relay-ops-service/internal/qualityreports"
@@ -44,21 +34,14 @@ import (
 	"example.invalid/relay-ops-service/internal/upstreams"
 )
 
-const feishuOpenAPIBaseURL = "https://open.feishu.cn"
-
 type App struct {
 	Store      *store.Store
 	Scheduler  *scheduler.Scheduler
 	Handler    http.Handler
 	Readiness  *Readiness
-	Agent      *agent.Service
 	Accounting *accounting.Service
 	Consumer   *events.Consumer
 	CoreOutbox *sub2api.CoreOutbox
-}
-
-type incidentMessageSender interface {
-	SendIncident(context.Context, string, string, notify.FeishuMessage) error
 }
 
 type fastCandidateRepository interface {
@@ -134,13 +117,6 @@ func (a qualityReviewAdapter) Preview(ctx context.Context, actor domain.AdminAct
 	}, nil
 }
 
-func acceptanceAnalysisRunner(service *agent.Service) acceptance.AnalysisRunner {
-	if service == nil {
-		return nil
-	}
-	return service
-}
-
 func configuredUpstreamPricingResolver(configPath string) *upstreampricing.Resolver {
 	if configPath == "" {
 		return nil
@@ -148,64 +124,6 @@ func configuredUpstreamPricingResolver(configPath string) *upstreampricing.Resol
 	return &upstreampricing.Resolver{
 		ConfigPath: configPath, RequireHTTPS: true, TTL: 10 * time.Minute,
 	}
-}
-
-// upstreamPricingFallback keeps the current daily-report fallback contract.
-// Pricing events receive the Resolver itself so an explicit mapping can
-// suppress a duplicate account-multiplier event.
-func upstreamPricingFallback(configPath string) func(context.Context, string) *float64 {
-	return upstreamPricingFallbackFromResolver(configuredUpstreamPricingResolver(configPath))
-}
-
-func upstreamPricingFallbackFromResolver(
-	resolver *upstreampricing.Resolver,
-) func(context.Context, string) *float64 {
-	if resolver == nil {
-		return nil
-	}
-	return func(ctx context.Context, accountName string) *float64 {
-		value, ok := resolver.Lookup(ctx, accountName)
-		if !ok {
-			return nil
-		}
-		return value
-	}
-}
-
-func notificationClient(cfg config.Config, appSender notify.MessageSender) (notify.MessageClient, error) {
-	if cfg.FeishuAlertChatIDFile != "" {
-		if appSender == nil {
-			return nil, fmt.Errorf("Feishu App alert sender is unavailable")
-		}
-		chatID, err := readFeishuSecret(cfg.FeishuAlertChatIDFile)
-		if err != nil {
-			return nil, fmt.Errorf("Feishu alert chat ID is unavailable")
-		}
-		recipients, err := notify.LoadRecipientOpenIDs(cfg.FeishuAlertRecipientsFile)
-		if err != nil {
-			return nil, fmt.Errorf("Feishu alert recipients are unavailable")
-		}
-		return notify.AppClient{
-			Sender: appSender, ChatID: chatID, BaseURL: cfg.PublicBaseURL,
-			RecipientOpenIDs: recipients,
-		}, nil
-	}
-	if cfg.FeishuWebhookFile != "" {
-		return notify.Client{WebhookFile: cfg.FeishuWebhookFile, BaseURL: cfg.PublicBaseURL}, nil
-	}
-	return nil, nil
-}
-
-func readFeishuSecret(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil || len(data) > 64<<10 {
-		return "", errors.New("secret is unavailable")
-	}
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
-		return "", errors.New("secret is empty")
-	}
-	return string(data), nil
 }
 
 func New(ctx context.Context, cfg config.Config) (*App, error) {
@@ -227,9 +145,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		return nil, err
 	}
 	accountingService := configuredAccountingService(cfg, database)
-	if _, err := database.SupersedeLegacyNotificationIncidents(ctx, time.Now().UTC()); err != nil {
-		return nil, err
-	}
 	reader, err := sub2api.NewHTTPReader(cfg.Sub2APIBaseURL, cfg.Sub2APIAdminKeyFile)
 	if err != nil {
 		return nil, err
@@ -254,14 +169,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		}()
 	}
 	readiness := &Readiness{Database: database}
-	syncer := sub2api.Synchronizer{
-		Reader: reader,
-		Sink:   database,
-		Observer: nativealerts.Service{
-			Signals: database,
-			Policy:  cfg.NotificationPolicy,
-		},
-	}
+	syncer := sub2api.Synchronizer{Reader: reader, Sink: database}
 	if cfg.Mode != config.ModeClosed {
 		bootstrapCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		_ = BootstrapNativeReadiness(bootstrapCtx, syncer.Sync, readiness)
@@ -270,57 +178,10 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	candidateService := configuredCandidateService(cfg, database)
 	productionService := upstreams.Service{Repository: database}
 	probeRunner := &probes.V2Executor{RubyPath: cfg.RubyPath, ScriptPath: cfg.V2ScriptPath, ProfilePath: cfg.CandidateProfilePath, FastProfilePath: cfg.FastProfilePath, QualificationProfilePath: cfg.QualificationProfilePath, MaxOutputBytes: 2 << 20, MaxRequestCost: domain.MicroUSD(1_000)}
-	var analysisService *agent.Service
-	if cfg.AgentBaseURL != "" && cfg.AgentAPIKeyFile != "" && cfg.AgentModel != "" {
-		client := &agent.Client{BaseURL: cfg.AgentBaseURL, APIKeyFile: cfg.AgentAPIKeyFile, Model: cfg.AgentModel}
-		analysisService = &agent.Service{Analyzer: client, Repository: database}
-	}
-	acceptanceAnalysis := acceptanceAnalysisRunner(analysisService)
-	var appAlertSender notify.MessageSender
-	if cfg.FeishuAlertChatIDFile != "" {
-		appClient, clientErr := feishuapi.NewClient(feishuOpenAPIBaseURL, cfg.FeishuAppIDFile, cfg.FeishuAppSecretFile)
-		if clientErr != nil {
-			return nil, fmt.Errorf("Feishu App alert client is unavailable")
-		}
-		appAlertSender = appClient
-	}
-	notificationTransport, err := notificationClient(cfg, appAlertSender)
-	if err != nil {
-		return nil, err
-	}
-	var notifier incidentMessageSender
-	var oneShotNotifier pricingevents.EventSender
-	if notificationTransport != nil {
-		notifier = notify.DeliverySender{
-			Client: notificationTransport, Repository: database,
-		}
-		oneShotNotifier = notify.OneShotSender{
-			Client: notificationTransport, Repository: database,
-		}
-	}
-	incidentMachine := &incidents.Machine{Repository: database, Policy: incidents.DefaultPolicy()}
 	pricingResolver := configuredUpstreamPricingResolver(cfg.UpstreamGroupMappingFile)
-	pricingFallback := upstreamPricingFallbackFromResolver(pricingResolver)
-	dailyReportService := dailyreport.Service{
-		Reader: reader, Summary: database, Reconciliation: database, Notifier: oneShotNotifier,
-		Decisions: database, Policy: cfg.NotificationPolicy,
-		Timezone: cfg.Timezone, Fallback: pricingFallback,
-	}
 	collector := &collection.Collector{
 		Repository: database, Fetcher: pricing.Fetcher{}, Extractor: pricing.CompositeExtractor{}, Probes: probeRunner,
-		Notifier: oneShotNotifier, Decisions: database, Policy: cfg.NotificationPolicy,
 	}
-	pricingEventService := pricingevents.Service{
-		Accounts: reader, Multipliers: reader, Baselines: database,
-		Resolver: pricingResolver, Notifier: oneShotNotifier, Decisions: database,
-		Policy: cfg.NotificationPolicy,
-	}
-	groupImpactService := groupimpact.Service{
-		Reader: reader, Signals: database, Incidents: incidentMachine,
-		Notifier: notifier, Policy: cfg.NotificationPolicy, Decisions: database,
-	}
-	escalationService := alerting.Service{Repository: database, Sender: notifier}
-	retryService := notify.DeliveryRetryService{Repository: database, Client: notificationTransport}
 	usageReader := billing.SessionReader{Reporter: database}
 	costCollector := reconciliation.Collector{
 		Sources:    database,
@@ -485,38 +346,11 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 			}
 			return nil
 		},
-		DailyReport: func(runCtx context.Context) error {
-			_, err := dailyReportService.Run(runCtx)
-			return err
-		},
 		AccountingDaily: accountingDaily,
-		SiteMonitor: func(runCtx context.Context) error {
-			return errors.Join(
-				groupImpactService.Run(runCtx),
-				pricingEventService.Run(runCtx),
-			)
-		},
-		IncidentEscalation: func(runCtx context.Context) error {
-			if notifier == nil {
-				return nil
-			}
-			return escalationService.Run(runCtx)
-		},
-		NotificationRetry: func(runCtx context.Context) error {
-			if notificationTransport == nil {
-				return nil
-			}
-			return retryService.Run(runCtx)
-		},
 		ReconciliationSweep: func(runCtx context.Context) error {
 			now := time.Now().UTC()
 			_, err := reconciliationRuntime.Sweep(runCtx, now.Add(-24*time.Hour), now)
 			return err
-		},
-		GroupAvailability: func(runCtx context.Context) error {
-			return runGroupAvailability(
-				runCtx, reader, database, cfg.NotificationPolicy, time.Now().UTC(),
-			)
 		},
 	}
 	qualityRepository := qualityReportStoreAdapter{Store: database}
@@ -525,8 +359,6 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 		BaseOrigin: cfg.PublicBaseURL, Auth: reader, TrustedProxy: trustedProxy, Pricing: httpserver.NativePricingSource{Reader: reader},
 		Candidates: candidateService, Upstreams: productionService,
 		Billing:        billing.SessionRegistrationService{Repository: database},
-		Acceptance:     acceptance.Service{Incidents: incidentMachine, Agent: acceptanceAnalysis},
-		DailyReport:    dailyReportService,
 		Reconciliation: reconciliationRuntime,
 		CostGuard:      reconciliationRuntime,
 		QualityReview:  qualityReview,
@@ -551,7 +383,7 @@ func New(ctx context.Context, cfg config.Config) (*App, error) {
 	root.Handle("/readyz", HealthHandler(readiness))
 	root.Handle("/", operations)
 	failed = false
-	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Agent: analysisService, Accounting: accountingService, Consumer: consumer, CoreOutbox: coreOutbox}, nil
+	return &App{Store: database, Scheduler: scheduled, Handler: root, Readiness: readiness, Accounting: accountingService, Consumer: consumer, CoreOutbox: coreOutbox}, nil
 }
 
 func configuredTrustedProxy(cfg config.Config, lookup func(string) ([]net.IP, error)) (adminauth.TrustedProxy, error) {

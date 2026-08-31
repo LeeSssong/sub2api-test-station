@@ -159,35 +159,6 @@ CREATE TABLE IF NOT EXISTS relay_ops.candidate_comparisons (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS relay_ops.incidents (
-    id BIGSERIAL PRIMARY KEY,
-    incident_key TEXT NOT NULL UNIQUE,
-    severity TEXT NOT NULL CHECK (severity IN ('P0', 'P1', 'P2')),
-    state TEXT NOT NULL,
-    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_notified_at TIMESTAMPTZ,
-    next_review_at TIMESTAMPTZ,
-    baseline_value TEXT,
-    current_value TEXT,
-    sample_count BIGINT NOT NULL DEFAULT 1,
-    evidence_refs JSONB NOT NULL DEFAULT '[]'::JSONB,
-    recommended_action TEXT,
-    human_decision TEXT,
-    closed_by BIGINT
-);
-
-CREATE TABLE IF NOT EXISTS relay_ops.notification_deliveries (
-    id BIGSERIAL PRIMARY KEY,
-    incident_id BIGINT NOT NULL REFERENCES relay_ops.incidents(id),
-    dedup_key TEXT NOT NULL UNIQUE,
-    message_hash TEXT NOT NULL,
-    delivery_status TEXT NOT NULL,
-    response_code INTEGER,
-    delivered_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS relay_ops.auth_sessions (
     upstream_id BIGINT PRIMARY KEY REFERENCES relay_ops.upstreams(id),
     secret_ref TEXT NOT NULL,
@@ -198,23 +169,7 @@ CREATE TABLE IF NOT EXISTS relay_ops.auth_sessions (
     last_refresh_at TIMESTAMPTZ,
     last_success_at TIMESTAMPTZ,
     last_failure_reason TEXT,
-    last_notified_at TIMESTAMPTZ,
     scope TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS relay_ops.agent_analyses (
-    id BIGSERIAL PRIMARY KEY,
-    analysis_id TEXT NOT NULL UNIQUE,
-    incident_id BIGINT NOT NULL REFERENCES relay_ops.incidents(id),
-    model_provider TEXT NOT NULL,
-    prompt_contract_version TEXT NOT NULL,
-    result JSONB NOT NULL,
-    confidence DOUBLE PRECISION,
-    requires_human_approval BOOLEAN NOT NULL,
-    delivery_status TEXT NOT NULL,
-    output_hash TEXT NOT NULL,
-    estimated_cost_microusd BIGINT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS relay_ops.audit_events (

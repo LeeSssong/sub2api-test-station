@@ -149,11 +149,11 @@
 - Consumes: existing relay-ops app/store/notify wiring.
 - Produces: a compatibility build that has no old notification writers, schedulers, policy families, retry payload writes, migration embedding or startup queries for retired tables; explicit cleanup command remains disabled unless release gate invokes it.
 
-- [ ] **Step 1: Write failing contract tests** that start the store against a schema without retired tables and assert startup/provision performs no query/create against them; assert old notifier constructors and policy families are unreachable.
-- [ ] **Step 2: Run** `go test ./internal/store ./internal/app ./internal/notify ./internal/notificationpolicy` and verify expected FAIL.
-- [ ] **Step 3: Remove old notification runtime wiring and embedded migrations; add explicit ordered retire SQL for the nine authorized tables and a dry-run/count-only guard that never logs BaseURL or credentials.
-- [ ] **Step 4: Re-run relay-ops tests** and assert billing/externalization/non-notification services remain constructible.
-- [ ] **Step 5: Commit** `refactor: retire legacy feishu notification runtime`.
+- [x] **Step 1: Write failing contract tests** that start the store against a schema without retired tables and assert startup/provision performs no query/create against them; assert old notifier constructors and policy families are unreachable.
+- [x] **Step 2: Run** `go test ./internal/store ./internal/app ./internal/notify ./internal/notificationpolicy` and verify expected FAIL.
+- [x] **Step 3: Remove old notification runtime wiring and embedded migrations; add explicit ordered retire SQL for the nine authorized tables and a dry-run/count-only guard that never logs BaseURL or credentials.
+- [x] **Step 4: Re-run relay-ops tests** and assert billing/externalization/non-notification services remain constructible.
+- [x] **Step 5: Commit** `refactor: retire legacy feishu notification runtime`.
 
 ### Task 8: Cross-boundary verification and handoff
 

@@ -31,17 +31,6 @@ require_relay_ops 'RELAY_OPS_MODE: ${RELAY_OPS_MODE:-read_only}'
 require_relay_ops 'RELAY_OPS_ACCOUNT_QUALITY_RESULT_FILE: /run/relay-ops/account-quality/account-quality-result.json'
 require_relay_ops 'RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE: ${RELAY_OPS_UPSTREAM_GROUP_MAPPING_FILE:-}'
 require_relay_ops 'RELAY_OPS_CANDIDATE_SECRET_DIR: /var/lib/relay-ops/candidate-keys'
-require_relay_ops 'RELAY_OPS_FEISHU_WEBHOOK_FILE: ${RELAY_OPS_FEISHU_WEBHOOK_FILE:-}'
-require_relay_ops 'RELAY_OPS_FEISHU_APP_ID_FILE: ${RELAY_OPS_FEISHU_APP_ID_FILE:-}'
-require_relay_ops 'RELAY_OPS_FEISHU_APP_SECRET_FILE: ${RELAY_OPS_FEISHU_APP_SECRET_FILE:-}'
-require_relay_ops 'RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE: ${RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE:-}'
-require_relay_ops 'RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE: ${RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE:-}'
-require_relay_ops 'RELAY_OPS_NOTIFICATION_POLICY_FILE: ${RELAY_OPS_NOTIFICATION_POLICY_FILE:-}'
-require_relay_ops '${RELAY_OPS_FEISHU_APP_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-id:ro'
-require_relay_ops '${RELAY_OPS_FEISHU_APP_SECRET_HOST_FILE:-/dev/null}:/run/secrets/feishu-app-secret:ro'
-require_relay_ops '${RELAY_OPS_FEISHU_ALERT_CHAT_ID_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-chat-id:ro'
-require_relay_ops '${RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE:-/dev/null}:/run/secrets/feishu-alert-recipients.json:ro'
-require_relay_ops '${RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE:-/dev/null}:/run/relay-ops/notification-policy.json:ro'
 require_relay_ops '${RELAY_OPS_ACCOUNT_QUALITY_RESULT_HOST_DIR:-/dev/null}:/run/relay-ops/account-quality:ro'
 require_relay_ops '${RELAY_OPS_UPSTREAM_GROUP_MAPPING_HOST_FILE:-/dev/null}:/run/relay-ops/upstream-group-mapping.json:ro'
 require_relay_ops '${RELAY_OPS_CANDIDATE_KEYS_HOST_DIR:-./secrets/candidate-keys}:/run/secrets/candidates:ro'
@@ -54,6 +43,13 @@ forbid_relay_ops 'RELAY_OPS_MODEL_RELEASE_RESULT_FILE'
 forbid_relay_ops 'RELAY_OPS_MODEL_RELEASE_RESULT_HOST'
 
 for retired in \
+  RELAY_OPS_FEISHU_ \
+  RELAY_OPS_NOTIFICATION_POLICY \
+  RELAY_OPS_AGENT_
+do
+  forbid_relay_ops "$retired"
+done
+for retired in \
   RELAY_OPS_FEISHU_COMMAND_MODE \
   RELAY_OPS_FEISHU_VERIFICATION_TOKEN_FILE \
   RELAY_OPS_FEISHU_ENCRYPT_KEY_FILE \
@@ -63,6 +59,9 @@ do
   forbid "$retired" infra/.env.example
 done
 for retired_mount in \
+  /run/secrets/feishu- \
+  /run/secrets/agent-api-key \
+  notification-policy.json \
   feishu-verification-token \
   feishu-encrypt-key \
   feishu-routing.json
@@ -70,44 +69,18 @@ do
   forbid_relay_ops "$retired_mount"
 done
 
-for disabled_app_bot_assignment in \
-  RELAY_OPS_FEISHU_APP_ID_FILE= \
-  RELAY_OPS_FEISHU_APP_SECRET_FILE= \
-  RELAY_OPS_FEISHU_ALERT_CHAT_ID_FILE= \
-  RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE= \
-  RELAY_OPS_NOTIFICATION_POLICY_FILE= \
+for retained_host_credential in \
+  RELAY_OPS_FEISHU_WEBHOOK_HOST_FILE= \
   RELAY_OPS_FEISHU_APP_ID_HOST_FILE= \
   RELAY_OPS_FEISHU_APP_SECRET_HOST_FILE= \
   RELAY_OPS_FEISHU_ALERT_CHAT_ID_HOST_FILE= \
-  RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE= \
-  RELAY_OPS_NOTIFICATION_POLICY_HOST_FILE=
+  RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=
 do
-  require_line "$disabled_app_bot_assignment" infra/.env.example
+  require_line "$retained_host_credential" infra/.env.example
 done
-require_line '# RELAY_OPS_FEISHU_ALERT_RECIPIENTS_FILE=/run/secrets/feishu-alert-recipients.json' infra/.env.example
-require_line '# RELAY_OPS_FEISHU_ALERT_RECIPIENTS_HOST_FILE=./secrets/feishu-alert-recipients.json' infra/.env.example
-policy_file=config/relay-ops/notification-policy.example.json
-[[ -f "$policy_file" ]] || fail "missing notification policy example $policy_file"
-require '"version": 1' "$policy_file"
-require '"delivery_mode": "shadow"' "$policy_file"
-for family in \
-  group_runtime \
-  group_capacity \
-  account_impact \
-  native_monitor_evidence \
-  pricing_notice \
-  daily_digest \
-  incident_escalation
-do
-  require "\"${family}_enabled\":" "$policy_file"
-done
-for family in candidate release usage synthetic
-do
-  forbid "$family" "$policy_file"
-done
+[[ ! -e config/relay-ops/notification-policy.example.json ]] || fail 'retired notification policy example remains'
 
 for inactive_dir in \
-  relay-ops-service/internal/acceptance \
   relay-ops-service/internal/candidates \
   relay-ops-service/internal/qualityreports \
   relay-ops-service/internal/billing
@@ -120,10 +93,12 @@ forbid 'notifier.SendIncident' relay-ops-service/internal/app/app.go
 if rg -n 'Acceptance:.*Notifier:' relay-ops-service/internal/app/app.go; then
   fail 'synthetic acceptance regained a notification sender'
 fi
-require 'SupersedeLegacyNotificationIncidents(ctx' relay-ops-service/internal/app/app.go
+forbid 'SupersedeLegacyNotificationIncidents(ctx' relay-ops-service/internal/app/app.go
 
 require 'USER 10002:10002' infra/Dockerfile.relay-ops
 require 'ENTRYPOINT ["/relay-ops"]' infra/Dockerfile.relay-ops
+require '/out/retire-legacy-notifications' infra/Dockerfile.relay-ops
+require '/retire-legacy-notifications' infra/Dockerfile.relay-ops
 forbid 'd04-readiness-snapshot' infra/Dockerfile.relay-ops
 require 'ops/collect-account-quality-pulse.rb' infra/Dockerfile.relay-ops
 require 'ops/analyze-account-monitor.rb' infra/Dockerfile.relay-ops
@@ -171,4 +146,4 @@ docker compose \
   -f "$COMPOSE_FILE" \
   config --quiet || fail 'compose config failed'
 
-printf 'PASS: relay-ops outbound-only and native-ops contracts\n'
+printf 'PASS: relay-ops notification retirement contract\n'

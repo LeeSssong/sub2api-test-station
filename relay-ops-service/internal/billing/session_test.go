@@ -42,7 +42,7 @@ func TestSessionReaderClassifiesExpiredSessionAfterOneRetry(t *testing.T) {
 		calls++
 		return billingResponse(http.StatusUnauthorized, `{"error":"cookie-secret-must-not-leak"}`)
 	})}
-	reporter := &fakeSessionReporter{notify: true}
+	reporter := &fakeSessionReporter{}
 	secret := writeSessionSecret(t, 0o600, "session=cookie-secret")
 	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }, SecretRoot: filepath.Dir(secret)}
 	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 8, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + secret})
@@ -50,7 +50,7 @@ func TestSessionReaderClassifiesExpiredSessionAfterOneRetry(t *testing.T) {
 	if !errors.As(err, &expired) || expired.LoginURL != "https://usage.example/login" || calls != 2 {
 		t.Fatalf("error=%v calls=%d", err, calls)
 	}
-	if strings.Contains(err.Error(), "cookie-secret") || reporter.loginURL != expired.LoginURL || !reporter.notified {
+	if strings.Contains(err.Error(), "cookie-secret") || reporter.loginURL != expired.LoginURL || !reporter.expired {
 		t.Fatalf("expired=%#v reporter=%#v", expired, reporter)
 	}
 }
@@ -62,12 +62,12 @@ func TestSessionReaderClassifiesLoginHTMLAsExpired(t *testing.T) {
 		calls++
 		return billingResponse(http.StatusOK, `<form action="/login"><input type="password"></form>`)
 	})}
-	reporter := &fakeSessionReporter{notify: true}
+	reporter := &fakeSessionReporter{}
 	secret := writeSessionSecret(t, 0o600, "session=opaque")
 	reader := SessionReader{Client: client, Resolver: billingResolver{}, Reporter: reporter, Now: func() time.Time { return time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC) }, SecretRoot: filepath.Dir(secret)}
 	_, err := reader.ReadUsage(context.Background(), SessionConfig{UpstreamID: 10, UsageURL: "https://usage.example/usage", LoginURL: "https://usage.example/login", AuthMode: "cookie", SecretRef: "file:" + secret})
 	var expired *SessionExpiredError
-	if !errors.As(err, &expired) || !expired.Notify || calls != 2 {
+	if !errors.As(err, &expired) || calls != 2 || !reporter.expired {
 		t.Fatalf("error=%v calls=%d expired=%#v", err, calls, expired)
 	}
 }
@@ -105,15 +105,14 @@ func TestEstimateEffectiveMultiplier(t *testing.T) {
 }
 
 type fakeSessionReporter struct {
-	notify   bool
-	notified bool
+	expired  bool
 	loginURL string
 }
 
-func (r *fakeSessionReporter) RecordExpired(_ context.Context, _ domain.UpstreamID, loginURL string, _ time.Time) (bool, error) {
-	r.notified = r.notify
+func (r *fakeSessionReporter) RecordExpired(_ context.Context, _ domain.UpstreamID, loginURL string, _ time.Time) error {
+	r.expired = true
 	r.loginURL = loginURL
-	return r.notify, nil
+	return nil
 }
 
 func (r *fakeSessionReporter) RecordHealthy(context.Context, domain.UpstreamID, time.Time) error {

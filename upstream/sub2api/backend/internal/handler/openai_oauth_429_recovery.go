@@ -24,14 +24,15 @@ func recoverOpenAIOAuth429GroupOnce(
 		return false
 	}
 	*consumed = true
-	if _, err := gateway.RefreshOpenAIOAuth429Group(ctx, *groupID, excludedIDs); err != nil {
+	clearedIDs, err := gateway.RefreshOpenAIOAuth429Group(ctx, *groupID, excludedIDs)
+	if err != nil || len(clearedIDs) == 0 {
 		return false
 	}
-	for accountID := range excludedIDs {
+	for accountID := range clearedIDs {
 		delete(excludedIDs, accountID)
 	}
 	if scope != nil {
-		gateway.ConsumeOpenAIRecoveryExcludedAccounts(*scope)
+		gateway.ClearOpenAIRecoveryExcludedAccountIDs(*scope, clearedIDs)
 	}
 	return true
 }

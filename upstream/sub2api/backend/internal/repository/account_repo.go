@@ -2464,6 +2464,28 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 	return nil
 }
 
+// ClearOpenAIOAuth429FallbackIfObserved clears only the short fallback written
+// by the OpenAI OAuth 429 recovery path. The exact reset boundary prevents a
+// later official quota reset from being erased by a stale recovery pass.
+func (r *accountRepository) ClearOpenAIOAuth429FallbackIfObserved(ctx context.Context, id int64, resetAt time.Time) (bool, error) {
+	updated, err := r.execAccountMonotonicUpdate(ctx, id,
+		"rate_limited_at = NULL, rate_limit_reset_at = NULL",
+		"platform = $1 AND type IN ($2, $3) AND rate_limit_reset_at = $4",
+		service.PlatformOpenAI, service.AccountTypeOAuth, service.AccountTypeSetupToken, resetAt)
+	if err != nil {
+		return false, err
+	}
+	if updated == 0 {
+		r.syncSchedulerAccountSnapshot(ctx, id)
+		return false, nil
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear OpenAI OAuth 429 fallback failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return true, nil
+}
+
 func (r *accountRepository) ClearAntigravityQuotaScopes(ctx context.Context, id int64) error {
 	client := clientFromContext(ctx, r.client)
 	result, err := client.ExecContext(

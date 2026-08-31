@@ -41,18 +41,95 @@ func (r *openAIOAuth429CooldownRepo) ClearRateLimit(_ context.Context, _ int64) 
 	return nil
 }
 
-func TestPersistOpenAIOAuth429CooldownUsesFiveMinuteFallback(t *testing.T) {
+func (r *openAIOAuth429CooldownRepo) ClearOpenAIOAuth429FallbackIfObserved(_ context.Context, _ int64, _ time.Time) (bool, error) {
+	r.clearCalls++
+	return true, nil
+}
+
+func TestPersistOpenAIOAuth429CooldownUsesOfficialFiveSecondFallback(t *testing.T) {
+	require.Equal(t, 5*time.Second, openAIOAuth429FallbackCooldown)
 	repo := &openAIOAuth429CooldownRepo{}
 	svc := &OpenAIGatewayService{accountRepo: repo}
 	account := &Account{ID: 701, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	before := time.Now()
 
-	svc.PersistOpenAIOAuth429Cooldown(context.Background(), account, http.Header{}, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), account, http.StatusTooManyRequests, http.Header{}, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
 
 	require.Equal(t, 0, repo.setCalls)
 	require.Equal(t, 1, repo.extendCalls)
 	require.InDelta(t, float64(openAIOAuth429FallbackCooldown), float64(repo.lastResetAt.Sub(before)), float64(2*time.Second))
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
+func TestRefreshOpenAIOAuth429GroupDoesNotClearOfficialResetWithoutT105Marker(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-time.Minute)
+	officialReset := now.Add(5 * time.Minute)
+	repo := &openAIOAuth429CooldownRepo{groupAccounts: []Account{{
+		ID: 709, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
+		RateLimitedAt: &startedAt, RateLimitResetAt: &officialReset,
+	}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	svc.BlockAccountScheduling(&repo.groupAccounts[0], officialReset, "429")
+
+	cleared, err := svc.RefreshOpenAIOAuth429Group(context.Background(), 99, map[int64]struct{}{709: {}})
+
+	require.NoError(t, err)
+	require.Empty(t, cleared)
+	require.Zero(t, repo.clearCalls)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(&repo.groupAccounts[0]))
+}
+
+func TestRefreshOpenAIOAuth429GroupClearsPersistedT105Fallback(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-time.Second)
+	shortReset := now.Add(openAIOAuth429FallbackCooldown)
+	repo := &openAIOAuth429CooldownRepo{groupAccounts: []Account{{
+		ID: 710, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
+		RateLimitedAt: &startedAt, RateLimitResetAt: &shortReset,
+	}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), &repo.groupAccounts[0], http.StatusTooManyRequests, http.Header{}, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
+
+	cleared, err := svc.RefreshOpenAIOAuth429Group(context.Background(), 99, map[int64]struct{}{710: {}})
+
+	require.NoError(t, err)
+	require.Contains(t, cleared, int64(710))
+	require.Equal(t, 1, repo.clearCalls)
+}
+
+func TestRefreshOpenAIOAuth429GroupDoesNotClearWhenNoT105CooldownWasRecorded(t *testing.T) {
+	now := time.Now()
+	startedAt := now.Add(-time.Second)
+	shortReset := now.Add(5 * time.Second)
+	repo := &openAIOAuth429CooldownRepo{groupAccounts: []Account{{
+		ID: 711, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
+		RateLimitedAt: &startedAt, RateLimitResetAt: &shortReset,
+	}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	svc.BlockAccountScheduling(&repo.groupAccounts[0], shortReset, "429")
+
+	cleared, err := svc.RefreshOpenAIOAuth429Group(context.Background(), 99, map[int64]struct{}{711: {}})
+
+	require.NoError(t, err)
+	require.Empty(t, cleared)
+	require.Zero(t, repo.clearCalls)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(&repo.groupAccounts[0]))
+}
+
+func TestPersistOpenAIOAuth429CooldownFromCodexModelsError(t *testing.T) {
+	repo := &openAIOAuth429CooldownRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 712, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	err := &codexModelsManifestUpstreamError{
+		statusCode: http.StatusTooManyRequests,
+		headers:    http.Header{},
+		body:       []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`),
+	}
+
+	svc.PersistOpenAIOAuth429CooldownFromError(context.Background(), account, err)
+
+	require.Equal(t, 1, repo.extendCalls)
 }
 
 func TestPersistOpenAIOAuth429CooldownHonorsReliableReset(t *testing.T) {
@@ -61,10 +138,23 @@ func TestPersistOpenAIOAuth429CooldownHonorsReliableReset(t *testing.T) {
 	account := &Account{ID: 702, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	headers := http.Header{"Retry-After": []string{"90"}}
 
-	svc.PersistOpenAIOAuth429Cooldown(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
 
 	require.Equal(t, 1, repo.extendCalls)
 	require.InDelta(t, float64(90*time.Second), float64(repo.lastResetAt.Sub(time.Now())), float64(2*time.Second))
+}
+
+func TestPersistOpenAIOAuth429CooldownDoesNotMarkReliableFiveSecondResetAsFallback(t *testing.T) {
+	repo := &openAIOAuth429CooldownRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 713, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	headers := http.Header{"Retry-After": []string{"5"}}
+
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), account, http.StatusTooManyRequests, headers, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
+
+	_, markedFallback := svc.openaiOAuth429FallbackObservations.Load(account.ID)
+	require.False(t, markedFallback)
+	require.Equal(t, 1, repo.extendCalls)
 }
 
 func TestPersistOpenAIOAuth429CooldownIgnoresNonTransientAndNonOAuth(t *testing.T) {
@@ -77,16 +167,16 @@ func TestPersistOpenAIOAuth429CooldownIgnoresNonTransientAndNonOAuth(t *testing.
 	quotaHeaders.Set("x-codex-primary-used-percent", "100")
 	quotaHeaders.Set("x-codex-primary-reset-after-seconds", "60")
 	quotaHeaders.Set("x-codex-primary-window-minutes", "300")
-	svc.PersistOpenAIOAuth429Cooldown(context.Background(), quotaAccount, quotaHeaders, []byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`))
-	svc.PersistOpenAIOAuth429Cooldown(context.Background(), apiKeyAccount, http.Header{}, nil)
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), quotaAccount, http.StatusTooManyRequests, quotaHeaders, []byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded"}}`))
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), apiKeyAccount, http.StatusTooManyRequests, http.Header{}, nil)
 
 	require.Zero(t, repo.extendCalls)
 }
 
 func TestRefreshOpenAIOAuth429GroupClearsOnlyShortExcludedCooldowns(t *testing.T) {
 	now := time.Now()
-	shortStarted := now.Add(-time.Minute)
-	shortReset := now.Add(4 * time.Minute)
+	shortStarted := now.Add(-time.Second)
+	shortReset := now.Add(openAIOAuth429FallbackCooldown)
 	sevenDayReset := now.Add(24 * time.Hour)
 	repo := &openAIOAuth429CooldownRepo{groupAccounts: []Account{
 		{ID: 705, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, RateLimitedAt: &shortStarted, RateLimitResetAt: &shortReset},
@@ -94,12 +184,12 @@ func TestRefreshOpenAIOAuth429GroupClearsOnlyShortExcludedCooldowns(t *testing.T
 		{ID: 707, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, RateLimitedAt: &shortStarted, RateLimitResetAt: &shortReset},
 	}}
 	svc := &OpenAIGatewayService{accountRepo: repo}
-	svc.BlockAccountScheduling(&repo.groupAccounts[0], shortReset, "429")
+	svc.PersistOpenAIOAuth429Cooldown(context.Background(), &repo.groupAccounts[0], http.StatusTooManyRequests, http.Header{}, []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`))
 
 	cleared, err := svc.RefreshOpenAIOAuth429Group(context.Background(), 99, map[int64]struct{}{705: {}, 706: {}, 707: {}})
 
 	require.NoError(t, err)
-	require.Equal(t, 1, cleared)
+	require.Contains(t, cleared, int64(705))
 	require.Equal(t, 1, repo.clearCalls)
 	_, blocked := svc.openaiAccountRuntimeBlockUntil.Load(int64(705))
 	require.False(t, blocked)

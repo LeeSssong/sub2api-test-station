@@ -111,6 +111,27 @@ func (s *OpenAIGatewayService) ConsumeOpenAIRecoveryExcludedAccounts(scope OpenA
 	delete(state.entries, scopeKey)
 }
 
+// ClearOpenAIRecoveryExcludedAccountIDs removes only the provided account IDs
+// from a continuation scope, preserving unrelated failure exclusions.
+func (s *OpenAIGatewayService) ClearOpenAIRecoveryExcludedAccountIDs(scope OpenAIRecoveryScope, accountIDs map[int64]struct{}) {
+	state := s.getOpenAIRecoveryExclusionState()
+	scopeKey := scope.key()
+	if state == nil || scopeKey == "" || len(accountIDs) == 0 {
+		return
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	entries := state.entries[scopeKey]
+	for key := range entries {
+		if _, ok := accountIDs[key.AccountID]; ok {
+			delete(entries, key)
+		}
+	}
+	if len(entries) == 0 {
+		delete(state.entries, scopeKey)
+	}
+}
+
 // OpenAIRecoveryStickyReferenceCount reports live Redis sticky session and
 // response bindings for an account-model runtime row. The existing Redis
 // bindings are the source of truth; recovery exclusions are never counted.

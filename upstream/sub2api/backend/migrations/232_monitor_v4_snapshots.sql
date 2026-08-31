@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS account_monitor_v4_snapshots (
-    window TEXT NOT NULL CHECK (window IN ('24h', '7d', '30d')),
+    "window" TEXT NOT NULL CHECK ("window" IN ('24h', '7d', '30d')),
     group_id BIGINT NOT NULL CHECK (group_id > 0),
     snapshot_id UUID NOT NULL,
     generated_at TIMESTAMPTZ NOT NULL,
@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS account_monitor_v4_snapshots (
     source_updated_at TIMESTAMPTZ,
     current_operational BOOLEAN NOT NULL,
     CHECK (window_start < window_end),
-    UNIQUE (window, group_id)
+    UNIQUE ("window", group_id)
 );
 
 CREATE INDEX IF NOT EXISTS account_monitor_v4_snapshots_window_generated_idx
-    ON account_monitor_v4_snapshots (window, generated_at DESC);
+    ON account_monitor_v4_snapshots ("window", generated_at DESC);

@@ -62,7 +62,7 @@ func (r *accountMonitorRepository) ReplaceMonitorV4Snapshots(ctx context.Context
 		for _, groupID := range groupIDs {
 			projection := snapshot.Groups[groupID]
 			if _, err := tx.ExecContext(ctx, `INSERT INTO account_monitor_v4_snapshots (
-				window, group_id, snapshot_id, generated_at, window_start, window_end, contract_version,
+				"window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version,
 				success_rate, request_count, success_count, real_request_count, real_success_count,
 				probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count,
 				ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational
@@ -82,7 +82,7 @@ func (r *accountMonitorRepository) LoadLatestMonitorV4Snapshot(ctx context.Conte
 	if window != service.MonitorV4Window24H && window != service.MonitorV4Window7D && window != service.MonitorV4Window30D {
 		return service.MonitorV4StoredWindow{}, fmt.Errorf("unsupported monitor v4 window %q", window)
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT window, group_id, snapshot_id, generated_at, window_start, window_end, contract_version, success_rate, request_count, success_count, real_request_count, real_success_count, probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count, ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational FROM account_monitor_v4_snapshots WHERE window = $1 ORDER BY generated_at DESC, group_id`, window)
+	rows, err := r.db.QueryContext(ctx, `SELECT "window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version, success_rate, request_count, success_count, real_request_count, real_success_count, probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count, ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational FROM account_monitor_v4_snapshots WHERE "window" = $1 ORDER BY generated_at DESC, group_id`, window)
 	if err != nil {
 		return service.MonitorV4StoredWindow{}, err
 	}

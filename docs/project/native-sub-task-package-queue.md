@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T105-R1 502 排查后续：OpenAI OAuth 429 原生恢复语义修正（2026-09-01）：** 状态 `DEPLOYING`。用户明确指定本轮采用“快速部署”顺序，先主站、后同 commit 同步验收站，并要求本任务先于 T96/T98 发布。候选 `codex/t105-openai-429-account-cooldown@77e9dabe5f3adc88ce8e8024fad5fb808ace52cb`（tree `c769d38429bcb520a7fcca4448db8e2f5f513c70`）已无冲突快进合入根 `main`。修正范围：无可靠 reset 时恢复官方 5 秒 fallback；可靠 reset 优先且不再按 5 分钟时长猜测来源；补齐 Embeddings/Codex Models 等 429 切号接线；只清除本次短 cooldown 与对应请求级排除；选号 error 与 nil selection 统一执行一次有界恢复。无迁移、配置、依赖或生产数据写入；定向 service 测试、server build、gofmt/diff-check 与 native-only guard 新鲜通过。当前根 `main` 已包含此前在验收站验证通过的 T104，快速发布会如实以同一根 source 一并带入主站，不伪装为独立旧树部署。
+
 **T104 Monitor V4 持久化分组快照（2026-08-31）：** 状态 `VERIFYING`。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入并推送根 `main@aa2727fa710a785ec3f27a07e0329336524d968d`（tree `b7b5cbeb4e8d6e146244149f669b1792462c312e`），根工作区干净且与 `origin/main` 一致。验收站已从该根 `main` 成功部署并完成基础线上核对：源 commit/tree 为 `aa2727fa7/b7b5cbeb`，镜像归档 SHA-256 `683c6fa1d5a2a6698944799e0630180d6346d5a66591e5f682aa4f54533b4ec5`，六项服务均 healthy，`/admin/lab/health` 与登录页均 HTTP 200。此前验收失败已记录：迁移 232 未引用 PostgreSQL 保留字 `window`，以及构建阶段 GitHub detector 下载失败；现已通过候选修复并复用同 SHA-256 的本地 detector 制品解决。范围为 expand-only migration `232_monitor_v4_snapshots`、原子 DELETE+INSERT 快照仓储及完整性校验、Monitor V4 只读最近快照与实时可见组裁剪、singleton worker 每 5 分钟刷新三窗口并复用 Sub 原生协调。主站尚未部署，等待用户明确“测试站验收通过，部署主站”或“快速部署到主站”。
 
 **T103 最新处置（2026-08-31）：`ABANDONED / 已废弃`。** 用户明确废弃 T103，不再要求其单独部署，不再占用或阻塞整合、部署和验证车道。当前生产请求 handler 已不调用自定义账号 admission/slow-session，仅保留 Sub 原生账号槽位；已进入 `main` 的 native-only 发布硬门禁继续作为全局永久约束保留，不因任务废弃而删除。T103 历史排查、提交和停机门禁记录只作审计证据，不得再据此启动 T103 发布。

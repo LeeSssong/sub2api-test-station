@@ -4,14 +4,15 @@
 
 `READY_FOR_ROOT_REVIEW`. The candidate is implemented and directly verified. It has not been merged to root `main`, pushed, deployed, or used to change production data.
 
-T99 remains `INTEGRATING` and owns the only integration/deployment/verification lane. T95 must wait until that lane is released. T96 must not create its worktree or consume this API until T95 is merged into the then-latest clean `main`.
+T99 and T101 are complete. T95 has been refreshed to the latest pushed root `main` and is the current integration candidate. T96 must not create its worktree or consume this API until T95 is merged into root `main`.
 
 ## Identity
 
-- Baseline: `main@879787096a7bc4b3ff4ab4820d4a5f3c3a63a29a`
+- Original baseline: `main@879787096a7bc4b3ff4ab4820d4a5f3c3a63a29a`
+- Current baseline: `main@6df628f282684b4626b6b18b2bccbf2cc595aad7`
 - Branch: `codex/t95-effective-cost-normalization`
 - Worktree: `.worktrees/t95-effective-cost-normalization`
-- Refresh merge: `747eaa9d9`
+- Latest refresh merge: `7d2523782`
 - Implementation commits: `01d1bd30e`, `f5c5a5fee`
 - Spec: `docs/superpowers/specs/2026-08-30-t95-effective-cost-normalization.md`
 - Plan: `docs/superpowers/plans/2026-08-30-t95-effective-cost-normalization.md`
@@ -39,4 +40,4 @@ T96 must read U live from `EffectiveCostForAccount`; it must not cache U in the 
 
 ## Verification And Risk
 
-All direct verification listed in the report passed. The only unverified item is a completely unmodified `go test ./internal/service` run, blocked by three pre-existing main test compilation defects documented in the report. No migration, configuration, production write, deployment, or credentials are involved.
+All direct verification listed in the report passed after the latest-main refresh. The only unverified item is a completely unmodified `go test ./internal/service` run, blocked by three pre-existing main test compilation defects documented in the report. No migration, configuration, production write, deployment, or credentials are involved.

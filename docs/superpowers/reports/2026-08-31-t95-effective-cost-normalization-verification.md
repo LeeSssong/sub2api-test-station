@@ -2,8 +2,9 @@
 
 ## Candidate
 
-- Refreshed baseline: `main@879787096a7bc4b3ff4ab4820d4a5f3c3a63a29a`
-- Refresh merge: `747eaa9d9`
+- Original baseline: `main@879787096a7bc4b3ff4ab4820d4a5f3c3a63a29a`
+- Latest refreshed baseline: `main@6df628f282684b4626b6b18b2bccbf2cc595aad7`
+- Latest refresh merge: `7d2523782`
 - Implementation commits: `01d1bd30e`, `f5c5a5fee`
 - Branch: `codex/t95-effective-cost-normalization`
 - Worktree: `.worktrees/t95-effective-cost-normalization`
@@ -19,6 +20,20 @@
 - The existing Account Monitor cost dialog is the administrator input surface and previews U before saving.
 
 ## Verification
+
+Latest-main refresh verification:
+
+- Go 1.27 focused effective-cost and profit-control tests with the documented temporary overlay: PASS.
+- Go 1.27 `unit` duplicate-account configuration test with the documented temporary overlay: PASS.
+- Admin handler procurement/effective-cost focused tests: PASS.
+- `go build ./cmd/server`: PASS.
+- Account Monitor cost dialog Vitest: 1 file, 9 tests PASS.
+- `vue-tsc --noEmit`: PASS.
+- Vite production build: PASS, 1094 modules transformed.
+- `git diff --check`: PASS.
+- Temporary overlay and generated lockfile delta removed; candidate worktree clean: PASS.
+
+Original candidate verification:
 
 - Go 1.27 focused effective-cost and profit-control tests: PASS.
 - Go 1.27 `unit` duplicate-account configuration test: PASS.

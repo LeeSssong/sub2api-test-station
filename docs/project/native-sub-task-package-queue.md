@@ -1,6 +1,18 @@
 # 原生 Sub 小步发布任务包队列
 
-**T102：** 状态 `INTEGRATING`。修复已快进合入根 `main@d0236e0f7`：无实际探测结果的桶不再写伪失败或进入分母，缺失数仍独立告警；实际探测失败仍按 `0/1`；共享账号按分组判断真实流量，任一空分组仍执行一次探测；最终逻辑请求按 `group_id + request_key` 跨账号去重；缓存 P95 原位替换为成功最终真实请求的 Sub 原生 Token 命中率 `cache_read / (input + cache_creation + cache_read)`，失败请求和主动探测排除、零分母显示空值。API v2 保留旧缓存字段 `null/0` 以兼容蓝绿窗口中的旧 SPA，新页面不额外展示指标。候选仓储三项定向测试、共享账号行为用例、Monitor V4 前端 14 项、类型检查、完整 server 构建、diff/迁移范围检查通过，独立审查未发现 P0/P1。用户已明确“确认，快速部署到主站”；待合并后主线门禁、证据和推送完成后执行主站蓝绿链，成功后立即以同 commit 同步验收站。无迁移、配置、账号/分组、计费或生产数据写入。
+**T103 最新处置（2026-08-31）：`ABANDONED / 已废弃`。** 用户明确废弃 T103，不再要求其单独部署，不再占用或阻塞整合、部署和验证车道。当前生产请求 handler 已不调用自定义账号 admission/slow-session，仅保留 Sub 原生账号槽位；已进入 `main` 的 native-only 发布硬门禁继续作为全局永久约束保留，不因任务废弃而删除。T103 历史排查、提交和停机门禁记录只作审计证据，不得再据此启动 T103 发布。
+
+T103 硬防护补充：`main@9f4a1c916062b0c4f7b02b99c144beaae8f94a20` 已推送；发布源断言在真实构建前 fail-closed 校验 admission/slow-session no-op、handler 无自定义 admission 调用及原生账号槽位接线。0600 回归证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-31-main-9f4a1c916-t103-native-concurrency-guard.json`。当前仍因 `migration_set_changed` 停机门禁未部署，三个并行窗口已暂停发布。
+
+T103 官方更新链补充：`main@21cbf912571062db0fd6e7656f1cff1688dde14a` 已将同一 guard 接入 `ops/merge-sub2api-release.sh`，官方上游 overlay 在提交候选前即拒绝恢复自定义 admission；根 `main` 与 `origin/main` commit/tree 一致。最新 0600 证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-31-main-21cbf9125-t103-native-concurrency-guard.json`。
+
+T103 防覆盖加固：`main@956ef5882` 将 guard 扫描范围扩大到全部生产 Go 源码和所有 gateway handler，并拒绝重命名后的 admission/slow-session 调用；先添加通用 gateway handler 负向回归使旧规则 RED，再实现扫描后 GREEN。`ops/assert-native-openai-concurrency-only.sh`、原生并发变体测试、来源新鲜度测试、官方 overlay 合同测试、脚本语法和 `git diff --check` 均已通过；此提交只改发布门禁/合同测试，不改运行时账号并发语义。
+
+T103 发布门禁边界补齐：`main@4ce15f896` 将 admission/slow-session 调用扫描从 `backend/internal/**` 扩展到整个 `backend/**` 的非测试 Go 源码，并新增 `backend/cmd` 负向回归；native-only guard、来源门禁、脚本语法和 `git diff --check` 均通过。生产活动槽未切换，三个并行窗口继续暂停。
+
+**T103：** 状态 `ABANDONED`。以下历史排查与停机门禁只作审计证据，不再形成待部署任务：用户报告同类错误回归；主站只读证据显示活动 handler 无额外 admission 接线，账号 `293` 在 T100 后无新 `openai.admission_rejected`，最新错误为真实上游 502，其中一条是上游 OAuth token 撤销。`main@5833d36d664dfc15942a0fb5ea3735170577a0c0` 已将 admission/slow-session service 入口硬性 no-op；随后硬防护提交 `main@01d93b044c1a9c013eb86d91b6b6ce1112cdfb9a`（tree `d997c17faef78b6cbd0a04fa39186ec2900f67e1`）已推送，发布链在每次真实 Sub2API 构建前 fail-closed 校验 no-op service、handler 无 admission 调用和原生 `acquireResponsesAccountSlot` 接线；变体拒绝测试、来源新鲜度、验收站/蓝绿/relay-ops 合同测试、脚本语法与 `git diff --check` 均通过。0600 原始证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-31-main-5833d36d6-t103-admission-permanent-guard.json`。最新生产只读核对确认账号 ID `231` 已于 `2026-08-16 14:49:43+08` 软删除且不是当前 502 样本；它与 T98 的数据库迁移文件 `231_upstream_baseurl_balance_notifications.sql` 无关，删除账号不会改变迁移集合哈希。主站未因 T103 停服、迁移、重启或切换；账号并发只保留 Sub 原生槽位。
+
+**T102：** 状态 `DONE`。修复已合入并推送根 `main@a928c671d3133fc33d59cd6f56c351674af0406e`（tree `4421898740f1f817b155a545457a505ecbda8adc`）：无实际探测结果的桶不再写伪失败或进入分母，缺失数独立告警；实际探测失败仍按 `0/1`；共享账号按分组判断真实流量；最终逻辑请求按 `group_id + request_key` 跨账号去重；缓存 P95 原位替换为成功最终真实请求的 Sub 原生 Token 命中率 `cache_read / (input + cache_creation + cache_read)`，失败请求和主动探测排除、零分母显示空值。直接测试、前端 14 项、类型检查、server 构建与范围门禁通过，0600 证据为 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-08-31-main-a928c671d-t102-monitor-v4-correction.json`。用户授权快速部署后，主站记录 `/var/lib/sub2api/release-records/20260831T042444Z-production-3398217.json` 为 `succeeded/promoted`、`downtime_required=false`、活动槽 `green`；生产 API/worker/detector 与验收站六项服务均运行同 commit 且 healthy，公开健康/就绪/验收健康/登录探针通过。生产只读固定时点复算：24h 为 Pro `56.0%`、Plus `88.2%`、特惠 `57.4%`；7d 为 Pro `78.6%`、Plus `85.0%`、特惠 `70.0%`；30d 为 Pro `91.7%`、Plus `94.4%`、特惠 `71.0%`；缺失探测桶未进分母且只读事务已回滚。无迁移、配置、账号/分组、计费或生产业务数据写入。
 
 **全局 `main` 部署来源门禁（2026-08-31）：** 状态 `READY_FOR_ROOT_REVIEW`。用户明确要求所有环境只能基于根目录 `main` 部署。候选必须先合入并推送 `main`；发布入口在构建或 SSH/SCP 前统一验证当前分支为 `main`、工作树干净且 `HEAD` commit/tree 与 `origin/main` 一致。验收站常规路径调整为先合 main、再部署验收；候选 worktree、临时 checkout 和 detached HEAD 均禁止部署。来源新鲜度、验收站、蓝绿发布和 relay-ops 直接测试、脚本语法与 diff-check 已通过；旧 admin lab 新增来源门禁合同已满足，其完整合同仍被既有 Caddy 路由断言阻断。本变更不触发服务部署、不写入业务数据。
 
@@ -24,7 +36,7 @@
 
 **T98 正式规格草案（2026-08-31）：** 已完成旧通知表/外键/wiring、原生余额与排名、原生事件账本、飞书传输/重试和 secret 挂载的只读盘点；正式草案为 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md`。草案固定 `scheduler_rank`、严格有效快照、原生非敏感 event claim、at-least-once 重试、整份配置 fail-closed、单 BaseURL 未登记仍发送，以及“停旧 writer -> 无备份清库 -> 启新 sender”的切换顺序。匿名 P2/P1 对照稿已完成桌面/移动检查。当前待用户批准，未进入实现、清库、生产配置或真实投递。
 
-**T98：** 状态 `IMPLEMENTING`。用户已批准正式规格 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md` 并授权进入实现；实施从最新本地 `main` 创建独立 worktree。飞书通知重构移除旧通知业务内容与判定规则，仅保留飞书 App Bot/凭据、传输适配和卡片样式等可复用能力；首个事件为 BaseURL 维度的 API Key 上游余额不足预警，消费 Sub2API 既有 `account_monitor_balance`、管理员页现行账号元数据和当前调度排名，不新增监控、探测、事实源或业务写入。规范化 BaseURL 是事件/去重主键，一个 BaseURL 只有一个最新有效 USD 余额；卡片列出全部活跃账号及 `scheduler_rank`，并按用户授权显示登记簿登录账号和明文密码。规格批准不构成主站部署、生产清库、生产配置修改或真实飞书发送授权；当前只允许本地实现与直接相关验证。
+**T98：** 状态 `FROZEN`（停机授权门禁）。候选已合入并推送根 `main@12aea434e2c8d42b70437bb60a5e6d8565d1a6d6`（tree `de422b739f01a59c0e8f1ab1718016f084ea909c`），并已从该 `main` 成功发布移除旧通知 writer/retry/scheduler 的 relay-ops；旧镜像保留为回滚目标，PostgreSQL、Redis、Caddy、API 两槽和 worker 身份未改变。count-only 核对后，按用户既有无备份授权和双门禁删除九张旧通知表（共 1940 行），复核均不存在；飞书传输凭据保留，新 worker-only secret 目录已准备为 `0700/0600`，通知开关仍关闭。Sub2API 候选镜像已从同一 `main` 构建，但宿主预检返回 `downtime_required=true`、`reason_code=migration_set_changed`、预计不可用 300 秒；尚未停服、迁移、重启、槽位切换或启用 sender。除非用户另行明确“允许停机部署”，不得恢复 T98 发布；当前仅保留证据，不占用后续实现车道。
 
 **T98 计划与实现工作区（2026-08-31）：** 已从 `main@06695141f` 创建 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t98-feishu-upstream-balance-notification`，分支 `codex/t98-feishu-upstream-balance-notification`。实施计划即将在该 worktree 编写；当前不改生产、不清库、不发送真实飞书消息。
 

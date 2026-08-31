@@ -39,6 +39,12 @@ func (*stickyReferenceCountingCache) ClaimGrokVideoBilled(context.Context, strin
 func (*stickyReferenceCountingCache) ReleaseGrokVideoBilled(context.Context, string) error {
 	return nil
 }
+func (*stickyReferenceCountingCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+func (*stickyReferenceCountingCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", ErrReasoningContentNotFound
+}
 
 func TestOpenAIAccountModelRuntimeCountsLiveRedisStickyReferences(t *testing.T) {
 	svc := &OpenAIGatewayService{cache: &stickyReferenceCountingCache{count: 3}}

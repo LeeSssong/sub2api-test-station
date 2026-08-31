@@ -31,4 +31,14 @@ remote_tree=$(git -C "$worktree" rev-parse 'refs/remotes/origin/main^{tree}') \
   || fail 'could not resolve origin/main tree'
 [[ "$source_commit" == "$remote_commit" ]] || fail 'release source is not the pushed origin/main commit'
 [[ "$source_tree" == "$remote_tree" ]] || fail 'release source tree does not match origin/main'
+
+# Every real Sub2API release must prove that account concurrency remains
+# provider-native. Lightweight release-source fixtures may omit the backend,
+# so only invoke the guard when the production backend marker is present.
+if [[ -f "$worktree/upstream/sub2api/backend/go.mod" ]]; then
+  guard="$worktree/ops/assert-native-openai-concurrency-only.sh"
+  [[ -x "$guard" && ! -L "$guard" ]] || fail 'native account concurrency guard is missing or not executable'
+  "$guard" --worktree "$worktree" || fail 'native account concurrency guard failed'
+fi
+
 printf 'release_source status=passed branch=main commit=%s tree=%s\n' "$source_commit" "$source_tree"

@@ -76,3 +76,7 @@ ok github.com/Wei-Shaw/sub2api/migrations 0.476s
 ## 结论
 
 后端核心功能覆盖在刷新候选上通过；handler/frontend 两组合同测试因已记录的仓库/环境阻断未执行，不能宣称通过。候选满足本轮用户要求的“实施完成后仅功能覆盖测试”范围，可交根总控审阅；任何合并、迁移预检和发布仍由根总控串行决定。
+
+## 合并后验收修复
+
+根总控从 `main@68a85a7b` 进行验收站发布时，worker 启动日志报告 `apply migration 232_monitor_v4_snapshots.sql: pq: syntax error at or near "window"`，验收站发布在 worker 健康检查阶段失败，未触及主站。根因为 PostgreSQL 保留字 `window` 未被引用。候选已用 TDD 先加入保留字回归断言并验证旧 SQL 为 RED，随后以提交 `65c56741d` 将迁移 DDL、唯一约束、索引和 repository 查询统一改为安全引用 `"window"`；迁移合同与快照 repository 定向测试重新 GREEN。该修复不改变表名、接口、窗口值或业务语义，待根总控合入最新修复提交后重试验收站发布。

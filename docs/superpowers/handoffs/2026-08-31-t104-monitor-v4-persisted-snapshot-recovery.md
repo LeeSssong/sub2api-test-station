@@ -92,3 +92,10 @@ PASS: native_concurrency_guard status=passed mode=native_account_concurrency_onl
 2. 登记 T104 到全局队列/总账并审阅最终分支 diff、迁移编号与来源边界。
 3. 若决定整合，发送带目标 main SHA 的 `AUTHORIZE_MERGE_TO_MAIN`；本线程不自行合并、推送或部署。
 4. 合并后的根 `main` 只跑用户批准的最小功能门禁和必要迁移/来源预检。主站发布仍需验收站约束定义的明确授权，发布成功后同 commit 对账验收站。
+
+## 2026-08-31 合并后修复指针
+
+- 根总控验收站启动失败的唯一根因为：迁移 232 使用 PostgreSQL 保留字 `window` 未引用；worker 日志已记录，主站未触碰。
+- 已在本候选先写 RED 回归，再由提交 `65c56741d` 修复迁移 DDL、约束/索引和 repository SQL 的列引用；迁移与 repository 定向测试 GREEN。
+- 候选随后吸收根 `main@68a85a7b` 的总账状态，当前修复提交待根总控授权合入；不要从旧 `main@d2d26208d` 重新发布。
+- 下一步：根总控合入修复候选并推送，重试验收站发布；主站仍须明确授权且不得绕过发布链。

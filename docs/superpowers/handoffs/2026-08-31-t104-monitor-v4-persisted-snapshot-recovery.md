@@ -53,3 +53,13 @@
 - 发现根 `main`、其他 worktree 或生产状态发生未授权变化，立即停止并更新本文件。
 - 任一实现/测试阶段再次中断，先在本文件追加当前 HEAD、changed files、测试命令/结果、未验证项和下一唯一动作，再暂停。
 - 回滚仅通过保留候选分支/提交并由根总控在干净 `main` 上决定；本线程不执行回退或发布。
+
+## Latest Checkpoint (2026-08-31 22:46 Asia/Shanghai)
+
+- Candidate: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t104-monitor-v4-persisted-snapshot`, branch `codex/t104-monitor-v4-persisted-snapshot`.
+- Candidate HEAD/tree: `b547f0c56a8b34200c7be73cfe4bd09353300428` / `eaee664a4ea23f6657dabab0162890203e132fe7`; working tree has only the intentionally untracked T104 spec and plan.
+- Root `main`/`origin/main` advanced independently to `fde3ece1b6e20a9e0b6a7ff47bf1e0be03213178` / `3c7a8c6d85d18d9c3ecb1a40dd3efaeab95315ad` while T105 was deployed. Candidate is ahead by the seven T104 commits and behind that root by 19 commits; no root content was overwritten.
+- Completed candidate commits: `23997a946`, `f2bf70309`, `3040f6901`, `969d87fa3`, `e134d50bf`, `65d6fc97a`, `b547f0c56`. They implement the expand-only snapshot table, atomic load/replace, strict read/refresh semantics, missing-probe `0/1` denominator, five-minute singleton worker/wiring, and direct contract tests.
+- Functional evidence: repository/service/runner focused Go tests passed; `git diff --check` and native-only guard passed. Handler tests are blocked by pre-existing `ProvideHandlers`/`openAIAccountScheduleModel` compile errors; frontend Vitest is blocked by absent `node_modules` and offline lockfile override mismatch. No full builds/typechecks were run by user instruction.
+- Current state: `READY_FOR_ROOT_REVIEW` pending a safe candidate refresh to the latest root `main`, rerun only the direct functional tests, and final handoff. No merge, push, deployment, migration execution, or production access is authorized in this worktree.
+- Recovery next step: verify no release command is running, fast-forward/merge `main@fde3ece1` into this candidate without dropping T104 commits or the two untracked docs, resolve only genuine T104/T105 file conflicts, rerun focused functional tests, then report the refreshed candidate SHA to root.

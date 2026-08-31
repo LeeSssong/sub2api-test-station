@@ -31,8 +31,8 @@ handler_dir="$backend/internal/handler"
 
 # Keep the source-level contract strict so a stale candidate cannot silently
 # restore the custom Redis admission gate while preserving the old method names.
-ruby - "$service" "$handler_dir" <<'RUBY'
-service_path, handler_dir = ARGV
+ruby - "$service" "$handler_dir" "$backend" <<'RUBY'
+service_path, handler_dir, backend = ARGV
 source = File.binread(service_path).force_encoding(Encoding::UTF_8)
 abort "native_concurrency_guard status=failed: service source is not valid UTF-8" unless source.valid_encoding?
 
@@ -51,8 +51,8 @@ record_expected = "#{record_signature}\n}\n"
 record_blocks = source.scan(/^#{Regexp.escape(record_signature)}.*?^\}/m)
 abort "native_concurrency_guard status=failed: RecordOpenAISlowSessionGuard must be empty" unless record_blocks.length == 1 && normalize.call(record_blocks.first + "\n") == normalize.call(record_expected)
 
-handlers = Dir[File.join(handler_dir, 'openai*.go')].reject { |path| path.end_with?('_test.go') }
-abort 'native_concurrency_guard status=failed: no OpenAI runtime handlers found' if handlers.empty?
+handlers = Dir[File.join(handler_dir, '*.go')].reject { |path| path.end_with?('_test.go') }
+abort 'native_concurrency_guard status=failed: no runtime handlers found' if handlers.empty?
 forbidden = [
   '.AcquireOpenAIAdmission(',
   '.RecordOpenAISlowSessionGuard(',
@@ -67,6 +67,17 @@ handlers.each do |path|
   forbidden.each do |token|
     abort "native_concurrency_guard status=failed: custom admission call #{token} found in #{path}" if body.include?(token)
   end
+end
+
+# Scan every production Go source so a task cannot bypass the named handler
+# checks by moving or renaming the custom admission call.
+runtime_sources = Dir[File.join(backend, 'internal', '**', '*.go')].reject { |path| path.end_with?('_test.go') }
+custom_admission_call = /\.(?:Acquire|Renew|Release|Record|Has)[A-Za-z0-9_]*(?:Admission|SlowSessionGuard)[A-Za-z0-9_]*\s*\(/
+runtime_sources.each do |path|
+  body = File.binread(path).force_encoding(Encoding::UTF_8)
+  abort "native_concurrency_guard status=failed: runtime source is not valid UTF-8: #{path}" unless body.valid_encoding?
+  match = body.match(custom_admission_call)
+  abort "native_concurrency_guard status=failed: custom admission-like call #{match[0]} found in #{path}" if match
 end
 
 required_native_handlers = %w[openai_chat_completions.go openai_gateway_handler.go]

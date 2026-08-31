@@ -16,6 +16,8 @@ cp "$ROOT/upstream/sub2api/backend/internal/handler/openai_chat_completions.go" 
   "$FIXTURE/upstream/sub2api/backend/internal/handler/openai_chat_completions.go"
 cp "$ROOT/upstream/sub2api/backend/internal/handler/openai_gateway_handler.go" \
   "$FIXTURE/upstream/sub2api/backend/internal/handler/openai_gateway_handler.go"
+cp "$ROOT/upstream/sub2api/backend/internal/handler/gateway_handler.go" \
+  "$FIXTURE/upstream/sub2api/backend/internal/handler/gateway_handler.go"
 
 "$GUARD" --worktree "$FIXTURE" >/dev/null || fail 'current native-only source was rejected'
 
@@ -33,6 +35,14 @@ sed -i.bak 's/return func() {}, OpenAISharedAdmissionDecision{Allowed: true, Rea
 rm -f "$FIXTURE/upstream/sub2api/backend/internal/service/openai_shared_health.go.bak"
 if "$GUARD" --worktree "$FIXTURE" >/dev/null 2>&1; then
   fail 'restored admission rejection was accepted'
+fi
+
+cp "$ROOT/upstream/sub2api/backend/internal/service/openai_shared_health.go" \
+  "$FIXTURE/upstream/sub2api/backend/internal/service/openai_shared_health.go"
+printf '\nfunc forbiddenAdmissionForTest(svc interface{ AcquireOpenAIAdmissionV2() }) { svc.AcquireOpenAIAdmissionV2() }\n' \
+  >>"$FIXTURE/upstream/sub2api/backend/internal/handler/gateway_handler.go"
+if "$GUARD" --worktree "$FIXTURE" >/dev/null 2>&1; then
+  fail 'admission call in a generic gateway handler was accepted'
 fi
 
 printf 'PASS: native OpenAI account concurrency guard\n'

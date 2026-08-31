@@ -31,16 +31,16 @@ func (s *monitorV4SnapshotterStub) Snapshot(
 	return s.snapshot, nil
 }
 
-func TestMonitorV4HandlerReturnsCacheP95Contract(t *testing.T) {
+func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	cacheReadTokens := 4096.5
+	cacheHitRate := 40.0
 	stub := &monitorV4SnapshotterStub{snapshot: &service.MonitorV4Snapshot{
 		ContractVersion:        service.MonitorV4ContractVersion,
 		Window:                 service.MonitorV4Window30D,
 		RefreshIntervalSeconds: 300,
 		GeneratedAt:            time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
 		Groups: []service.MonitorV4Group{
-			{ID: 7, Name: "Cached", CacheReadTokensP95: &cacheReadTokens, CacheReadTokensSampleCount: 3},
+			{ID: 7, Name: "Cached", CacheHitRate: &cacheHitRate},
 			{ID: 8, Name: "No successful real request"},
 		},
 	}}
@@ -66,10 +66,8 @@ func TestMonitorV4HandlerReturnsCacheP95Contract(t *testing.T) {
 	require.Len(t, groups, 2)
 
 	withSamples := groups[0].(map[string]any)
-	require.Equal(t, cacheReadTokens, withSamples["cache_read_tokens_p95"])
-	require.Equal(t, float64(3), withSamples["cache_read_tokens_sample_count"])
+	require.Equal(t, cacheHitRate, withSamples["cache_hit_rate"])
 
 	withoutSamples := groups[1].(map[string]any)
-	require.Nil(t, withoutSamples["cache_read_tokens_p95"])
-	require.Equal(t, float64(0), withoutSamples["cache_read_tokens_sample_count"])
+	require.Nil(t, withoutSamples["cache_hit_rate"])
 }

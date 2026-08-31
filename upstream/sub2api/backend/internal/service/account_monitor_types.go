@@ -376,22 +376,21 @@ type MonitorV2NativeGroupProjection struct {
 // used by the hybrid performance monitor. Probe fallback rows are already
 // reduced to one logical request per selected bucket by the repository.
 type MonitorV4GroupProjection struct {
-	SuccessRate                *float64
-	RequestCount               int
-	SuccessCount               int
-	RealRequestCount           int
-	RealSuccessCount           int
-	ProbeFallbackBucketCount   int
-	ProbeFallbackRequestCount  int
-	MissingProbeTerminalCount  int
-	TTFTP95MS                  *float64
-	TTFTSampleCount            int
-	LatencyP95MS               *float64
-	LatencySampleCount         int
-	CacheReadTokensP95         *float64
-	CacheReadTokensSampleCount int
-	SourceUpdatedAt            *time.Time
-	CurrentOperational         bool
+	SuccessRate               *float64
+	RequestCount              int
+	SuccessCount              int
+	RealRequestCount          int
+	RealSuccessCount          int
+	ProbeFallbackBucketCount  int
+	ProbeFallbackRequestCount int
+	MissingProbeTerminalCount int
+	TTFTP95MS                 *float64
+	TTFTSampleCount           int
+	LatencyP95MS              *float64
+	LatencySampleCount        int
+	CacheHitRate              *float64
+	SourceUpdatedAt           *time.Time
+	CurrentOperational        bool
 }
 
 // AccountMonitorGroupProbeRepository is the native read path used by Monitor V2.
@@ -542,7 +541,8 @@ type AccountMonitorRepository interface {
 	InsertResult(ctx context.Context, result AccountMonitorProbeResult, runID string) error
 	// EnsureProbeBucketTerminal atomically records one group/bucket probe
 	// terminal. Existing account-level probe rows are reduced to one logical
-	// result; an empty/failed set becomes a persisted failure terminal.
+	// result; an empty set creates no terminal, while an observed failed set
+	// becomes a persisted failure terminal.
 	EnsureProbeBucketTerminal(ctx context.Context, groupID int64, accountIDs []int64, bucketStart time.Time, runID string) error
 	ListAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorAggregate, error)
 	ListWindowAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)

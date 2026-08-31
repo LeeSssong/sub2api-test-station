@@ -18,8 +18,7 @@ export interface MonitorV4Group {
   ttft_sample_count: number
   latency_p95_ms: number | null
   latency_sample_count: number
-  cache_read_tokens_p95: number | null
-  cache_read_tokens_sample_count: number
+  cache_hit_rate: number | null
   source_updated_at: string | null
   current_operational: boolean
 }

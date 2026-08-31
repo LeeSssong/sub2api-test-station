@@ -43,12 +43,12 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	rate := 75.0
 	ttft := 120.0
 	latency := 900.0
-	cacheReadTokens := 4096.5
+	cacheHitRate := 40.0
 	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{
 		7: {
 			SuccessRate: &rate, RequestCount: 4, SuccessCount: 3,
 			TTFTP95MS: &ttft, LatencyP95MS: &latency, TTFTSampleCount: 3, LatencySampleCount: 3,
-			CacheReadTokensP95: &cacheReadTokens, CacheReadTokensSampleCount: 3,
+			CacheHitRate: &cacheHitRate,
 		},
 	}}
 	svc := NewMonitorV4Service(
@@ -67,8 +67,8 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	if len(native.groupIDs) != 1 || native.groupIDs[0] != 7 {
 		t.Fatalf("native group IDs = %v, want [7]", native.groupIDs)
 	}
-	if snapshot.Groups[0].CacheReadTokensP95 == nil || *snapshot.Groups[0].CacheReadTokensP95 != cacheReadTokens || snapshot.Groups[0].CacheReadTokensSampleCount != 3 {
-		t.Fatalf("cache P95 projection = %#v", snapshot.Groups[0])
+	if snapshot.Groups[0].CacheHitRate == nil || *snapshot.Groups[0].CacheHitRate != cacheHitRate {
+		t.Fatalf("cache hit rate projection = %#v", snapshot.Groups[0])
 	}
 }
 
@@ -86,7 +86,7 @@ func TestMonitorV4SnapshotPreservesNullableMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot() error = %v", err)
 	}
-	if len(snapshot.Groups) != 1 || snapshot.Groups[0].SuccessRate != nil || snapshot.Groups[0].TTFTP95MS != nil || snapshot.Groups[0].LatencyP95MS != nil || snapshot.Groups[0].CacheReadTokensP95 != nil || snapshot.Groups[0].CacheReadTokensSampleCount != 0 {
+	if len(snapshot.Groups) != 1 || snapshot.Groups[0].SuccessRate != nil || snapshot.Groups[0].TTFTP95MS != nil || snapshot.Groups[0].LatencyP95MS != nil || snapshot.Groups[0].CacheHitRate != nil {
 		t.Fatalf("nullable metrics = %#v", snapshot.Groups)
 	}
 }

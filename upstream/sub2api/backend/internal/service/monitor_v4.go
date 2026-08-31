@@ -25,6 +25,21 @@ type MonitorV4ProjectionReader interface {
 	ProjectMonitorV4Groups(context.Context, []int64, time.Time, time.Time, time.Duration) (map[int64]MonitorV4GroupProjection, error)
 }
 
+type MonitorV4StoredWindow struct {
+	Window          MonitorV4Window
+	SnapshotID      string
+	WindowStart     time.Time
+	WindowEnd       time.Time
+	GeneratedAt     time.Time
+	ContractVersion string
+	Groups          map[int64]MonitorV4GroupProjection
+}
+
+type MonitorV4SnapshotStore interface {
+	LoadLatestMonitorV4Snapshot(context.Context, MonitorV4Window) (MonitorV4StoredWindow, error)
+	ReplaceMonitorV4Snapshots(context.Context, string, []MonitorV4StoredWindow) error
+}
+
 type MonitorV4Metric struct {
 	Value       float64
 	SampleCount int

@@ -71,7 +71,7 @@ end
 
 # Scan every production Go source so a task cannot bypass the named handler
 # checks by moving or renaming the custom admission call.
-runtime_sources = Dir[File.join(backend, 'internal', '**', '*.go')].reject { |path| path.end_with?('_test.go') }
+runtime_sources = Dir[File.join(backend, '**', '*.go')].reject { |path| path.end_with?('_test.go') }
 custom_admission_call = /\.(?:Acquire|Renew|Release|Record|Has)[A-Za-z0-9_]*(?:Admission|SlowSessionGuard)[A-Za-z0-9_]*\s*\(/
 runtime_sources.each do |path|
   body = File.binread(path).force_encoding(Encoding::UTF_8)

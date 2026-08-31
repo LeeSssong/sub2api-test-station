@@ -45,4 +45,13 @@ if "$GUARD" --worktree "$FIXTURE" >/dev/null 2>&1; then
   fail 'admission call in a generic gateway handler was accepted'
 fi
 
+cp "$ROOT/upstream/sub2api/backend/internal/handler/gateway_handler.go" \
+  "$FIXTURE/upstream/sub2api/backend/internal/handler/gateway_handler.go"
+mkdir -p "$FIXTURE/upstream/sub2api/backend/cmd/server"
+printf '\npackage main\n\nfunc forbiddenAdmissionInCmd(svc interface{ AcquireOpenAIAdmissionV2() }) { svc.AcquireOpenAIAdmissionV2() }\n' \
+  >>"$FIXTURE/upstream/sub2api/backend/cmd/server/main.go"
+if "$GUARD" --worktree "$FIXTURE" >/dev/null 2>&1; then
+  fail 'admission call in a cmd production source was accepted'
+fi
+
 printf 'PASS: native OpenAI account concurrency guard\n'

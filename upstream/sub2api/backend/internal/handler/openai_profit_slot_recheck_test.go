@@ -172,13 +172,17 @@ func TestOpenAIUnifiedQualityOptInCoversOnlyOrdinaryHTTPTextEntrypoints(t *testi
 		source := read(name)
 		require.Contains(t, source, "WithOpenAIUnifiedQualityScheduling", name)
 	}
-	require.Contains(t, read("openai_gateway_handler.go"), "selectionCtx := openAIUnifiedQualityContextForResponses(c.Request.Context(), imageIntent)")
-	require.NotContains(t, read("openai_gateway_handler.go"), "selectionCtx := service.WithOpenAIUnifiedQualityScheduling(c.Request.Context())")
+	gateway := read("openai_gateway_handler.go")
+	responsesStart := strings.Index(gateway, "func (h *OpenAIGatewayHandler) Responses(c *gin.Context)")
+	messagesStart := strings.Index(gateway, "func (h *OpenAIGatewayHandler) Messages(c *gin.Context)")
+	websocketStart := strings.Index(gateway, "func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context)")
+	require.NotEqual(t, -1, responsesStart)
+	require.NotEqual(t, -1, messagesStart)
+	require.NotEqual(t, -1, websocketStart)
+	require.Contains(t, gateway[responsesStart:messagesStart], "selectionCtx := openAIUnifiedQualityContextForResponses(c.Request.Context(), imageIntent)")
+	require.Contains(t, gateway[messagesStart:websocketStart], "selectionCtx := service.WithOpenAIUnifiedQualityScheduling(c.Request.Context())")
 
 	alpha := read("openai_alpha_search.go")
 	require.NotContains(t, alpha, "WithOpenAIUnifiedQualityScheduling")
-	gateway := read("openai_gateway_handler.go")
-	websocketStart := strings.Index(gateway, "func (h *OpenAIGatewayHandler) ResponsesWebSocket")
-	require.NotEqual(t, -1, websocketStart)
 	require.NotContains(t, gateway[websocketStart:], "WithOpenAIUnifiedQualityScheduling")
 }

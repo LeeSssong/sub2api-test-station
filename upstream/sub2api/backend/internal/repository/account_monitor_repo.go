@@ -609,7 +609,7 @@ WITH scopes AS (
 		'probe'::text AS source,
 		bm.probe_missing
   FROM bucket_matrix bm
-  WHERE bm.has_real IS NOT TRUE AND bm.probe_missing IS FALSE
+  WHERE bm.has_real IS NOT TRUE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events

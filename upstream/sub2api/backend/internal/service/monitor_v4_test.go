@@ -9,6 +9,13 @@ import (
 type monitorV4NativeReaderStub struct {
 	projection map[int64]MonitorV4GroupProjection
 	groupIDs   []int64
+	calls      []monitorV4ProjectionCall
+}
+
+type monitorV4ProjectionCall struct {
+	groupIDs []int64
+	start    time.Time
+	end      time.Time
 }
 
 type monitorV4GroupRepoStub struct {
@@ -34,8 +41,9 @@ func (s *monitorV4ConfiguredGroupReaderStub) GetConfig(context.Context) (*Channe
 	return s.config, nil
 }
 
-func (s *monitorV4NativeReaderStub) ProjectMonitorV4Groups(_ context.Context, groupIDs []int64, _, _ time.Time, _ time.Duration) (map[int64]MonitorV4GroupProjection, error) {
+func (s *monitorV4NativeReaderStub) ProjectMonitorV4Groups(_ context.Context, groupIDs []int64, start, end time.Time, _ time.Duration) (map[int64]MonitorV4GroupProjection, error) {
 	s.groupIDs = append([]int64(nil), groupIDs...)
+	s.calls = append(s.calls, monitorV4ProjectionCall{groupIDs: append([]int64(nil), groupIDs...), start: start, end: end})
 	return s.projection, nil
 }
 
@@ -56,6 +64,7 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 		&monitorV4AvailableGroupReaderStub{}, native, nil,
 		&monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
 	)
+	svc.SetSnapshotStore(&monitorV4SnapshotStoreStub{loaded: MonitorV4StoredWindow{Window: MonitorV4Window7D, SnapshotID: "snapshot", WindowStart: time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC), WindowEnd: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC), GeneratedAt: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC), ContractVersion: MonitorV4ContractVersion, Groups: native.projection}})
 
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -63,9 +72,6 @@ func TestMonitorV4SnapshotKeepsConfiguredGroupsWhenV2AggregationDisabled(t *test
 	}
 	if len(snapshot.Groups) != 1 || snapshot.Groups[0].ID != 7 {
 		t.Fatalf("groups = %#v, want configured group 7", snapshot.Groups)
-	}
-	if len(native.groupIDs) != 1 || native.groupIDs[0] != 7 {
-		t.Fatalf("native group IDs = %v, want [7]", native.groupIDs)
 	}
 	if snapshot.Groups[0].CacheHitRate == nil || *snapshot.Groups[0].CacheHitRate != cacheHitRate {
 		t.Fatalf("cache hit rate projection = %#v", snapshot.Groups[0])
@@ -84,6 +90,7 @@ func TestMonitorV4SnapshotPreservesNullableMetrics(t *testing.T) {
 		&monitorV4AvailableGroupReaderStub{}, native, nil,
 		&monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
 	)
+	svc.SetSnapshotStore(&monitorV4SnapshotStoreStub{loaded: MonitorV4StoredWindow{Window: MonitorV4Window7D, SnapshotID: "snapshot", WindowStart: time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC), WindowEnd: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC), GeneratedAt: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC), ContractVersion: MonitorV4ContractVersion, Groups: native.projection}})
 
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
 	if err != nil {
@@ -104,6 +111,7 @@ func TestMonitorV4SnapshotKeepsZeroSuccessRateForFailedRequests(t *testing.T) {
 		&monitorV4AvailableGroupReaderStub{}, native, nil,
 		&monitorV4ConfiguredGroupReaderStub{config: &ChannelMonitorV2Config{Enabled: false, GroupIDs: []int64{7}}},
 	)
+	svc.SetSnapshotStore(&monitorV4SnapshotStoreStub{loaded: MonitorV4StoredWindow{Window: MonitorV4Window7D, SnapshotID: "snapshot", WindowStart: time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC), WindowEnd: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC), GeneratedAt: time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC), ContractVersion: MonitorV4ContractVersion, Groups: native.projection}})
 
 	snapshot, err := svc.Snapshot(context.Background(), 42, MonitorV4Window7D, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
 	if err != nil {

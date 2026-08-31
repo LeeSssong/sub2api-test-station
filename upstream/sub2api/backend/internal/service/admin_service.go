@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -11,8 +10,14 @@ import (
 )
 
 var (
-	ErrInvalidEffectiveCostModel = errors.New("effective_cost_model must be direct_multiplier, ratio_based_upstream, or self_owned")
-	ErrInvalidEffectiveCostRatio = errors.New("upstream_actual_cost and upstream_obtained_quota are required for ratio_based_upstream")
+	ErrInvalidEffectiveCostModel = infraerrors.BadRequest(
+		"INVALID_EFFECTIVE_COST_MODEL",
+		"effective_cost_model must match the account type",
+	)
+	ErrInvalidEffectiveCostRatio = infraerrors.BadRequest(
+		"INVALID_EFFECTIVE_COST_RATIO",
+		"ratio inputs must be a finite non-negative cost and a finite positive quota, and are not allowed for OAuth accounts",
+	)
 )
 
 // AdminService interface defines admin management operations

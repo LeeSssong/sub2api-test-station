@@ -134,12 +134,12 @@ func TestProfitControl_ResponsesCapabilityUsesTextGateAtScheduler(t *testing.T) 
 	require.Nil(t, selection)
 }
 
-// 账号倍率缺失一律视为非法保守拒绝；手工或同步维护了倍率的任意账号类型都按
-// 同一阈值判断（OAuth 与 API Key 无差别）。
-func TestProfitControl_AccountRateSemantics(t *testing.T) {
+// 有效成本缺失一律视为非法保守拒绝；API Key 使用倍率模型，OAuth 使用
+// 自购采购成本模型，最终都以 U 对同一阈值判断。
+func TestProfitControl_AccountEffectiveCostSemantics(t *testing.T) {
 	now := time.Now()
 	missing := upstreamCostTestOAuthAccount(2)
-	manualOAuth := profitControlTestAccountWithRate(upstreamCostTestOAuthAccount(3), 0.3)
+	selfOwnedOAuth := profitControlTestSelfOwnedAccount(upstreamCostTestOAuthAccount(3), 30, 100)
 	expensive := profitControlTestAccountWithRate(upstreamCostTestAccount(4, UpstreamBillingProbeStatusOK, 0.1, now.Add(-3*time.Hour), 30*time.Minute), 0.8)
 
 	group := profitControlTestGroup(77, 0.5, 0)
@@ -153,8 +153,8 @@ func TestProfitControl_AccountRateSemantics(t *testing.T) {
 	require.True(t, vetoed, "缺失账号倍率必须保守拒绝")
 	require.Equal(t, openAIProfitFilterReasonInvalidAccountRate, reason)
 
-	vetoed, _ = openAIProfitControlVetoReason(gateCtx, manualOAuth)
-	require.False(t, vetoed, "手工维护的 OAuth 倍率应正常准入")
+	vetoed, _ = openAIProfitControlVetoReason(gateCtx, selfOwnedOAuth)
+	require.False(t, vetoed, "已配置采购成本的 OAuth 账号应按自购有效成本准入")
 
 	vetoed, reason = openAIProfitControlVetoReason(gateCtx, expensive)
 	require.True(t, vetoed)

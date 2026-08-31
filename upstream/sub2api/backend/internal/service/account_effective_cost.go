@@ -31,9 +31,9 @@ func EffectiveCostForAccount(account *Account) EffectiveCost {
 	if account == nil {
 		return EffectiveCost{Status: EffectiveCostStatusUnknown}
 	}
-	// OAuth is a locked self-owned model. Legacy rate_multiplier and any stale
-	// ratio keys must never become an upstream return multiplier for OAuth.
-	if account.Type == AccountTypeOAuth {
+	// OAuth-family accounts are locked to the self-owned model. Legacy
+	// rate_multiplier and stale ratio keys never become their upstream R.
+	if isSelfOwnedEffectiveCostAccountType(account.Type) {
 		cost, quota := account.ProcurementCostCNY, account.EstimatedUsableQuotaUSD
 		if !validNonNegative(cost) || !validPositive(quota) {
 			return EffectiveCost{Model: EffectiveCostModelSelfOwned, Status: EffectiveCostStatusUnknown}
@@ -43,6 +43,9 @@ func EffectiveCostForAccount(account *Account) EffectiveCost {
 			return EffectiveCost{Model: EffectiveCostModelSelfOwned, Status: EffectiveCostStatusUnknown}
 		}
 		return EffectiveCost{Model: EffectiveCostModelSelfOwned, Status: EffectiveCostStatusReady, A: &a, U: &a}
+	}
+	if account.Type != AccountTypeAPIKey {
+		return EffectiveCost{Status: EffectiveCostStatusUnknown}
 	}
 
 	model := strings.TrimSpace(account.EffectiveCostModel)
@@ -86,11 +89,17 @@ func validPositive(value *float64) bool {
 // direct_multiplier when the model is omitted.
 func NormalizeEffectiveCostModel(accountType, requested string, actual, quota, rate *float64) (string, error) {
 	model := strings.TrimSpace(requested)
-	if accountType == AccountTypeOAuth {
+	if isSelfOwnedEffectiveCostAccountType(accountType) {
+		if actual != nil || quota != nil {
+			return "", ErrInvalidEffectiveCostRatio
+		}
 		if model != "" && model != EffectiveCostModelSelfOwned {
 			return "", ErrInvalidEffectiveCostModel
 		}
 		return EffectiveCostModelSelfOwned, nil
+	}
+	if accountType != AccountTypeAPIKey {
+		return "", ErrInvalidEffectiveCostModel
 	}
 	if model == "" {
 		model = EffectiveCostModelDirectMultiplier
@@ -104,6 +113,10 @@ func NormalizeEffectiveCostModel(accountType, requested string, actual, quota, r
 		}
 	}
 	return model, nil
+}
+
+func isSelfOwnedEffectiveCostAccountType(accountType string) bool {
+	return accountType == AccountTypeOAuth || accountType == AccountTypeSetupToken
 }
 
 func applyEffectiveCostConfiguration(account *Account, requested string, actual, quota *float64) error {

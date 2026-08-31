@@ -79,6 +79,8 @@ func TestDuplicateAccountCopiesConfigurationAndResetsRuntimeState(t *testing.T) 
 	proxyID := int64(17)
 	originalProxyID := int64(11)
 	rateMultiplier := 1.25
+	upstreamActualCost := 1.0
+	upstreamObtainedQuota := 10.0
 	loadFactor := 9
 	expiresAt := time.Date(2027, time.March, 4, 5, 6, 7, 0, time.UTC)
 	rateLimitedAt := time.Now().Add(-time.Minute)
@@ -98,6 +100,9 @@ func TestDuplicateAccountCopiesConfigurationAndResetsRuntimeState(t *testing.T) 
 		Concurrency:           6,
 		Priority:              40,
 		RateMultiplier:        &rateMultiplier,
+		EffectiveCostModel:    EffectiveCostModelRatioBasedUpstream,
+		UpstreamActualCost:    &upstreamActualCost,
+		UpstreamObtainedQuota: &upstreamObtainedQuota,
 		LoadFactor:            &loadFactor,
 		Status:                StatusError,
 		Schedulable:           true,
@@ -109,6 +114,9 @@ func TestDuplicateAccountCopiesConfigurationAndResetsRuntimeState(t *testing.T) 
 			"nested":  map[string]any{"token": "source-token"},
 		},
 		Extra: map[string]any{
+			EffectiveCostModelExtraKey:        EffectiveCostModelRatioBasedUpstream,
+			UpstreamActualCostExtraKey:        upstreamActualCost,
+			UpstreamObtainedQuotaExtraKey:     upstreamObtainedQuota,
 			"config":                          map[string]any{"region": "us-east-1"},
 			"items":                           []any{map[string]any{"enabled": true}},
 			"quota_limit":                     1000,
@@ -158,10 +166,13 @@ func TestDuplicateAccountCopiesConfigurationAndResetsRuntimeState(t *testing.T) 
 	require.Equal(t, source.GroupIDs, duplicate.GroupIDs)
 	require.Equal(t, source.Credentials, duplicate.Credentials)
 	require.Equal(t, map[string]any{
-		"config":         map[string]any{"region": "us-east-1"},
-		"items":          []any{map[string]any{"enabled": true}},
-		"quota_limit":    float64(1000),
-		"codex_cli_only": true,
+		EffectiveCostModelExtraKey:    EffectiveCostModelRatioBasedUpstream,
+		UpstreamActualCostExtraKey:    upstreamActualCost,
+		UpstreamObtainedQuotaExtraKey: upstreamObtainedQuota,
+		"config":                      map[string]any{"region": "us-east-1"},
+		"items":                       []any{map[string]any{"enabled": true}},
+		"quota_limit":                 float64(1000),
+		"codex_cli_only":              true,
 	}, duplicate.Extra)
 	require.NotContains(t, duplicate.Extra, UpstreamBillingRateSyncEnabledExtraKey)
 	require.NotNil(t, duplicate.ExpiresAt)
@@ -169,6 +180,10 @@ func TestDuplicateAccountCopiesConfigurationAndResetsRuntimeState(t *testing.T) 
 	require.Equal(t, source.Notes, duplicate.Notes)
 	require.Equal(t, source.ProxyFallbackOriginID, duplicate.ProxyID)
 	require.Equal(t, source.RateMultiplier, duplicate.RateMultiplier)
+	require.Equal(t, EffectiveCostModelRatioBasedUpstream, duplicate.EffectiveCostModel)
+	require.Equal(t, source.UpstreamActualCost, duplicate.UpstreamActualCost)
+	require.Equal(t, source.UpstreamObtainedQuota, duplicate.UpstreamObtainedQuota)
+	require.InDelta(t, 0.125, *EffectiveCostForAccount(duplicate).U, 1e-12)
 	require.Equal(t, source.LoadFactor, duplicate.LoadFactor)
 	require.Equal(t, source.GroupIDs, repo.groupsOf[duplicate.ID])
 	require.Equal(t, []AccountGroup{

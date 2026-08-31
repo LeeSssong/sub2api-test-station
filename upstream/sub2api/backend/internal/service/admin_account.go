@@ -301,6 +301,9 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 		Concurrency:           source.Concurrency,
 		Priority:              source.Priority,
 		RateMultiplier:        cloneAccountValuePointer(source.RateMultiplier),
+		EffectiveCostModel:    source.EffectiveCostModel,
+		UpstreamActualCost:    cloneAccountValuePointer(source.UpstreamActualCost),
+		UpstreamObtainedQuota: cloneAccountValuePointer(source.UpstreamObtainedQuota),
 		LoadFactor:            cloneAccountValuePointer(source.LoadFactor),
 		GroupIDs:              groupIDs,
 		ExpiresAt:             expiresAt,
@@ -824,14 +827,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if input.EffectiveCostModel != nil || input.UpstreamActualCost != nil || input.UpstreamObtainedQuota != nil || input.Type != "" {
 		model := account.EffectiveCostModel
-		if input.EffectiveCostModel != nil {
-			model = *input.EffectiveCostModel
-		} else if input.Type != "" && input.Type != originalAccountType {
-			// Do not carry a model across the OAuth/API-key type boundary.
-			model = ""
-		}
 		actual := account.UpstreamActualCost
 		quota := account.UpstreamObtainedQuota
+		if input.Type != "" && input.Type != originalAccountType {
+			// Do not carry a cost model or ratio inputs across the OAuth/API-key boundary.
+			model = ""
+			actual = nil
+			quota = nil
+		}
+		if input.EffectiveCostModel != nil {
+			model = *input.EffectiveCostModel
+		}
 		if input.UpstreamActualCost != nil {
 			actual = input.UpstreamActualCost
 		}

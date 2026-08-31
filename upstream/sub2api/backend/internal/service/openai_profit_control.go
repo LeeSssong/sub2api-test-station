@@ -317,8 +317,9 @@ func openAIProfitControlVetoReasonReadOnly(ctx context.Context, account *Account
 	}
 	cost := EffectiveCostForAccount(account)
 	if cost.Status != EffectiveCostStatusReady || cost.U == nil || math.IsNaN(*cost.U) || math.IsInf(*cost.U, 0) || *cost.U < 0 {
-		// Availability remains primary: temporarily unknown cost is fail-open.
-		return false, ""
+		// Preserve the native invalid-cost partition. T96 owns the separate
+		// availability-first full-pool fallback when no profitable account exists.
+		return true, openAIProfitFilterReasonInvalidAccountRate
 	}
 	if profitControlOverThreshold(*cost.U, gate.threshold) {
 		return true, openAIProfitFilterReasonThreshold

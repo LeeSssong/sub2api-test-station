@@ -43,16 +43,16 @@ describe('AccountMonitorCostDialog', () => {
     expect(wrapper.emitted('saveProcurement')).toEqual([[4, 120]])
   })
 
-  it('shows multiplier controls for OpenAI API Key accounts without a mode selector', async () => {
+  it('shows a direct multiplier model by default for API Key accounts', async () => {
     const wrapper = mountDialog(openAIAccount({ account_type: 'apikey', multiplier: { value: 0.11, source: 'manual', status: 'ok', sample_count: 1 } }))
 
     expect(wrapper.get('[data-test="multiplier-input"]').element.value).toBe('0.11')
     expect(wrapper.find('[data-test="procurement-cost-input"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="cost-mode-select"]').exists()).toBe(false)
+    expect(wrapper.get<HTMLSelectElement>('[data-test="cost-mode-select"]').element.value).toBe('direct_multiplier')
 
     await wrapper.get<HTMLInputElement>('[data-test="multiplier-input"]').setValue('0.2')
     await wrapper.get('[data-test="save-multiplier"]').trigger('click')
-    expect(wrapper.emitted('saveMultiplier')).toEqual([[0.2]])
+    expect(wrapper.emitted('saveMultiplier')).toEqual([[0.2, 'direct_multiplier']])
   })
 
   it('treats the underscored API Key wire spelling as a multiplier account', async () => {
@@ -61,7 +61,22 @@ describe('AccountMonitorCostDialog', () => {
     expect(wrapper.get('[data-test="multiplier-input"]').element.value).toBe('0.11')
     expect(wrapper.find('[data-test="procurement-cost-input"]').exists()).toBe(false)
     await wrapper.get('[data-test="save-multiplier"]').trigger('click')
-    expect(wrapper.emitted('saveMultiplier')).toEqual([[0.11]])
+    expect(wrapper.emitted('saveMultiplier')).toEqual([[0.11, 'direct_multiplier']])
+  })
+
+  it('collects ratio based upstream inputs and previews U', async () => {
+    const wrapper = mountDialog(openAIAccount({
+      account_type: 'apikey',
+      effective_cost_model: 'ratio_based_upstream',
+      upstream_actual_cost: 1,
+      upstream_obtained_quota: 10,
+      multiplier: { value: 1.5, source: 'manual', status: 'ok', sample_count: 1 },
+    }))
+
+    expect(wrapper.get<HTMLInputElement>('[data-test="upstream-actual-cost-input"]').element.value).toBe('1')
+    expect(wrapper.get('[data-test="effective-cost-preview"]').text()).toContain('0.1500')
+    await wrapper.get('[data-test="save-multiplier"]').trigger('click')
+    expect(wrapper.emitted('saveMultiplier')).toEqual([[1.5, 'ratio_based_upstream', 1, 10]])
   })
 
   it('uses procurement mode for OAuth accounts on every platform', () => {

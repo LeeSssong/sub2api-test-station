@@ -471,6 +471,9 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		}
 		account.RateMultiplier = input.RateMultiplier
 	}
+	if err := applyEffectiveCostConfiguration(account, input.EffectiveCostModel, input.UpstreamActualCost, input.UpstreamObtainedQuota); err != nil {
+		return nil, err
+	}
 	if input.ActiveProbeEnabled != nil {
 		if account.Extra == nil {
 			account.Extra = make(map[string]any)
@@ -578,6 +581,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	originalAccountType := account.Type
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -699,6 +703,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
 			ActiveProbeEnabledExtraKey,
+			EffectiveCostModelExtraKey,
+			UpstreamActualCostExtraKey,
+			UpstreamObtainedQuotaExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
@@ -814,6 +821,26 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, ErrUpstreamBillingRateSyncConflict
 		}
 		account.RateMultiplier = input.RateMultiplier
+	}
+	if input.EffectiveCostModel != nil || input.UpstreamActualCost != nil || input.UpstreamObtainedQuota != nil || input.Type != "" {
+		model := account.EffectiveCostModel
+		if input.EffectiveCostModel != nil {
+			model = *input.EffectiveCostModel
+		} else if input.Type != "" && input.Type != originalAccountType {
+			// Do not carry a model across the OAuth/API-key type boundary.
+			model = ""
+		}
+		actual := account.UpstreamActualCost
+		quota := account.UpstreamObtainedQuota
+		if input.UpstreamActualCost != nil {
+			actual = input.UpstreamActualCost
+		}
+		if input.UpstreamObtainedQuota != nil {
+			quota = input.UpstreamObtainedQuota
+		}
+		if err := applyEffectiveCostConfiguration(account, model, actual, quota); err != nil {
+			return nil, err
+		}
 	}
 	if input.ProcurementCost != nil {
 		if input.ProcurementCost.Value == nil && input.ProcurementCost.EstimatedUsableQuotaUSD == nil {

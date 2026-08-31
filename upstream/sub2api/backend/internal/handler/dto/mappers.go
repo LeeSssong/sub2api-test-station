@@ -236,6 +236,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	if state := service.OllamaCloudUsageStateFromAccount(a); state.Eligible {
 		ollamaCloudUsage = state
 	}
+	effectiveCost := service.EffectiveCostForAccount(a)
 	out := &Account{
 		ID:                         a.ID,
 		Name:                       a.Name,
@@ -254,6 +255,13 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		LoadFactor:                 a.LoadFactor,
 		Priority:                   a.Priority,
 		RateMultiplier:             a.BillingRateMultiplier(),
+		EffectiveCostModel:         effectiveCost.Model,
+		UpstreamActualCost:         a.UpstreamActualCost,
+		UpstreamObtainedQuota:      a.UpstreamObtainedQuota,
+		EffectiveCostA:             effectiveCost.A,
+		EffectiveCostR:             effectiveCost.R,
+		EffectiveCostU:             effectiveCost.U,
+		EffectiveCostStatus:        effectiveCost.Status,
 		ProcurementCostCNY:         a.ProcurementCostCNY,
 		EstimatedUsableQuotaUSD:    a.EstimatedUsableQuotaUSD,
 		ProcurementCostEffectiveAt: a.ProcurementCostEffectiveAt,

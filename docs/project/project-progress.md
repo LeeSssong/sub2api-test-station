@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**紧急回归排查与 T101 发布状态（2026-08-31）：** 线上最新主站记录 `/var/lib/sub2api/release-records/20260831T013736Z-production-3191472.json` 与验收站容器均明确运行 `3c5b9710a807904b8449708c71e3931b7f838490`；该 commit 不含 T101，故本次不是 T101 被回滚，而是后续发布继续使用旧 `main` 基线。T101 已合入根 `main`，合并后直接相关后端/前端测试、类型检查、生产构建和 `git diff --check` 均通过，当前进入推送及验收站部署阶段；主站仍需明确发布授权。
+
 **T98 实施授权更新（2026-08-31）：** 状态：进行中（`IMPLEMENTING`）。用户已批准 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md` 并要求进入实现；当前只允许在独立 worktree 完成本地实现与直接相关验证。该批准不构成主站部署、生产清库、生产配置修改或真实飞书发送授权。
 
 **T98 实施工作区登记（2026-08-31）：** 已从本地 `main@06695141f` 创建 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t98-feishu-upstream-balance-notification`，分支 `codex/t98-feishu-upstream-balance-notification`。计划、实现和直接相关验证均在该候选中进行；当前未改生产配置、生产数据或真实飞书投递。

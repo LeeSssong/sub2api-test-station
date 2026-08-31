@@ -1,10 +1,10 @@
 # 原生 Sub 小步发布任务包队列
 
-**T101：** 状态 `DESIGNING`。范围为管理员账号监控卡片的证据语义修复：真实请求性能时间线固定投影为 24 个等宽桶并保留空桶，避免少量有数据桶被放大为整块；全站范围不再把缺失的分组利润字段显示为“待确认”，改为“按分组查看”，选择具体分组后才显示该分组利润率；同时澄清“刷新主动探测”不会生成真实请求时间线样本。任务从已推送 `main@3c5b9710a807904b8449708c71e3931b7f838490` 创建独立 worktree，按 `$impeccable` 的运营产品界面准则与 TDD 实施。无利润公式、调度、计费、探测执行、迁移、配置或生产数据写入变化；尚未实现、合并、部署或验证。
+**T101：** 状态 `DEPLOYING`。紧急回归排查确认 T101 之前从未进入根 `main`/`origin/main`，最新发布 `20260831T013736Z-production-3191472.json` 实际运行 `3c5b9710a`，不是代码回滚。候选 `codex/t101-account-monitor-evidence-semantics@bc0988d2089652bf6c2740a001415ebe0b0c7461` 已合入当前根 `main`；合并后 Go 1.27 repository 定向测试和完整 server 编译、前端 56/56、typecheck、1094 modules production build、diff-check 均通过。修复固定 24 个真实请求桶、全站“按分组查看”和主动探测文案语义；无利润公式、调度、计费、探测执行、迁移、配置、依赖或生产数据写入变化。当前准备推送 `main` 并从同一 commit 部署验收站，主站仍需明确“快速部署到主站”或“测试站验收通过，部署主站”。
 
 **T100：** 状态 `DONE`。紧急修复已删除 OpenAI 请求路径上的自定义 admission/slow-session 并发控制，包括“单个长请求尚未首输出即拒绝同账号后续请求”的规则；账号并发只保留 Sub 原生账号并发槽。`main@5d77271b32990076b8b0344a3f1909c62192abc6`（tree `0b7ff53f1081be5684486b31c1ee7a3e3377e329`）已推送；源合同与 diff-check 通过，发布链 Linux/amd64 构建成功。主站记录 `/var/lib/sub2api/release-records/20260830T180509Z-production-2673285.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `blue`；验收站随后以同一 commit/tree 同步成功，六个服务全部 healthy。无迁移、账号/分组数据、凭据或业务数据写入。
 
-**T99：** 状态 `INTEGRATING`。根总控已完成候选差异与交接证据审查，未发现阻断问题；候选已合入并推送为 `main@3c5b9710a807904b8449708c71e3931b7f838490`。新增 Monitor V4 分组 `cache_read_tokens_p95` 与样本数字段，复用 `usage_logs.cache_read_tokens`；仅统计所选窗口内最终成功真实请求，包含 0 值，失败请求和主动探测排除。候选原有 Go 1.27.0 repository/service/handler 定向测试和完整 server 编译通过；根审重新执行前端 11/11、typecheck、production build 与 diff-check 通过，本机 Go 1.27 工具链下载因网络 EOF 未重复完成。无迁移、配置、依赖或事实源变化；尚未部署，且没有 T99 主站发布授权。
+**T99：** 状态 `DONE`。根总控已合入并推送 `main@3c5b9710a807904b8449708c71e3931b7f838490`；宿主发布记录 `/var/lib/sub2api/release-records/20260831T013736Z-production-3191472.json` 为 `succeeded/promoted`、`rolled_back=false`，主站与验收站均运行同一 `3c5b9710a` tree `cb944525481f65df25ef66e29c0681f3c471e60c`，六项验收服务 healthy，公网 `/healthz` 与验收 `/admin/lab/health` 均 HTTP 200。T99 直接相关测试、构建、范围检查和线上同步已完成；无迁移、配置、依赖、账号/分组或事实源变化。
 
 **T98 方案选择补充（2026-08-31）：** 用户确认新通知在 Sub2API 原生账号监控链路内按 BaseURL 判定并直接复用飞书传输/凭据/卡片样式；relay-ops 不再作为新体系运行时主路径，不新增余额探测、轮询或业务事实源。
 

@@ -635,6 +635,11 @@ WITH scopes AS (
            ]
          ) AS values(value)) AS latency_trimmed_mean
   FROM metric_arrays ma
+), missing_probe_counts AS (
+  SELECT group_id, COUNT(*)::int AS missing_probe_terminal_count
+  FROM bucket_matrix
+  WHERE has_real IS NOT TRUE AND probe_missing
+  GROUP BY group_id
 ), aggregate AS (
   SELECT g.group_id,
          CASE WHEN COUNT(s.group_id) = 0 THEN NULL
@@ -646,7 +651,7 @@ WITH scopes AS (
          COUNT(*) FILTER (WHERE s.source = 'real' AND s.successful)::int AS real_success_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_bucket_count,
 			COUNT(*) FILTER (WHERE s.source = 'probe')::int AS probe_fallback_request_count,
-			COUNT(*) FILTER (WHERE s.source = 'probe' AND s.probe_missing)::int AS missing_probe_terminal_count,
+			COALESCE(MAX(mpc.missing_probe_terminal_count), 0)::int AS missing_probe_terminal_count,
          MAX(ms.ttft_trimmed_mean) AS ttft_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
          MAX(ms.latency_trimmed_mean) AS latency_p95_ms,
@@ -659,6 +664,7 @@ WITH scopes AS (
   LEFT JOIN selected_events s ON s.group_id = g.group_id
   LEFT JOIN latest_selected ls ON ls.group_id = g.group_id
   LEFT JOIN metric_stats ms ON ms.group_id = g.group_id
+	LEFT JOIN missing_probe_counts mpc ON mpc.group_id = g.group_id
   GROUP BY g.group_id
 )
 	SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,

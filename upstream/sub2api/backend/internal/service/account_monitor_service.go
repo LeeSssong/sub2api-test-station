@@ -444,7 +444,7 @@ func logMonitorV4ProbeCompleteness(ctx context.Context, projection map[int64]Mon
 		if group.MissingProbeTerminalCount <= 0 {
 			continue
 		}
-		slog.WarnContext(ctx, "monitor_v4_probe_terminal_missing_fail_closed", "group_id", groupID, "bucket_count", group.MissingProbeTerminalCount)
+		slog.WarnContext(ctx, "monitor_v4_probe_terminal_missing", "group_id", groupID, "bucket_count", group.MissingProbeTerminalCount)
 	}
 }
 

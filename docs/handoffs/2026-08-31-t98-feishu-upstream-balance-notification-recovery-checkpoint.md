@@ -53,8 +53,14 @@
 - 根 `main` 已由 T105 窗口推进并推送到 `e53c98d11a0f75822064c18f72cbce47b2dffab3`（tree `0436dcdb180eb8a8cc5ebf41ad72d67d73a459b8`），包含 T98 `MAINTENANCE_19` allowlist；T98 维护发布必须以该最新根为目标。
 - 用户已明确批准必要停机。恢复后的唯一动作是：重新核对根/远端/宿主锁与 active hash，生成绑定当前根 tree 的 T98 证据，再使用 `--maintenance-authorized` 和精确 active hash 执行；若状态漂移立即停止。
 
-## Production Result And Remaining Blocker
+## Production Result And Prior Blocker (resolved below)
+
+## Permission Fix Completed
+
+- 用户已明确批准并已执行 ownership 修复：目录和五个文件均为 `1000:1000`，权限保持 `0700/0600`，内容未读取或修改。
+- 仅 `sub2api-worker` 已重启并恢复 `healthy`；UID 1000 可读全部挂载文件。PostgreSQL、Redis、Caddy 保持 running 且身份未变。
+- 脱敏日志计数：`notification subsystem disabled=0`、`secret_unavailable=0`、凭据签名=0、通知发送错误=0；release lock/partial=0；主站健康端点均 200。
+- T98 当前不再因 secret 权限阻塞；真实群送达仍未主动制造或验证，后续不得重复重启/改 secret，除非有新的明确授权。
 
 - 主站维护发布已成功：source `c651bcb7` / tree `79144c1c`、migration `0bda54bb`、活动槽 `green`；验收站运行同一镜像且健康。宿主 release lock/partial 均已释放。
-- worker 开关为启用态但 `secret_unavailable`；目录/五个文件为 root-owned `0700/0600`，UID 1000 不可读，sender 未发送消息。
-- 当前阶段暂停在敏感配置门禁：等待用户明确批准目录与文件 ownership 调整为 UID 1000（权限保持 0700/0600）及仅 worker 重启。批准后第一步是重新读全局约束和本 checkpoint，核对主站 source/锁未漂移，再执行最小修复。
+- （历史阻塞，已解决）worker 曾因 root-owned `0700/0600` secret 无法读取并记录 `secret_unavailable`；现已按授权改为 UID 1000 ownership 并完成仅 worker 重启，当前不再报错。

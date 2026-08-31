@@ -17,6 +17,8 @@
 
 - 分支：`codex/t98-feishu-upstream-balance-notification`
 - 基线：`main@06695141ff6459c08f316a97e6049ba2a42034bd`
+- 已刷新到：`main@a928c671d3133fc33d59cd6f56c351674af0406e`
+- 刷新合并提交：`11ee7f9f6 Merge branch 'main' into codex/t98-feishu-upstream-balance-notification`
 - 实现提交链：
   - `1b1245117 feat: add baseurl balance notification evaluation`
   - `80667fbe5 feat: add protected upstream balance secret loader`
@@ -29,7 +31,7 @@
 
 ## Verification
 
-- service 15/15、notify 7/7、repository 8/8、migration 1/1、converter 4/4 通过。
+- 合入 `main@a928c671d` 后重跑：service 15/15、notify 7/7、repository 8/8、migration 1/1、converter 4/4 通过。
 - `go build ./cmd/server` 通过。
 - relay-ops 34 个包 0 失败；常驻服务、provision、独立清理命令均构建通过。
 - relay-ops 依赖退休合同、Compose 合同、worker secret 合同、gofmt、diff check 和敏感信息扫描通过。
@@ -44,7 +46,7 @@
 
 ## Root Review And Release Order
 
-1. 根线程盘点领先 worktree，确认 T98 可进入唯一 `INTEGRATING` 车道，再刷新/合并到届时最新 `main`。
+1. 根线程盘点领先 worktree并确认 T98 可进入唯一 `INTEGRATING` 车道；若 `main` 仍为 `a928c671d` 可直接根审，若已前进则先重新刷新并复跑专项验证。
 2. 在合并后的 `main` 重跑本报告的直接相关测试、server/relay-ops 构建和发布预检，记录 `downtime_required`。
 3. 固定兼容镜像和回滚目标，部署已移除旧 writer 的 relay-ops/runtime；确认旧 sender、retry 和 scheduler 全部停止。
 4. 先运行独立清理命令 count-only 核对九表，只在已批准的受控发布阶段同时提供双门禁执行无备份删除。

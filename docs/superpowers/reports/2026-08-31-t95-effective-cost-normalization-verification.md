@@ -3,8 +3,8 @@
 ## Candidate
 
 - Original baseline: `main@879787096a7bc4b3ff4ab4820d4a5f3c3a63a29a`
-- Latest refreshed baseline: `main@6df628f282684b4626b6b18b2bccbf2cc595aad7`
-- Latest refresh merge: `7d2523782`
+- Latest refreshed baseline: `main@9729e372e7f48d83d8825348cee4a3c0bdcf5e43`
+- Latest refresh merge: `c3a0a54a1`
 - Implementation commits: `01d1bd30e`, `f5c5a5fee`
 - Branch: `codex/t95-effective-cost-normalization`
 - Worktree: `.worktrees/t95-effective-cost-normalization`

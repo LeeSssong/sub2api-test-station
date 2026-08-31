@@ -1,7 +1,7 @@
 # T98 恢复检查点
 
-日期：2026-08-31
-阶段：`FROZEN`（主站维护发布已成功；暂停在凭据权限门禁）
+日期：2026-09-01
+阶段：`IMPLEMENTING`（接手后继续 T98 精度缺陷诊断；不涉及发布/生产写入）
 
 ## 当前现场
 
@@ -64,3 +64,16 @@
 
 - 主站维护发布已成功：source `c651bcb7` / tree `79144c1c`、migration `0bda54bb`、活动槽 `green`；验收站运行同一镜像且健康。宿主 release lock/partial 均已释放。
 - （历史阻塞，已解决）worker 曾因 root-owned `0700/0600` secret 无法读取并记录 `secret_unavailable`；现已按授权改为 UID 1000 ownership 并完成仅 worker 重启，当前不再报错。
+
+## 接手记录（2026-09-01）
+
+- 本窗口正式接手 T98 缺陷诊断；用户明确要求继续工作。当前仅处理只读证据与候选实现，不执行发布总控动作。
+- 已确认根因假设：`TIMESTAMPTZ` 写入/读取为微秒精度，而 JSON `observed_at` 可保留纳秒；`time.Time.Equal` 在 lease/current 与 evaluation/lease 两处造成合法同一观测被判不匹配，静默跳过发送。
+- 下一步：在候选 worktree 先补纳秒截断回归测试并验证 RED，再实现统一微秒归一化；完成后更新 handoff，交 `READY_FOR_ROOT_REVIEW`。
+
+## 精度缺陷修复记录（2026-09-01）
+
+- TDD RED：新增两个回归测试，验证 JSON `observed_at` 含 `123456789` 纳秒、事件账本仅保留微秒时，lease/current 与 evaluation/lease 原严格 `time.Equal` 均失败。
+- 最小修复：新增 `upstreamBalanceObservationTimeEqual`，双方先 `Truncate(time.Microsecond)` 再比较；仅应用于最终投递指纹的两处时间比较，不改变余额、状态、generation、lease 或 CAS 语义。
+- TDD GREEN：两个纳秒/微秒回归测试通过；`go test ./internal/service -run 'TestUpstreamBalance'` 通过；`go test -vet=off ./internal/repository -run 'TestUpstreamBalanceEventRepository'` 通过；notify 相关测试、`go build ./cmd/server`、`git diff --check` 通过。
+- 未验证/基线阻断：仓储包默认 vet 仍被既有 `internal/repository/usage_log_repo_stats.go:1004` 的 `fmt.Sprintf` 参数数量错误阻断；未修改该无关文件。未执行生产/验收站/真实飞书动作。

@@ -336,7 +336,7 @@ func upstreamBalanceLeaseMatches(current *UpstreamBalanceEvent, lease UpstreamBa
 		current.ScopeKey == lease.ScopeKey && current.NotificationState == lease.NotificationState &&
 		current.DeliveryGeneration == lease.Generation && current.DeliveryLeaseToken == lease.Token &&
 		current.DeliveryLeaseUntil != nil && current.DeliveryLeaseUntil.After(now) &&
-		current.LastObservedAt.Equal(lease.ObservedAt) && current.ValueUSD == lease.ValueUSD
+		upstreamBalanceObservationTimeEqual(current.LastObservedAt, lease.ObservedAt) && current.ValueUSD == lease.ValueUSD
 }
 
 func findUpstreamBalanceEvaluation(evaluations []UpstreamBalanceEvaluation, scopeKey string) (UpstreamBalanceEvaluation, bool) {
@@ -349,8 +349,16 @@ func findUpstreamBalanceEvaluation(evaluations []UpstreamBalanceEvaluation, scop
 }
 
 func upstreamBalanceEvaluationMatchesLease(evaluation UpstreamBalanceEvaluation, lease UpstreamBalanceDeliveryLease) bool {
-	return evaluation.ValueUSD != nil && evaluation.ObservedAt.Equal(lease.ObservedAt) &&
+	return evaluation.ValueUSD != nil && upstreamBalanceObservationTimeEqual(evaluation.ObservedAt, lease.ObservedAt) &&
 		*evaluation.ValueUSD == lease.ValueUSD && evaluation.State == lease.NotificationState
+}
+
+// PostgreSQL TIMESTAMPTZ stores microseconds, while account_monitor_balance
+// JSON timestamps may retain nanoseconds. Normalize both sides before comparing
+// the delivery fingerprint so a round-trip through the event ledger does not
+// silently discard an otherwise current notification.
+func upstreamBalanceObservationTimeEqual(a, b time.Time) bool {
+	return a.Truncate(time.Microsecond).Equal(b.Truncate(time.Microsecond))
 }
 
 func upstreamBalanceCardInput(

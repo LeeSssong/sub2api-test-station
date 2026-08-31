@@ -35,6 +35,42 @@ func TestUpstreamBalanceNotificationServiceEvaluateReReadsCurrentProjectionBefor
 	require.Equal(t, now, repo.confirmed[0].At)
 }
 
+func TestUpstreamBalanceLeaseMatchesMicrosecondTruncatedDatabaseObservation(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	jsonObservedAt := time.Date(2026, 8, 31, 11, 59, 0, 123456789, time.UTC)
+	databaseObservedAt := jsonObservedAt.Truncate(time.Microsecond)
+	current := &UpstreamBalanceEvent{
+		ID: 41, RuleID: 17, Status: OpsAlertStatusFiring, ScopeType: UpstreamBalanceScopeTypeBaseURL,
+		ScopeKey: "https://upstream.invalid", NotificationState: UpstreamBalanceNotificationStateLow,
+		LastObservedAt: databaseObservedAt, ValueUSD: 4.5, DeliveryGeneration: 1,
+		DeliveryLeaseToken: "lease-token", DeliveryLeaseUntil: upstreamBalanceTimePointer(now.Add(time.Minute)),
+	}
+	lease := UpstreamBalanceDeliveryLease{
+		EventID: 41, RuleID: 17, ScopeKey: "https://upstream.invalid", NotificationState: UpstreamBalanceNotificationStateLow,
+		ObservedAt: jsonObservedAt, ValueUSD: 4.5, Generation: 1, Token: "lease-token", LeaseUntil: now.Add(time.Minute),
+	}
+
+	if !upstreamBalanceLeaseMatches(current, lease, now) {
+		t.Fatal("microsecond-truncated database timestamp must match the JSON observation")
+	}
+}
+
+func TestUpstreamBalanceEvaluationMatchesLeaseMicrosecondTruncation(t *testing.T) {
+	jsonObservedAt := time.Date(2026, 8, 31, 11, 59, 0, 123456789, time.UTC)
+	value := 4.5
+	evaluation := UpstreamBalanceEvaluation{
+		ObservedAt: jsonObservedAt, ValueUSD: &value, State: UpstreamBalanceNotificationStateLow,
+	}
+	lease := UpstreamBalanceDeliveryLease{
+		ObservedAt: jsonObservedAt.Truncate(time.Microsecond), ValueUSD: value,
+		NotificationState: UpstreamBalanceNotificationStateLow,
+	}
+
+	if !upstreamBalanceEvaluationMatchesLease(evaluation, lease) {
+		t.Fatal("microsecond-truncated lease timestamp must match the JSON evaluation")
+	}
+}
+
 func TestUpstreamBalanceNotificationServiceUsesFiveMinuteZeroCadence(t *testing.T) {
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 	evaluation := upstreamBalanceEvaluationFixture("zero account", UpstreamBalanceStateZero, 0, now.Add(-time.Minute))

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -50,7 +51,13 @@ func (r *accountMonitorRepository) ReplaceMonitorV4Snapshots(ctx context.Context
 		return rollback(err)
 	}
 	for _, snapshot := range snapshots {
-		for groupID, projection := range snapshot.Groups {
+		groupIDs := make([]int64, 0, len(snapshot.Groups))
+		for groupID := range snapshot.Groups {
+			groupIDs = append(groupIDs, groupID)
+		}
+		sort.Slice(groupIDs, func(i, j int) bool { return groupIDs[i] < groupIDs[j] })
+		for _, groupID := range groupIDs {
+			projection := snapshot.Groups[groupID]
 			if _, err := tx.ExecContext(ctx, `INSERT INTO account_monitor_v4_snapshots (
 				window, group_id, snapshot_id, generated_at, window_start, window_end, contract_version,
 				success_rate, request_count, success_count, real_request_count, real_success_count,

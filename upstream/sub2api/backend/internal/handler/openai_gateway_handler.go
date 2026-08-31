@@ -590,10 +590,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
-	if reqStream {
-		shape := service.ClassifyOpenAIAdmissionRequestShape(len(body), h.cfg.Gateway.OpenAISharedHealth.LongRequestBodyThresholdBytes)
-		c.Request = c.Request.WithContext(service.WithOpenAIAdmissionRequestShape(c.Request.Context(), shape))
-	}
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 	if previousResponseID != "" {
 		previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
@@ -902,25 +898,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
-		shape := service.OpenAIAdmissionRequestShapeFromContext(c.Request.Context())
-		if reqStream && shape != service.OpenAIAdmissionShapeUnknown {
-			admissionRelease, admission := h.gatewayService.AcquireOpenAIAdmission(account.ID, shape)
-			if !admission.Allowed {
-				if accountReleaseFunc != nil {
-					accountReleaseFunc()
-				}
-				failedAccountIDs[account.ID] = struct{}{}
-				reqLog.Info("openai.admission_rejected", zap.Int64("account_id", account.ID), zap.String("reason", admission.Reason))
-				continue
-			}
-			priorRelease := accountReleaseFunc
-			accountReleaseFunc = func() {
-				admissionRelease()
-				if priorRelease != nil {
-					priorRelease()
-				}
-			}
-		}
 		if !retryBudget.consumeAccountAttempt(account) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -951,7 +928,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
-		attemptCtx = service.WithOpenAIFirstSemanticOutputCallback(attemptCtx, accountReleaseFunc)
 		service.RecordOpenAISchedulerSelection(attemptCtx, requestPlatform, apiKey.GroupID, scheduleDecision)
 		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
 			service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
@@ -979,9 +955,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}()
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
-		}
-		if err == nil {
-			h.gatewayService.RecordOpenAISlowSessionGuard(account.ID, result, selection.HalfOpenProbe)
 		}
 		var cyberBlockBodyHTTP []byte
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -1609,10 +1582,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
-	if reqStream {
-		shape := service.ClassifyOpenAIAdmissionRequestShape(len(body), h.cfg.Gateway.OpenAISharedHealth.LongRequestBodyThresholdBytes)
-		c.Request = c.Request.WithContext(service.WithOpenAIAdmissionRequestShape(c.Request.Context(), shape))
-	}
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
@@ -1798,25 +1767,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
-		shape := service.OpenAIAdmissionRequestShapeFromContext(c.Request.Context())
-		if reqStream && shape != service.OpenAIAdmissionShapeUnknown {
-			admissionRelease, admission := h.gatewayService.AcquireOpenAIAdmission(account.ID, shape)
-			if !admission.Allowed {
-				if accountReleaseFunc != nil {
-					accountReleaseFunc()
-				}
-				failedAccountIDs[account.ID] = struct{}{}
-				reqLog.Info("openai.admission_rejected", zap.Int64("account_id", account.ID), zap.String("reason", admission.Reason))
-				continue
-			}
-			priorRelease := accountReleaseFunc
-			accountReleaseFunc = func() {
-				admissionRelease()
-				if priorRelease != nil {
-					priorRelease()
-				}
-			}
-		}
 		if !retryBudget.consumeAccountAttempt(account) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -1844,7 +1794,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
-		attemptCtx = service.WithOpenAIFirstSemanticOutputCallback(attemptCtx, accountReleaseFunc)
 		service.RecordOpenAISchedulerSelection(attemptCtx, requestPlatform, apiKey.GroupID, scheduleDecision)
 		if attemptMode == openAICachePreservationModeFailoverAfterFailure {
 			service.RecordOpenAIResilienceOutcomeWithContext(attemptCtx, service.OpenAIResilienceEvent{
@@ -1872,9 +1821,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		}()
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
-		}
-		if err == nil {
-			h.gatewayService.RecordOpenAISlowSessionGuard(account.ID, result, selection.HalfOpenProbe)
 		}
 		var cyberBlockBodyMsg []byte
 		if service.GetOpsCyberPolicy(c) != nil {

@@ -376,20 +376,22 @@ type MonitorV2NativeGroupProjection struct {
 // used by the hybrid performance monitor. Probe fallback rows are already
 // reduced to one logical request per selected bucket by the repository.
 type MonitorV4GroupProjection struct {
-	SuccessRate               *float64
-	RequestCount              int
-	SuccessCount              int
-	RealRequestCount          int
-	RealSuccessCount          int
-	ProbeFallbackBucketCount  int
-	ProbeFallbackRequestCount int
-	MissingProbeTerminalCount int
-	TTFTP95MS                 *float64
-	TTFTSampleCount           int
-	LatencyP95MS              *float64
-	LatencySampleCount        int
-	SourceUpdatedAt           *time.Time
-	CurrentOperational        bool
+	SuccessRate                *float64
+	RequestCount               int
+	SuccessCount               int
+	RealRequestCount           int
+	RealSuccessCount           int
+	ProbeFallbackBucketCount   int
+	ProbeFallbackRequestCount  int
+	MissingProbeTerminalCount  int
+	TTFTP95MS                  *float64
+	TTFTSampleCount            int
+	LatencyP95MS               *float64
+	LatencySampleCount         int
+	CacheReadTokensP95         *float64
+	CacheReadTokensSampleCount int
+	SourceUpdatedAt            *time.Time
+	CurrentOperational         bool
 }
 
 // AccountMonitorGroupProbeRepository is the native read path used by Monitor V2.

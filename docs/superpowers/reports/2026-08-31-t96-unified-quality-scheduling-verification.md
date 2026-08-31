@@ -12,8 +12,9 @@ This candidate is implemented and directly functionally verified. It has not bee
 - Branch: `codex/t96-unified-quality-scheduling`
 - Refresh base: clean root `main == origin/main == 7d6c4a178d394b756e8c6428a4508e7230b4a73c`
 - Refresh base tree: `262776dba20cde897ca446ab30252b6577069684`
-- Candidate HEAD: `509b631dc194108397c7ea393508738db888abe8`
-- Candidate tree: `eda9659f93307b78819d656dc9a44ccbdd79c823`
+- Verified implementation/test tip: `13608022152797901e7ada712851377a8d1d5deb`
+- Verified implementation/test tree: `eda9659f93307b78819d656dc9a44ccbdd79c823`
+- Final branch tip: use the clean `codex/t96-unified-quality-scheduling` HEAD reported in the root handoff; the report commit itself is intentionally newer than the verified code tree.
 - Candidate status: clean after committing this report; no staged or untracked files
 - Root status: clean, `main == origin/main`
 
@@ -73,4 +74,4 @@ The frontend typecheck rewrote dependency metadata in `pnpm-lock.yaml`; that unr
 
 ## Root handoff
 
-The root release controller may now review candidate `509b631dc194108397c7ea393508738db888abe8` against `main@7d6c4a178d394b756e8c6428a4508e7230b4a73c`. If approved, the next actions are root-only: merge to a clean root `main`, run the root direct gates, push `origin/main`, and follow the acceptance-station/main-site authorization rules. This report does not authorize merge, push, deployment, or production verification.
+The root release controller may now review the clean `codex/t96-unified-quality-scheduling` branch against `main@7d6c4a178d394b756e8c6428a4508e7230b4a73c`; the exact final branch HEAD/tree is included in the task handoff response. If approved, the next actions are root-only: merge to a clean root `main`, run the root direct gates, push `origin/main`, and follow the acceptance-station/main-site authorization rules. This report does not authorize merge, push, deployment, or production verification.

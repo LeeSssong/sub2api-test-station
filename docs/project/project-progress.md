@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**T104 Monitor V4 持久化分组快照（2026-08-31）：** 状态：进行中（`READY_FOR_ROOT_REVIEW`）。候选 `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t104-monitor-v4-persisted-snapshot`，分支 `codex/t104-monitor-v4-persisted-snapshot`，基线已刷新至根 `main@fde3ece1b6e20a9e0b6a7ff47bf1e0be03213178`（tree `3c7a8c6d85d18d9c3ecb1a40dd3efaeab95315ad`），候选 HEAD `39eb62a268bdab59e880a74fdb3d5f603bbd13cf`（tree `0cb3d5402651353b629615e372bb9ef8a620a362`），无未提交内容。范围为 expand-only migration `232_monitor_v4_snapshots`、原子 DELETE+INSERT 快照仓储及完整性校验、Monitor V4 只读最近快照与实时可见组裁剪、singleton worker 每 5 分钟刷新三窗口并复用 Sub 原生协调。repository/service/runner/migration 直接测试、`git diff --check` 与 native-only guard 已通过；handler/frontend 测试及完整构建按快速验证范围保留已记录环境阻断，未部署、未触碰生产。等待根总控发出 `AUTHORIZE_MERGE_TO_MAIN`。
+**T104 Monitor V4 持久化分组快照（2026-08-31）：** 状态：进行中（`DEPLOYING`）。候选已按 `AUTHORIZE_MERGE_TO_MAIN` 合入并推送根 `main@d2d26208d0b14e2f9db8308c9f799a84c5275aa9`（tree `f8065bb8a3b599cfa28272645224a79a956c6a36`），根工作区干净且与 `origin/main` 一致。范围为 expand-only migration `232_monitor_v4_snapshots`、原子 DELETE+INSERT 快照仓储及完整性校验、Monitor V4 只读最近快照与实时可见组裁剪、singleton worker 每 5 分钟刷新三窗口并复用 Sub 原生协调。repository/service/runner/migration 直接测试、`git diff --check` 与 native-only guard 已通过；handler/frontend 测试及完整构建按快速验证范围保留已记录环境阻断，尚未完成生产发布或线上验收。
 
 **T103 最新处置（2026-08-31）：`ABANDONED / 已废弃`。** 用户明确废弃 T103，不再要求其单独部署，不再占用或阻塞整合、部署和验证车道。当前生产请求 handler 已不调用自定义账号 admission/slow-session，仅保留 Sub 原生账号槽位；已进入 `main` 的 native-only 发布硬门禁继续作为全局永久约束保留，不因任务废弃而删除。T103 历史排查、提交和停机门禁记录只作审计证据，不得再据此启动 T103 发布。
 

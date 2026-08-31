@@ -116,6 +116,18 @@ func (r *upstreamBalanceEventRepository) Claim(ctx context.Context, input servic
 		return service.UpstreamBalanceDeliveryLease{}, false, err
 	}
 	insertEvent := errors.Is(err, sql.ErrNoRows)
+	if insertEvent {
+		latestObservedAt, historyErr := selectLatestUpstreamBalanceObservation(ctx, tx, input.RuleID, input.ScopeKey)
+		if historyErr != nil && !errors.Is(historyErr, sql.ErrNoRows) {
+			return service.UpstreamBalanceDeliveryLease{}, false, historyErr
+		}
+		if historyErr == nil && !input.ObservedAt.After(latestObservedAt) {
+			if err := tx.Commit(); err != nil {
+				return service.UpstreamBalanceDeliveryLease{}, false, err
+			}
+			return service.UpstreamBalanceDeliveryLease{}, false, nil
+		}
+	}
 	if !insertEvent && !shouldClaimUpstreamBalanceEvent(event, input) {
 		if err := tx.Commit(); err != nil {
 			return service.UpstreamBalanceDeliveryLease{}, false, err
@@ -133,6 +145,12 @@ func (r *upstreamBalanceEventRepository) Claim(ctx context.Context, input servic
 		event, err = insertUpstreamBalanceEvent(ctx, tx, input, token, leaseUntil)
 	} else {
 		event, err = updateUpstreamBalanceEventClaim(ctx, tx, event, input, token, leaseUntil)
+		if errors.Is(err, sql.ErrNoRows) {
+			if commitErr := tx.Commit(); commitErr != nil {
+				return service.UpstreamBalanceDeliveryLease{}, false, commitErr
+			}
+			return service.UpstreamBalanceDeliveryLease{}, false, nil
+		}
 	}
 	if err != nil {
 		return service.UpstreamBalanceDeliveryLease{}, false, err
@@ -239,7 +257,8 @@ SET status = $4,
 WHERE rule_id = $1
   AND scope_type = $5
   AND scope_key = $2
-  AND status = $6`, ruleID, scopeKey, observedAt, service.OpsAlertStatusResolved, service.UpstreamBalanceScopeTypeBaseURL, service.OpsAlertStatusFiring)
+  AND status = $6
+  AND (last_observed_at IS NULL OR last_observed_at < $3)`, ruleID, scopeKey, observedAt, service.OpsAlertStatusResolved, service.UpstreamBalanceScopeTypeBaseURL, service.OpsAlertStatusFiring)
 	changed, err := upstreamBalanceCASResult(res, err)
 	if err != nil {
 		return false, err
@@ -319,6 +338,21 @@ FOR UPDATE`, ruleID, service.UpstreamBalanceScopeTypeBaseURL, scopeKey, service.
 	return scanUpstreamBalanceEvent(row)
 }
 
+func selectLatestUpstreamBalanceObservation(ctx context.Context, tx *sql.Tx, ruleID int64, scopeKey string) (time.Time, error) {
+	var observedAt time.Time
+	err := tx.QueryRowContext(ctx, `
+SELECT last_observed_at
+FROM ops_alert_events
+WHERE rule_id = $1
+  AND scope_type = $2
+  AND scope_key = $3
+  AND status <> $4
+  AND last_observed_at IS NOT NULL
+ORDER BY last_observed_at DESC, id DESC
+LIMIT 1`, ruleID, service.UpstreamBalanceScopeTypeBaseURL, scopeKey, service.OpsAlertStatusFiring).Scan(&observedAt)
+	return observedAt, err
+}
+
 func insertUpstreamBalanceEvent(ctx context.Context, tx *sql.Tx, input service.UpstreamBalanceClaimInput, token string, leaseUntil time.Time) (*service.UpstreamBalanceEvent, error) {
 	row := tx.QueryRowContext(ctx, `
 INSERT INTO ops_alert_events (
@@ -350,6 +384,16 @@ SET severity = CASE WHEN $2 = 'zero' THEN 'P1' ELSE 'P2' END,
     delivery_lease_token = $6,
     delivery_lease_until = $7
 WHERE id = $1
+  AND status = 'firing'
+  AND (
+    last_observed_at IS NULL
+    OR last_observed_at < $4
+    OR (
+      last_observed_at = $4
+      AND notification_state = $2
+      AND metric_value = $3
+    )
+  )
 RETURNING`+upstreamBalanceEventSelectColumns,
 		event.ID, input.NotificationState, input.ValueUSD, input.ObservedAt, stateChanged, token, leaseUntil)
 	return scanUpstreamBalanceEvent(row)

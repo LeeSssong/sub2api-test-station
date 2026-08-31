@@ -116,6 +116,14 @@ to   e177e184c777b6080167c1cf787a5d2fe6a95eb0d965ed3522320da76ee5ee8e
 file 229_active_probe_switches.sql — add-only account/group active-probe switches with defaults enabled; no historical backfill, credential changes, usage/accounting rewrite, or destructive data operation.
 ```
 
+Current T98 transition:
+
+```text
+from 88a0ff14d25215f07d05f307a521f03114005ace43078b80f3bd2702e0f08d03
+to   0bda54bbf75076c03bbd780603ccdca20c5b09e46ca7e2b4d2a1717c90e5dc57
+file 231_upstream_baseurl_balance_notifications.sql (SHA-256 0827fc078eb21f5be6d1a7cb05667585914a78665d572b1ba44e377d3a9b16b4) — add-only BaseURL-scoped non-sensitive notification state columns, indexes and the native alert rule; no balance/account/usage backfill or business data rewrite.
+```
+
 Invoke the same controller with the explicit maintenance flag:
 
 ```bash

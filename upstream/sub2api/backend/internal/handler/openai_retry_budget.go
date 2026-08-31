@@ -221,6 +221,13 @@ func handleOpenAIUnifiedOAuth429(
 	return gateway.ShouldStopOpenAIOAuth429Failover(account, failure.StatusCode, failedSwitches, state)
 }
 
+// shouldUseLegacyOpenAIOAuth429GroupRecovery keeps the pre-T96 one-shot group
+// reset on legacy paths only. Unified quality routing owns its complete
+// cross-account budget and must not reopen an already exhausted candidate set.
+func shouldUseLegacyOpenAIOAuth429GroupRecovery(unifiedQuality bool) bool {
+	return !unifiedQuality
+}
+
 func openAIUnifiedFailureSafeToReplay(failure service.OpenAIUpstreamFailureClass, failoverErr *service.UpstreamFailoverError, usageProduced bool) bool {
 	if !failure.SafeToReplay || failure.OutputStarted || failure.HasSideEffect || usageProduced {
 		return false

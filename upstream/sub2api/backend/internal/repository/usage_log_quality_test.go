@@ -35,8 +35,8 @@ func TestUsageLogRepositoryListOpenAIAccountQualityUsesUsageLogsOnly(t *testing.
 	got, err := newUsageLogRepositoryWithSQL(nil, db).ListOpenAIAccountQuality(context.Background(), from, to)
 	require.NoError(t, err)
 	require.Equal(t, []service.OpenAIAccountQuality{
-		{AccountID: 7, AttemptCount: 2, SuccessCount: 1, SuccessRate: floatPtr(0.5), TTFTSampleCount: 1, TTFTTrimmedMeanMS: floatPtr(1200), LatencySampleCount: 1, LatencyTrimmedMeanMS: floatPtr(2400)},
-		{AccountID: 8, AttemptCount: 1, SuccessCount: 0, SuccessRate: floatPtr(0), TTFTSampleCount: 0, LatencySampleCount: 0},
+		{AccountID: 7, AttemptCount: 2, SuccessCount: 1, SuccessRate: qualityFloatPtr(0.5), TTFTSampleCount: 1, TTFTTrimmedMeanMS: qualityFloatPtr(1200), LatencySampleCount: 1, LatencyTrimmedMeanMS: qualityFloatPtr(2400)},
+		{AccountID: 8, AttemptCount: 1, SuccessCount: 0, SuccessRate: qualityFloatPtr(0), TTFTSampleCount: 0, LatencySampleCount: 0},
 	}, got)
 	require.Contains(t, strings.ToLower(captured), "from usage_logs")
 	require.NotContains(t, strings.ToLower(captured), "ops_error_logs")
@@ -74,4 +74,4 @@ func TestOpenAIAccountQualityQueryContainsPhysicalAttemptAndTrimmedMeanContract(
 	require.NotContains(t, query, "join ops_error_logs")
 }
 
-func floatPtr(value float64) *float64 { return &value }
+func qualityFloatPtr(value float64) *float64 { return &value }

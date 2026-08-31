@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -51,8 +50,8 @@ func NormalizeNotificationBaseURL(raw string) (string, error) {
 
 // EvaluateUpstreamBaseURLBalance filters active OpenAI API-key accounts,
 // groups them by normalized BaseURL, and selects one latest strict-valid USD
-// snapshot per key. A same-time value conflict fails closed for the whole
-// evaluation because the current value is not unique.
+// snapshot per key. A same-time value conflict fails closed for that scope
+// because the current value is not unique, while unrelated scopes continue.
 func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount) ([]UpstreamBalanceEvaluation, error) {
 	groups := make(map[string][]UpstreamBalanceAccount)
 	for _, account := range accounts {
@@ -75,6 +74,7 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount) ([]Upstre
 		members := groups[key]
 		sort.SliceStable(members, func(i, j int) bool { return members[i].AccountID < members[j].AccountID })
 		var latest *AccountMonitorBalance
+		conflict := false
 		for i := range members {
 			snapshot := members[i].Snapshot
 			if !validNotificationSnapshot(snapshot) {
@@ -85,10 +85,11 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount) ([]Upstre
 				continue
 			}
 			if snapshot.ObservedAt.Equal(*latest.ObservedAt) && *snapshot.ValueUSD != *latest.ValueUSD {
-				return nil, fmt.Errorf("base URL %q has conflicting balance snapshots", key)
+				conflict = true
+				break
 			}
 		}
-		if latest == nil {
+		if conflict || latest == nil {
 			continue
 		}
 		value := *latest.ValueUSD

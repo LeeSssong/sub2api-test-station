@@ -110,6 +110,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
+	recoveryPassUsed := false
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	switchCount := 0
 	recordedSwitchCount := 0
@@ -155,6 +156,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				}
 				h.errorResponse(c, cls.Status, cls.ErrType, cls.Message)
 				return
+			}
+			if shouldUseLegacyOpenAIOAuth429GroupRecovery(scheduleDecision.UnifiedQuality) && recoverOpenAIOAuth429GroupOnce(c.Request.Context(), h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, false, &recoveryPassUsed, nil) {
+				continue
 			}
 			if lastFailoverErr != nil {
 				h.handleFailoverExhausted(c, lastFailoverErr, false)

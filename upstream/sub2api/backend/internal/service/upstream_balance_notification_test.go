@@ -62,22 +62,21 @@ func TestEvaluateUpstreamBaseURLBalanceUsesLatestValidSnapshot(t *testing.T) {
 	}
 }
 
-func TestEvaluateUpstreamBaseURLBalanceRejectsAmbiguousAndInvalidData(t *testing.T) {
+func TestEvaluateUpstreamBaseURLBalanceSkipsAmbiguousScope(t *testing.T) {
 	now := time.Date(2026, 8, 31, 2, 0, 0, 0, time.UTC)
 	zero := 0.0
 	conflicting := 1.0
+	healthy := 7.0
 	result, err := EvaluateUpstreamBaseURLBalance([]UpstreamBalanceAccount{
 		{AccountID: 1, Name: "one", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://same.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &zero, ObservedAt: &now}},
 		{AccountID: 2, Name: "two", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://same.example/", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK, ValueUSD: &conflicting, ObservedAt: &now}},
+		{AccountID: 3, Name: "healthy", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://healthy.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &healthy, ObservedAt: &now}},
 	})
-	if err == nil || result != nil {
-		t.Fatalf("ambiguous/invalid result = %#v, %v, want fail-closed error", result, err)
+	if err != nil {
+		t.Fatalf("ambiguous scope should not block other scopes: %v", err)
 	}
-
-	healthy := 7.0
-	result, err = EvaluateUpstreamBaseURLBalance([]UpstreamBalanceAccount{{AccountID: 3, Name: "healthy", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://healthy.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &healthy, ObservedAt: &now}}})
-	if err != nil || len(result) != 1 || result[0].State != UpstreamBalanceStateHealthy {
-		t.Fatalf("healthy result = %#v, %v", result, err)
+	if len(result) != 1 || result[0].NormalizedBaseURL != "https://healthy.example" || result[0].State != UpstreamBalanceStateHealthy {
+		t.Fatalf("result = %#v, want only unaffected healthy scope", result)
 	}
 	if result[0].ValueUSD == nil || *result[0].ValueUSD != healthy {
 		t.Fatalf("healthy value = %#v", result[0].ValueUSD)

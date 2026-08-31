@@ -1338,11 +1338,16 @@ func ProvideAccountMonitorRunner(
 	svc *AccountMonitorService,
 	detector *AccountModelDetectionService,
 	balanceNotification *UpstreamBalanceNotificationService,
+	monitorV4 *MonitorV4Service,
+	leaderLockCache LeaderLockCache,
+	db *sql.DB,
 	cfg *config.Config,
 ) *AccountMonitorRunner {
 	runner := NewAccountMonitorRunner(svc)
 	runner.SetModelDetectionService(detector)
 	runner.SetUpstreamBalanceNotificationTrigger(balanceNotification)
+	runner.SetMonitorV4SnapshotRefresher(monitorV4)
+	runner.SetMonitorV4SnapshotCoordination(leaderLockCache, db)
 	if shouldStartSingleton(cfg) {
 		runner.Start()
 	}

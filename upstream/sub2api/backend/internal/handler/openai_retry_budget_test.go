@@ -234,6 +234,11 @@ func TestOpenAIUnifiedOAuth429KeepsNativeCooldownAndStopSemantics(t *testing.T) 
 	require.Equal(t, 3, gateway.lastFailedSwitches)
 }
 
+func TestOpenAIUnifiedModeSkipsLegacyOAuth429GroupReset(t *testing.T) {
+	require.False(t, shouldUseLegacyOpenAIOAuth429GroupRecovery(true))
+	require.True(t, shouldUseLegacyOpenAIOAuth429GroupRecovery(false))
+}
+
 type recordingOpenAIUnifiedOAuth429Gateway struct {
 	persistCalls       int
 	lastAccountID      int64

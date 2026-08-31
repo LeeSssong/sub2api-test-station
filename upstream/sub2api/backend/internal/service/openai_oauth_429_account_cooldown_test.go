@@ -13,9 +13,11 @@ import (
 
 type openAIOAuth429CooldownRepo struct {
 	mockAccountRepoForGemini
-	setCalls    int
-	extendCalls int
-	lastResetAt time.Time
+	setCalls      int
+	extendCalls   int
+	clearCalls    int
+	lastResetAt   time.Time
+	groupAccounts []Account
 }
 
 func (r *openAIOAuth429CooldownRepo) SetRateLimited(_ context.Context, _ int64, resetAt time.Time) error {
@@ -27,6 +29,15 @@ func (r *openAIOAuth429CooldownRepo) SetRateLimited(_ context.Context, _ int64, 
 func (r *openAIOAuth429CooldownRepo) SetRateLimitedIfLater(_ context.Context, _ int64, resetAt time.Time) error {
 	r.extendCalls++
 	r.lastResetAt = resetAt
+	return nil
+}
+
+func (r *openAIOAuth429CooldownRepo) ListByGroup(_ context.Context, _ int64) ([]Account, error) {
+	return r.groupAccounts, nil
+}
+
+func (r *openAIOAuth429CooldownRepo) ClearRateLimit(_ context.Context, _ int64) error {
+	r.clearCalls++
 	return nil
 }
 
@@ -70,4 +81,37 @@ func TestPersistOpenAIOAuth429CooldownIgnoresNonTransientAndNonOAuth(t *testing.
 	svc.PersistOpenAIOAuth429Cooldown(context.Background(), apiKeyAccount, http.Header{}, nil)
 
 	require.Zero(t, repo.extendCalls)
+}
+
+func TestRefreshOpenAIOAuth429GroupClearsOnlyShortExcludedCooldowns(t *testing.T) {
+	now := time.Now()
+	shortStarted := now.Add(-time.Minute)
+	shortReset := now.Add(4 * time.Minute)
+	sevenDayReset := now.Add(24 * time.Hour)
+	repo := &openAIOAuth429CooldownRepo{groupAccounts: []Account{
+		{ID: 705, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, RateLimitedAt: &shortStarted, RateLimitResetAt: &shortReset},
+		{ID: 706, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true, RateLimitedAt: &shortStarted, RateLimitResetAt: &sevenDayReset, Extra: map[string]any{"codex_7d_used_percent": 100.0, "codex_7d_reset_at": sevenDayReset.Format(time.RFC3339)}},
+		{ID: 707, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, RateLimitedAt: &shortStarted, RateLimitResetAt: &shortReset},
+	}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	svc.BlockAccountScheduling(&repo.groupAccounts[0], shortReset, "429")
+
+	cleared, err := svc.RefreshOpenAIOAuth429Group(context.Background(), 99, map[int64]struct{}{705: {}, 706: {}, 707: {}})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, cleared)
+	require.Equal(t, 1, repo.clearCalls)
+	_, blocked := svc.openaiAccountRuntimeBlockUntil.Load(int64(705))
+	require.False(t, blocked)
+}
+
+func TestRefreshOpenAIOAuth429GroupRequiresExcludedAccounts(t *testing.T) {
+	repo := &openAIOAuth429CooldownRepo{groupAccounts: []Account{{ID: 708, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}}}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	cleared, err := svc.RefreshOpenAIOAuth429Group(context.Background(), 99, nil)
+
+	require.NoError(t, err)
+	require.Zero(t, cleared)
+	require.Zero(t, repo.clearCalls)
 }

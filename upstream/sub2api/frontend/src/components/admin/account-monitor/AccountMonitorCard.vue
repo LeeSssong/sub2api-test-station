@@ -46,8 +46,8 @@
         </div>
         <section class="monitor-card-chart" data-test="timeline-section" aria-label="真实性能">
           <div class="chart-head">
-            <h3>真实性能</h3>
-            <button type="button" class="chart-action" data-test="refresh-account" title="刷新主动探测" aria-label="刷新主动探测" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新主动探测</button>
+            <h3>真实性能 · 真实请求</h3>
+            <button type="button" class="chart-action" data-test="refresh-account" title="刷新主动探测状态，不生成真实请求样本" aria-label="刷新主动探测状态，不生成真实请求样本" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新探测状态</button>
           </div>
           <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
             <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" :title="bar.title" data-test="real-request-bar" />
@@ -427,6 +427,7 @@ const realSuccessRate = computed(() => {
 })
 const realTTFTP95 = computed(() => formatMs(realEvidence.value?.ttft_p95_ms ?? props.account.ttft_p95_ms))
 const profitRateLabel = computed(() => {
+  if (props.rankingScope === 'global') return '按分组查看'
   const profit = props.account.group_profitability
   if (!profit || !['confirmed', 'estimated'].includes(profit.status) || profit.profit_rate == null) return profit?.status === 'no_real_request' ? '--' : '待确认'
   return formatPercent(profit.profit_rate)

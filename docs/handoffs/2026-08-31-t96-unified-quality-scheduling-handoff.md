@@ -96,3 +96,19 @@ Commit the four T96 baseline artifacts, then begin Task 2 with RED tests for `ex
 - Added frontend `OPENAI_SCHEDULER_LIMITS.extraRetryCount` (`0..3`, step `1`) and API type coverage.
 - RED/GREEN evidence: service Task 2 tests pass; handler round-trip/invalid-input tests pass; existing scheduler normalization focused tests pass; frontend `pnpm typecheck` passes. `git diff --check` passes. The first typecheck generated a lockfile-only dependency rewrite, which was removed after verification; no lockfile change remains.
 - Task 2 changes are uncommitted at this checkpoint. Next action is commit the Task 2 files, then start Task 3 with the quality SQL RED test.
+
+## Task 2 commit and Task 3 RED checkpoint (2026-08-31)
+
+- Task 2 is committed as `be31cd869` on the isolated branch; its focused service/handler tests and frontend typecheck passed.
+- Task 3 RED test file `internal/service/openai_account_quality_test.go` is present. `go test ./internal/service -run 'TestOpenAIAccountQualitySnapshotProvider' -count=1` fails as expected because the quality types/provider do not yet exist.
+- Repository RED tests are present in `internal/repository/usage_log_quality_test.go`. The focused repository command fails as expected because `ListOpenAIAccountQuality`, `OpenAIAccountQuality`, and `openAIAccountQualityQuery` do not yet exist.
+- No Task 3 production code, schema migration, or runtime configuration has been written. Next action is the minimal read-only repository query and 60-second stale snapshot provider, followed by constructor wiring.
+
+## Task 3 implementation checkpoint (2026-08-31)
+
+- Added `OpenAIAccountQuality`, the narrow read-only repository interface, and the 60-second mutex/singleflight snapshot provider. Refresh failures return the last successful snapshot with `Stale=true`; cold-start failures return an empty stale snapshot and never block routing. U is intentionally not present in the snapshot.
+- Added `usageLogRepository.ListOpenAIAccountQuality` with a usage-ledger-only CTE: physical-attempt deduplication, complete/positive-cost success definition, image/video exclusion, independent five-percent trimmed means, and nullable metrics.
+- Wired the provider into `OpenAIGatewayService` only when the existing usage repository implements the narrow interface; absent repositories remain non-blocking.
+- RED/GREEN evidence: repository focused tests pass with `-vet=off`; service provider tests pass with `-vet=off`. The normal repository command is currently blocked by a pre-existing `fmt.Sprintf` vet diagnostic in `usage_log_repo_stats.go:1004`, unrelated to this change. `git diff --check` passes.
+- Root `main` advanced from the T96 base to `43ffa2353` (T105 OAuth 429 account cooldown) while this task was in progress; candidate must be refreshed to that latest main before READY_FOR_ROOT_REVIEW. T105 handler changes must be preserved.
+- Next action: commit Task 3, fast-forward/merge the latest root main into this candidate without discarding local commits, resolve only real T96/T105 overlap, then continue Task 4.

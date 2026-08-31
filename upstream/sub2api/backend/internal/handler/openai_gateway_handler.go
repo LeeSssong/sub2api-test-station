@@ -1089,6 +1089,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			})
 			if retryBudget.unified {
 				retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, channelMapping.ChannelID))
+				if handleOpenAIUnifiedOAuth429(h.gatewayService, c.Request.Context(), account, classifiedFailoverErr, retryBudget.ExtraUsed()+1, &oauth429FailoverState) {
+					h.handleFailoverExhausted(c, classifiedFailoverErr, streamStarted)
+					return
+				}
 				if classifiedFailoverErr == nil || !openAIUnifiedFailureSafeToReplay(failure, classifiedFailoverErr, attemptMetadata.UsageProduced) {
 					if classifiedFailoverErr == nil {
 						h.handleFailoverExhaustedSimple(c, http.StatusBadGateway, streamStarted)
@@ -1984,6 +1988,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			})
 			if retryBudget.unified {
 				retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, channelMappingMsg.ChannelID))
+				if handleOpenAIUnifiedOAuth429(h.gatewayService, c.Request.Context(), account, classifiedFailoverErr, retryBudget.ExtraUsed()+1, &oauth429FailoverState) {
+					h.handleAnthropicFailoverExhausted(c, classifiedFailoverErr, streamStarted)
+					return
+				}
 				if classifiedFailoverErr == nil || !openAIUnifiedFailureSafeToReplay(failure, classifiedFailoverErr, attemptMetadata.UsageProduced) {
 					if classifiedFailoverErr == nil {
 						h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)

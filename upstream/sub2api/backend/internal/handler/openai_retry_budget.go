@@ -197,6 +197,30 @@ func annotateOpenAIUnifiedDecision(decision *service.OpenAIAccountScheduleDecisi
 	decision.SwitchCount = switchCount
 }
 
+// handleOpenAIUnifiedOAuth429 preserves T105's native account cooldown and
+// storm-stop semantics while leaving the T96 group budget responsible for how
+// many distinct accounts may be attempted. The persistence helper is a no-op
+// for non-OAuth accounts and non-transient 429 classifications.
+type openAIUnifiedOAuth429Gateway interface {
+	PersistOpenAIOAuth429Cooldown(context.Context, *service.Account, http.Header, []byte)
+	ShouldStopOpenAIOAuth429Failover(*service.Account, int, int, *service.OpenAIOAuth429FailoverState) bool
+}
+
+func handleOpenAIUnifiedOAuth429(
+	gateway openAIUnifiedOAuth429Gateway,
+	ctx context.Context,
+	account *service.Account,
+	failure *service.UpstreamFailoverError,
+	failedSwitches int,
+	state *service.OpenAIOAuth429FailoverState,
+) bool {
+	if gateway == nil || failure == nil || failure.StatusCode != http.StatusTooManyRequests {
+		return false
+	}
+	gateway.PersistOpenAIOAuth429Cooldown(ctx, account, failure.ResponseHeaders, failure.ResponseBody)
+	return gateway.ShouldStopOpenAIOAuth429Failover(account, failure.StatusCode, failedSwitches, state)
+}
+
 func openAIUnifiedFailureSafeToReplay(failure service.OpenAIUpstreamFailureClass, failoverErr *service.UpstreamFailoverError, usageProduced bool) bool {
 	if !failure.SafeToReplay || failure.OutputStarted || failure.HasSideEffect || usageProduced {
 		return false

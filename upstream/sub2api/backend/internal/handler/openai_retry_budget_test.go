@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -212,6 +213,43 @@ func TestOpenAIUnifiedFailureSafetyBlocksNonReplayableAttempts(t *testing.T) {
 			require.False(t, openAIUnifiedFailureSafeToReplay(tc.failure, tc.err, tc.usage))
 		})
 	}
+}
+
+func TestOpenAIUnifiedOAuth429KeepsNativeCooldownAndStopSemantics(t *testing.T) {
+	account := &service.Account{ID: 9001, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
+	failure := &service.UpstreamFailoverError{
+		StatusCode:        http.StatusTooManyRequests,
+		NextAccountAction: service.NextAccountRetry,
+		ResponseHeaders:   http.Header{"Retry-After": []string{"1"}},
+		ResponseBody:      []byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`),
+	}
+	state := &service.OpenAIOAuth429FailoverState{}
+	gateway := &recordingOpenAIUnifiedOAuth429Gateway{}
+
+	require.False(t, handleOpenAIUnifiedOAuth429(gateway, context.Background(), account, failure, 0, state))
+	require.False(t, handleOpenAIUnifiedOAuth429(gateway, context.Background(), account, failure, 1, state))
+	require.True(t, handleOpenAIUnifiedOAuth429(gateway, context.Background(), account, failure, 3, state))
+	require.Equal(t, 3, gateway.persistCalls)
+	require.Equal(t, account.ID, gateway.lastAccountID)
+	require.Equal(t, 3, gateway.lastFailedSwitches)
+}
+
+type recordingOpenAIUnifiedOAuth429Gateway struct {
+	persistCalls       int
+	lastAccountID      int64
+	lastFailedSwitches int
+}
+
+func (g *recordingOpenAIUnifiedOAuth429Gateway) PersistOpenAIOAuth429Cooldown(_ context.Context, account *service.Account, _ http.Header, _ []byte) {
+	g.persistCalls++
+	if account != nil {
+		g.lastAccountID = account.ID
+	}
+}
+
+func (g *recordingOpenAIUnifiedOAuth429Gateway) ShouldStopOpenAIOAuth429Failover(_ *service.Account, _ int, failedSwitches int, _ *service.OpenAIOAuth429FailoverState) bool {
+	g.lastFailedSwitches = failedSwitches
+	return failedSwitches >= 3
 }
 
 func minDuration(left, right time.Duration) time.Duration {

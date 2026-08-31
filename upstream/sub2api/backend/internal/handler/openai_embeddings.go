@@ -110,6 +110,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
+	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	switchCount := 0
 	recordedSwitchCount := 0
 	maxAccountSwitches := h.maxAccountSwitches
@@ -241,6 +242,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				if retryBudget.unified {
 					failure := classifyOpenAIAttemptFailure(err, failoverErr, c.Writer.Size() != writerSizeBeforeForward, false)
 					retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, 0))
+					if handleOpenAIUnifiedOAuth429(h.gatewayService, c.Request.Context(), account, failoverErr, retryBudget.ExtraUsed()+1, &oauth429FailoverState) {
+						h.handleFailoverExhausted(c, failoverErr, false)
+						return
+					}
 					if !openAIUnifiedFailureSafeToReplay(failure, failoverErr, result != nil && result.UsageKnown) {
 						h.handleFailoverExhausted(c, failoverErr, false)
 						return

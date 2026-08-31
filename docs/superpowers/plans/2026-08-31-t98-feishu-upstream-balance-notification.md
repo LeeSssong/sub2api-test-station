@@ -38,7 +38,7 @@
   Expected: FAIL because the new functions do not exist.
 - [x] **Step 3: Implement minimal pure functions** with hand-derived status values and no database or HTTP calls; preserve failed snapshots as ineligible even when they retain old values.
 - [x] **Step 4: Re-run the focused tests** and confirm all boundary cases pass. The repository's two unrelated broken test files are excluded only via `/tmp/t98_service_test_overlay.json`; production package sources and T98 tests compile and pass.
-- [ ] **Step 5: Commit** `feat: add baseurl balance notification evaluation`.
+- [x] **Step 5: Commit** `feat: add baseurl balance notification evaluation` (`1b1245117`).
 
 ### Task 2: Load protected Feishu and login-registry secrets
 
@@ -50,10 +50,10 @@
 - Consumes: host paths for app ID, app secret, chat ID, recipient OpenIDs, and converted registry JSON.
 - Produces: `LoadUpstreamBalanceSecrets(UpstreamBalanceSecretPaths) (UpstreamBalanceSecrets, error)` and `LoginRegistry.Lookup(normalizedBaseURL) (loginAccount, loginPassword string, ok bool)`.
 
-- [ ] **Step 1: Write failing tests** for exact `0600` file/`0700` parent checks, symlink rejection, 1 MiB registry limit, `DisallowUnknownFields`, trailing JSON rejection, duplicate normalized BaseURL rejection, missing whole-file fail-closed, and per-BaseURL “未登记”. Tests use only values such as `fake-app-id` and `registry-user.invalid`.
-- [ ] **Step 2: Run** `go test -run 'TestLoadUpstreamBalanceSecrets|TestLoginRegistry' ./internal/notify` and verify expected FAIL.
-- [ ] **Step 3: Implement secure file checks, bounded decoding, normalization and zeroing of temporary byte buffers; do not log file content.
-- [ ] **Step 4: Re-run tests** and verify malformed files fail without preventing unrelated service construction.
+- [x] **Step 1: Write failing tests** for exact `0600` file/`0700` parent checks, symlink rejection, 1 MiB registry limit, `DisallowUnknownFields`, trailing JSON rejection, duplicate normalized BaseURL rejection, missing whole-file fail-closed, and per-BaseURL “未登记”. Tests use only values such as `fake-app-id` and `registry-user.invalid`.
+- [x] **Step 2: Run** `go test -run 'TestLoadUpstreamBalanceSecrets|TestLoginRegistry' ./internal/notify` and verify expected FAIL.
+- [x] **Step 3: Implement secure file checks, bounded decoding, normalization and zeroing of temporary byte buffers; do not log file content.
+- [x] **Step 4: Re-run tests** and verify malformed files fail without preventing unrelated service construction.
 - [ ] **Step 5: Commit** `feat: add protected upstream balance secret loader`.
 
 ### Task 3: Render and send P1/P2 cards with existing Feishu transport contracts

@@ -1,13 +1,12 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"math"
-	"net/url"
 	"sort"
-	"strings"
 	"time"
+
+	upstreamnotify "github.com/Wei-Shaw/sub2api/internal/notify"
 )
 
 const (
@@ -41,28 +40,7 @@ type UpstreamBalanceEvaluation struct {
 // upstream endpoint. Query strings, fragments and userinfo are rejected so a
 // credential-bearing or request-specific URL can never become an event key.
 func NormalizeNotificationBaseURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", errors.New("base URL is empty")
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", errors.New("base URL is invalid")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", errors.New("base URL scheme is invalid")
-	}
-	parsed.Scheme = strings.ToLower(parsed.Scheme)
-	parsed.Host = strings.ToLower(parsed.Host)
-	parsed.Path = strings.TrimRight(parsed.EscapedPath(), "/")
-	parsed.RawPath = ""
-	parsed.ForceQuery = false
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	if parsed.Path == "." {
-		parsed.Path = ""
-	}
-	return strings.TrimRight(parsed.String(), "/"), nil
+	return upstreamnotify.NormalizeBaseURL(raw)
 }
 
 // EvaluateUpstreamBaseURLBalance filters active OpenAI API-key accounts,

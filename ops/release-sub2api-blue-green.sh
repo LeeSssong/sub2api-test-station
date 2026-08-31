@@ -63,6 +63,10 @@ worktree_physical=$(cd "$worktree" && pwd -P)
 source_commit=$(git -C "$worktree" rev-parse HEAD) || fail 'could not resolve source commit'
 source_tree=$(git -C "$worktree" rev-parse 'HEAD^{tree}') || fail 'could not resolve source tree'
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail 'Git identity is invalid'
+if [[ "$mode" == production ]]; then
+  "$worktree/ops/assert-sub2api-release-source.sh" --mode production --worktree "$worktree" \
+    || fail 'production release source freshness check failed'
+fi
 
 migrations_dir="$worktree/upstream/sub2api/backend/migrations"
 [[ -d "$migrations_dir" && ! -L "$migrations_dir" ]] || fail 'migration directory is invalid'
@@ -207,7 +211,8 @@ run_stage() {
 
 verify_remote_executor_directory_chain() {
   local verification_script
-  verification_script='set -eu
+  verification_script='# verify_executor_directory_chain
+set -eu
 path=$1
 current=$path
 while :; do
@@ -233,7 +238,8 @@ done'
 
 verify_remote_executor_path_chain() {
   local verification_script
-  verification_script='set -eu
+  verification_script='# verify_executor_path_chain
+set -eu
 path=$1
 current=$path
 while :; do

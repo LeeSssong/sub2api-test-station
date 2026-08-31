@@ -1,6 +1,6 @@
 # 项目全局进度总账
 
-**紧急回归排查与 T101 发布状态（2026-08-31）：** 线上最新主站记录 `/var/lib/sub2api/release-records/20260831T013736Z-production-3191472.json` 与验收站容器均明确运行 `3c5b9710a807904b8449708c71e3931b7f838490`；该 commit 不含 T101，故本次不是 T101 被回滚，而是后续发布继续使用旧 `main` 基线。T101 已合入根 `main`，合并后直接相关后端/前端测试、类型检查、生产构建和 `git diff --check` 均通过，当前进入推送及验收站部署阶段；主站仍需明确发布授权。
+**紧急回归排查与 T101 发布状态（2026-08-31）：** 线上最新主站记录 `/var/lib/sub2api/release-records/20260831T013736Z-production-3191472.json` 与验收站容器均明确运行 `3c5b9710a807904b8449708c71e3931b7f838490`；该 commit 不含 T101，故本次不是 T101 被回滚，而是后续发布继续使用旧 `main` 基线。T101 已合入并推送根 `main@4ccee6c9a`，合并后直接相关后端/前端测试、类型检查、生产构建和 `git diff --check` 均通过，验收站已运行同一 commit/tree 且六项服务 healthy。并发覆盖防护已进入根发布车道：主站发布强制来自已推送且与 `origin/main` commit/tree 一致的干净 `main`，验收站发布增加宿主互斥锁；直接相关发布控制器、来源新鲜度、语法和 diff 检查已通过。用户已明确授权“快速部署到主站”，当前状态 `DEPLOYING`。
 
 **T98 实施授权更新（2026-08-31）：** 状态：进行中（`IMPLEMENTING`）。用户已批准 `docs/superpowers/specs/2026-08-31-t98-feishu-upstream-balance-notification-design.md` 并要求进入实现；当前只允许在独立 worktree 完成本地实现与直接相关验证。该批准不构成主站部署、生产清库、生产配置修改或真实飞书发送授权。
 

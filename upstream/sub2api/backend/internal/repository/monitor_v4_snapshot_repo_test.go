@@ -80,7 +80,7 @@ func TestMonitorV4SnapshotLoadValidatesMetadata(t *testing.T) {
 	defer db.Close()
 	repo := NewAccountMonitorRepository(db).(*accountMonitorRepository)
 	window := monitorV4StoredWindowFixture()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT window, group_id, snapshot_id, generated_at, window_start, window_end, contract_version")).
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version`)).
 		WithArgs(window.Window).WillReturnRows(sqlmock.NewRows([]string{
 		"window", "group_id", "snapshot_id", "generated_at", "window_start", "window_end", "contract_version", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count", "probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational",
 	}).AddRow(window.Window, 7, window.SnapshotID, window.GeneratedAt, window.WindowStart, window.WindowEnd, window.ContractVersion, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true))
@@ -117,7 +117,7 @@ func TestMonitorV4SnapshotLoadRejectsEmptyOrInconsistentRows(t *testing.T) {
 			}
 			defer db.Close()
 			repo := NewAccountMonitorRepository(db).(*accountMonitorRepository)
-			mock.ExpectQuery("SELECT window, group_id, snapshot_id").WithArgs(service.MonitorV4Window24H).WillReturnRows(tc.rows)
+			mock.ExpectQuery(`SELECT "window", group_id, snapshot_id`).WithArgs(service.MonitorV4Window24H).WillReturnRows(tc.rows)
 			if _, err := repo.LoadLatestMonitorV4Snapshot(context.Background(), service.MonitorV4Window24H); err == nil {
 				t.Fatal("expected validation error")
 			}
@@ -148,7 +148,7 @@ func TestMonitorV4SnapshotLoadRejectsWindowBoundsGeneratedAtAndContractMismatch(
 			rows := sqlmock.NewRows(columns).
 				AddRow("24h", 7, base.SnapshotID, base.GeneratedAt, base.WindowStart, base.WindowEnd, base.ContractVersion, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true).
 				AddRow(tc.window, 8, base.SnapshotID, tc.generated, tc.start, tc.end, tc.contract, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true)
-			mock.ExpectQuery("SELECT window, group_id, snapshot_id").WithArgs(service.MonitorV4Window24H).WillReturnRows(rows)
+			mock.ExpectQuery(`SELECT "window", group_id, snapshot_id`).WithArgs(service.MonitorV4Window24H).WillReturnRows(rows)
 			if _, err := NewAccountMonitorRepository(db).(*accountMonitorRepository).LoadLatestMonitorV4Snapshot(context.Background(), service.MonitorV4Window24H); err == nil {
 				t.Fatal("expected metadata validation error")
 			}

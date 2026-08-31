@@ -1600,6 +1600,53 @@ test_t84_maintenance_transition_allowlist() {
   grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'T84 transition did not enter the bounded maintenance path'
 }
 
+test_t98_maintenance_transition_allowlist() {
+  local production_hash=88a0ff14d25215f07d05f307a521f03114005ace43078b80f3bd2702e0f08d03
+  local candidate_hash=0bda54bbf75076c03bbd780603ccdca20c5b09e46ca7e2b4d2a1717c90e5dc57
+  local wrong_old_hash=88a0ff14d25215f07d05f307a521f03114005ace43078b80f3bd2702e0f08d02
+  local wrong_new_hash=0bda54bbf75076c03bbd780603ccdca20c5b09e46ca7e2b4d2a1717c90e5dc58
+
+  setup_case t98_unauthorized
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  expect_failure t98_unauthorized run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'unauthorized T98 transition was not gated'
+  assert_no_mutation t98_unauthorized
+
+  setup_case t98_wrong_old_hash
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$wrong_old_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$wrong_old_hash expect_failure t98_wrong_old_hash run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'T98 wrong old hash was not gated'
+  assert_no_mutation t98_wrong_old_hash
+
+  setup_case t98_wrong_new_hash
+  write_meminfo
+  MIGRATIONS_HASH=$wrong_new_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash expect_failure t98_wrong_new_hash run_executor
+  grep -q 'migration_set_changed' "$CASE_DIR/stdout" || fail 'T98 wrong new hash was not gated'
+  assert_no_mutation t98_wrong_new_hash
+
+  setup_case t98_success
+  write_meminfo
+  MIGRATIONS_HASH=$candidate_hash
+  "$REAL_JQ" --arg hash "$production_hash" '.migrations_hash=$hash' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+  mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"
+  chmod 0600 "$CASE_DIR/state.json"
+  MAINTENANCE_MODE=true MAINTENANCE_FROM_HASH=$production_hash run_executor >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" \
+    || fail "T98 transition failed: $(cat "$CASE_DIR/stdout") $(cat "$CASE_DIR/stderr")"
+  grep -q 'maintenance stop api-worker' "$EVENT_LOG" || fail 'T98 transition did not enter the bounded maintenance path'
+}
+
 test_maintenance_window_hard_maximum() {
   local old_hash=ac8b0b33d7ea31a1a4f0117716ba56efec4bd66be9c38267a88d4c512d01bf39
   local new_hash=0204f39423f3218ffa0c8d4e3d665f7113c4990610e0dd22e9f5910c4d578c6d
@@ -2339,6 +2386,7 @@ case "${ONLY_TEST:-all}" in
 		test_t55_maintenance_transition_allowlist
 		test_t70_maintenance_transition_allowlist
 		test_t84_maintenance_transition_allowlist
+		test_t98_maintenance_transition_allowlist
 		test_maintenance_window_hard_maximum
 		test_maintenance_pre_worker_failure_restores_previous_api
 		test_maintenance_deadline_bounds_post_stop_operation
@@ -2362,6 +2410,7 @@ case "${ONLY_TEST:-all}" in
 	maintenance-t15-transition) test_t15_maintenance_transition_allowlist ;;
 	maintenance-t55-transition) test_t55_maintenance_transition_allowlist ;;
 	maintenance-t70-transition) test_t70_maintenance_transition_allowlist ;;
+	maintenance-t98-transition) test_t98_maintenance_transition_allowlist ;;
 	gates) test_downtime_gates ;;
 	preloaded) test_preloaded_transport_loads_archive_without_pull ;;
   *) fail "unknown ONLY_TEST: ${ONLY_TEST}" ;;

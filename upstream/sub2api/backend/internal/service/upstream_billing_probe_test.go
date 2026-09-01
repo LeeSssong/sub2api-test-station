@@ -803,7 +803,7 @@ func TestUpstreamBillingProbeFailurePreservesLastSuccessAndRetryAfter(t *testing
 	require.Equal(t, initialRate, *account.RateMultiplier)
 }
 
-func TestUpstreamBillingProbeSuccessfulBalanceRecoveryRequiresTwoProbes(t *testing.T) {
+func TestUpstreamBillingProbeSuccessfulProbesDoNotClearGenericTempUnschedulable(t *testing.T) {
 	until := time.Date(2036, time.January, 1, 0, 0, 0, 0, time.UTC)
 	account := &Account{
 		ID: 901, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
@@ -818,10 +818,11 @@ func TestUpstreamBillingProbeSuccessfulBalanceRecoveryRequiresTwoProbes(t *testi
 	_, err := svc.ProbeAccount(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.Zero(t, repo.clearTempCalls, "one successful probe must not recover the account")
+	require.NotNil(t, repo.accounts[account.ID].TempUnschedulableUntil)
 	_, err = svc.ProbeAccount(context.Background(), account.ID)
 	require.NoError(t, err)
-	require.Equal(t, 1, repo.clearTempCalls)
-	require.Nil(t, repo.accounts[account.ID].TempUnschedulableUntil)
+	require.Zero(t, repo.clearTempCalls, "billing probes must not clear generic scheduling state")
+	require.NotNil(t, repo.accounts[account.ID].TempUnschedulableUntil)
 }
 
 func TestUpstreamBillingProbeRetryAfterIsNotShortened(t *testing.T) {

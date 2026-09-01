@@ -14,7 +14,7 @@
             <span class="account-id">#{{ account.account_id }}</span>
           </h2>
           <div class="monitor-card-meta" data-test="account-metadata">
-            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次真实请求</span>
+            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次窗口真实请求 · 累计 {{ formatNumber(account.lifetime_real_request_count ?? 0) }} 次</span>
             <template v-if="recommendation">
               <span aria-hidden="true">·</span>
               <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
@@ -22,8 +22,8 @@
             </template>
           </div>
         </section>
-        <section v-if="schedulerContext" class="monitor-card-scheduler" data-test="scheduler-column" aria-label="本组调度优先级">
-          <div class="scheduler-label">本组调度优先级</div>
+        <section v-if="schedulerContext" class="monitor-card-scheduler" data-test="scheduler-column" :aria-label="schedulerRankTitle">
+          <div class="scheduler-label">{{ schedulerRankTitle }}</div>
           <div class="scheduler-rank" data-test="scheduler-rank">{{ schedulerRankLabel }}<span v-if="schedulerRanked"> / {{ schedulerRankTotalLabel }}</span></div>
         </section>
       </header>
@@ -356,7 +356,8 @@ const qualityRankTotalLabel = computed(() => props.account.quality_rank_total ??
 const qualityRankTitle = computed(() => props.rankingScope === 'global' ? '全站质量排名' : '组内质量排名')
 const schedulerExplanation = computed(() => (props.account.scheduler_explanation ?? null) as SchedulerDetails | null)
 const schedulerPlatformSupported = computed(() => ['openai', 'grok'].includes(props.account.platform.toLowerCase()))
-const schedulerContext = computed(() => props.rankingScope === 'group' && schedulerPlatformSupported.value && (schedulerExplanation.value != null || props.account.scheduler_unavailable === true))
+const schedulerContext = computed(() => schedulerPlatformSupported.value && (schedulerExplanation.value != null || props.account.scheduler_rank != null || props.account.scheduler_unavailable === true))
+const schedulerRankTitle = computed(() => props.rankingScope === 'global' ? `最佳组内调度排名${props.account.best_scheduler_group_name ? ` · ${props.account.best_scheduler_group_name}` : ''}` : '本组调度优先级')
 const schedulerRanked = computed(() => schedulerContext.value && props.account.scheduler_rank != null)
 const schedulerRankLabel = computed(() => schedulerRanked.value ? `第 ${props.account.scheduler_rank}` : '暂不可用')
 const schedulerRankTotalLabel = computed(() => props.account.scheduler_rank_total ?? '--')
@@ -437,8 +438,12 @@ const realRequestBars = computed(() => {
   if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, title: '暂无真实请求' }))
   return points.map((point) => {
     const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 5000
-    const colorClass = point.request_count === 0 ? 'bg-gray-200 dark:bg-slate-700' : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
-    return { colorClass, height: point.request_count === 0 ? 16 : Math.max(28, Math.min(100, 28 + point.request_count * 4)), title: `${formatShortTime(point.start_at)} · 请求 ${point.request_count} · 成功 ${point.success_count} · 失败 ${point.failure_count} · TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
+    const probeCount = point.probe_count ?? 0
+    const source = point.source ?? (point.request_count > 0 ? 'real' : probeCount > 0 ? 'probe' : 'no_data')
+    const requestCount = point.request_count + probeCount
+    const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : source === 'probe' ? (point.probe_failure_count && point.probe_failure_count > 0 ? 'bg-red-500' : 'bg-amber-400') : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
+    const sourceLabel = source === 'probe' ? '主动探测兜底' : source === 'no_data' ? '无数据' : source === 'mixed' ? '含真实请求/探测兜底' : '真实请求'
+    return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), title: `${formatShortTime(point.start_at)} · ${sourceLabel} · 真实请求 ${point.request_count} · 探测 ${probeCount} · 成功 ${point.success_count + (point.probe_success_count ?? 0)} · 失败 ${point.failure_count + (point.probe_failure_count ?? 0)} · TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
   })
 })
 const realTimelineAriaLabel = computed(() => `真实性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次真实请求`)

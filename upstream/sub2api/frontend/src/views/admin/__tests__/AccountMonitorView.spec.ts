@@ -543,7 +543,7 @@ describe('admin account monitor view V3', () => {
     expect(cards.every((card) => !card.find('[data-test="rank-metric"]').exists())).toBe(true)
   })
 
-  it('uses quality order site-wide and scheduler order only inside the selected group', async () => {
+  it('uses scheduler order both site-wide and inside the selected group', async () => {
     const orderedAccounts = [
       { ...account(10, 'Quality three scheduler two', 3), quality_rank: 3, scheduler_rank: 2, group_rank: 3 },
       { ...account(11, 'Quality one scheduler three', 1), quality_rank: 1, scheduler_rank: 3, group_rank: 1 },
@@ -561,9 +561,9 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-test="monitor-card"]').map((card) => card.get('[data-test="account-identity"]').text())).toEqual([
-      'Quality one scheduler three #11',
       'Quality two scheduler one #20',
       'Quality three scheduler two #10',
+      'Quality one scheduler three #11',
       'Unranked 24h #30',
     ])
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-1']))
@@ -630,7 +630,7 @@ describe('admin account monitor view V3', () => {
 
     expect(wrapper.get('[data-test="group-tab-3"]').attributes('aria-selected')).toBe('true')
     const summaryFields = wrapper.findAll('[data-test="group-summary-field"]')
-    expect(summaryFields).toHaveLength(8)
+    expect(summaryFields).toHaveLength(7)
     expect(summaryFields.every((field) => field.classes().includes('min-h-[82px]'))).toBe(true)
     expect(summaryFields.map((field) => field.attributes('data-field'))).toEqual([
       'status',
@@ -640,11 +640,10 @@ describe('admin account monitor view V3', () => {
       'account_count',
       'active_account_count',
       'rate_limited_account_count',
-      'score_weights',
     ])
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20×')
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('120')
-    expect(wrapper.get('[data-test="edit-group-score-weights"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(false)
 
     const cards = wrapper.findAll('[data-test="monitor-card"]')
     expect(cards).toHaveLength(4)
@@ -656,377 +655,16 @@ describe('admin account monitor view V3', () => {
     expect(cards.every((card) => card.classes().every((name) => !name.startsWith('order-')))).toBe(true)
   })
 
-  it('restores selected-group score weight editing and reloads the active range after save and reset', async () => {
+  it('shows the fixed scheduler rule and removes score-weight editing from both scopes', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('[data-test="group-summary"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(false)
-
-    await selectRange(wrapper, '7d')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.findAll('[data-test="group-summary-field"]')).toHaveLength(8)
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('show')).toBe(true)
-    expect(dialog.props('groupId')).toBe(3)
-
-    list.mockClear()
-    dialog.vm.$emit('save', {
-      cost: 25,
-      success: 35,
-      ttft: 20,
-      latency: 20,
-      ttft_target_ms: 900,
-      ttft_limit_ms: 4500,
-      latency_target_ms: 9000,
-      latency_limit_ms: 55000,
-    })
-    await flushPromises()
-
-    expect(updateGroupScoreWeights).toHaveBeenCalledWith(3, {
-      cost: 25,
-      success: 35,
-      ttft: 20,
-      latency: 20,
-      ttft_target_ms: 900,
-      ttft_limit_ms: 4500,
-      latency_target_ms: 9000,
-      latency_limit_ms: 55000,
-    })
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
-
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    const reopenedDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    list.mockClear()
-    reopenedDialog.vm.$emit('reset')
-    await flushPromises()
-
-    expect(resetGroupScoreWeights).toHaveBeenCalledWith(3)
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
-  })
-
-  it('shows global score settings only on the all-site view and loads weights when opened', async () => {
-    getGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
-    const wrapper = mountView()
-    await flushPromises()
-
-    expect(wrapper.get('[data-test="edit-global-score-weights"]').exists()).toBe(true)
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-
-    expect(getGlobalScoreWeights).toHaveBeenCalledTimes(1)
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('mode')).toBe('global')
-    expect(dialog.props('weights')).toMatchObject({ cost: 15, success: 45, ttft: 20, latency: 20 })
-
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await flushPromises()
+    expect(wrapper.text()).toContain('旧评分权重不参与当前调度')
     expect(wrapper.find('[data-test="edit-global-score-weights"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(true)
-  })
-
-  it('closes the global score dialog when switching to a group after its weights load', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
-
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
-
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('mode')).toBe('group')
-    expect(dialog.props('show')).toBe(false)
-  })
-
-  it('does not open a pending global score dialog after switching to a group', async () => {
-    let resolveWeights!: (weights: { cost: number; success: number; ttft: number; latency: number; is_default: boolean }) => void
-    getGlobalScoreWeights.mockImplementationOnce(() => new Promise((resolve) => { resolveWeights = resolve }))
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    resolveWeights({ cost: 25, success: 35, ttft: 20, latency: 20, is_default: false })
-    await flushPromises()
-
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('mode')).toBe('group')
-    expect(dialog.props('show')).toBe(false)
-  })
-
-  it('saves and resets global score weights with four-field payloads and reloads active range', async () => {
-    getGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
-    updateGlobalScoreWeights.mockResolvedValue({ cost: 30, success: 30, ttft: 20, latency: 20, is_default: false })
-    resetGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
-    const wrapper = mountView()
-    await flushPromises()
-    await selectRange(wrapper, '7d')
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-
-    list.mockClear()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
-      cost: 30,
-      success: 30,
-      ttft: 20,
-      latency: 20,
-      ttft_target_ms: 1,
-      ttft_limit_ms: 2,
-      latency_target_ms: 3,
-      latency_limit_ms: 4,
-    })
-    await flushPromises()
-
-    expect(updateGlobalScoreWeights).toHaveBeenCalledWith({ cost: 30, success: 30, ttft: 20, latency: 20 })
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(false)
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    list.mockClear()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
-    await flushPromises()
-
-    expect(resetGlobalScoreWeights).toHaveBeenCalledTimes(1)
-    expect(list).toHaveBeenCalledWith('7d', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-  })
-
-  it('does not let a stale global save completion close or relabel a newly opened group dialog', async () => {
-    let resolveSave!: (weights: { cost: number; success: number; ttft: number; latency: number; is_default: boolean }) => void
-    updateGlobalScoreWeights.mockImplementationOnce(() => new Promise((resolve) => { resolveSave = resolve }))
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
-      cost: 30,
-      success: 30,
-      ttft: 20,
-      latency: 20,
-    })
-    await flushPromises()
-    expect(updateGlobalScoreWeights).toHaveBeenCalledTimes(1)
-
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    showSuccess.mockClear()
-
-    resolveSave({ cost: 30, success: 30, ttft: 20, latency: 20, is_default: false })
-    await flushPromises()
-
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('mode')).toBe('group')
-    expect(dialog.props('show')).toBe(true)
-    expect(dialog.props('error')).toBeNull()
-    expect(showSuccess).not.toHaveBeenCalled()
-  })
-
-  it('does not let a stale global reset completion close or relabel a newly opened group dialog', async () => {
-    let resolveReset!: (weights: { cost: number; success: number; ttft: number; latency: number; is_default: boolean }) => void
-    resetGlobalScoreWeights.mockImplementationOnce(() => new Promise((resolve) => { resolveReset = resolve }))
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
-    await flushPromises()
-    expect(resetGlobalScoreWeights).toHaveBeenCalledTimes(1)
-
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    showSuccess.mockClear()
-
-    resolveReset({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
-    await flushPromises()
-
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('mode')).toBe('group')
-    expect(dialog.props('show')).toBe(true)
-    expect(dialog.props('error')).toBeNull()
-    expect(showSuccess).not.toHaveBeenCalled()
-  })
-
-  it('does not apply a stale global save reload after a group dialog takes ownership', async () => {
-    let resolveReload!: (value: ReturnType<typeof projection>) => void
-    const wrapper = mountView()
-    await flushPromises()
-    list.mockImplementationOnce(() => new Promise((resolve) => { resolveReload = resolve }))
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
-      cost: 30,
-      success: 30,
-      ttft: 20,
-      latency: 20,
-    })
-    await flushPromises()
-    expect(list).toHaveBeenCalledTimes(2)
-
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    const groupCostInput = latestModalInput()
-    expect(groupCostInput).not.toBeNull()
-    groupCostInput!.value = '26'
-    groupCostInput!.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-    showError.mockClear()
-    showSuccess.mockClear()
-
-    const staleProjection = projection('24h')
-    staleProjection.accounts[0].name = 'STALE GLOBAL SAVE RELOAD'
-    staleProjection.groups[0].accounts[0].name = 'STALE GLOBAL SAVE RELOAD'
-    staleProjection.groups[0].score_weights = { cost: 5, success: 55, ttft: 20, latency: 20 }
-    resolveReload(staleProjection)
-    await flushPromises()
-
-    const currentDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(currentDialog.props('mode')).toBe('group')
-    expect(currentDialog.props('show')).toBe(true)
-    expect(latestModalInput()?.value).toBe('26')
-    expect(wrapper.text()).not.toContain('STALE GLOBAL SAVE RELOAD')
-    expect(wrapper.find('[data-test="range-error"]').exists()).toBe(false)
-    expect(currentDialog.props('error')).toBeNull()
-    expect(showError).not.toHaveBeenCalled()
-    expect(showSuccess).not.toHaveBeenCalled()
-  })
-
-  it('does not surface a stale global reset reload failure after a group dialog takes ownership', async () => {
-    let rejectReload!: (reason: Error) => void
-    const wrapper = mountView()
-    await flushPromises()
-    list.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectReload = reject }))
-
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
-    await flushPromises()
-    expect(list).toHaveBeenCalledTimes(2)
-
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('close')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-    const groupCostInput = latestModalInput()
-    expect(groupCostInput).not.toBeNull()
-    groupCostInput!.value = '26'
-    groupCostInput!.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
-    showError.mockClear()
-    showSuccess.mockClear()
-
-    rejectReload(new Error('stale global reset reload failed'))
-    await flushPromises()
-
-    const currentDialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(currentDialog.props('mode')).toBe('group')
-    expect(currentDialog.props('show')).toBe(true)
-    expect(latestModalInput()?.value).toBe('26')
-    expect(wrapper.find('[data-test="range-error"]').exists()).toBe(false)
-    expect(currentDialog.props('error')).toBeNull()
-    expect(showError).not.toHaveBeenCalled()
-    expect(showSuccess).not.toHaveBeenCalled()
-  })
-
-  it('keeps the global score weight dialog open and skips success when save reload fails', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    await selectRange(wrapper, '7d')
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-
-    list.mockRejectedValueOnce(new Error('reload failed'))
-    showSuccess.mockReset()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
-      cost: 25,
-      success: 35,
-      ttft: 20,
-      latency: 20,
-    })
-    await flushPromises()
-
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
-    expect(showSuccess).not.toHaveBeenCalled()
-  })
-
-  it('shows returned defaults after global reset when projection reload fails', async () => {
-    getGlobalScoreWeights.mockResolvedValue({ cost: 60, success: 20, ttft: 10, latency: 10, is_default: false })
-    resetGlobalScoreWeights.mockResolvedValue({ cost: 15, success: 45, ttft: 20, latency: 20, is_default: true })
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-test="edit-global-score-weights"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('weights')).toMatchObject({
-      cost: 60,
-      success: 20,
-      ttft: 10,
-      latency: 10,
-    })
-
-    list.mockRejectedValueOnce(new Error('reload failed'))
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
-    await flushPromises()
-
-    const dialog = wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' })
-    expect(dialog.props('show')).toBe(true)
-    expect(dialog.props('weights')).toMatchObject({ cost: 15, success: 45, ttft: 20, latency: 20 })
-    expect(dialog.props('error')).toContain('最新监控卡片加载失败')
-  })
-
-  it('keeps the score weight dialog open and skips success when save reload fails', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    await selectRange(wrapper, '7d')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-
-    list.mockRejectedValueOnce(new Error('reload failed'))
-    showSuccess.mockReset()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('save', {
-      cost: 25,
-      success: 35,
-      ttft: 20,
-      latency: 20,
-      ttft_target_ms: 900,
-      ttft_limit_ms: 4500,
-      latency_target_ms: 9000,
-      latency_limit_ms: 55000,
-    })
-    await flushPromises()
-
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
-    expect(showSuccess).not.toHaveBeenCalled()
-  })
-
-  it('keeps the score weight dialog open and skips success when reset reload fails', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    await selectRange(wrapper, '7d')
-    await wrapper.get('[data-test="group-tab-3"]').trigger('click')
-    await wrapper.get('[data-test="edit-group-score-weights"]').trigger('click')
-
-    list.mockRejectedValueOnce(new Error('reload failed'))
-    showSuccess.mockReset()
-    wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).vm.$emit('reset')
-    await flushPromises()
-
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('show')).toBe(true)
-    expect(wrapper.getComponent({ name: 'AccountMonitorGroupScoreDialog' }).props('error')).toContain('最新监控卡片加载失败')
-    expect(showSuccess).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="group-summary-field"]')).toHaveLength(7)
   })
 
   it('preserves the accepted shell spacing and exact responsive page-header typography', async () => {
@@ -1263,10 +901,10 @@ describe('admin account monitor view V3', () => {
     list.mockClear()
     await wrapper.get('[data-test="dialog-save-multiplier"]').trigger('click')
     await flushPromises()
-    expect(updateAccount).toHaveBeenCalledWith(10, {
+    expect(updateAccount).toHaveBeenCalledWith(10, expect.objectContaining({
       rate_multiplier: 0.08,
       upstream_billing_rate_sync_enabled: false,
-    })
+    }))
 
     await card.get('[data-test="edit-cost"]').trigger('click')
     list.mockClear()

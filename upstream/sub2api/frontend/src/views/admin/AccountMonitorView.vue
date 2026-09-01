@@ -87,23 +87,12 @@
       <section
         v-if="!activeGroup"
         class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800"
-        aria-label="全局评分规则"
+        aria-label="当前调度排名规则"
       >
         <div class="min-w-0">
-          <div class="text-sm font-medium text-gray-900 dark:text-white">全局评分规则</div>
-          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">仅影响全站账号监控排序，保存后立即重载当前统计范围。</div>
+          <div class="text-sm font-medium text-gray-900 dark:text-white">当前调度排名规则</div>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">成功率优先，其次 TTFT、有效成本 U 和账号 ID；旧评分权重不参与当前调度。</div>
         </div>
-        <button
-          type="button"
-          class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
-          data-test="edit-global-score-weights"
-          title="编辑全局评分权重"
-          aria-label="编辑全局评分权重"
-          :disabled="savingScoreWeights"
-          @click="openGlobalScoreDialog"
-        >
-          <Icon name="edit" size="sm" />
-        </button>
       </section>
 
       <div
@@ -132,22 +121,7 @@
           :data-field="field.key"
         >
           <div class="text-xs text-gray-500 dark:text-gray-400">{{ field.label }}</div>
-          <div v-if="field.key === 'score_weights'" class="mt-1.5 flex items-start justify-between gap-2">
-            <span class="min-w-0 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white">
-              {{ field.value }}
-            </span>
-            <button
-              type="button"
-              class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
-              data-test="edit-group-score-weights"
-              title="编辑评分权重"
-              aria-label="编辑评分权重"
-              @click="openScoreDialog"
-            >
-              <Icon name="edit" size="sm" />
-            </button>
-          </div>
-          <div v-else class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
+          <div class="mt-1.5 break-words font-mono text-sm font-semibold text-gray-900 dark:text-white" :class="{ 'text-emerald-700 dark:text-emerald-300': field.key === 'status' && activeGroup.status === 'active' }">
             {{ field.value }}
           </div>
         </div>
@@ -214,19 +188,6 @@
         />
       </section>
       </div>
-      <AccountMonitorGroupScoreDialog
-        v-if="scoreDialogMode === 'global' || activeGroup"
-        :show="showScoreDialog"
-        :mode="scoreDialogMode"
-        :group-id="activeGroup?.id ?? 0"
-        :group-name="activeGroup?.name ?? ''"
-        :weights="scoreDialogMode === 'global' ? globalScoreWeights : activeGroup!.score_weights"
-        :saving="savingScoreWeights"
-        :error="scoreWeightsError"
-        @close="closeScoreDialog"
-        @save="saveScoreWeights"
-        @reset="resetScoreWeights"
-      />
       <AccountMonitorCostDialog
         v-if="showCostDialog && selectedCostAccount"
         :show="showCostDialog"
@@ -303,18 +264,15 @@ import { adminAPI } from '@/api/admin'
 import type {
   AccountMonitorAccount,
   AccountMonitorConcurrencyItem,
-  AccountMonitorFourScoreWeights,
   AccountMonitorGroup,
   AccountMonitorProjection,
   AccountMonitorRange,
-  AccountMonitorScoreWeights,
   AccountModelDetectionModelsResponse,
 } from '@/api/admin/accountMonitor'
 import AccountMonitorCard from '@/components/admin/account-monitor/AccountMonitorCard.vue'
 import AccountMonitorCostDialog from '@/components/admin/account-monitor/AccountMonitorCostDialog.vue'
 import AccountMonitorAccountInfoDialog from '@/components/admin/account-monitor/AccountMonitorAccountInfoDialog.vue'
 import AccountMonitorFilters from '@/components/admin/account-monitor/AccountMonitorFilters.vue'
-import AccountMonitorGroupScoreDialog from '@/components/admin/account-monitor/AccountMonitorGroupScoreDialog.vue'
 import AccountModelDetectionHistoryPanel from '@/components/admin/account-monitor/AccountModelDetectionHistoryPanel.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { EditAccountModal } from '@/components/account'
@@ -331,7 +289,6 @@ import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import type { Account, AdminGroup, Proxy as AccountProxy, ClaudeModel } from '@/types'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
-type EditableWeights = Pick<AccountMonitorScoreWeights, 'cost' | 'success' | 'ttft' | 'latency' | 'ttft_target_ms' | 'ttft_limit_ms' | 'latency_target_ms' | 'latency_limit_ms'>
 type SaveCompletion = {
   resolve: () => void
   reject: (reason?: unknown) => void
@@ -355,7 +312,6 @@ const groupSummaryLabels = {
   account_count: '原生账号数',
   active_account_count: '原生活跃账号数',
   rate_limited_account_count: '原生限流账号数',
-  score_weights: '评分权重',
 } as const
 
 const { t } = useI18n()
@@ -374,11 +330,6 @@ const savingModelDetectionIDs = ref<number[]>([])
 const detectingModelDetectionIDs = ref<number[]>([])
 const rangeError = ref<string | null>(null)
 const concurrencyByID = ref<Record<number, CardConcurrency>>({})
-const showScoreDialog = ref(false)
-const scoreDialogMode = ref<'group' | 'global'>('group')
-const savingScoreWeights = ref(false)
-const scoreWeightsError = ref<string | null>(null)
-const globalScoreWeights = ref<AccountMonitorFourScoreWeights>({ cost: 15, success: 45, ttft: 20, latency: 20 })
 const showCostDialog = ref(false)
 const savingCost = ref(false)
 const costDialogError = ref<string | null>(null)
@@ -409,9 +360,6 @@ let nativeEntryGeneration = 0
 
 let abortController: AbortController | null = null
 let loadGeneration = 0
-let globalScoreDialogGeneration = 0
-let scoreDialogSessionGeneration = 0
-let scoreWeightsMutationGeneration = 0
 let pollTimer: number | null = null
 let pollInFlight = false
 let pollQueued = false
@@ -425,9 +373,9 @@ function uniqueAccounts(source: AccountMonitorAccount[]): AccountMonitorAccount[
   })
 }
 
-function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccount, useSchedulerRank: boolean): number {
-  const leftRank = useSchedulerRank ? left.scheduler_rank : (left.quality_rank ?? left.group_rank)
-  const rightRank = useSchedulerRank ? right.scheduler_rank : (right.quality_rank ?? right.group_rank)
+function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccount): number {
+  const leftRank = left.scheduler_rank
+  const rightRank = right.scheduler_rank
   const leftRanked = leftRank != null
   const rightRanked = rightRank != null
   if (leftRanked && rightRanked) {
@@ -452,7 +400,7 @@ const scopedAccounts = computed(() => {
   const source = group?.accounts ?? (group
     ? allAccounts.value.filter((account) => account.group_ids.includes(group.id))
     : allAccounts.value)
-  return uniqueAccounts(source).sort((left, right) => compareAccounts(left, right, group != null))
+  return uniqueAccounts(source).sort(compareAccounts)
 })
 const filteredAccounts = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -463,7 +411,7 @@ const filteredAccounts = computed(() => {
       .some((value) => value.toLowerCase().includes(query))
   })
 })
-const rankedAccountCount = computed(() => scopedAccounts.value.filter((account) => (activeGroup.value ? account.scheduler_rank : (account.quality_rank ?? account.group_rank)) != null).length)
+const rankedAccountCount = computed(() => scopedAccounts.value.filter((account) => account.scheduler_rank != null).length)
 const visibleAccountIDs = computed(() => filteredAccounts.value.map((account) => account.account_id))
 const visibleAccountIDKey = computed(() => visibleAccountIDs.value.join(','))
 const groupSummaryFields = computed(() => {
@@ -477,7 +425,6 @@ const groupSummaryFields = computed(() => {
     { key: 'account_count', label: groupSummaryLabels.account_count, value: formatNativeNumber(group.account_count) },
     { key: 'active_account_count', label: groupSummaryLabels.active_account_count, value: formatNativeNumber(group.active_account_count) },
     { key: 'rate_limited_account_count', label: groupSummaryLabels.rate_limited_account_count, value: formatNativeNumber(group.rate_limited_account_count) },
-    { key: 'score_weights', label: groupSummaryLabels.score_weights, value: formatScoreWeights(group.score_weights) },
   ]
 })
 
@@ -502,66 +449,11 @@ function formatMultiplier(value?: number): string {
 function formatNativeNumber(value?: number): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)
 }
-function formatScoreWeights(weights?: AccountMonitorScoreWeights): string {
-  if (!weights) return '--'
-  return `成本 ${weights.cost} / 成功 ${weights.success} / TTFT ${weights.ttft} / 耗时 ${weights.latency}`
-}
 function groupAccountCount(group: AccountMonitorGroup): number {
   return group.account_count ?? uniqueAccounts(group.accounts ?? []).length
 }
 
-function openScoreDialog(): void {
-  if (!activeGroup.value) return
-  scoreDialogSessionGeneration++
-  scoreWeightsMutationGeneration++
-  savingScoreWeights.value = false
-  scoreDialogMode.value = 'group'
-  scoreWeightsError.value = null
-  showScoreDialog.value = true
-}
-
-async function openGlobalScoreDialog(): Promise<void> {
-  if (savingScoreWeights.value || activeGroupId.value !== null) return
-  const generation = ++globalScoreDialogGeneration
-  scoreWeightsError.value = null
-  try {
-    const weights = await adminAPI.accountMonitor.getGlobalScoreWeights()
-    if (generation !== globalScoreDialogGeneration || activeGroupId.value !== null) return
-    scoreDialogSessionGeneration++
-    scoreWeightsMutationGeneration++
-    savingScoreWeights.value = false
-    scoreDialogMode.value = 'global'
-    globalScoreWeights.value = {
-      cost: weights.cost,
-      success: weights.success,
-      ttft: weights.ttft,
-      latency: weights.latency,
-    }
-    showScoreDialog.value = true
-  } catch (reason: unknown) {
-    if (generation !== globalScoreDialogGeneration || activeGroupId.value !== null) return
-    scoreWeightsError.value = extractApiErrorMessage(reason, '全局评分权重加载失败')
-    appStore.showError(scoreWeightsError.value)
-  }
-}
-
-function closeScoreDialog(): void {
-  globalScoreDialogGeneration++
-  scoreDialogSessionGeneration++
-  scoreWeightsMutationGeneration++
-  savingScoreWeights.value = false
-  showScoreDialog.value = false
-  scoreWeightsError.value = null
-}
-
 function selectGroup(groupID: number | null, event: MouseEvent): void {
-  globalScoreDialogGeneration++
-  scoreDialogSessionGeneration++
-  scoreWeightsMutationGeneration++
-  savingScoreWeights.value = false
-  showScoreDialog.value = false
-  scoreDialogMode.value = 'group'
-  scoreWeightsError.value = null
   activeGroupId.value = groupID
   if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
 }
@@ -878,108 +770,6 @@ async function clearProcurementCost() {
   }
 }
 
-function reportScoreWeightsReloadFailure(operation: string): void {
-  const message = `${operation}成功，但最新监控卡片加载失败，请重试`
-  scoreWeightsError.value = message
-  appStore.showError(message)
-}
-
-type ScoreWeightsMutationSession = {
-  dialogGeneration: number
-  mutationGeneration: number
-  mode: 'group' | 'global'
-  groupID: number | null
-}
-
-function beginScoreWeightsMutation(): ScoreWeightsMutationSession {
-  const session = {
-    dialogGeneration: scoreDialogSessionGeneration,
-    mutationGeneration: ++scoreWeightsMutationGeneration,
-    mode: scoreDialogMode.value,
-    groupID: activeGroup.value?.id ?? null,
-  } satisfies ScoreWeightsMutationSession
-  savingScoreWeights.value = true
-  scoreWeightsError.value = null
-  return session
-}
-
-function isCurrentScoreWeightsMutation(session: ScoreWeightsMutationSession): boolean {
-  return session.dialogGeneration === scoreDialogSessionGeneration
-    && session.mutationGeneration === scoreWeightsMutationGeneration
-}
-
-function ownsScoreDialog(session: ScoreWeightsMutationSession): boolean {
-  return isCurrentScoreWeightsMutation(session)
-    && showScoreDialog.value
-    && scoreDialogMode.value === session.mode
-    && (activeGroup.value?.id ?? null) === session.groupID
-}
-
-async function saveScoreWeights(weights: EditableWeights | AccountMonitorFourScoreWeights) {
-  const session = beginScoreWeightsMutation()
-  try {
-    if (session.mode === 'global') {
-      await adminAPI.accountMonitor.updateGlobalScoreWeights({
-        cost: Number(weights.cost),
-        success: Number(weights.success),
-        ttft: Number(weights.ttft),
-        latency: Number(weights.latency),
-      })
-    } else {
-      if (session.groupID == null) return
-      await adminAPI.accountMonitor.updateGroupScoreWeights(session.groupID, weights)
-    }
-    if (!ownsScoreDialog(session)) return
-    const reloaded = await load(activeRange.value, { notifyError: false, commitIf: () => ownsScoreDialog(session) })
-    if (!ownsScoreDialog(session)) return
-    if (!reloaded) {
-      reportScoreWeightsReloadFailure(session.mode === 'global' ? '保存全局评分权重' : '保存分组评分权重')
-      return
-    }
-    showScoreDialog.value = false
-    appStore.showSuccess(session.mode === 'global' ? '全局评分权重已更新' : '分组评分权重已更新')
-  } catch (reason: unknown) {
-    if (!ownsScoreDialog(session)) return
-    scoreWeightsError.value = extractApiErrorMessage(reason, session.mode === 'global' ? '保存全局评分权重失败' : '保存分组评分权重失败')
-    appStore.showError(scoreWeightsError.value)
-  } finally {
-    if (isCurrentScoreWeightsMutation(session)) savingScoreWeights.value = false
-  }
-}
-
-async function resetScoreWeights() {
-  const session = beginScoreWeightsMutation()
-  try {
-    if (session.mode === 'global') {
-      const weights = await adminAPI.accountMonitor.resetGlobalScoreWeights()
-      if (!ownsScoreDialog(session)) return
-      globalScoreWeights.value = {
-        cost: weights.cost,
-        success: weights.success,
-        ttft: weights.ttft,
-        latency: weights.latency,
-      }
-    } else {
-      if (session.groupID == null) return
-      await adminAPI.accountMonitor.resetGroupScoreWeights(session.groupID)
-    }
-    if (!ownsScoreDialog(session)) return
-    const reloaded = await load(activeRange.value, { notifyError: false, commitIf: () => ownsScoreDialog(session) })
-    if (!ownsScoreDialog(session)) return
-    if (!reloaded) {
-      reportScoreWeightsReloadFailure(session.mode === 'global' ? '恢复默认全局评分权重' : '恢复默认评分权重')
-      return
-    }
-    showScoreDialog.value = false
-    appStore.showSuccess(session.mode === 'global' ? '全局评分权重已恢复默认' : '分组评分权重已恢复默认')
-  } catch (reason: unknown) {
-    if (!ownsScoreDialog(session)) return
-    scoreWeightsError.value = extractApiErrorMessage(reason, session.mode === 'global' ? '恢复默认全局评分权重失败' : '恢复默认评分权重失败')
-    appStore.showError(scoreWeightsError.value)
-  } finally {
-    if (isCurrentScoreWeightsMutation(session)) savingScoreWeights.value = false
-  }
-}
 
 async function fetchNativeAccount(accountID: number): Promise<Account> {
   const pending = nativeAccountRequests.get(accountID)

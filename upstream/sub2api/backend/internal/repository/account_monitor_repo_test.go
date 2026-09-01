@@ -774,6 +774,34 @@ func TestAccountMonitorRepositoryListsRecentTimelinesInOneBatch(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRepositoryListsLifetimeRealRequestCounts(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorLifetimeRealRequestRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement lifetime real request counts")
+	}
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*usage_completeness.*error_events AS.*ROW_NUMBER\(\) OVER.*PARTITION BY e\.account_id, e\.request_key.*COUNT\(\*\)::bigint.*GROUP BY account_id`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count"}).
+			AddRow(7, int64(12846)).
+			AddRow(8, int64(42)))
+
+	counts, err := repo.ListLifetimeRealRequestCounts(context.Background(), []int64{7, 8, 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[7] != 12846 || counts[8] != 42 || counts[9] != 0 {
+		t.Fatalf("lifetime counts = %#v", counts)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -786,11 +814,12 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
 	until := since.Add(24 * time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*bucket_index.*ORDER BY account_id, bucket_index`).
-		WithArgs(sqlmock.AnyArg(), since, until, 3600.0).
-		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
-			AddRow(7, 3, 5, 4, 1, 6200.0).
-			AddRow(7, 22, 2, 2, 0, 900.0))
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*source_bucket_index.*probe_buckets AS.*selected_source_buckets AS.*FLOOR\(source_bucket_index.*CASE WHEN BOOL_OR.*ORDER BY account_id, bucket_index`).
+		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 24, 288).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms", "probe_count", "probe_success_count", "probe_failure_count", "source"}).
+			AddRow(7, 3, 5, 4, 1, 6200.0, 0, 0, 0, "real").
+			AddRow(7, 22, 2, 2, 0, 900.0, 0, 0, 0, "real").
+			AddRow(8, 1, 0, 0, 0, nil, 1, 1, 0, "probe"))
 
 	timelines, err := timelineRepo.ListRealRequestTimelines(context.Background(), []int64{7, 8}, since, until, 24)
 	if err != nil {
@@ -798,6 +827,9 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	if len(timelines[7]) != 24 || len(timelines[8]) != 24 {
 		t.Fatalf("timeline lengths = %d/%d, want 24/24", len(timelines[7]), len(timelines[8]))
+	}
+	if timelines[8][1].ProbeCount != 1 || timelines[8][1].Source != "probe" || timelines[8][1].ProbeSuccessCount != 1 {
+		t.Fatalf("probe fallback bucket = %#v", timelines[8][1])
 	}
 	if timelines[7][0].RequestCount != 0 || timelines[7][0].TTFTP95MS != nil {
 		t.Fatalf("empty bucket = %#v", timelines[7][0])

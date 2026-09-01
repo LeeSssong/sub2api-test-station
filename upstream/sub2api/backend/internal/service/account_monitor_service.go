@@ -595,6 +595,13 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			return AccountMonitorPage{}, fmt.Errorf("list real request timelines: %w", err)
 		}
 	}
+	lifetimeCounts := map[int64]int64{}
+	if lifetimeRepo, ok := s.repo.(AccountMonitorLifetimeRealRequestRepository); ok {
+		lifetimeCounts, err = lifetimeRepo.ListLifetimeRealRequestCounts(ctx, ids)
+		if err != nil {
+			return AccountMonitorPage{}, fmt.Errorf("list lifetime real request counts: %w", err)
+		}
+	}
 	probeAggregates, err := s.repo.ListAggregates(ctx, ids, since, observedAt)
 	if err != nil {
 		return AccountMonitorPage{}, fmt.Errorf("list account monitor probe aggregates: %w", err)
@@ -668,6 +675,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
+		row.LifetimeRealRequestCount = lifetimeCounts[account.ID]
 		projectAccountMonitorEffectiveCost(&row, &account)
 		if realTimelines != nil {
 			row.RealRequestTimeline = realTimelines[account.ID]
@@ -710,11 +718,60 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		applyGroupProfitability(groups, windowAggregates)
 	}
 	applyGroupSchedulerOrder(groups)
+	applyBestGroupSchedulerRanks(rows, groups)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
 		Health: summarizeAccountMonitorHealth(rows), Groups: groups, Accounts: rows,
 	}}, nil
+}
+
+func applyBestGroupSchedulerRanks(rows []AccountMonitorAccount, groups []AccountMonitorGroup) {
+	type bestRank struct {
+		rank, total int
+		groupID     int64
+		groupName   string
+	}
+	bestByAccount := make(map[int64]bestRank)
+	for _, group := range groups {
+		for _, account := range group.Accounts {
+			if account.SchedulerRank == nil {
+				continue
+			}
+			candidate := bestRank{rank: *account.SchedulerRank, total: account.SchedulerRankTotal, groupID: group.ID, groupName: group.Name}
+			current, exists := bestByAccount[account.AccountID]
+			if !exists || candidate.rank < current.rank || (candidate.rank == current.rank && candidate.groupID < current.groupID) {
+				bestByAccount[account.AccountID] = candidate
+			}
+		}
+	}
+	for i := range rows {
+		rows[i].SchedulerRank = nil
+		rows[i].SchedulerRankTotal = 0
+		rows[i].SchedulerExplanation = nil
+		best, exists := bestByAccount[rows[i].AccountID]
+		if !exists {
+			continue
+		}
+		rank := best.rank
+		rows[i].SchedulerRank = &rank
+		rows[i].SchedulerRankTotal = best.total
+		rows[i].BestSchedulerGroupName = best.groupName
+		rows[i].SchedulerExplanation = &AccountMonitorSchedulerExplanation{Rank: &rank, RankTotal: best.total, Eligible: true, PolicyKey: "unified_quality", PolicyLabel: "固定质量顺序", CandidateScope: "best_group"}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		l, r := rows[i].SchedulerRank, rows[j].SchedulerRank
+		if l == nil && r != nil {
+			return false
+		}
+		if l != nil && r == nil {
+			return true
+		}
+		if l != nil && r != nil && *l != *r {
+			return *l < *r
+		}
+		return rows[i].AccountID < rows[j].AccountID
+	})
 }
 
 func projectAccountMonitorEffectiveCost(row *AccountMonitorAccount, account *Account) {

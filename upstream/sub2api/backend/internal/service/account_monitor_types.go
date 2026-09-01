@@ -249,6 +249,10 @@ type AccountMonitorRealRequestRepository interface {
 	ListRealRequestAggregates(ctx context.Context, accountIDs []int64, since, until time.Time) (map[int64]AccountMonitorWindowAggregate, error)
 }
 
+type AccountMonitorLifetimeRealRequestRepository interface {
+	ListLifetimeRealRequestCounts(ctx context.Context, accountIDs []int64) (map[int64]int64, error)
+}
+
 type AccountMonitorGroupRealRequestRepository interface {
 	ListGroupRealRequestAggregates(ctx context.Context, groupIDs, accountIDs []int64, since, until time.Time) (map[int64]map[int64]AccountMonitorWindowAggregate, error)
 }
@@ -286,12 +290,16 @@ type AccountMonitorGroupProfitability struct {
 }
 
 type AccountMonitorRealRequestTimelinePoint struct {
-	StartAt      time.Time `json:"start_at"`
-	EndAt        time.Time `json:"end_at"`
-	RequestCount int64     `json:"request_count"`
-	SuccessCount int64     `json:"success_count"`
-	FailureCount int64     `json:"failure_count"`
-	TTFTP95MS    *float64  `json:"ttft_p95_ms,omitempty"`
+	StartAt           time.Time `json:"start_at"`
+	EndAt             time.Time `json:"end_at"`
+	RequestCount      int64     `json:"request_count"`
+	SuccessCount      int64     `json:"success_count"`
+	FailureCount      int64     `json:"failure_count"`
+	TTFTP95MS         *float64  `json:"ttft_p95_ms,omitempty"`
+	ProbeCount        int64     `json:"probe_count,omitempty"`
+	ProbeSuccessCount int64     `json:"probe_success_count,omitempty"`
+	ProbeFailureCount int64     `json:"probe_failure_count,omitempty"`
+	Source            string    `json:"source,omitempty"`
 }
 
 type AccountMonitorUsageWindow struct {
@@ -505,6 +513,7 @@ type AccountMonitorAccount struct {
 	QualityRankTotal           int                                      `json:"quality_rank_total,omitempty"`
 	SchedulerRank              *int                                     `json:"scheduler_rank,omitempty"`
 	SchedulerRankTotal         int                                      `json:"scheduler_rank_total,omitempty"`
+	BestSchedulerGroupName     string                                   `json:"best_scheduler_group_name,omitempty"`
 	QualityExplanation         *AccountMonitorQualityExplanation        `json:"quality_explanation,omitempty"`
 	SchedulerExplanation       *AccountMonitorSchedulerExplanation      `json:"scheduler_explanation,omitempty"`
 	SchedulerUnavailable       bool                                     `json:"scheduler_unavailable,omitempty"`
@@ -521,6 +530,7 @@ type AccountMonitorAccount struct {
 	MonitorBucket              string                                   `json:"monitor_bucket"`
 	GroupRecommendation        *AccountMonitorGroupRecommendation       `json:"group_recommendation,omitempty"`
 	RealRequestEvidence        *AccountMonitorRealRequestEvidence       `json:"real_request_evidence,omitempty"`
+	LifetimeRealRequestCount   int64                                    `json:"lifetime_real_request_count"`
 	GlobalRanks                AccountMonitorGlobalRanks                `json:"global_ranks,omitempty"`
 	GroupProfitability         *AccountMonitorGroupProfitability        `json:"group_profitability,omitempty"`
 	UpstreamMultiplier         *AccountMonitorMultiplier                `json:"upstream_multiplier,omitempty"`

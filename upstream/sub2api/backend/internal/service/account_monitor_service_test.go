@@ -115,6 +115,13 @@ type accountMonitorRepoStub struct {
 	monitorV2Projection    map[int64]MonitorV2NativeGroupProjection
 	monitorV2ProjectionErr error
 	deleteBeforeCalls      []time.Time
+	lifetimeCounts         map[int64]int64
+	lifetimeCountCalls     int
+}
+
+func (s *accountMonitorRepoStub) ListLifetimeRealRequestCounts(_ context.Context, _ []int64) (map[int64]int64, error) {
+	s.lifetimeCountCalls++
+	return s.lifetimeCounts, nil
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -451,7 +458,7 @@ func TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
+func TestAccountMonitorListWindowIgnoresPersistedGlobalScoreWeightsForPrimaryOrder(t *testing.T) {
 	rate := 1.0
 	accounts := []Account{
 		{ID: 1, Name: "cheap", Status: "active", Schedulable: true, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, RateMultiplier: &rate},
@@ -474,8 +481,8 @@ func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListWindow() error = %v", err)
 	}
-	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{2, 1}) {
-		t.Fatalf("global ranking account ids = %v", got)
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{1, 2}) {
+		t.Fatalf("global scheduler fallback account ids = %v", got)
 	}
 	if page.SchemaVersion != AccountMonitorSchemaVersion {
 		t.Fatalf("schema version changed: %d", page.SchemaVersion)
@@ -584,8 +591,11 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 		t.Fatalf("account without evidence fabricated projection: %#v", noEvidence)
 	}
 	global := findAccountMonitorAccount(t, page.Accounts, 1)
-	if global.QualityRank == nil || global.SchedulerRank != nil {
-		t.Fatalf("full-site row left global quality path: %#v", global)
+	if global.SchedulerRank == nil || *global.SchedulerRank != 1 || global.BestSchedulerGroupName != "seven" {
+		t.Fatalf("full-site row did not project best scheduler rank: %#v", global)
+	}
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{1, 3, 2, 4}) {
+		t.Fatalf("full-site scheduler order = %v", got)
 	}
 }
 

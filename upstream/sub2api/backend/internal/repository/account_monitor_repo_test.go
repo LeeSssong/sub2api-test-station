@@ -111,7 +111,7 @@ func TestAccountMonitorRepositoryGroupRealRequestProjectionDeduplicatesAcrossAcc
 	require.True(t, ok)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*error_events AS.*PARTITION BY e\.group_id, e\.request_key ORDER BY e\.created_at DESC, e\.successful DESC`).
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*request_id AS request_id.*usage_completeness.*error_events AS.*NULL::text AS request_id.*PARTITION BY e\.group_id, e\.request_key ORDER BY e\.created_at DESC, e\.successful DESC`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
@@ -810,7 +810,7 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
 	until := since.Add(24 * time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*bucket_index.*ORDER BY account_id, bucket_index`).
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*usage_completeness.*= 'complete'.*bucket_index.*ORDER BY account_id, bucket_index`).
 		WithArgs(sqlmock.AnyArg(), since, until, 3600.0).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
 			AddRow(7, 3, 5, 4, 1, 6200.0).
@@ -831,6 +831,37 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	if !timelines[7][23].EndAt.Equal(until) {
 		t.Fatalf("last bucket end = %s, want %s", timelines[7][23].EndAt, until)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAccountMonitorRepositoryRealRequestAggregateRequiresCompleteUsage(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	aggregateRepo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorRealRequestRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement real request aggregates")
+	}
+	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
+	until := since.Add(24 * time.Hour)
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*usage_completeness.*= 'complete'.*dedup AS.*PARTITION BY e\.account_id, e\.request_key`).
+		WithArgs(sqlmock.AnyArg(), since, until).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate",
+			"ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+		}).AddRow(7, 1, 0, 1, 0.0, 0.0, true, 0.0, 0, nil, nil, until.Add(-time.Minute)))
+
+	got, err := aggregateRepo.ListRealRequestAggregates(context.Background(), []int64{7}, since, until)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[7].RequestCount != 1 || got[7].SuccessCount != 0 || got[7].ErrorCount != 1 {
+		t.Fatalf("aggregate = %#v, want partial usage to remain a failure", got[7])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

@@ -926,7 +926,7 @@ func (r *accountMonitorRepository) ListRealRequestAggregates(
 				u.actual_cost::double precision AS revenue,
 				COALESCE(u.account_cost, COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1))::double precision AS account_cost,
 				(u.account_cost IS NOT NULL OR u.account_stats_cost IS NOT NULL OR u.total_cost IS NOT NULL) AS cost_complete,
-				(u.actual_cost > 0) AS successful,
+				(COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
 				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key,
 				1 AS source_priority
 			FROM usage_logs u
@@ -997,7 +997,7 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 	rows, err := r.db.QueryContext(ctx, `
 		WITH usage_events AS (
 			SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms,
-				(u.actual_cost > 0) AS successful,
+				(COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
 				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
 			FROM usage_logs u WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
 		), error_events AS (
@@ -1049,7 +1049,8 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 				u.actual_cost::double precision AS revenue,
 				COALESCE(u.account_cost, COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1))::double precision AS account_cost,
 				(u.account_cost IS NOT NULL OR u.account_stats_cost IS NOT NULL OR u.total_cost IS NOT NULL) AS cost_complete,
-				(u.actual_cost > 0) AS successful,
+				(COALESCE(NULLIF(u.usage_completeness, ''), 'complete') = 'complete' AND u.actual_cost > 0) AS successful,
+				u.request_id AS request_id,
 				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
 			FROM usage_logs u WHERE u.group_id = ANY($1) AND u.account_id = ANY($2) AND u.created_at >= $3 AND u.created_at < $4 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
 		), usage_request_keys AS (
@@ -1060,6 +1061,7 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 			SELECT e.group_id, e.account_id, e.id::bigint AS source_id, e.created_at,
 				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
 				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
+				NULL::text AS request_id,
 				COALESCE(ur.canonical_request_key, NULLIF(e.request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
 			FROM ops_error_logs e
 			LEFT JOIN usage_request_keys ur ON ur.group_id = e.group_id AND ur.request_key = NULLIF(e.request_id, '')

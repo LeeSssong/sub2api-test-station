@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -30,12 +34,14 @@ type UpstreamBalanceLoginLookup interface {
 }
 
 type UpstreamBalanceNotificationService struct {
-	repo       UpstreamBalanceEventRepository
-	reader     UpstreamBalanceEvaluationReader
-	sender     UpstreamBalanceNotificationSender
-	registry   UpstreamBalanceLoginLookup
-	recipients []string
-	now        func() time.Time
+	repo          UpstreamBalanceEventRepository
+	reader        UpstreamBalanceEvaluationReader
+	sender        UpstreamBalanceNotificationSender
+	registry      UpstreamBalanceLoginLookup
+	recipients    []string
+	now           func() time.Time
+	silenceRepo   UpstreamBalanceNotificationSilenceRepository
+	callbackToken string
 
 	mu          sync.Mutex
 	started     bool
@@ -124,6 +130,53 @@ func (s *UpstreamBalanceNotificationService) Start() {
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go s.loop()
+}
+
+func (s *UpstreamBalanceNotificationService) ConfigureFeishuSilence(repo UpstreamBalanceNotificationSilenceRepository, callbackToken string) {
+	if s == nil {
+		return
+	}
+	s.silenceRepo = repo
+	s.callbackToken = callbackToken
+}
+
+func (s *UpstreamBalanceNotificationService) SilenceFromFeishu(ctx context.Context, callbackToken, operatorOpenID, actionToken, duration string) (string, error) {
+	if !s.ValidateFeishuCallbackToken(callbackToken) || s.silenceRepo == nil {
+		return "", errors.New("invalid Feishu callback authorization")
+	}
+	if !containsStringExact(s.recipients, operatorOpenID) {
+		return "", errors.New("unauthorized Feishu callback operator")
+	}
+	d, ok := map[string]time.Duration{"1h": time.Hour, "6h": 6 * time.Hour, "24h": 24 * time.Hour}[duration]
+	if !ok || len(actionToken) < 32 || len(actionToken) > 128 {
+		return "", errors.New("invalid Feishu silence action")
+	}
+	now := s.currentTime()
+	hash := sha256.Sum256([]byte(actionToken))
+	changed, err := s.silenceRepo.SilenceByActionToken(ctx, hex.EncodeToString(hash[:]), now.Add(d), now)
+	if err != nil {
+		return "", err
+	}
+	if !changed {
+		return "已处理或告警已失效", nil
+	}
+	return "已静默 " + duration, nil
+}
+
+func (s *UpstreamBalanceNotificationService) ValidateFeishuCallbackToken(callbackToken string) bool {
+	if s == nil || s.callbackToken == "" || len(callbackToken) != len(s.callbackToken) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(callbackToken), []byte(s.callbackToken)) == 1
+}
+
+func containsStringExact(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *UpstreamBalanceNotificationService) Stop() {
@@ -241,10 +294,21 @@ func (s *UpstreamBalanceNotificationService) processEvaluations(
 		if !ok {
 			continue
 		}
+		actionToken, actionTokenHash := "", ""
+		if s.silenceRepo != nil && s.callbackToken != "" {
+			actionToken = newUpstreamBalanceActionToken()
+			if actionToken == "" {
+				errs = append(errs, errors.New("generate upstream balance action token"))
+				continue
+			}
+			hash := sha256.Sum256([]byte(actionToken))
+			actionTokenHash = hex.EncodeToString(hash[:])
+		}
 		lease, claimed, err := s.repo.Claim(ctx, UpstreamBalanceClaimInput{
 			RuleID: ruleID, ScopeKey: evaluation.NormalizedBaseURL, NotificationState: state,
 			ValueUSD: *evaluation.ValueUSD, ObservedAt: evaluation.ObservedAt, Now: s.currentTime(),
 			RepeatInterval: interval, LeaseDuration: upstreamBalanceDeliveryLease,
+			ActionToken: actionToken, ActionTokenHash: actionTokenHash,
 		})
 		if err != nil {
 			errs = append(errs, errors.New("claim upstream balance event"))
@@ -279,6 +343,7 @@ func (s *UpstreamBalanceNotificationService) deliver(ctx context.Context, lease 
 		}
 		loginAccount, loginPassword, _ := s.registry.Lookup(lease.ScopeKey)
 		input := upstreamBalanceCardInput(evaluation, loginAccount, loginPassword, s.recipients)
+		input.SilenceToken = lease.ActionToken
 		if _, err := s.sender.Send(lockCtx, input); err != nil {
 			next := s.currentTime().Add(upstreamBalanceFailureDelay(current.DeliveryAttemptCount, lease.NotificationState))
 			code := upstreamBalanceDeliveryErrorCode(err)
@@ -303,6 +368,14 @@ func (s *UpstreamBalanceNotificationService) deliver(ctx context.Context, lease 
 		return nil
 	}
 	return nil
+}
+
+func newUpstreamBalanceActionToken() string {
+	var raw [24]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(raw[:])
 }
 
 func (s *UpstreamBalanceNotificationService) validate() error {

@@ -131,6 +131,16 @@ type UpstreamBalanceClaimInput struct {
 	Now               time.Time
 	RepeatInterval    time.Duration
 	LeaseDuration     time.Duration
+	ActionToken       string
+	ActionTokenHash   string
+}
+
+type UpstreamBalanceNotificationSilenceInput struct {
+	RuleID          int64
+	ScopeKey        string
+	ActionTokenHash string
+	Until           time.Time
+	Now             time.Time
 }
 
 type UpstreamBalanceDeliveryLease struct {
@@ -143,6 +153,7 @@ type UpstreamBalanceDeliveryLease struct {
 	Generation        int64
 	Token             string
 	LeaseUntil        time.Time
+	ActionToken       string
 }
 
 type UpstreamBalanceDeliveryResult struct {

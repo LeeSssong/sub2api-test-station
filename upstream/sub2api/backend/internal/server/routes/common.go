@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 
+	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,4 +30,11 @@ func RegisterCommonRoutes(r *gin.Engine) {
 			},
 		})
 	})
+}
+
+func RegisterFeishuUpstreamBalanceRoutes(r *gin.Engine, h *handler.Handlers) {
+	if h == nil || h.FeishuUpstreamBalance == nil {
+		return
+	}
+	r.POST("/api/v1/notifications/feishu/upstream-balance/callback", h.FeishuUpstreamBalance.Handle)
 }

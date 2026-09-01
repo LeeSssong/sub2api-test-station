@@ -5,6 +5,48 @@ import (
 	"strings"
 )
 
+type OpenAINotFoundKind string
+
+const (
+	OpenAINotFoundNone    OpenAINotFoundKind = ""
+	OpenAINotFoundModel   OpenAINotFoundKind = "model_not_found"
+	OpenAINotFoundRoute   OpenAINotFoundKind = "route_or_channel_not_found"
+	OpenAINotFoundUnknown OpenAINotFoundKind = "unknown_not_found"
+)
+
+type OpenAINotFoundClassification struct {
+	Kind          OpenAINotFoundKind
+	Retryable     bool
+	ModelCooldown bool
+}
+
+// ClassifyOpenAINotFound distinguishes model capability failures from route
+// failures. The latter are request-scoped so an account can be skipped once
+// without being persistently disabled.
+func ClassifyOpenAINotFound(statusCode int, body []byte) OpenAINotFoundClassification {
+	if statusCode != http.StatusNotFound {
+		return OpenAINotFoundClassification{}
+	}
+	normalized := normalizeModelNotFoundBody(body)
+	explicitModelCode := strings.Contains(normalized, "model_not_found")
+	if !explicitModelCode {
+		for _, marker := range []string{"endpoint", "route", "path", "base url"} {
+			if strings.Contains(normalized, marker) {
+				return OpenAINotFoundClassification{Kind: OpenAINotFoundRoute, Retryable: true}
+			}
+		}
+	}
+	if isUpstreamModelNotFoundError(statusCode, body) {
+		return OpenAINotFoundClassification{Kind: OpenAINotFoundModel, Retryable: true, ModelCooldown: true}
+	}
+	for _, marker := range []string{"endpoint", "route", "path", "base url", "resource"} {
+		if strings.Contains(normalized, marker) {
+			return OpenAINotFoundClassification{Kind: OpenAINotFoundRoute, Retryable: true}
+		}
+	}
+	return OpenAINotFoundClassification{Kind: OpenAINotFoundUnknown, Retryable: true}
+}
+
 var upstreamModelNotFoundKeywords = []string{"model not found", "unknown model", "not found"}
 
 func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {

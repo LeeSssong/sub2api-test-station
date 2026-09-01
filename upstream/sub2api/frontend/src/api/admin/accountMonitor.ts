@@ -88,6 +88,10 @@ export interface AccountMonitorRealRequestTimelinePoint {
   success_count: number
   failure_count: number
   ttft_p95_ms?: number | null
+  probe_count?: number
+  probe_success_count?: number
+  probe_failure_count?: number
+  source?: 'real' | 'probe' | 'mixed' | 'no_data' | string
 }
 
 export interface AccountMonitorBalance {
@@ -273,6 +277,7 @@ export interface AccountMonitorAccount {
   effective_cost_u?: number | null
   effective_cost_status?: string
   request_count: number
+  lifetime_real_request_count: number
   error_count: number
   range?: AccountMonitorRange
   base_cost?: number
@@ -299,6 +304,7 @@ export interface AccountMonitorAccount {
   quality_rank_total?: number
   scheduler_rank?: number | null
   scheduler_rank_total?: number
+  best_scheduler_group_name?: string
   quality_explanation?: AccountMonitorQualityExplanation | null
   scheduler_explanation?: AccountMonitorSchedulerExplanation | null
   scheduler_unavailable?: boolean

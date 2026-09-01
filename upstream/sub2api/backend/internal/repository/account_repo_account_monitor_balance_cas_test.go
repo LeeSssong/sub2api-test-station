@@ -103,6 +103,29 @@ func TestSchedulableBalanceVetoPredicateFailsOpenForMissingSnapshot(t *testing.T
 	require.Equal(t, []any{service.PlatformOpenAI, service.AccountTypeAPIKey, service.AccountMonitorBalanceStatusFailed, "balance_unavailable", fmt.Sprintf("%d", service.AccountMonitorBalanceVersion)}, args)
 }
 
+func TestClearBalanceExhaustedTempUnschedulableRequiresSameCredentialsAndReason(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() { _ = client.Close() })
+	reason := "{\"source\":\"deterministic_failure_isolation\",\"failure_class\":\"balance_exhausted\"}"
+	account := &service.Account{ID: 21, Credentials: map[string]any{"api_key": "sk-current"}, TempUnschedulableReason: reason}
+	mock.ExpectExec("(?s)UPDATE accounts.*temp_unschedulable_until = NULL.*credentials = \\$2::jsonb.*temp_unschedulable_reason = \\$3").
+		WithArgs(int64(21), "{\"api_key\":\"sk-current\"}", reason).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("(?s)INSERT INTO scheduler_outbox").
+		WithArgs(service.SchedulerOutboxEventAccountChanged, int64(21), nil, nil, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	repo := newAccountRepositoryWithSQL(client, db, nil)
+
+	changed, err := repo.ClearBalanceExhaustedTempUnschedulable(context.Background(), account)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestListSchedulableCapacityByGroupIDsAppliesBalanceVeto(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

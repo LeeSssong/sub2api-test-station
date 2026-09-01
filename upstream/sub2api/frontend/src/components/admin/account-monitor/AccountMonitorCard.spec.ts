@@ -27,6 +27,7 @@ const account = {
   priority: 1,
   group_names: ['GPT-Pro'],
   request_count: 12846,
+  lifetime_real_request_count: 54231,
   success_rate: 0.9913,
   ttft_p95_ms: 4120,
   multiplier: { value: 0.12, source: 'declared', status: 'ok', sample_count: 12846 },
@@ -77,7 +78,8 @@ describe('AccountMonitorCard R2', () => {
     const wrapper = mountCard()
     const text = wrapper.text()
 
-    expect(text).toContain('12,846 次真实请求')
+    expect(text).toContain('12,846 次窗口真实请求')
+    expect(text).toContain('累计 54,231 次')
     expect(text).not.toContain('质量评分')
     expect(text).not.toContain('全站质量排名')
     expect(text).not.toContain('组内质量排名')
@@ -121,6 +123,25 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('真实性能 · 真实请求')
     expect(wrapper.get('[data-test="refresh-account"]').text()).toContain('刷新探测状态')
     expect(wrapper.get('[data-test="refresh-account"]').attributes('title')).toContain('不生成真实请求样本')
+  })
+
+  it('labels active-probe fallback without adding it to real-request counts', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        request_count: 0,
+        lifetime_real_request_count: 51,
+        real_request_timeline: [{
+          start_at: '2026-08-30T00:00:00Z', end_at: '2026-08-30T01:00:00Z',
+          request_count: 0, success_count: 0, failure_count: 0,
+          probe_count: 1, probe_success_count: 1, probe_failure_count: 0, source: 'probe', ttft_p95_ms: 900,
+        }],
+      },
+    })
+
+    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('0 次窗口真实请求 · 累计 51 次')
+    expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toContain('主动探测兜底')
+    expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toContain('真实请求 0')
   })
 
   it('keeps manual model detection and account action entry points', async () => {

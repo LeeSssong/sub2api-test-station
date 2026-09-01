@@ -52,6 +52,7 @@ type UpstreamBalanceCardInput struct {
 	LoginPassword    string
 	RecipientOpenIDs []string
 	Accounts         []UpstreamBalanceCardAccount
+	SilenceToken     string
 }
 
 type interactiveCardText struct {
@@ -69,8 +70,16 @@ type interactiveCardHeader struct {
 }
 
 type interactiveCardElement struct {
-	Tag  string               `json:"tag"`
-	Text *interactiveCardText `json:"text,omitempty"`
+	Tag     string                  `json:"tag"`
+	Text    *interactiveCardText    `json:"text,omitempty"`
+	Actions []interactiveCardAction `json:"actions,omitempty"`
+}
+
+type interactiveCardAction struct {
+	Tag   string              `json:"tag"`
+	Text  interactiveCardText `json:"text"`
+	Type  string              `json:"type"`
+	Value map[string]string   `json:"value"`
 }
 
 type interactiveCard struct {
@@ -108,7 +117,15 @@ func RenderUpstreamBalanceCard(input UpstreamBalanceCardInput) ([]byte, error) {
 		"**上游登录账号**：" + cardValue(loginAccount),
 		"**上游登录密码**：" + cardValue(loginPassword),
 	}, "\n")
-	elements = append(elements, markdownElement(wallet), markdownElement("**关联活跃账号**"))
+	elements = append(elements, markdownElement(wallet))
+	if strings.TrimSpace(input.SilenceToken) != "" {
+		elements = append(elements, actionElement([]interactiveCardAction{
+			cardAction("静默 1 小时", "default", "1h", input.SilenceToken),
+			cardAction("静默 6 小时", "default", "6h", input.SilenceToken),
+			cardAction("静默 24 小时", "primary", "24h", input.SilenceToken),
+		}))
+	}
+	elements = append(elements, markdownElement("**关联活跃账号**"))
 	accounts := append([]UpstreamBalanceCardAccount(nil), input.Accounts...)
 	sort.SliceStable(accounts, func(i, j int) bool {
 		left, right := bestCardRank(accounts[i]), bestCardRank(accounts[j])
@@ -168,6 +185,17 @@ func RenderUpstreamBalanceCard(input UpstreamBalanceCardInput) ([]byte, error) {
 
 func markdownElement(content string) interactiveCardElement {
 	return interactiveCardElement{Tag: "div", Text: &interactiveCardText{Tag: "lark_md", Content: content}}
+}
+
+func actionElement(actions []interactiveCardAction) interactiveCardElement {
+	return interactiveCardElement{Tag: "action", Actions: actions}
+}
+
+func cardAction(label, actionType, duration, token string) interactiveCardAction {
+	return interactiveCardAction{
+		Tag: "button", Text: interactiveCardText{Tag: "plain_text", Content: label}, Type: actionType,
+		Value: map[string]string{"action": "silence", "duration": duration, "token": token},
+	}
 }
 
 func renderedCardText(card interactiveCard) string {

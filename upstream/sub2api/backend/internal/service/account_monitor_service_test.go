@@ -35,6 +35,16 @@ type accountMonitorAPIKeyRecoveryRepoStub struct {
 	clearTempCalls int
 }
 
+type accountMonitorBalanceRecoveryRepoStub struct {
+	accountMonitorAccountRepoStub
+	cleared []int64
+}
+
+func (s *accountMonitorBalanceRecoveryRepoStub) ClearBalanceExhaustedTempUnschedulable(_ context.Context, account *Account) (bool, error) {
+	s.cleared = append(s.cleared, account.ID)
+	return true, nil
+}
+
 type accountMonitorRuntimeBlockerStub struct {
 	cleared []int64
 }
@@ -115,6 +125,13 @@ type accountMonitorRepoStub struct {
 	monitorV2Projection    map[int64]MonitorV2NativeGroupProjection
 	monitorV2ProjectionErr error
 	deleteBeforeCalls      []time.Time
+	lifetimeCounts         map[int64]int64
+	lifetimeCountCalls     int
+}
+
+func (s *accountMonitorRepoStub) ListLifetimeRealRequestCounts(_ context.Context, _ []int64) (map[int64]int64, error) {
+	s.lifetimeCountCalls++
+	return s.lifetimeCounts, nil
 }
 
 func (s *accountMonitorRepoStub) InsertResult(_ context.Context, result AccountMonitorProbeResult, _ string) error {
@@ -451,7 +468,7 @@ func TestAccountMonitorServiceRejectsInvalidGlobalScoreWeights(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
+func TestAccountMonitorListWindowIgnoresPersistedGlobalScoreWeightsForPrimaryOrder(t *testing.T) {
 	rate := 1.0
 	accounts := []Account{
 		{ID: 1, Name: "cheap", Status: "active", Schedulable: true, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, RateMultiplier: &rate},
@@ -474,8 +491,8 @@ func TestAccountMonitorListWindowUsesPersistedGlobalScoreWeights(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListWindow() error = %v", err)
 	}
-	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{2, 1}) {
-		t.Fatalf("global ranking account ids = %v", got)
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{1, 2}) {
+		t.Fatalf("global scheduler fallback account ids = %v", got)
 	}
 	if page.SchemaVersion != AccountMonitorSchemaVersion {
 		t.Fatalf("schema version changed: %d", page.SchemaVersion)
@@ -584,8 +601,11 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 		t.Fatalf("account without evidence fabricated projection: %#v", noEvidence)
 	}
 	global := findAccountMonitorAccount(t, page.Accounts, 1)
-	if global.QualityRank == nil || global.SchedulerRank != nil {
-		t.Fatalf("full-site row left global quality path: %#v", global)
+	if global.SchedulerRank == nil || *global.SchedulerRank != 1 || global.BestSchedulerGroupName != "seven" {
+		t.Fatalf("full-site row did not project best scheduler rank: %#v", global)
+	}
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{1, 3, 2, 4}) {
+		t.Fatalf("full-site scheduler order = %v", got)
 	}
 }
 
@@ -792,6 +812,7 @@ type accountMonitorMultiplierStub struct {
 	err     error
 	result  AccountMonitorMultiplier
 	results map[int64]AccountMonitorMultiplier
+	refresh func(*Account, AccountMonitorRefreshOptions) error
 }
 
 type accountMonitorMultiplierCall struct {
@@ -1018,6 +1039,9 @@ func (s *accountMonitorMultiplierStub) Refresh(_ context.Context, account *Accou
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, accountMonitorMultiplierCall{accountID: account.ID, options: options})
+	if s.refresh != nil {
+		return s.refresh(account, options)
+	}
 	return s.err
 }
 
@@ -3302,6 +3326,47 @@ func TestAccountMonitorServiceRunAllRefreshesBalanceWhenAllGroupsHaveRealTraffic
 		accountID: 24,
 		options:   AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true},
 	}}, multiplier.calls)
+}
+
+func TestAccountMonitorServiceRefreshUpstreamBalanceScopesIncludesUnschedulableAccounts(t *testing.T) {
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{
+		{ID: 31, Status: StatusActive, Schedulable: false, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://upstream.invalid", "api_key": "current-key"}},
+		{ID: 32, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://other.invalid", "api_key": "other-key"}},
+	}}
+	multiplier := &accountMonitorMultiplierStub{}
+	svc := NewAccountMonitorService(&accountMonitorRepoStub{}, accountRepo, nil, nil, multiplier)
+
+	err := svc.RefreshUpstreamBalanceScopes(context.Background(), map[string]struct{}{"https://upstream.invalid": {}})
+
+	require.NoError(t, err)
+	require.Equal(t, []accountMonitorMultiplierCall{{
+		accountID: 31, options: AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true},
+	}}, multiplier.calls)
+}
+
+func TestAccountMonitorServiceRefreshUpstreamBalanceScopesClearsOnlyBalanceBlockAfterRecovery(t *testing.T) {
+	now := time.Date(2026, 9, 1, 1, 0, 0, 0, time.UTC)
+	value := 8.0
+	fingerprint := accountMonitorBalanceCredentialFingerprint("current-key")
+	account := Account{
+		ID: 41, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Credentials:             map[string]any{"base_url": "https://upstream.invalid", "api_key": "current-key"},
+		TempUnschedulableUntil:  timePtr(now.Add(time.Hour)),
+		TempUnschedulableReason: `{"source":"deterministic_failure_isolation","failure_class":"balance_exhausted"}`,
+		Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK, Source: AccountMonitorBalanceSourceSub2API,
+			ValueUSD: &value, ObservedAt: &now, CredentialFingerprint: fingerprint,
+		}},
+	}
+	repo := &accountMonitorBalanceRecoveryRepoStub{accountMonitorAccountRepoStub: accountMonitorAccountRepoStub{accounts: []Account{account}}}
+	multiplier := &accountMonitorMultiplierStub{}
+	blocker := &accountMonitorRuntimeBlockerStub{}
+	svc := NewAccountMonitorService(&accountMonitorRepoStub{}, repo, nil, nil, multiplier)
+	svc.SetAccountRuntimeBlocker(blocker)
+
+	require.NoError(t, svc.RefreshUpstreamBalanceScopes(context.Background(), map[string]struct{}{"https://upstream.invalid": {}}))
+	require.Equal(t, []int64{41}, repo.cleared)
+	require.Equal(t, []int64{41}, blocker.cleared)
 }
 
 func TestAccountMonitorServiceRunOneForcesMultiplierWithoutFailingConnectivity(t *testing.T) {

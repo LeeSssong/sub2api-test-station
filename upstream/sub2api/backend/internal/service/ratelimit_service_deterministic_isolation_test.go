@@ -46,6 +46,8 @@ func (r *deterministicIsolationRepoStub) SetModelRateLimit(_ context.Context, _ 
 func TestRateLimitService_DeterministicBalanceUsesNativeTempUnschedulable(t *testing.T) {
 	repo := &deterministicIsolationRepoStub{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	blocker := &runtimeBlockRecorder{}
+	svc.SetAccountRuntimeBlocker(blocker)
 	account := &Account{ID: 31, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
 	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusPaymentRequired, http.Header{}, []byte(`{"error":{"code":"insufficient_balance"}}`), "gpt-5.6-sol")
@@ -56,6 +58,38 @@ func TestRateLimitService_DeterministicBalanceUsesNativeTempUnschedulable(t *tes
 	require.Contains(t, repo.lastTempReason, `"failure_class":"balance_exhausted"`)
 	require.Contains(t, repo.lastTempReason, `"recovery_policy":"probe_required"`)
 	require.Equal(t, 0, len(repo.modelRateLimitCalls))
+	require.Len(t, blocker.accounts, 1)
+	require.Equal(t, account.ID, blocker.accounts[0].ID)
+	require.Equal(t, "deterministic_balance_exhausted", blocker.reasons[0])
+}
+
+func TestRateLimitService_DeterministicBalancePreemptsPoolMode(t *testing.T) {
+	repo := &deterministicIsolationRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 34, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"pool_mode": true,
+	}}
+
+	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{}, []byte(`{"error":{"code":"insufficient_user_quota"}}`))
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Zero(t, repo.setErrorCalls)
+}
+
+func TestRateLimitService_DeterministicBalancePreemptsCustomErrorCodeSkip(t *testing.T) {
+	repo := &deterministicIsolationRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	account := &Account{ID: 35, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
+		"custom_error_codes_enabled": true,
+		"custom_error_codes":         []any{float64(http.StatusUnauthorized)},
+	}}
+
+	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusPaymentRequired, http.Header{}, []byte(`{"error":{"code":"E44001"}}`))
+
+	require.True(t, shouldDisable)
+	require.Equal(t, 1, repo.tempCalls)
+	require.Zero(t, repo.setErrorCalls)
 }
 
 func TestRateLimitService_DeterministicModelUsesCanonicalProbeRequiredLimit(t *testing.T) {

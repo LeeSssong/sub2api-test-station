@@ -151,6 +151,12 @@ const kindBadgeClass = (kind: string) => {
   if (kind === 'error') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
 }
+
+const terminalKindLabel = (kind: string) => {
+  const key = `admin.ops.requestDetails.lifecycle.${kind}`
+  const translated = t(key)
+  return translated === key ? t('admin.ops.requestDetails.lifecycle.unknown') : translated
+}
 </script>
 
 <template>
@@ -208,6 +214,12 @@ const kindBadgeClass = (kind: string) => {
                     <span>{{ typeof row.duration_ms === 'number' ? `${row.duration_ms} ms` : '-' }}</span>
                     <span>{{ row.status_code ?? '-' }}</span>
                   </div>
+                  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">
+                    <span data-test="terminal-kind">{{ t('admin.ops.requestDetails.lifecycle.terminal') }}: {{ terminalKindLabel(row.terminal_kind) }}</span>
+                    <span data-test="attempt-count">{{ t('admin.ops.requestDetails.lifecycle.attempts') }}: {{ row.attempt_count }}</span>
+                    <span data-test="failover-count">{{ t('admin.ops.requestDetails.lifecycle.failovers') }}: {{ row.failover_count }}</span>
+                    <span data-test="upstream-error-count">{{ t('admin.ops.requestDetails.lifecycle.upstreamErrors') }}: {{ row.upstream_error_count }}</span>
+                  </div>
                   <div v-if="row.request_id" class="flex items-center gap-2">
                     <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-gray-700 dark:text-gray-200" :title="row.request_id">
                       {{ row.request_id }}
@@ -250,6 +262,9 @@ const kindBadgeClass = (kind: string) => {
                     {{ t('admin.ops.requestDetails.table.status') }}
                   </th>
                   <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                    {{ t('admin.ops.requestDetails.lifecycle.terminal') }}
+                  </th>
+                  <th class="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     {{ t('admin.ops.requestDetails.table.requestId') }}
                   </th>
                   <th class="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -278,6 +293,18 @@ const kindBadgeClass = (kind: string) => {
                   </td>
                   <td class="whitespace-nowrap px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
                     {{ row.status_code ?? '-' }}
+                  </td>
+                  <td class="max-w-[220px] px-4 py-3 text-xs text-gray-600 dark:text-gray-300">
+                    <div data-test="terminal-kind" class="truncate font-medium" :title="terminalKindLabel(row.terminal_kind)">
+                      {{ terminalKindLabel(row.terminal_kind) }}
+                    </div>
+                    <div class="mt-1 whitespace-nowrap text-[11px] text-gray-400">
+                      <span data-test="attempt-count">{{ t('admin.ops.requestDetails.lifecycle.attempts') }} {{ row.attempt_count }}</span>
+                      <span class="mx-1">·</span>
+                      <span data-test="failover-count">{{ t('admin.ops.requestDetails.lifecycle.failovers') }} {{ row.failover_count }}</span>
+                      <span class="mx-1">·</span>
+                      <span data-test="upstream-error-count">{{ t('admin.ops.requestDetails.lifecycle.upstreamErrors') }} {{ row.upstream_error_count }}</span>
+                    </div>
                   </td>
                   <td class="px-4 py-3">
                     <div v-if="row.request_id" class="flex items-center gap-2">

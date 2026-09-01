@@ -10,7 +10,31 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 )
+
+func TestAccountMonitorRepositoryGroupRealRequestProjectionDeduplicatesAcrossAccountsByFinalEvent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	repo := NewAccountMonitorRepository(db)
+	groupRepo, ok := repo.(service.AccountMonitorGroupRealRequestRepository)
+	require.True(t, ok)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(time.Hour)
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*error_events AS.*PARTITION BY e\.group_id, e\.request_key ORDER BY e\.created_at DESC, e\.successful DESC`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"group_id", "account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+		}).AddRow(7, 12, 1, 1, 0, 0.2, 0.1, true, 1.0, 1, 120.0, 800.0, end.Add(-time.Minute)))
+
+	got, err := groupRepo.ListGroupRealRequestAggregates(context.Background(), []int64{7}, []int64{11, 12}, start, end)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got[7][12].RequestCount)
+	require.Equal(t, int64(1), got[7][12].SuccessCount)
+	require.Zero(t, got[7][11].RequestCount)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
 
 func TestAccountMonitorRepositoryHealthHistoryErrorRollsBackWithoutEvent(t *testing.T) {
 	db, mock, err := sqlmock.New()
@@ -101,7 +125,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	}
 }
 
-func TestAccountMonitorRepositoryProjectMonitorV4FailClosesMissingProbeBucket(t *testing.T) {
+func TestAccountMonitorRepositoryProjectMonitorV4ReportsMissingProbeWithoutServiceFailure(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -114,13 +138,13 @@ func TestAccountMonitorRepositoryProjectMonitorV4FailClosesMissingProbeBucket(t 
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(10*time.Minute + 30*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*COALESCE\(bm\.probe_successful, FALSE\).*WHERE bm\.has_real IS NOT TRUE\s*\), latest_selected AS`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.has_real IS NOT TRUE AND bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
 			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
 			"latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational",
-		}).AddRow(7, 0.0, 1, 0, 0, 0, 1, 1, 1, nil, 0, nil, 0, nil, nil, false))
+		}).AddRow(7, nil, 0, 0, 0, 0, 0, 0, 1, nil, 0, nil, 0, nil, nil, false))
 
 	projection, err := projector.ProjectMonitorV4GroupsForGroups(
 		context.Background(), []int64{7}, nil, start, end, 5*time.Minute,
@@ -129,11 +153,11 @@ func TestAccountMonitorRepositoryProjectMonitorV4FailClosesMissingProbeBucket(t 
 		t.Fatal(err)
 	}
 	row := projection[7]
-	if row.RequestCount != 1 || row.SuccessCount != 0 || row.SuccessRate == nil || *row.SuccessRate != 0 {
-		t.Fatalf("missing-probe projection = %#v, want one failed synthetic request", row)
+	if row.RequestCount != 0 || row.SuccessCount != 0 || row.SuccessRate != nil {
+		t.Fatalf("missing-probe projection = %#v, want no service sample", row)
 	}
-	if row.ProbeFallbackBucketCount != 1 || row.ProbeFallbackRequestCount != 1 {
-		t.Fatalf("missing-probe counters = %#v, want one synthetic bucket", row)
+	if row.ProbeFallbackBucketCount != 0 || row.ProbeFallbackRequestCount != 0 {
+		t.Fatalf("missing-probe counters = %#v, want no synthetic request", row)
 	}
 	if row.MissingProbeTerminalCount != 1 {
 		t.Fatalf("missing-probe terminal count = %d, want 1", row.MissingProbeTerminalCount)
@@ -165,7 +189,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4ConstructsGroupMatrixWithoutAcc
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
 			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
 			"latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational",
-		}).AddRow(99, 0.0, 1, 0, 0, 0, 1, 1, 1, nil, 0, nil, 0, nil, nil, false))
+		}).AddRow(99, nil, 0, 0, 0, 0, 0, 0, 1, nil, 0, nil, 0, nil, nil, false))
 
 	projection, err := projector.ProjectMonitorV4GroupsForGroups(
 		context.Background(), []int64{99}, nil, start, end, 5*time.Minute,
@@ -174,8 +198,8 @@ func TestAccountMonitorRepositoryProjectMonitorV4ConstructsGroupMatrixWithoutAcc
 		t.Fatal(err)
 	}
 	row, exists := projection[99]
-	if !exists || row.RequestCount != 1 || row.SuccessRate == nil || *row.SuccessRate != 0 {
-		t.Fatalf("group without scopes = %#v, want one fail-closed bucket", projection)
+	if !exists || row.RequestCount != 0 || row.SuccessRate != nil || row.MissingProbeTerminalCount != 1 {
+		t.Fatalf("group without scopes = %#v, want one missing-terminal alert without a service sample", projection)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -774,6 +798,34 @@ func TestAccountMonitorRepositoryListsRecentTimelinesInOneBatch(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRepositoryListsLifetimeRealRequestCounts(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorLifetimeRealRequestRepository)
+	if !ok {
+		t.Fatal("account monitor repository must implement lifetime real request counts")
+	}
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*usage_completeness.*error_events AS.*ROW_NUMBER\(\) OVER.*PARTITION BY e\.account_id, e\.request_key.*COUNT\(\*\)::bigint.*GROUP BY account_id`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count"}).
+			AddRow(7, int64(12846)).
+			AddRow(8, int64(42)))
+
+	counts, err := repo.ListLifetimeRealRequestCounts(context.Background(), []int64{7, 8, 9})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[7] != 12846 || counts[8] != 42 || counts[9] != 0 {
+		t.Fatalf("lifetime counts = %#v", counts)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -786,11 +838,12 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
 	until := since.Add(24 * time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*bucket_index.*ORDER BY account_id, bucket_index`).
-		WithArgs(sqlmock.AnyArg(), since, until, 3600.0).
-		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
-			AddRow(7, 3, 5, 4, 1, 6200.0).
-			AddRow(7, 22, 2, 2, 0, 900.0))
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*source_bucket_index.*probe_buckets AS.*selected_source_buckets AS.*FLOOR\(source_bucket_index.*CASE WHEN BOOL_OR.*ORDER BY account_id, bucket_index`).
+		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 24, 288).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms", "probe_count", "probe_success_count", "probe_failure_count", "source"}).
+			AddRow(7, 3, 5, 4, 1, 6200.0, 0, 0, 0, "real").
+			AddRow(7, 22, 2, 2, 0, 900.0, 0, 0, 0, "real").
+			AddRow(8, 1, 0, 0, 0, nil, 1, 1, 0, "probe"))
 
 	timelines, err := timelineRepo.ListRealRequestTimelines(context.Background(), []int64{7, 8}, since, until, 24)
 	if err != nil {
@@ -798,6 +851,9 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	if len(timelines[7]) != 24 || len(timelines[8]) != 24 {
 		t.Fatalf("timeline lengths = %d/%d, want 24/24", len(timelines[7]), len(timelines[8]))
+	}
+	if timelines[8][1].ProbeCount != 1 || timelines[8][1].Source != "probe" || timelines[8][1].ProbeSuccessCount != 1 {
+		t.Fatalf("probe fallback bucket = %#v", timelines[8][1])
 	}
 	if timelines[7][0].RequestCount != 0 || timelines[7][0].TTFTP95MS != nil {
 		t.Fatalf("empty bucket = %#v", timelines[7][0])

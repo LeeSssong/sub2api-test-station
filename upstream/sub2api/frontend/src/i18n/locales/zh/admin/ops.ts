@@ -441,6 +441,19 @@ export default {
         copyFailed: '复制失败',
         copy: '复制',
         viewError: '查看错误',
+        lifecycle: {
+          terminal: '最终终态',
+          attempts: '尝试次数',
+          failovers: '切号次数',
+          upstreamErrors: '上游错误',
+          success: '成功',
+          autoRetryRecovered: '自动重试后恢复',
+          singleAttemptUserVisible: '单次请求失败',
+          retryExhaustedUserVisible: '重试耗尽',
+          stoppedUnsafeToReplay: '已停止：不可安全重放',
+          incompleteUnknown: '证据不足',
+          unknown: '未知'
+        },
         kind: {
           success: '成功',
           error: '失败'

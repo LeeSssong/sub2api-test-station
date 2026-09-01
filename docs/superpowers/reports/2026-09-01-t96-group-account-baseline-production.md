@@ -125,3 +125,21 @@
 - 确定目标账号账号级 `priority` 不再有非 50 值。
 - 生产前后未修改账号状态、可调度状态、并发、倍率、凭据或模型配置。
 - 原生 `PUT` 接口重建 `account_groups.priority` 为组内序号；现有公开原生接口不接受关系级 priority=50 字段。本报告中的“Sub 原生优先级”指账号级 `accounts.priority`。
+
+## 组级调度参数实时读回
+
+2026-09-01 生产管理员 API `GET /api/v1/admin/settings` 读回如下（已脱敏）：
+
+```json
+{
+  "openai_advanced_scheduler_enabled": true,
+  "openai_advanced_scheduler_group_policies": {
+    "2": {"mode": "custom", "extra_retry_count": 1},
+    "17": {"mode": "custom", "extra_retry_count": 1},
+    "6": {"mode": "custom", "extra_retry_count": 2},
+    "20": {"mode": "custom", "extra_retry_count": 3}
+  }
+}
+```
+
+本次发布来源为 `main@41a36389a0229d537ef2a6c1f0f219ec6a77f513`；主站与验收站均已运行该 commit/tree。部署后只新增本地报告与总账提交，按用户要求未推送远端。

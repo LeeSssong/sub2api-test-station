@@ -482,13 +482,11 @@ WITH scopes AS (
   WHERE request_exclusion.request_key IS NULL
     AND logical_exclusion.request_key IS NULL
 ), usage_request_keys AS (
-  SELECT DISTINCT group_id, account_id, request_id AS request_key, request_key AS canonical_request_key
+  -- request_id is the exact bridge available on ops_error_logs. Keep the
+  -- mapping group-scoped so a failover across accounts remains one request.
+  SELECT DISTINCT group_id, request_id AS request_key, request_key AS canonical_request_key
   FROM usage_candidates
   WHERE request_id IS NOT NULL
-  UNION
-  SELECT DISTINCT group_id, account_id, logical_request_id AS request_key, request_key AS canonical_request_key
-  FROM usage_candidates
-  WHERE logical_request_id IS NOT NULL
 ), error_candidates AS (
   SELECT o.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
          date_bin($3::interval, o.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
@@ -498,18 +496,13 @@ WITH scopes AS (
 	         NULL::double precision AS input_tokens,
 	         NULL::double precision AS cache_creation_tokens,
          NULL::double precision AS cache_read_tokens,
-         COALESCE(request_match.canonical_request_key, client_match.canonical_request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
+         COALESCE(request_match.canonical_request_key, NULLIF(o.request_id, ''), 'error:' || o.id::text) AS request_key,
          0 AS source_priority
   FROM ops_error_logs o
   JOIN groups g ON g.group_id = o.group_id
   LEFT JOIN usage_request_keys request_match
     ON request_match.group_id = o.group_id
-   AND request_match.account_id IS NOT DISTINCT FROM o.account_id
    AND request_match.request_key = NULLIF(o.request_id, '')
-  LEFT JOIN usage_request_keys client_match
-    ON client_match.group_id = o.group_id
-   AND client_match.account_id IS NOT DISTINCT FROM o.account_id
-   AND client_match.request_key = NULLIF(o.client_request_id, '')
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND COALESCE(o.status_code, 0) >= 400
@@ -533,7 +526,7 @@ WITH scopes AS (
   FROM (
     SELECT rc.*, ROW_NUMBER() OVER (
       PARTITION BY rc.group_id, rc.request_key
-      ORDER BY rc.source_priority ASC, rc.observed_at DESC, rc.source_id DESC
+      ORDER BY rc.observed_at DESC, rc.successful DESC, rc.source_id DESC
     ) AS position
     FROM real_candidates rc
   ) ranked
@@ -609,7 +602,7 @@ WITH scopes AS (
 		'probe'::text AS source,
 		bm.probe_missing
   FROM bucket_matrix bm
-  WHERE bm.has_real IS NOT TRUE
+  WHERE bm.has_real IS NOT TRUE AND bm.probe_missing IS NOT TRUE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events

@@ -4,11 +4,11 @@
 - 目标来源：`docs/superpowers/specs/2026-08-31-t96-group-account-baseline-unified-quality-scheduling-design.md`
 - 生产 API：Sub2API 原生管理员接口 `POST /api/v1/admin/accounts/bulk-update` 与 `PUT /api/v1/admin/accounts/:id`
 - 前快照：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-01-t96-group-account-baseline/before.json`
-- 后快照：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-01-t96-group-account-baseline/after-api.json`
+- 后快照：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-01-t96-group-account-baseline/final-api.json`
 
 ## 结果
 
-已通过原生账号管理接口精确替换 68 个仍存在且有明确 T96 目标的账号分组，并将这 68 个账号的账号级 Sub 原生 `priority` 从原值调整为 `50`。生图 7 个账号保持原生生图组，Pro 与专属 Pro 的确定账号集合保持镜像。
+已通过原生账号管理接口精确替换 68 个仍存在且有明确 T96 目标的账号分组，并将这 68 个账号的账号级 Sub 原生 `priority` 从原值调整为 `50`。生图 7 个账号保持原生生图组，Pro 与专属 Pro 的确定账号集合保持镜像。最终快照校验确定目标集合均已精确落地；额外关系只来自 7 个新增待定账号。
 
 历史目标名单中的 `131、152、153、273、293` 当前已不存在，接口返回账号不存在或列表不再包含，因此未伪造写入。2026-08-31/09-01 新增的 `294、295、296、298、299、300、301` 不在 T96 质量排名报告中；其中 `294、295、296、298、301` 当前属于多个公开文本组，`299、300` 当前属于特惠组，均保留现状，待形成同一质量口径证据后再归组。
 

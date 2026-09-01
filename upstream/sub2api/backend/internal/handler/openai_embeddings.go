@@ -185,10 +185,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &streamStarted, reqLog)
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号；否决次数达上限则按无可用账号终止。
-			if scheduleDecision.UnifiedQuality {
-				failedAccountIDs[account.ID] = struct{}{}
-				continue
-			}
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
@@ -196,10 +192,6 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
-			if slotResult == openAISlotAcquireRetryNext && scheduleDecision.UnifiedQuality {
-				failedAccountIDs[account.ID] = struct{}{}
-				continue
-			}
 			return
 		}
 		if retryBudget.unified && !retryBudget.RecordForwardStarted(account.ID) {

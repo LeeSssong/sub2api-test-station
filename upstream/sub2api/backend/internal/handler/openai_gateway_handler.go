@@ -905,10 +905,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
-			if scheduleDecision.UnifiedQuality {
-				failedAccountIDs[account.ID] = struct{}{}
-				continue
-			}
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
@@ -916,10 +912,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
-			if slotResult == openAISlotAcquireRetryNext && scheduleDecision.UnifiedQuality {
-				failedAccountIDs[account.ID] = struct{}{}
-				continue
-			}
 			return
 		}
 		if !retryBudget.unified && !retryBudget.consumeAccountAttempt(account) {
@@ -1835,10 +1827,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
-			if scheduleDecision.UnifiedQuality {
-				failedAccountIDs[account.ID] = struct{}{}
-				continue
-			}
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
 				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
 				return
@@ -1846,10 +1834,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			continue
 		}
 		if slotResult != openAISlotAcquireOK {
-			if slotResult == openAISlotAcquireRetryNext && scheduleDecision.UnifiedQuality {
-				failedAccountIDs[account.ID] = struct{}{}
-				continue
-			}
 			return
 		}
 		if !retryBudget.unified && !retryBudget.consumeAccountAttempt(account) {

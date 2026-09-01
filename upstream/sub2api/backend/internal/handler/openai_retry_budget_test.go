@@ -236,8 +236,22 @@ func TestOpenAIUnifiedOAuth429KeepsNativeCooldownAndStopSemantics(t *testing.T) 
 }
 
 func TestOpenAIUnifiedModeSkipsLegacyOAuth429GroupReset(t *testing.T) {
-	require.False(t, shouldUseLegacyOpenAIOAuth429GroupRecovery(true))
+	require.True(t, shouldUseLegacyOpenAIOAuth429GroupRecovery(true))
 	require.True(t, shouldUseLegacyOpenAIOAuth429GroupRecovery(false))
+}
+
+func TestOpenAIUnifiedQualityDoesNotReplaceNativeRetryBudget(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	native := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 4, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
+	decision := service.OpenAIAccountScheduleDecision{UnifiedQuality: true}
+	got := adoptOpenAIUnifiedRetryBudget(native, decision, nil, context.Background(), nil)
+	require.Same(t, native, got)
+	require.False(t, got.unified)
+	require.Equal(t, 4, openAIMaxAccountSwitches)
+	for _, accountID := range []int64{11, 12, 13, 14, 15} {
+		require.True(t, got.ConsumeAttempt(accountID), "native failover should allow account %d", accountID)
+	}
+	require.False(t, got.ConsumeAttempt(16))
 }
 
 type recordingOpenAIUnifiedOAuth429Gateway struct {

@@ -47,3 +47,37 @@ func TestOpenAIStreamingHandlersUseOnlyNativeAccountConcurrency(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenAIHTTPHandlersApplyGroupModelAdmissionBeforeRouting(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		signature string
+	}{
+		{"native responses", "openai_gateway_handler.go", "func (h *OpenAIGatewayHandler) Responses"},
+		{"native messages", "openai_gateway_handler.go", "func (h *OpenAIGatewayHandler) Messages"},
+		{"gateway responses", "gateway_handler_responses.go", "func (h *GatewayHandler) Responses"},
+		{"gateway chat completions", "gateway_handler_chat_completions.go", "func (h *GatewayHandler) ChatCompletions"},
+		{"images", "openai_images.go", "func (h *OpenAIGatewayHandler) Images"},
+		{"responses input tokens", "openai_gateway_count_tokens.go", "func (h *OpenAIGatewayHandler) ResponsesInputTokens"},
+		{"messages count tokens", "openai_gateway_count_tokens.go", "func (h *OpenAIGatewayHandler) CountTokens"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := handlerFunctionSource(t, tt.path, tt.signature)
+			admission := strings.Index(body, "service.GroupAllowsOpenAIModel(")
+			require.GreaterOrEqual(t, admission, 0, "group model admission must be wired")
+			for _, marker := range []string{
+				"SelectAccount",
+				"AcquireUserSlot",
+				"AcquireAccount",
+				"CheckBillingEligibility",
+			} {
+				if index := strings.Index(body, marker); index >= 0 {
+					require.Less(t, admission, index, "admission must precede %s", marker)
+				}
+			}
+		})
+	}
+}

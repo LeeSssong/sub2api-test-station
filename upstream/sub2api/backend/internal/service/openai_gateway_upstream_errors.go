@@ -223,15 +223,19 @@ func ClassifyOpenAIUpstreamFailure(statusCode int, upstreamMessage string, respo
 	if hard {
 		transient = false
 	}
+	// A concrete HTTP response proves the request reached the upstream. For a
+	// non-model 404 the execution/billing outcome is still unknown, so retain
+	// the request-scoped diagnostic classification but never replay it.
+	requestScoped404 := statusCode == http.StatusNotFound && !hard
 	return OpenAIUpstreamFailureClass{
 		StatusCode:               statusCode,
 		ErrorType:                errType,
 		Message:                  message,
 		Transient:                transient,
 		Hard:                     hard,
-		Retryable:                transient && !outputStarted,
-		SafeToReplay:             transient && !outputStarted && !requestHasSideEffects,
-		SafeToFailoverAfterWrite: transient && !outputStarted,
+		Retryable:                transient && !outputStarted && !requestScoped404,
+		SafeToReplay:             transient && !outputStarted && !requestHasSideEffects && !requestScoped404,
+		SafeToFailoverAfterWrite: transient && !outputStarted && !requestScoped404,
 		OutputStarted:            outputStarted,
 		HasSideEffect:            requestHasSideEffects,
 		RequestScopedTransient:   statusCode == http.StatusBadRequest && isOpenAITransientProcessingError(statusCode, message, responseBody),

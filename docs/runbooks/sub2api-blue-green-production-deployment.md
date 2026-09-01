@@ -124,6 +124,14 @@ to   0bda54bbf75076c03bbd780603ccdca20c5b09e46ca7e2b4d2a1717c90e5dc57
 file 231_upstream_baseurl_balance_notifications.sql (SHA-256 0827fc078eb21f5be6d1a7cb05667585914a78665d572b1ba44e377d3a9b16b4) — add-only BaseURL-scoped non-sensitive notification state columns, indexes and the native alert rule; no balance/account/usage backfill or business data rewrite.
 ```
 
+Current T98-R3 transition:
+
+```text
+from 17621492b7321c85cdab9ae0813e902dd64bf0bbe4d6b6d6b97f8926bacdfd2f
+to   a26e13fd562198f92a51a920543c9f2ca9f0423bf9c8abf774b0b130b25defed
+file 233_upstream_balance_notification_silence.sql — add-only alert silence columns and a partial BaseURL alert index; no account, balance, usage, credential, or business-data rewrite.
+```
+
 Invoke the same controller with the explicit maintenance flag:
 
 ```bash

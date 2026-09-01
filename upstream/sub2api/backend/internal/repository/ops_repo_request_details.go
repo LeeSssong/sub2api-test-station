@@ -58,16 +58,17 @@ func (r *opsRepository) ListRequestDetails(ctx context.Context, filter *service.
 			addCondition(fmt.Sprintf("model = $%d", len(args)+1), model)
 		}
 		if requestID := strings.TrimSpace(filter.RequestID); requestID != "" {
-			addCondition(fmt.Sprintf("request_id = $%d", len(args)+1), requestID)
+			idx := len(args) + 1
+			addCondition(fmt.Sprintf("(request_id = $%d OR logical_request_id = $%d)", idx, idx), requestID)
 		}
 		if q := strings.TrimSpace(filter.Query); q != "" {
 			like := "%" + strings.ToLower(q) + "%"
 			startIdx := len(args) + 1
 			addCondition(
-				fmt.Sprintf("(LOWER(COALESCE(request_id,'')) LIKE $%d OR LOWER(COALESCE(model,'')) LIKE $%d OR LOWER(COALESCE(message,'')) LIKE $%d)",
-					startIdx, startIdx+1, startIdx+2,
+				fmt.Sprintf("(LOWER(COALESCE(request_id,'')) LIKE $%d OR LOWER(COALESCE(logical_request_id,'')) LIKE $%d OR LOWER(COALESCE(model,'')) LIKE $%d OR LOWER(COALESCE(message,'')) LIKE $%d)",
+					startIdx, startIdx+1, startIdx+2, startIdx+3,
 				),
-				like, like, like,
+				like, like, like, like,
 			)
 		}
 
@@ -85,57 +86,186 @@ func (r *opsRepository) ListRequestDetails(ctx context.Context, filter *service.
 	}
 
 	cte := `
-WITH combined AS (
+WITH usage_events AS (
   SELECT
-    'success'::TEXT AS kind,
-    ul.created_at AS created_at,
-    ul.request_id AS request_id,
+    ul.id::BIGINT AS source_id,
+    ul.created_at,
+    ul.request_id,
+    NULLIF(ul.logical_request_id, '') AS logical_request_id,
+    COALESCE(NULLIF(ul.logical_request_id, ''), NULLIF(ul.request_id, ''), 'usage:' || ul.id::TEXT) AS request_key,
+    CASE WHEN NULLIF(ul.logical_request_id, '') IS NULL THEN 'legacy_request_id' ELSE 'logical_request_id' END AS correlation_quality,
+    NULLIF(ul.attempt_id, '') AS attempt_id,
+    'usage'::TEXT AS source_kind,
     COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '') AS platform,
-    ul.model AS model,
-    ul.duration_ms AS duration_ms,
+    ul.model,
+    ul.duration_ms,
     NULL::INT AS status_code,
     NULL::BIGINT AS error_id,
     NULL::TEXT AS phase,
     NULL::TEXT AS severity,
     NULL::TEXT AS message,
-    ul.user_id AS user_id,
-    ul.api_key_id AS api_key_id,
-    ul.account_id AS account_id,
-    ul.group_id AS group_id,
-    ul.stream AS stream
+    ul.user_id,
+    ul.api_key_id,
+    ul.account_id,
+    ul.group_id,
+    ul.stream,
+    (COALESCE(NULLIF(ul.usage_completeness, ''), 'complete') = 'complete' AND ul.actual_cost > 0) AS terminal_success,
+    FALSE AS terminal_error,
+    COALESCE(NULLIF(ul.usage_completeness, ''), 'complete') AS usage_completeness,
+    TRUE AS usage_present,
+    COALESCE(ul.unsafe_to_replay, FALSE) AS unsafe_to_replay,
+    FALSE AS switch_allowed,
+    NULL::TEXT AS switch_reason,
+    NULL::TEXT AS final_error_code,
+    NULL::TEXT AS terminal_reason,
+    NULL::TEXT AS error_owner,
+    ul.first_token_ms::BIGINT AS time_to_first_token_ms
   FROM usage_logs ul
   LEFT JOIN groups g ON g.id = ul.group_id
   LEFT JOIN accounts a ON a.id = ul.account_id
   WHERE ul.created_at >= $1 AND ul.created_at < $2
-
-  UNION ALL
-
+), logical_keys AS (
+  SELECT DISTINCT ON (request_id)
+    request_id, request_key, logical_request_id, correlation_quality
+  FROM usage_events
+  WHERE NULLIF(request_id, '') IS NOT NULL
+  ORDER BY request_id, created_at DESC, source_id DESC
+), error_events AS (
   SELECT
-    'error'::TEXT AS kind,
-    o.created_at AS created_at,
-    COALESCE(NULLIF(o.request_id,''), NULLIF(o.client_request_id,''), '') AS request_id,
+    o.id::BIGINT AS source_id,
+    o.created_at,
+    o.request_id,
+    lk.logical_request_id,
+    COALESCE(lk.request_key, NULLIF(o.request_id, ''), 'error:' || o.id::TEXT) AS request_key,
+    COALESCE(lk.correlation_quality, CASE WHEN NULLIF(o.request_id, '') IS NOT NULL THEN 'legacy_request_id' ELSE 'unknown' END) AS correlation_quality,
+    NULL::TEXT AS attempt_id,
+    'error'::TEXT AS source_kind,
     COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '') AS platform,
-    o.model AS model,
-    o.duration_ms AS duration_ms,
-    o.status_code AS status_code,
+    o.model,
+    o.duration_ms,
+    o.status_code,
     o.id AS error_id,
     o.error_phase AS phase,
-    o.severity AS severity,
+    o.severity,
     o.error_message AS message,
-    o.user_id AS user_id,
-    o.api_key_id AS api_key_id,
-    o.account_id AS account_id,
-    o.group_id AS group_id,
-    o.stream AS stream
+    o.user_id,
+    o.api_key_id,
+    o.account_id,
+    o.group_id,
+    o.stream,
+    FALSE AS terminal_success,
+    (COALESCE(o.status_code, 0) >= 400 OR o.error_type = 'cyber_policy') AS terminal_error,
+    NULL::TEXT AS usage_completeness,
+    FALSE AS usage_present,
+    FALSE AS unsafe_to_replay,
+    FALSE AS switch_allowed,
+    NULL::TEXT AS switch_reason,
+    COALESCE(NULLIF(o.provider_error_code, ''), NULLIF(o.error_type, '')) AS final_error_code,
+    'user_visible_error' AS terminal_reason,
+    o.error_owner,
+    o.time_to_first_token_ms
   FROM ops_error_logs o
+  LEFT JOIN logical_keys lk ON lk.request_id = NULLIF(o.request_id, '')
   LEFT JOIN groups g ON g.id = o.group_id
   LEFT JOIN accounts a ON a.id = o.account_id
   WHERE o.created_at >= $1 AND o.created_at < $2
-    AND COALESCE(o.status_code, 0) >= 400
+    AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+), events AS (
+  SELECT * FROM usage_events
+  UNION ALL
+  SELECT * FROM error_events
+), dedup_attempts AS (
+  SELECT e.*, ROW_NUMBER() OVER (
+    PARTITION BY e.request_key, COALESCE(e.attempt_id, NULLIF(e.request_id, ''), e.source_kind || ':' || e.source_id::TEXT)
+    ORDER BY e.created_at DESC, e.source_id DESC
+  ) AS attempt_position
+  FROM events e
+), distinct_attempts AS (
+  SELECT * FROM dedup_attempts WHERE attempt_position = 1
+), request_stats AS (
+  SELECT
+    request_key,
+    COUNT(DISTINCT COALESCE(attempt_id, NULLIF(request_id, ''), source_kind || ':' || source_id::TEXT))::INT AS attempt_count,
+    COUNT(DISTINCT COALESCE(attempt_id, NULLIF(request_id, ''), source_kind || ':' || source_id::TEXT)) FILTER (WHERE source_kind = 'error' AND (error_owner = 'provider' OR phase IN ('upstream', 'network')))::INT AS upstream_error_count,
+    COUNT(DISTINCT account_id) FILTER (WHERE account_id IS NOT NULL)::INT - 1 AS failover_count,
+    BOOL_OR(unsafe_to_replay) AS unsafe_to_replay,
+    BOOL_OR(usage_present) AS usage_present,
+    CASE
+      WHEN BOOL_OR(usage_present AND usage_completeness = 'unknown') THEN 'unknown'
+      WHEN BOOL_OR(usage_present AND usage_completeness = 'partial') THEN 'partial'
+      WHEN BOOL_OR(usage_present AND usage_completeness = 'complete') THEN 'complete'
+      ELSE NULL
+    END AS usage_completeness,
+    MIN(created_at) AS first_attempt_at
+  FROM events
+  GROUP BY request_key
+), terminal_candidates AS (
+  SELECT da.*, ROW_NUMBER() OVER (
+    PARTITION BY da.request_key
+    ORDER BY (da.terminal_success OR da.terminal_error) DESC, da.created_at DESC, da.terminal_success DESC, da.source_id DESC
+  ) AS terminal_position
+  FROM distinct_attempts da
+), terminals AS (
+  SELECT * FROM terminal_candidates WHERE terminal_position = 1
+), request_projection AS (
+  SELECT
+    CASE WHEN t.terminal_success THEN 'success'::TEXT ELSE 'error'::TEXT END AS kind,
+    t.created_at,
+    COALESCE(NULLIF(t.request_id, ''), t.request_key) AS request_id,
+    t.logical_request_id,
+    t.correlation_quality,
+    rs.attempt_count,
+    GREATEST(rs.failover_count, 0) AS failover_count,
+    rs.upstream_error_count,
+    CASE WHEN t.terminal_success THEN '200' WHEN t.terminal_error THEN COALESCE(t.status_code::TEXT, '500') ELSE 'unknown' END AS final_status,
+    CASE WHEN t.stream THEN 'stream' ELSE 'http' END AS final_protocol,
+    CASE
+      WHEN t.terminal_success AND rs.upstream_error_count > 0 THEN 'auto_retry_recovered'
+      WHEN t.terminal_success THEN 'success'
+      WHEN rs.unsafe_to_replay OR t.unsafe_to_replay THEN 'stopped_unsafe_to_replay'
+      WHEN NOT t.terminal_error THEN 'incomplete_unknown'
+      WHEN rs.attempt_count > 1 THEN 'retry_exhausted_user_visible'
+      ELSE 'single_attempt_user_visible'
+    END AS terminal_kind,
+    CASE
+      WHEN t.terminal_success AND rs.upstream_error_count > 0 THEN 'upstream_error_recovered'
+      WHEN t.terminal_success THEN 'completed'
+      WHEN NOT t.terminal_error THEN 'incomplete_unknown'
+      WHEN rs.attempt_count > 1 THEN 'retry_exhausted'
+      ELSE COALESCE(t.terminal_reason, 'user_visible_error')
+    END AS terminal_reason,
+    (NOT t.terminal_success AND t.terminal_error) AS user_visible,
+    (t.terminal_success AND rs.upstream_error_count > 0) AS auto_retry_recovered,
+    (NOT t.terminal_success AND t.terminal_error AND rs.attempt_count > 1) AS retry_exhausted,
+    (NOT t.terminal_success AND (rs.unsafe_to_replay OR t.unsafe_to_replay)) AS stopped_unsafe_to_replay,
+    (rs.unsafe_to_replay OR t.unsafe_to_replay) AS unsafe_to_replay,
+    t.switch_allowed,
+    t.switch_reason,
+    rs.usage_completeness,
+    rs.usage_present,
+    rs.first_attempt_at,
+    CASE WHEN t.terminal_success OR t.terminal_error THEN t.created_at ELSE NULL END AS completed_at,
+    t.time_to_first_token_ms,
+    t.final_error_code,
+    t.platform,
+    t.model,
+    t.duration_ms,
+    t.status_code,
+    t.error_id,
+    t.phase,
+    t.severity,
+    t.message,
+    t.user_id,
+    t.api_key_id,
+    t.account_id,
+    t.group_id,
+    t.stream
+  FROM terminals t
+  JOIN request_stats rs ON rs.request_key = t.request_key
 )
 `
 
-	countQuery := fmt.Sprintf(`%s SELECT COUNT(1) FROM combined %s`, cte, where)
+	countQuery := fmt.Sprintf(`%s SELECT COUNT(1) FROM request_projection %s`, cte, where)
 	var total int64
 	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		if err == sql.ErrNoRows {
@@ -163,6 +293,28 @@ SELECT
   kind,
   created_at,
   request_id,
+  logical_request_id,
+  correlation_quality,
+  attempt_count,
+  failover_count,
+  upstream_error_count,
+  final_status,
+  final_protocol,
+  terminal_kind,
+  terminal_reason,
+  user_visible,
+  auto_retry_recovered,
+  retry_exhausted,
+  stopped_unsafe_to_replay,
+  unsafe_to_replay,
+  switch_allowed,
+  switch_reason,
+  usage_completeness,
+  usage_present,
+  first_attempt_at,
+  completed_at,
+  time_to_first_token_ms,
+  final_error_code,
   platform,
   model,
   duration_ms,
@@ -176,7 +328,7 @@ SELECT
   account_id,
   group_id,
   stream
-FROM combined
+FROM request_projection
 %s
 %s
 LIMIT $%d OFFSET $%d
@@ -207,11 +359,33 @@ LIMIT $%d OFFSET $%d
 	out := make([]*service.OpsRequestDetail, 0, pageSize)
 	for rows.Next() {
 		var (
-			kind      string
-			createdAt time.Time
-			requestID sql.NullString
-			platform  sql.NullString
-			model     sql.NullString
+			kind                string
+			createdAt           time.Time
+			requestID           sql.NullString
+			logicalRequestID    sql.NullString
+			correlationQuality  sql.NullString
+			attemptCount        int
+			failoverCount       int
+			upstreamErrorCount  int
+			finalStatus         sql.NullString
+			finalProtocol       sql.NullString
+			terminalKind        string
+			terminalReason      sql.NullString
+			userVisible         bool
+			autoRetryRecovered  bool
+			retryExhausted      bool
+			stoppedUnsafeReplay bool
+			unsafeToReplay      bool
+			switchAllowed       bool
+			switchReason        sql.NullString
+			usageCompleteness   sql.NullString
+			usagePresent        bool
+			firstAttemptAt      sql.NullTime
+			completedAt         sql.NullTime
+			timeToFirstTokenMs  sql.NullInt64
+			finalErrorCode      sql.NullString
+			platform            sql.NullString
+			model               sql.NullString
 
 			durationMs sql.NullInt64
 			statusCode sql.NullInt64
@@ -233,6 +407,28 @@ LIMIT $%d OFFSET $%d
 			&kind,
 			&createdAt,
 			&requestID,
+			&logicalRequestID,
+			&correlationQuality,
+			&attemptCount,
+			&failoverCount,
+			&upstreamErrorCount,
+			&finalStatus,
+			&finalProtocol,
+			&terminalKind,
+			&terminalReason,
+			&userVisible,
+			&autoRetryRecovered,
+			&retryExhausted,
+			&stoppedUnsafeReplay,
+			&unsafeToReplay,
+			&switchAllowed,
+			&switchReason,
+			&usageCompleteness,
+			&usagePresent,
+			&firstAttemptAt,
+			&completedAt,
+			&timeToFirstTokenMs,
+			&finalErrorCode,
 			&platform,
 			&model,
 			&durationMs,
@@ -251,11 +447,30 @@ LIMIT $%d OFFSET $%d
 		}
 
 		item := &service.OpsRequestDetail{
-			Kind:      service.OpsRequestKind(kind),
-			CreatedAt: createdAt,
-			RequestID: strings.TrimSpace(requestID.String),
-			Platform:  strings.TrimSpace(platform.String),
-			Model:     strings.TrimSpace(model.String),
+			Kind:                  service.OpsRequestKind(kind),
+			CreatedAt:             createdAt,
+			RequestID:             strings.TrimSpace(requestID.String),
+			LogicalRequestID:      strings.TrimSpace(logicalRequestID.String),
+			CorrelationQuality:    strings.TrimSpace(correlationQuality.String),
+			AttemptCount:          attemptCount,
+			FailoverCount:         failoverCount,
+			UpstreamErrorCount:    upstreamErrorCount,
+			FinalStatus:           strings.TrimSpace(finalStatus.String),
+			FinalProtocol:         strings.TrimSpace(finalProtocol.String),
+			TerminalKind:          terminalKind,
+			TerminalReason:        strings.TrimSpace(terminalReason.String),
+			UserVisible:           userVisible,
+			AutoRetryRecovered:    autoRetryRecovered,
+			RetryExhausted:        retryExhausted,
+			StoppedUnsafeToReplay: stoppedUnsafeReplay,
+			UnsafeToReplay:        unsafeToReplay,
+			SwitchAllowed:         switchAllowed,
+			SwitchReason:          strings.TrimSpace(switchReason.String),
+			UsageCompleteness:     strings.TrimSpace(usageCompleteness.String),
+			UsagePresent:          usagePresent,
+			FinalErrorCode:        strings.TrimSpace(finalErrorCode.String),
+			Platform:              strings.TrimSpace(platform.String),
+			Model:                 strings.TrimSpace(model.String),
 
 			DurationMs: toIntPtr(durationMs),
 			StatusCode: toIntPtr(statusCode),
@@ -270,6 +485,18 @@ LIMIT $%d OFFSET $%d
 			GroupID:   toInt64Ptr(groupID),
 
 			Stream: stream,
+		}
+		if firstAttemptAt.Valid {
+			value := firstAttemptAt.Time
+			item.FirstAttemptAt = &value
+		}
+		if completedAt.Valid {
+			value := completedAt.Time
+			item.CompletedAt = &value
+		}
+		if timeToFirstTokenMs.Valid {
+			value := int(timeToFirstTokenMs.Int64)
+			item.TimeToFirstTokenMs = &value
 		}
 
 		if item.Platform == "" {

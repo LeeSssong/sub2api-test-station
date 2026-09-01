@@ -9,8 +9,8 @@
 - 基线：`main@a4580f476fbb61f89ddbcba3a8f5a5429313ec2f`
 - 候选 worktree：`/Users/gongtengxinwen/Documents/sub2api-t87-logical-request-error-lifecycle`
 - 候选分支：`codex/t87-logical-request-terminal-projection`
-- 候选提交：`200561ee250b65269e9ce7632779e0ec431164ab`
-- 候选 tree：`8d8e8573f84b88b87e0bea5744ad0a3abb5a1713`
+- 候选提交：`322a819219a31261e27d063aca05718ea0f41955`
+- 候选 tree：`6eae8f767b2f04cd3d354411d009b51f6c9dfeaa`
 - 提交前置 T87 提交：`7f7dab997`；Monitor V4 逻辑请求修订提交：`a61a81d95`、`cf361e1ab`
 
 ## 实现范围
@@ -62,5 +62,5 @@
 
 ## 注意事项
 
-- 候选 worktree 仍有一个未纳入本提交的既有脏文件：`upstream/sub2api/frontend/pnpm-lock.yaml`。该文件未由 T87 提交，根总控合并时不要把它作为 T87 变更带入。
+- 候选 worktree 仍有一个未纳入本提交的既有脏文件：`upstream/sub2api/frontend/pnpm-lock.yaml`。这是独立的依赖锁文件重解析变更，未由 T87 产生，也未纳入任何 T87 提交；根总控合并时必须排除，不应把它作为 T87 变更带入。
 - 收到带目标 `main` SHA 的 `AUTHORIZE_MERGE_TO_MAIN` 前保持等待，不自行合并、推送、部署或清理 worktree/分支。

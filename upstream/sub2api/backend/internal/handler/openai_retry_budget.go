@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	openAIMaxAccountSwitches            = 2
+	openAIMaxAccountSwitches            = 4
 	openAIRetryReasonAttemptLimit       = "attempt_limit"
 	openAIRetryReasonAccountSwitchLimit = "account_switch_limit"
 	openAIRetryReasonFailureDomainLimit = "failure_domain_limit"
@@ -90,12 +90,16 @@ func openAIRetryBudgetConfigFromConfig(cfg *config.Config) openAIRetryBudgetConf
 			}
 		}
 	}
-	if shared.MaxAttempts > 4 {
-		shared.MaxAttempts = 4
+	// Native OpenAI failover needs the initial attempt plus four possible
+	// account switches. Keep the shared-health setting for compatibility, but
+	// do not let it reduce the native request-level ceiling.
+	if shared.MaxAttempts < openAIMaxAccountSwitches+1 {
+		shared.MaxAttempts = openAIMaxAccountSwitches + 1
 	}
-	if shared.MaxAccountSwitches > openAIMaxAccountSwitches {
-		shared.MaxAccountSwitches = openAIMaxAccountSwitches
+	if shared.MaxAttempts > 5 {
+		shared.MaxAttempts = 5
 	}
+	shared.MaxAccountSwitches = openAIMaxAccountSwitches
 	if shared.MaxFailureDomains > 2 {
 		shared.MaxFailureDomains = 2
 	}
@@ -120,8 +124,8 @@ func newOpenAIRetryBudget(cfg openAIRetryBudgetConfig, now func() time.Time) *op
 	if now == nil {
 		now = time.Now
 	}
-	if cfg.MaxAttempts <= 0 || cfg.MaxAttempts > 4 {
-		cfg.MaxAttempts = 4
+	if cfg.MaxAttempts <= 0 || cfg.MaxAttempts > openAIMaxAccountSwitches+1 {
+		cfg.MaxAttempts = openAIMaxAccountSwitches + 1
 	}
 	if cfg.MaxAccountSwitches < 0 || cfg.MaxAccountSwitches > openAIMaxAccountSwitches {
 		cfg.MaxAccountSwitches = openAIMaxAccountSwitches
@@ -168,17 +172,11 @@ func newOpenAIUnifiedRetryBudget(extraRetryCount int, now func() time.Time) *ope
 }
 
 func adoptOpenAIUnifiedRetryBudget(current *openAIRetryBudget, decision service.OpenAIAccountScheduleDecision, gateway *service.OpenAIGatewayService, ctx context.Context, groupID *int64) *openAIRetryBudget {
-	if !decision.UnifiedQuality {
-		return current
-	}
-	if current != nil && current.unified {
-		return current
-	}
-	extra := 0
-	if gateway != nil {
-		extra = gateway.OpenAIUnifiedExtraRetryCount(ctx, groupID)
-	}
-	return newOpenAIUnifiedRetryBudget(extra, time.Now)
+	// T96's extra_retry_count remains a settings/API compatibility field, but
+	// ordinary OpenAI HTTP requests use the native failover budget. Quality
+	// scheduling may still annotate the decision; it must not change runtime
+	// attempt or account-switch capacity.
+	return current
 }
 
 // annotateOpenAIUnifiedDecision copies request-local recovery counters into the
@@ -221,11 +219,10 @@ func handleOpenAIUnifiedOAuth429(
 	return gateway.ShouldStopOpenAIOAuth429Failover(account, failure.StatusCode, failedSwitches, state)
 }
 
-// shouldUseLegacyOpenAIOAuth429GroupRecovery keeps the pre-T96 one-shot group
-// reset on legacy paths only. Unified quality routing owns its complete
-// cross-account budget and must not reopen an already exhausted candidate set.
+// shouldUseLegacyOpenAIOAuth429GroupRecovery keeps Sub's native OAuth 429
+// cooldown/recovery behavior. T96 no longer owns a runtime retry budget.
 func shouldUseLegacyOpenAIOAuth429GroupRecovery(unifiedQuality bool) bool {
-	return !unifiedQuality
+	return true
 }
 
 func openAIUnifiedFailureSafeToReplay(failure service.OpenAIUpstreamFailureClass, failoverErr *service.UpstreamFailoverError, usageProduced bool) bool {

@@ -114,13 +114,13 @@ func TestAccountMonitorRepositoryProjectMonitorV4FailClosesMissingProbeBucket(t 
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(10*time.Minute + 30*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*COALESCE\(bm\.probe_successful, FALSE\)`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*COALESCE\(bm\.probe_successful, FALSE\).*WHERE bm\.has_real IS NOT TRUE\s*\), latest_selected AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
 			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
 			"latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational",
-		}).AddRow(7, nil, 0, 0, 0, 0, 0, 0, 2, nil, 0, nil, 0, nil, nil, false))
+		}).AddRow(7, 0.0, 1, 0, 0, 0, 1, 1, 1, nil, 0, nil, 0, nil, nil, false))
 
 	projection, err := projector.ProjectMonitorV4GroupsForGroups(
 		context.Background(), []int64{7}, nil, start, end, 5*time.Minute,
@@ -129,14 +129,14 @@ func TestAccountMonitorRepositoryProjectMonitorV4FailClosesMissingProbeBucket(t 
 		t.Fatal(err)
 	}
 	row := projection[7]
-	if row.RequestCount != 0 || row.SuccessCount != 0 || row.SuccessRate != nil {
-		t.Fatalf("missing-probe projection = %#v, want no synthetic requests", row)
+	if row.RequestCount != 1 || row.SuccessCount != 0 || row.SuccessRate == nil || *row.SuccessRate != 0 {
+		t.Fatalf("missing-probe projection = %#v, want one failed synthetic request", row)
 	}
-	if row.ProbeFallbackBucketCount != 0 || row.ProbeFallbackRequestCount != 0 {
-		t.Fatalf("missing-probe counters = %#v, want no synthetic buckets", row)
+	if row.ProbeFallbackBucketCount != 1 || row.ProbeFallbackRequestCount != 1 {
+		t.Fatalf("missing-probe counters = %#v, want one synthetic bucket", row)
 	}
-	if row.MissingProbeTerminalCount != 2 {
-		t.Fatalf("missing-probe terminal count = %d, want 2", row.MissingProbeTerminalCount)
+	if row.MissingProbeTerminalCount != 1 {
+		t.Fatalf("missing-probe terminal count = %d, want 1", row.MissingProbeTerminalCount)
 	}
 	if row.TTFTP95MS != nil || row.LatencyP95MS != nil || row.CacheHitRate != nil || row.CurrentOperational {
 		t.Fatalf("missing-probe timing/status = %#v", row)

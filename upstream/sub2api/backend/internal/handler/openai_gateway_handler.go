@@ -736,6 +736,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		)
 	}()
 	var lastFailoverErr *service.UpstreamFailoverError
+	recoveryPassUsed := false
 	var streamFailoverPending *openAIRecoveryTransition
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var passthroughFailoverState openAIPassthroughFailoverState
@@ -812,6 +813,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 				return
 			}
+			if recoverOpenAIOAuth429GroupOnce(c.Request.Context(), h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, streamStarted, &recoveryPassUsed, &recoveryScope) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 			} else {
@@ -824,6 +828,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				failedAccountIDs[forcedRetryAccountID] = struct{}{}
 				forcedRetryAccountID = 0
 				attemptCachePreservationMode = openAICachePreservationModeFailoverAfterFailure
+				continue
+			}
+			if recoverOpenAIOAuth429GroupOnce(c.Request.Context(), h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, streamStarted, &recoveryPassUsed, &recoveryScope) {
 				continue
 			}
 			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
@@ -1180,7 +1187,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
 						retryDelay, withinBudget := retryBudget.RetryDelay(failoverErr, sameAccountRetryCount[account.ID])
 						if !withinBudget {
-							h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+							h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 							h.handleFailoverExhausted(c, failoverErr, streamStarted)
 							return
 						}
@@ -1207,16 +1214,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
-						h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+						h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
 					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
-						h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+						h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					if failure.OutputStarted {
 						failedMetadata := attemptMetadata
@@ -1284,7 +1291,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					forcedRetryAccountID = 0
 					attemptCachePreservationMode = retryDecision.CachePreservationMode
 					lastFailoverErr = &service.UpstreamFailoverError{StatusCode: failure.StatusCode, OutputStarted: failure.OutputStarted, AttemptMetadata: attemptMetadata}
-					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, nil, nil)
+					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failure.StatusCode, nil, nil)
 					if switchCount >= maxAccountSwitches {
 						h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 						return
@@ -1655,6 +1662,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		)
 	}()
 	var lastFailoverErr *service.UpstreamFailoverError
+	recoveryPassUsed := false
 	var streamFailoverPending *openAIRecoveryTransition
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	effectiveMappedModel := preferredMappedModel
@@ -1716,6 +1724,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					return
 				}
 			} else {
+				if recoverOpenAIOAuth429GroupOnce(c.Request.Context(), h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, streamStarted, &recoveryPassUsed, &recoveryScope) {
+					continue
+				}
 				if lastFailoverErr != nil {
 					h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
 				} else {
@@ -1729,6 +1740,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				failedAccountIDs[forcedRetryAccountID] = struct{}{}
 				forcedRetryAccountID = 0
 				attemptCachePreservationMode = openAICachePreservationModeFailoverAfterFailure
+				continue
+			}
+			if recoverOpenAIOAuth429GroupOnce(c.Request.Context(), h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, streamStarted, &recoveryPassUsed, &recoveryScope) {
 				continue
 			}
 			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, currentRoutingModel, reqModel)
@@ -2015,7 +2029,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					if failure.OutputStarted {
 						failedMetadata := attemptMetadata
@@ -2082,7 +2096,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					forcedRetryAccountID = 0
 					attemptCachePreservationMode = retryDecision.CachePreservationMode
 					lastFailoverErr = &service.UpstreamFailoverError{StatusCode: failure.StatusCode, OutputStarted: failure.OutputStarted, AttemptMetadata: attemptMetadata}
-					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, nil, nil)
+					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failure.StatusCode, nil, nil)
 					if switchCount >= maxAccountSwitches {
 						h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
 						return
@@ -2782,6 +2796,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
+	recoveryPassUsed := false
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	wsAttemptMessage := append([]byte(nil), firstMessage...)
 	waitForWSSameAccountRetry := func(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
@@ -2822,7 +2837,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if ctx.Err() != nil {
 			return false
 		}
-		h.gatewayService.PersistOpenAIOAuth429Cooldown(ctx, account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+		h.gatewayService.PersistOpenAIOAuth429Cooldown(ctx, account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 		h.gatewayService.RecordOpenAIAccountSwitch()
 		failedAccountIDs[account.ID] = struct{}{}
 		lastFailoverErr = failoverErr
@@ -2887,6 +2902,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
+			if recoverOpenAIOAuth429GroupOnce(ctx, h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, false, &recoveryPassUsed, nil) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(c, wsConn, lastFailoverErr)
 			} else {
@@ -2895,6 +2913,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if recoverOpenAIOAuth429GroupOnce(ctx, h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, false, &recoveryPassUsed, nil) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(c, wsConn, lastFailoverErr)
 			} else {

@@ -11,6 +11,11 @@ const group = {
 }
 
 describe('monitor v4 contract', () => {
+  it.each(['24h', '7d', '30d'] as const)('accepts the persisted %s window', (window) => {
+    const snapshot = validateMonitorV4Snapshot({ contract_version: '2', window, refresh_interval_seconds: 300, generated_at: '2026-08-31T12:00:00Z', groups: [] })
+    expect(snapshot.window).toBe(window)
+  })
+
   it('accepts request-weighted metrics and nullable cache hit rates', () => {
     const snapshot = validateMonitorV4Snapshot({ contract_version: '2', window: '7d', refresh_interval_seconds: 60, generated_at: '2026-08-25T00:00:00Z', groups: [group, { ...group, id: 2, request_count: 0, success_count: 0, real_request_count: 0, real_success_count: 0, probe_fallback_bucket_count: 0, probe_fallback_request_count: 0, success_rate: null, ttft_p95_ms: null, ttft_sample_count: 0, latency_p95_ms: null, latency_sample_count: 0, cache_hit_rate: null }] })
     expect(snapshot.groups[1].success_rate).toBeNull()

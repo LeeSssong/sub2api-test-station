@@ -2,15 +2,24 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
-	accountModelDetectionScheduleInterval  = 30 * time.Second
-	accountModelDetectionQueueInterval     = time.Second
-	accountMonitorTerminalWatchdogInterval = time.Minute
+	accountModelDetectionScheduleInterval   = 30 * time.Second
+	accountModelDetectionQueueInterval      = time.Second
+	accountMonitorTerminalWatchdogInterval  = time.Minute
+	accountMonitorV4SnapshotRefreshInterval = 5 * time.Minute
+)
+
+const (
+	accountMonitorV4SnapshotLeaderLockTTL = 10 * time.Minute
+	accountMonitorV4SnapshotLeaderLockKey = "account-monitor-v4-snapshot"
 )
 
 type AccountMonitorRunner struct {
@@ -20,14 +29,19 @@ type AccountMonitorRunner struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
 
-	mu       sync.Mutex
-	interval time.Duration
-	trigger  chan struct{}
-	reload   chan struct{}
-	started  bool
-	stopped  bool
-	wg       sync.WaitGroup
-	runMu    sync.Mutex
+	mu                sync.Mutex
+	interval          time.Duration
+	trigger           chan struct{}
+	reload            chan struct{}
+	started           bool
+	stopped           bool
+	wg                sync.WaitGroup
+	runMu             sync.Mutex
+	snapshotMu        sync.Mutex
+	snapshotRefresher MonitorV4SnapshotRefresher
+	lockCache         LeaderLockCache
+	db                *sql.DB
+	instanceID        string
 }
 
 type upstreamBalanceNotificationTrigger interface {
@@ -46,19 +60,32 @@ func (r *AccountMonitorRunner) SetUpstreamBalanceNotificationTrigger(trigger ups
 	}
 }
 
+func (r *AccountMonitorRunner) SetMonitorV4SnapshotRefresher(refresher MonitorV4SnapshotRefresher) {
+	if r != nil {
+		r.snapshotRefresher = refresher
+	}
+}
+
+func (r *AccountMonitorRunner) SetMonitorV4SnapshotCoordination(cache LeaderLockCache, db *sql.DB) {
+	if r != nil {
+		r.lockCache, r.db = cache, db
+	}
+}
+
 func NewAccountMonitorRunner(svc *AccountMonitorService) *AccountMonitorRunner {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &AccountMonitorRunner{
-		svc:     svc,
-		ctx:     ctx,
-		cancel:  cancel,
-		trigger: make(chan struct{}, 1),
-		reload:  make(chan struct{}, 1),
+		svc:        svc,
+		ctx:        ctx,
+		cancel:     cancel,
+		trigger:    make(chan struct{}, 1),
+		reload:     make(chan struct{}, 1),
+		instanceID: uuid.NewString(),
 	}
 }
 
 func (r *AccountMonitorRunner) Start() {
-	if r == nil || r.svc == nil {
+	if r == nil {
 		return
 	}
 	r.mu.Lock()
@@ -69,18 +96,29 @@ func (r *AccountMonitorRunner) Start() {
 	r.started = true
 	r.mu.Unlock()
 
-	settings, err := r.svc.loadSettings(r.ctx)
-	if err != nil {
-		slog.Error("account_monitor: load settings failed", "error", err)
-		settings.IntervalSeconds = AccountMonitorDefaultIntervalSeconds
+	if r.svc != nil {
+		settings, err := r.svc.loadSettings(r.ctx)
+		if err != nil {
+			slog.Error("account_monitor: load settings failed", "error", err)
+			settings.IntervalSeconds = AccountMonitorDefaultIntervalSeconds
+		}
+		r.mu.Lock()
+		r.interval = time.Duration(settings.IntervalSeconds) * time.Second
+		r.mu.Unlock()
 	}
-	r.mu.Lock()
-	r.interval = time.Duration(settings.IntervalSeconds) * time.Second
-	r.mu.Unlock()
 
-	r.wg.Add(2)
-	go r.loop()
-	go r.detectionLoop()
+	if r.svc != nil {
+		r.wg.Add(1)
+		go r.loop()
+	}
+	if r.detector != nil {
+		r.wg.Add(1)
+		go r.detectionLoop()
+	}
+	if r.snapshotRefresher != nil {
+		r.wg.Add(1)
+		go r.snapshotLoop()
+	}
 	r.TriggerNow()
 }
 
@@ -180,6 +218,38 @@ func (r *AccountMonitorRunner) detectionLoop() {
 		case <-queueTicker.C:
 			r.runQueuedDetections()
 		}
+	}
+}
+
+func (r *AccountMonitorRunner) snapshotLoop() {
+	defer r.wg.Done()
+	r.refreshSnapshotOnce()
+	ticker := time.NewTicker(accountMonitorV4SnapshotRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-ticker.C:
+			r.refreshSnapshotOnce()
+		}
+	}
+}
+
+func (r *AccountMonitorRunner) refreshSnapshotOnce() {
+	if r == nil || r.snapshotRefresher == nil || !r.snapshotMu.TryLock() {
+		return
+	}
+	defer r.snapshotMu.Unlock()
+	ctx, cancel := context.WithTimeout(r.ctx, 4*time.Minute)
+	defer cancel()
+	release, acquired := tryAcquireSingletonLeaderLock(ctx, r.lockCache, r.db, accountMonitorV4SnapshotLeaderLockKey, r.instanceID, accountMonitorV4SnapshotLeaderLockTTL)
+	if !acquired {
+		return
+	}
+	defer release()
+	if err := r.snapshotRefresher.RefreshMonitorV4Snapshots(ctx, time.Now().UTC()); err != nil {
+		slog.Warn("account_monitor_v4_snapshot: refresh failed", "phase", "refresh", "error_category", "refresh_failed")
 	}
 }
 

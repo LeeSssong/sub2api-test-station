@@ -295,7 +295,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorRequestTemplateRepository := repository.NewChannelMonitorRequestTemplateRepository(client, db)
 	channelMonitorRequestTemplateService := service.NewChannelMonitorRequestTemplateService(channelMonitorRequestTemplateRepository)
 	channelMonitorRequestTemplateHandler := admin.NewChannelMonitorRequestTemplateHandler(channelMonitorRequestTemplateService)
-	accountMonitorRunner := service.ProvideAccountMonitorRunner(accountMonitorService, accountModelDetectionService, upstreamBalanceNotificationService, configConfig)
+	accountMonitorRunner := service.ProvideAccountMonitorRunner(accountMonitorService, accountModelDetectionService, upstreamBalanceNotificationService, monitorV4Service, leaderLockCache, db, configConfig)
 	accountMonitorHandler := handler.ProvideAccountMonitorHandler(accountMonitorService, accountMonitorRunner, accountRepository, concurrencyService, openAIGatewayService, accountModelDetectionService)
 	contentModerationRepository := repository.NewContentModerationRepository(db)
 	contentModerationHashCache := repository.NewContentModerationHashCache(redisClient)

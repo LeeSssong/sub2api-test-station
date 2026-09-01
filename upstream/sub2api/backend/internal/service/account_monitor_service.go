@@ -154,6 +154,28 @@ func (s *AccountMonitorService) SetAccountRuntimeBlocker(blocker AccountRuntimeB
 	}
 }
 
+func (s *AccountMonitorService) LoadLatestMonitorV4Snapshot(ctx context.Context, window MonitorV4Window) (MonitorV4StoredWindow, error) {
+	if s == nil || s.repo == nil {
+		return MonitorV4StoredWindow{}, errors.New("account monitor v4 snapshot store unavailable")
+	}
+	store, ok := s.repo.(MonitorV4SnapshotStore)
+	if !ok {
+		return MonitorV4StoredWindow{}, errors.New("account monitor v4 snapshot store unavailable")
+	}
+	return store.LoadLatestMonitorV4Snapshot(ctx, window)
+}
+
+func (s *AccountMonitorService) ReplaceMonitorV4Snapshots(ctx context.Context, snapshotID string, snapshots []MonitorV4StoredWindow) error {
+	if s == nil || s.repo == nil {
+		return errors.New("account monitor v4 snapshot store unavailable")
+	}
+	store, ok := s.repo.(MonitorV4SnapshotStore)
+	if !ok {
+		return errors.New("account monitor v4 snapshot store unavailable")
+	}
+	return store.ReplaceMonitorV4Snapshots(ctx, snapshotID, snapshots)
+}
+
 type AccountMonitorAccountRepository interface {
 	ListAllWithFilters(
 		ctx context.Context,

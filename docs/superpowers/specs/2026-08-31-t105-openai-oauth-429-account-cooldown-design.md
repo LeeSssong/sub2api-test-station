@@ -6,7 +6,7 @@ OpenAI OAuth 的瞬时 429 在 `openai_account_runtime_block_fastpath.go` 中进
 
 ## 目标与非目标
 
-目标是：同账号重试耗尽或跨账号 failover 前，对 OpenAI OAuth 账号调用 Sub 原生账号级 `SetRateLimited`；可靠 reset 时间优先，无可靠 reset 时使用 5 分钟；运行时 blocker 与持久状态一致，并保留管理员 `clear-rate-limit` / `recover-state` 恢复入口。
+目标是：同账号重试耗尽或跨账号 failover 前，对 OpenAI OAuth 账号调用 Sub 原生账号级 `SetRateLimited`；可靠 reset 时间优先，无可靠 reset 时复用官方 5 秒 fallback；运行时 blocker 与持久状态一致，并保留管理员 `clear-rate-limit` / `recover-state` 恢复入口。
 
 非目标：不做模型级限流，不改变 OpenAI capacity shed、图片专用限流、model-not-found、非 OAuth 429、Spark shadow 429 或请求级 `failedAccountIDs` 语义；不移除同账号有限重试。
 
@@ -16,11 +16,13 @@ OpenAI OAuth 的瞬时 429 在 `openai_account_runtime_block_fastpath.go` 中进
 
 ## 控制流与契约
 
-首次瞬时 OAuth 429：保持现有 retry window，`SetRateLimited` 调用数为 0。handler 仍可在有限预算内重试同账号。预算耗尽、不可安全重试或准备切换账号时，调用账号级恢复方法：解析可靠 reset（Retry-After / OAuth quota reset）并使用该时间，否则 `now + 5m`；只延长已有更晚 reset。随后写入 runtime blocker，清理请求窗口状态，并继续现有 failover。管理员清除限流时沿用原生 `ClearRateLimit`，同时清理 runtime blocker。
+首次瞬时 OAuth 429：保持现有 retry window，`SetRateLimited` 调用数为 0。handler 仍可在有限预算内重试同账号。预算耗尽、不可安全重试或准备切换账号时，调用账号级恢复方法：解析可靠 reset（Retry-After / OAuth quota reset）并使用该时间，否则复用官方 `now + 5s` fallback；只延长已有更晚 reset。随后写入 runtime blocker，清理请求窗口状态，并继续现有 failover。管理员清除限流时沿用原生 `ClearRateLimit`，同时清理 runtime blocker。
+
+当一个分组在本请求中因瞬时 429 排除完候选账号时，且请求尚未写出语义输出，允许执行一次恢复轮次：从权威分组账号列表刷新投影，清除当前请求排除及 T105 短 cooldown（包括当前账号），再完整回到选号和请求流程。7 天原生 quota、账号禁用、凭据错误和其他长期原生状态不清除；恢复轮次再次失败即结束，不得循环清除。
 
 ## 验收矩阵
 
-覆盖窗口内零持久化、重试耗尽持久化、跨账号前持久化、无 reset 五分钟 fallback、官方 reset 优先、runtime/持久状态一致、管理员清除恢复，以及至少一个非 Responses 路径；capacity shed、图片专用、模型级和 shadow 分支保持原行为。
+覆盖窗口内零持久化、重试耗尽持久化、跨账号前持久化、无 reset 官方 5 秒 fallback、官方 reset 优先（包括恰好 5 秒的可靠 reset）、runtime/持久状态一致、管理员清除恢复，以及至少一个非 Responses 路径；capacity shed、图片专用、模型级和 shadow 分支保持原行为。
 
 ## 测试、发布与回滚
 
@@ -28,4 +30,4 @@ OpenAI OAuth 的瞬时 429 在 `openai_account_runtime_block_fastpath.go` 中进
 
 ## 批准记录
 
-用户已确认仅账号级、复用 Sub 原生限流状态、保留有限同账号重试、可靠 reset 优先、无可靠 reset 固定 5 分钟，以及管理员可手动恢复。
+用户已确认仅账号级、复用 Sub 原生限流状态、保留有限同账号重试、可靠 reset 优先、无可靠 reset 复用官方 5 秒 fallback，以及管理员可手动恢复。

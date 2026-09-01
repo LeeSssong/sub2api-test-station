@@ -380,7 +380,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 						continue
 					}
 				}
-				h.gatewayService.PersistOpenAIOAuth429Cooldown(requestCtx, account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+				h.gatewayService.PersistOpenAIOAuth429Cooldown(requestCtx, account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 				h.gatewayService.RecordOpenAIAccountSwitch()
 				failedAccountIDs[account.ID] = struct{}{}
 				lastFailoverErr = failoverErr

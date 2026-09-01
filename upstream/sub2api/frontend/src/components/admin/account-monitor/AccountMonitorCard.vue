@@ -269,7 +269,7 @@ function openModelDetectionEntry() {
 
 const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
-const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
+const schedulableLabel = computed(() => props.account.schedulable ? '可调度' : '不可调度')
 const effectiveSchedulableLabel = computed(() => props.account.effective_schedulable ? '可调度' : '不可调度')
 const effectiveUnschedulableReason = computed(() => ({
   inactive: '账号未激活',

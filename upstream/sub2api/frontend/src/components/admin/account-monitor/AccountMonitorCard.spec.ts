@@ -121,6 +121,24 @@ describe('AccountMonitorCard R2', () => {
     expect(text).not.toContain('余额')
   })
 
+  it('keeps the raw manual switch enabled when an inactive account is not effectively schedulable', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        status: 'disabled',
+        availability_status: 'disabled',
+        schedulable: true,
+        effective_schedulable: false,
+        effective_unschedulable_reason: 'inactive',
+      },
+    })
+    const identityText = wrapper.get('[data-test="identity-column"]').text()
+
+    expect(identityText).toContain('暂停 · 人工开关：可调度')
+    expect(identityText).toContain('人工开关：可调度')
+    expect(identityText).toContain('有效调度：不可调度（账号未激活）')
+  })
+
   it('shows multiplier-estimated profit before real requests exist', () => {
     const wrapper = mountCard({
       account: {

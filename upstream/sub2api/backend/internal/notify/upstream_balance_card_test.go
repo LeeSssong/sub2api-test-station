@@ -12,8 +12,8 @@ func TestRenderUpstreamBalanceCardP2ShowsOneWalletAndAllAccounts(t *testing.T) {
 		LoginAccount: "registry-user.invalid", LoginPassword: "fake-password-value",
 		RecipientOpenIDs: []string{"ou-fake-a"},
 		Accounts: []UpstreamBalanceCardAccount{
-			{ID: 12, Name: "second", Ranks: []UpstreamBalanceCardRank{{GroupName: "GPT-Pro", Rank: intPointer(2)}}},
-			{ID: 11, Name: "first", Ranks: []UpstreamBalanceCardRank{{GroupName: "GPT-Plus", Rank: intPointer(1)}, {GroupName: "Unranked"}}},
+			{ID: 12, Name: "second", BalanceUSD: floatPointer(8.5), Ranks: []UpstreamBalanceCardRank{{GroupName: "GPT-Pro", Rank: intPointer(2)}}},
+			{ID: 11, Name: "first", BalanceUSD: floatPointer(4.25), Ranks: []UpstreamBalanceCardRank{{GroupName: "GPT-Plus", Rank: intPointer(1)}, {GroupName: "Unranked"}}},
 		},
 	})
 	if err != nil {
@@ -27,14 +27,14 @@ func TestRenderUpstreamBalanceCardP2ShowsOneWalletAndAllAccounts(t *testing.T) {
 		t.Fatalf("card header = %#v", card.Header)
 	}
 	text := renderedCardText(card)
-	for _, value := range []string{"USD 4.25", "https://upstream.example", "registry-user.invalid", "fake-password-value", "first", "账号 ID：11", "GPT-Plus：第 1 名", "Unranked：未排名", "second", "账号 ID：12", "GPT-Pro：第 2 名"} {
+	for _, value := range []string{"USD 4.25", "https://upstream.example", "registry-user.invalid", "fake-password-value", "first", "账号 ID：11", "余额：USD 4.25", "GPT-Plus：第 1 名", "Unranked：未排名", "second", "账号 ID：12", "余额：USD 8.50", "GPT-Pro：第 2 名"} {
 		if !strings.Contains(text, value) {
 			t.Fatalf("card missing %q: %s", value, text)
 		}
 	}
-	for _, once := range []string{"USD 4.25", "https://upstream.example", "registry-user.invalid", "fake-password-value"} {
-		if strings.Count(text, once) != 1 {
-			t.Fatalf("%q appears %d times, want 1", once, strings.Count(text, once))
+	for value, expectedCount := range map[string]int{"USD 4.25": 2, "USD 8.50": 1, "https://upstream.example": 1, "registry-user.invalid": 1, "fake-password-value": 1} {
+		if strings.Count(text, value) != expectedCount {
+			t.Fatalf("%q appears %d times, want %d", value, strings.Count(text, value), expectedCount)
 		}
 	}
 	if strings.Contains(text, "<at id=") {
@@ -100,4 +100,5 @@ func TestRenderUpstreamBalanceCardRejectsOversizeWithoutTruncatingAccounts(t *te
 	}
 }
 
-func intPointer(value int) *int { return &value }
+func intPointer(value int) *int           { return &value }
+func floatPointer(value float64) *float64 { return &value }

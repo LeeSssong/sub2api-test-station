@@ -2463,6 +2463,12 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			continue
 		}
 		g.Go(func() error {
+			// Balance freshness is independent from whether this account needs an
+			// active probe. Real traffic may suppress the probe, but it must not
+			// suppress the API-key balance refresh that feeds notifications.
+			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
+				RefreshDeclaration: true, RefreshBalance: true,
+			})
 			reader := s.activeProbeUsageReader()
 			if reader != nil {
 				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
@@ -2500,9 +2506,6 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 				return fmt.Errorf("persist account %d monitor result: %w", account.ID, err)
 			}
 			s.recordAPIKeyRecoveryProbe(gctx, account, result)
-			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
-				RefreshDeclaration: true, RefreshBalance: true,
-			})
 			mu.Lock()
 			completed++
 			mu.Unlock()

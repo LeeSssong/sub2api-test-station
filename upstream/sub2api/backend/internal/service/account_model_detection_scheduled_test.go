@@ -12,6 +12,16 @@ type modelDetectionUsageStub struct {
 	err         error
 }
 
+type alwaysUsedActiveProbeUsageStub struct{}
+
+func (*alwaysUsedActiveProbeUsageStub) HasAccountUsageInWindow(context.Context, int64, time.Time, time.Time) (bool, error) {
+	return true, nil
+}
+
+func (*alwaysUsedActiveProbeUsageStub) HasGroupUsageInWindow(context.Context, int64, time.Time, time.Time) (bool, error) {
+	return true, nil
+}
+
 type sequencedModelDetectionUsageStub struct {
 	mu   sync.Mutex
 	used []bool

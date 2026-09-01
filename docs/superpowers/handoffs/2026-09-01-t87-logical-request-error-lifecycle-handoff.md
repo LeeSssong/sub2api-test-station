@@ -9,8 +9,8 @@
 - 基线：`main@a4580f476fbb61f89ddbcba3a8f5a5429313ec2f`
 - 候选 worktree：`/Users/gongtengxinwen/Documents/sub2api-t87-logical-request-error-lifecycle`
 - 候选分支：`codex/t87-logical-request-terminal-projection`
-- 候选提交：`78ac51b301627cf991f474eabd0a1d2629639f08`
-- 候选 tree：`6ebc064ecd44cb7c5aef7720a48118ed9748ac28`
+- 候选提交：`200561ee250b65269e9ce7632779e0ec431164ab`
+- 候选 tree：`8d8e8573f84b88b87e0bea5744ad0a3abb5a1713`
 - 提交前置 T87 提交：`7f7dab997`；Monitor V4 逻辑请求修订提交：`a61a81d95`、`cf361e1ab`
 
 ## 实现范围
@@ -35,6 +35,7 @@
 - `upstream/sub2api/frontend/src/i18n/locales/zh/admin/ops.ts`
 - `upstream/sub2api/frontend/src/views/admin/ops/components/OpsRequestDetailsModal.vue`
 - `upstream/sub2api/frontend/src/views/admin/ops/components/__tests__/OpsRequestDetailsModal.lifecycle.spec.ts`
+- `docs/superpowers/handoffs/2026-09-01-t87-logical-request-error-lifecycle-handoff.md`
 
 ## 验证
 

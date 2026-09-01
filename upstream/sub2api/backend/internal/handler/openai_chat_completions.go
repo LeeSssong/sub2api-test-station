@@ -219,6 +219,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		if selection == nil || selection.Account == nil {
+			if recoverOpenAIOAuth429GroupOnce(c.Request.Context(), h.gatewayService, apiKey.GroupID, failedAccountIDs, lastFailoverErr, streamStarted, &recoveryPassUsed, nil) {
+				continue
+			}
 			cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel)
 			if !cls.ModelNotFound {
 				markOpsRoutingCapacityLimited(c)
@@ -447,7 +450,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 							attemptCachePreservationMode = openAICachePreservationModeSameAccountRetry
 							retryDelay, withinBudget := retryBudget.RetryDelay(failoverErr, sameAccountRetryCount[account.ID])
 							if !withinBudget {
-								h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+								h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 								h.handleFailoverExhausted(c, failoverErr, streamStarted)
 								return
 							}
@@ -467,11 +470,11 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						}
 					}
 					if !retryBudget.CanSwitch(0, failure.OutputStarted, failure.HasSideEffect) {
-						h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+						h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
+					h.gatewayService.PersistOpenAIOAuth429Cooldown(c.Request.Context(), account, failoverErr.StatusCode, failoverErr.ResponseHeaders, failoverErr.ResponseBody)
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr

@@ -67,6 +67,25 @@ func NewUserHandler(
 	}
 }
 
+// ProvideUserHandler wires optional native services while preserving the
+// legacy constructor signature used by existing callers and tests.
+func ProvideUserHandler(
+	adminService service.AdminService,
+	concurrencyService *service.ConcurrencyService,
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository,
+	billingCache service.BillingCache,
+	totpService *service.TotpService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	wallets ...service.QuotaWalletService,
+) *UserHandler {
+	h := NewUserHandler(adminService, concurrencyService, userPlatformQuotaRepo, billingCache, totpService, userService, settingService)
+	if len(wallets) > 0 {
+		h.SetQuotaWalletService(wallets[0])
+	}
+	return h
+}
+
 // CreateUserRequest represents admin create user request
 type CreateUserRequest struct {
 	Email         string   `json:"email" binding:"required,email"`

@@ -61,11 +61,14 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			if c.Request.Context().Err() != nil {
 				return
 			}
-			if service.IsRetryableCodexModelsManifestError(err) && switchCount < maxAccountSwitches {
-				failedAccountIDs[account.ID] = struct{}{}
-				switchCount++
-				lastUpstreamErr = err
-				continue
+			if service.IsRetryableCodexModelsManifestError(err) {
+				h.gatewayService.PersistOpenAIOAuth429CooldownFromError(c.Request.Context(), account, err)
+				if switchCount < maxAccountSwitches {
+					failedAccountIDs[account.ID] = struct{}{}
+					switchCount++
+					lastUpstreamErr = err
+					continue
+				}
 			}
 			h.errorResponse(c, infraerrors.Code(err), "upstream_error", infraerrors.Message(err))
 			return

@@ -8,7 +8,7 @@ func TestProvideHandlersWiresMonitorV4(t *testing.T) {
 		nil, nil, nil, nil, nil, nil, nil, nil,
 		nil, monitorV4, nil, nil, nil, nil, nil, nil,
 		nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	if handlers == nil {
 		t.Fatal("ProvideHandlers() returned nil")

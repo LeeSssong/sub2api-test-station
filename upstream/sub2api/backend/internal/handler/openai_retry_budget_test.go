@@ -254,6 +254,23 @@ func TestOpenAIUnifiedQualityDoesNotReplaceNativeRetryBudget(t *testing.T) {
 	require.False(t, got.ConsumeAttempt(16))
 }
 
+func TestOpenAINativeRetryBudgetAllowsFourAccountSwitches(t *testing.T) {
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{
+		MaxAttempts:        5,
+		MaxAccountSwitches: 4,
+		MaxFailureDomains:  2,
+		Total:              5 * time.Second,
+	}, func() time.Time { return now })
+
+	for _, accountID := range []int64{11, 12, 13, 14, 15} {
+		require.True(t, budget.ConsumeAttempt(accountID), "native failover should reach account %d", accountID)
+	}
+	require.Equal(t, 5, budget.Attempts())
+	require.False(t, budget.ConsumeAttempt(16))
+	require.Equal(t, openAIRetryReasonAttemptLimit, budget.Reason())
+}
+
 type recordingOpenAIUnifiedOAuth429Gateway struct {
 	persistCalls       int
 	lastAccountID      int64

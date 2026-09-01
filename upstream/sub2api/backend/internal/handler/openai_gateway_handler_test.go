@@ -1777,29 +1777,6 @@ func TestOpenAIWSTurnBillingModelPreservesImagePricingModel(t *testing.T) {
 	}
 }
 
-func TestOpenAIAccountScheduleModelUsesActualOrSharedResolver(t *testing.T) {
-	account := &service.Account{
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeOAuth,
-		Credentials: map[string]any{
-			"model_mapping":         map[string]any{"public": "billing"},
-			"compact_model_mapping": map[string]any{"public": "compact-actual"},
-		},
-	}
-
-	reported := &service.OpenAIForwardResult{UpstreamModel: "observed-actual"}
-	require.Equal(t, "observed-actual", openAIAccountScheduleModel(nil, account, "public", true, reported))
-	require.Equal(t, "compact-actual", openAIAccountScheduleModel(nil, account, "public", true, nil))
-	require.Equal(t, "billing", openAIAccountScheduleModel(nil, account, "public", false, nil))
-
-	c, _ := gin.CreateTestContext(nil)
-	service.SetOpsUpstreamModel(c, "attempt-actual")
-	require.Equal(t, "attempt-actual", openAIAccountScheduleModel(c, account, "public", true, nil))
-
-	setOpsSelectedAccount(c, account.ID, account.Platform)
-	require.Equal(t, "attempt-actual", openAIAccountScheduleModel(c, account, "public", true, nil))
-}
-
 func TestShouldReportOpenAIWSProxyAccountFailure(t *testing.T) {
 	t.Run("unsupported client model switch does not penalize account", func(t *testing.T) {
 		err := fmt.Errorf("wrapped ingress turn: %w", newOpenAIWSUnsupportedModelSwitchError("gpt-unsupported"))

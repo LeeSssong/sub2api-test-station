@@ -114,6 +114,28 @@ export interface OpsRequestDetail {
   kind: OpsRequestKind
   created_at: string
   request_id: string
+  logical_request_id?: string
+  correlation_quality?: string
+  attempt_count: number
+  failover_count: number
+  upstream_error_count: number
+  final_status?: string
+  final_protocol?: string
+  terminal_kind: string
+  terminal_reason?: string
+  user_visible: boolean
+  auto_retry_recovered: boolean
+  retry_exhausted: boolean
+  stopped_unsafe_to_replay: boolean
+  unsafe_to_replay: boolean
+  switch_allowed: boolean
+  switch_reason?: string
+  usage_completeness?: string
+  usage_present: boolean
+  first_attempt_at?: string | null
+  completed_at?: string | null
+  time_to_first_token_ms?: number | null
+  final_error_code?: string
 
   platform?: string
   model?: string

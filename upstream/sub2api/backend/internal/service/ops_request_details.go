@@ -15,9 +15,31 @@ const (
 // OpsRequestDetail is a request-level view across success (usage_logs) and error (ops_error_logs).
 // It powers "request drilldown" UIs without exposing full request bodies for successful requests.
 type OpsRequestDetail struct {
-	Kind      OpsRequestKind `json:"kind"`
-	CreatedAt time.Time      `json:"created_at"`
-	RequestID string         `json:"request_id"`
+	Kind                  OpsRequestKind `json:"kind"`
+	CreatedAt             time.Time      `json:"created_at"`
+	RequestID             string         `json:"request_id"`
+	LogicalRequestID      string         `json:"logical_request_id,omitempty"`
+	CorrelationQuality    string         `json:"correlation_quality,omitempty"`
+	AttemptCount          int            `json:"attempt_count"`
+	FailoverCount         int            `json:"failover_count"`
+	UpstreamErrorCount    int            `json:"upstream_error_count"`
+	FinalStatus           string         `json:"final_status,omitempty"`
+	FinalProtocol         string         `json:"final_protocol,omitempty"`
+	TerminalKind          string         `json:"terminal_kind"`
+	TerminalReason        string         `json:"terminal_reason,omitempty"`
+	UserVisible           bool           `json:"user_visible"`
+	AutoRetryRecovered    bool           `json:"auto_retry_recovered"`
+	RetryExhausted        bool           `json:"retry_exhausted"`
+	StoppedUnsafeToReplay bool           `json:"stopped_unsafe_to_replay"`
+	UnsafeToReplay        bool           `json:"unsafe_to_replay"`
+	SwitchAllowed         bool           `json:"switch_allowed"`
+	SwitchReason          string         `json:"switch_reason,omitempty"`
+	UsageCompleteness     string         `json:"usage_completeness,omitempty"`
+	UsagePresent          bool           `json:"usage_present"`
+	FirstAttemptAt        *time.Time     `json:"first_attempt_at,omitempty"`
+	CompletedAt           *time.Time     `json:"completed_at,omitempty"`
+	TimeToFirstTokenMs    *int           `json:"time_to_first_token_ms,omitempty"`
+	FinalErrorCode        string         `json:"final_error_code,omitempty"`
 
 	Platform string `json:"platform,omitempty"`
 	Model    string `json:"model,omitempty"`

@@ -76,6 +76,10 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		return
+	}
 	reqLog = reqLog.With(zap.String("model", reqModel))
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))

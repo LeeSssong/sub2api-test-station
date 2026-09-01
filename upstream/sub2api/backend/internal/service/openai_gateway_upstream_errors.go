@@ -199,6 +199,11 @@ func ClassifyOpenAIUpstreamFailure(statusCode int, upstreamMessage string, respo
 		transient = true
 	case http.StatusBadRequest:
 		transient = isOpenAITransientProcessingError(statusCode, message, responseBody)
+	case http.StatusNotFound:
+		// OpenAI route and bare 404s are request-scoped failover candidates.
+		// Model 404s remain hard model capability failures and are handled by
+		// the account-model cooldown path below.
+		transient = ClassifyOpenAINotFound(statusCode, responseBody).Kind != OpenAINotFoundModel
 	}
 	if statusCode == 0 {
 		// A zero status is only transient for recognizable transport failures.

@@ -583,6 +583,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		return
+	}
 	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
 		body = cappedBody
 	}
@@ -1634,6 +1638,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
+	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+		h.anthropicErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
 		return
 	}
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(c, apiKey, body)

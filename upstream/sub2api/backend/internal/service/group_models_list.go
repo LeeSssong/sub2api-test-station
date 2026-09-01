@@ -30,3 +30,22 @@ func normalizeGroupModelsListConfig(cfg GroupModelsListConfig) GroupModelsListCo
 func (g *Group) CustomModelsListEnabled() bool {
 	return g != nil && g.ModelsListConfig.Enabled && len(g.ModelsListConfig.Models) > 0
 }
+
+// GroupAllowsOpenAIModel applies the group's optional model list as a request
+// admission check. A disabled or empty list remains an advertisement-only
+// configuration so existing native account capability semantics are preserved.
+func GroupAllowsOpenAIModel(g *Group, requestedModel string) bool {
+	if g == nil || !g.CustomModelsListEnabled() {
+		return true
+	}
+	requestedModel = strings.TrimSpace(requestedModel)
+	if requestedModel == "" {
+		return false
+	}
+	for _, allowedModel := range g.ModelsListConfig.Models {
+		if strings.EqualFold(strings.TrimSpace(allowedModel), requestedModel) {
+			return true
+		}
+	}
+	return false
+}

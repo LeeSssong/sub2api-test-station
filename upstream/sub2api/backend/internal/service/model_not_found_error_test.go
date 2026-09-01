@@ -5,6 +5,62 @@ import (
 	"testing"
 )
 
+func TestClassifyOpenAINotFoundSeparatesModelAndRouteErrors(t *testing.T) {
+	tests := []struct {
+		name              string
+		statusCode        int
+		body              []byte
+		wantKind          OpenAINotFoundKind
+		wantRetryable     bool
+		wantModelCooldown bool
+	}{
+		{
+			name:              "model error",
+			statusCode:        http.StatusNotFound,
+			body:              []byte(`{"error":{"code":"model_not_found","message":"model not found"}}`),
+			wantKind:          OpenAINotFoundModel,
+			wantRetryable:     true,
+			wantModelCooldown: true,
+		},
+		{
+			name:          "endpoint error",
+			statusCode:    http.StatusNotFound,
+			body:          []byte(`{"error":{"message":"endpoint route not found"}}`),
+			wantKind:      OpenAINotFoundRoute,
+			wantRetryable: true,
+		},
+		{
+			name:          "route wording wins over incidental model text",
+			statusCode:    http.StatusNotFound,
+			body:          []byte(`{"error":{"message":"model endpoint route not found"}}`),
+			wantKind:      OpenAINotFoundRoute,
+			wantRetryable: true,
+		},
+		{
+			name:          "bare error",
+			statusCode:    http.StatusNotFound,
+			body:          []byte(`404 page not found`),
+			wantKind:      OpenAINotFoundUnknown,
+			wantRetryable: true,
+		},
+		{
+			name:       "non 404 is not classified",
+			statusCode: http.StatusBadGateway,
+			body:       []byte(`{"error":{"code":"model_not_found"}}`),
+			wantKind:   OpenAINotFoundNone,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ClassifyOpenAINotFound(tt.statusCode, tt.body)
+			if got.Kind != tt.wantKind || got.Retryable != tt.wantRetryable || got.ModelCooldown != tt.wantModelCooldown {
+				t.Fatalf("ClassifyOpenAINotFound() = %+v, want kind=%q retryable=%v modelCooldown=%v", got, tt.wantKind, tt.wantRetryable, tt.wantModelCooldown)
+			}
+		})
+	}
+}
+
 func TestIsUpstreamModelNotFoundError(t *testing.T) {
 	tests := []struct {
 		name       string

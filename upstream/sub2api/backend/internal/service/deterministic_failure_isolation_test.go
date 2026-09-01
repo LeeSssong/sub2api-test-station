@@ -24,7 +24,19 @@ func TestClassifyDeterministicUpstreamFailure(t *testing.T) {
 		classified bool
 	}{
 		{name: "explicit balance code", statusCode: 402, body: `{"error":{"code":"insufficient_balance"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "insufficient quota code", statusCode: 403, body: `{"error":{"code":"insufficient_quota"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "insufficient user quota code", statusCode: 403, body: `{"error":{"code":"insufficient_user_quota"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "top level E44001 code", statusCode: 403, body: `{"code":"E44001","message":"quota unavailable"}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "error type balance exhausted", statusCode: 402, body: `{"error":{"type":"balance_exhausted"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "explicit English balance phrase", statusCode: 403, body: `{"error":{"message":"Your balance is exhausted"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "explicit English credits phrase", statusCode: 402, body: `{"error":{"message":"You have run out of credits"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "explicit Chinese quota phrase", statusCode: 403, body: `{"error":{"message":"额度已用完"}}`, class: "balance_exhausted", scope: "account", classified: true},
+		{name: "spending limit phrase", statusCode: 403, body: `{"error":{"message":"Spending limit reached"}}`, class: "balance_exhausted", scope: "account", classified: true},
 		{name: "generic payment required is not balance evidence", statusCode: 402, body: `{"error":{"message":"request rejected"}}`},
+		{name: "permission denied is not balance evidence", statusCode: 403, body: `{"error":{"code":"permission_denied","message":"forbidden"}}`},
+		{name: "insufficient scope is not balance evidence", statusCode: 403, body: `{"error":{"code":"insufficient_scope","message":"insufficient permissions"}}`},
+		{name: "ordinary 429 is not balance evidence", statusCode: 429, body: `{"error":{"code":"insufficient_quota"}}`},
+		{name: "server error is not balance evidence", statusCode: 503, body: `{"error":{"code":"insufficient_quota"}}`},
 		{name: "explicit model not found", statusCode: 404, body: `{"error":{"code":"model_not_found"}}`, model: "gpt-5.6-sol", class: "model_unsupported", scope: "account_model", canonical: "gpt-5.6-sol", classified: true},
 		{name: "api key unauthorized", statusCode: 401, body: `{"error":{"code":"invalid_api_key"}}`, class: "credential_invalid", scope: "account", classified: true},
 		{name: "api key bare unauthorized", statusCode: 401, body: `{"detail":"Unauthorized"}`, class: "credential_invalid", scope: "account", classified: true},
@@ -41,6 +53,23 @@ func TestClassifyDeterministicUpstreamFailure(t *testing.T) {
 			require.Equal(t, tc.canonical, got.CanonicalModel)
 		})
 	}
+}
+
+func TestClassifyDeterministicUpstreamFailure_IsOpenAIOnly(t *testing.T) {
+	for _, platform := range []string{PlatformAnthropic, PlatformGemini, PlatformGrok} {
+		t.Run(platform, func(t *testing.T) {
+			account := &Account{ID: 8, Type: AccountTypeAPIKey, Platform: platform}
+			got := classifyDeterministicUpstreamFailure(account, 402, []byte(`{"error":{"code":"insufficient_balance"}}`), "")
+			require.False(t, got.Classified)
+		})
+	}
+}
+
+func TestClassifyDeterministicUpstreamFailure_NonOpenAICredentialBehaviorIsUnchanged(t *testing.T) {
+	account := &Account{ID: 9, Type: AccountTypeAPIKey, Platform: PlatformAnthropic}
+	got := classifyDeterministicUpstreamFailure(account, 401, []byte(`{"error":{"code":"invalid_api_key"}}`), "")
+	require.True(t, got.Classified)
+	require.Equal(t, deterministicCredentialClass, got.FailureClass)
 }
 
 func TestBuildDeterministicFailureReasonIsBoundedAndOwned(t *testing.T) {

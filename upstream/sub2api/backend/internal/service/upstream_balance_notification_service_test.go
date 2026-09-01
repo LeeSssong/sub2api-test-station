@@ -234,6 +234,52 @@ func TestBuildUpstreamBalanceEvaluationsPreservesBaseURLPathAndGroupRanks(t *tes
 	require.Equal(t, 2, *evaluations[0].Accounts[0].Ranks[0].Rank)
 }
 
+func TestReadUpstreamBalanceEvaluationsUsesWindowSchedulerRanks(t *testing.T) {
+	now := time.Now().UTC()
+	value := 8.25
+	observedAt := now.Add(-time.Minute)
+	rank := 3
+	account := Account{
+		ID: 9, Name: "ranked account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Schedulable: true, GroupIDs: []int64{7},
+		Credentials: map[string]any{"base_url": "https://upstream.invalid/v1", "api_key": "test-key"},
+		Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK,
+			Source:   AccountMonitorBalanceSourceSub2API,
+			ValueUSD: &value, ObservedAt: &observedAt,
+		}},
+	}
+	repo := &accountMonitorRepoStub{
+		settings:         AccountMonitorSettings{IntervalSeconds: 300},
+		globalWeights:    DefaultAccountMonitorScoreWeights,
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{9: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now}},
+		aggregates:       map[int64]AccountMonitorAggregate{9: {SampleCount: 1, SuccessCount: 1, SuccessRate: 1, LastCheckedAt: &now}},
+		latest:           map[int64]AccountMonitorLatest{9: {Status: "success", CheckedAt: now}},
+		timelines:        map[int64][]AccountMonitorTimelinePoint{},
+		groups:           []AccountMonitorGroup{{ID: 7, Name: "Primary", Platform: PlatformOpenAI, RateMultiplier: 1}},
+	}
+	scheduler := &accountMonitorSchedulerProjectionStub{byGroup: map[int64]*OpenAIAccountSchedulerProjection{
+		7: {SnapshotAt: now, CandidateCount: 3, Candidates: []OpenAIAccountSchedulerProjectionCandidate{{AccountID: 9, Rank: &rank, Eligible: true}}},
+	}}
+	monitor := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, NewAccountMultiplierService(nil, nil, nil))
+	monitor.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+
+	evaluations, err := monitor.ReadUpstreamBalanceEvaluations(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, evaluations, 1)
+	require.Len(t, evaluations[0].Accounts, 1)
+	require.Len(t, evaluations[0].Accounts[0].Ranks, 1)
+	require.Equal(t, "Primary", evaluations[0].Accounts[0].Ranks[0].GroupName)
+	require.Equal(t, rank, *evaluations[0].Accounts[0].Ranks[0].Rank)
+
+	card := upstreamBalanceCardInput(evaluations[0], "login", "password", nil)
+	require.Len(t, card.Accounts[0].Ranks, 1)
+	require.Equal(t, rank, *card.Accounts[0].Ranks[0].Rank)
+	require.NotNil(t, card.Accounts[0].BalanceUSD)
+	require.Equal(t, value, *card.Accounts[0].BalanceUSD)
+}
+
 func TestProvideUpstreamBalanceNotificationServiceIsDisabledByDefault(t *testing.T) {
 	t.Setenv("SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED", "")
 

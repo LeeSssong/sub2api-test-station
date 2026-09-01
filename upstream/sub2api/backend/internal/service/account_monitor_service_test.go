@@ -3284,6 +3284,26 @@ func TestAccountMonitorServiceRunAllRefreshesDueMultiplierWithoutFailingConnecti
 	}
 }
 
+func TestAccountMonitorServiceRunAllRefreshesBalanceWhenAllGroupsHaveRealTraffic(t *testing.T) {
+	monitorRepo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 24, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI,
+		Type: AccountTypeAPIKey, GroupIDs: []int64{7, 8},
+	}}}
+	multiplier := &accountMonitorMultiplierStub{}
+	service := NewAccountMonitorService(monitorRepo, accountRepo, nil, nil, multiplier)
+	service.SetActiveProbeUsageReader(&alwaysUsedActiveProbeUsageStub{})
+
+	completed, err := service.RunAll(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Equal(t, 0, completed, "real traffic should skip the active probe")
+	require.Equal(t, []accountMonitorMultiplierCall{{
+		accountID: 24,
+		options:   AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true},
+	}}, multiplier.calls)
+}
+
 func TestAccountMonitorServiceRunOneForcesMultiplierWithoutFailingConnectivity(t *testing.T) {
 	monitorRepo := &accountMonitorRepoStub{}
 	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{

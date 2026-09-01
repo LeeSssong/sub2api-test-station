@@ -984,12 +984,16 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 				cache_read_tokens,
 				total_cost,
 				actual_cost,
-				COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) AS account_cost,
+					%s AS account_cost,
 				duration_ms
 			FROM usage_logs
 			%s
 		)
 		SELECT
+			GROUPING(inbound_endpoint) AS inbound_grouped,
+			GROUPING(upstream_endpoint) AS upstream_grouped,
+			inbound_endpoint,
+			upstream_endpoint,
 			COUNT(*) as total_requests,
 			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
 			COALESCE(SUM(output_tokens), 0) as total_output_tokens,
@@ -998,11 +1002,16 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
-			COALESCE(SUM(COALESCE(account_cost, COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1))), 0) as total_account_cost,
+			COALESCE(SUM(account_cost), 0) as total_account_cost,
 			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
-		FROM usage_logs
-		%s
-	`, buildWhere(conditions))
+		FROM scoped
+		GROUP BY GROUPING SETS (
+			(),
+			(inbound_endpoint),
+			(upstream_endpoint),
+			(inbound_endpoint, upstream_endpoint)
+		)
+		`, effectiveAccountCostSQL(""), buildWhere(conditions))
 
 	stats := &UsageStats{}
 	var totalAccountCost float64

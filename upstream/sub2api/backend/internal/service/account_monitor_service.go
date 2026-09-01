@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -2462,6 +2463,66 @@ func (s *AccountMonitorService) RunAll(ctx context.Context, actorID int64) (int,
 	completed, runErr := s.runAll(ctx, actorID)
 	s.finishRun(run, completed, runErr)
 	return completed, runErr
+}
+
+func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context, scopes map[string]struct{}) error {
+	if s == nil || s.multiplier == nil || len(scopes) == 0 {
+		return nil
+	}
+	accounts, err := s.listMonitorAccounts(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for i := range accounts {
+		account := &accounts[i]
+		if account.Status != StatusActive || !isAccountMonitorBalanceEligible(account) {
+			continue
+		}
+		baseURL, err := NormalizeNotificationBaseURL(account.GetOpenAIBaseURL())
+		if err != nil {
+			continue
+		}
+		if _, ok := scopes[baseURL]; !ok {
+			continue
+		}
+		refreshCtx, cancel := context.WithTimeout(ctx, accountMonitorMultiplierRefreshTimeout)
+		err = s.multiplier.Refresh(refreshCtx, account, AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true})
+		cancel()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("refresh account %d upstream balance: %w", account.ID, err))
+			continue
+		}
+		if accountBalanceSnapshotHealthy(account) && isDeterministicBalanceTempReason(account.TempUnschedulableReason) {
+			if repo, ok := s.accountRepo.(accountMonitorBalanceRecoveryRepository); ok {
+				cleared, clearErr := repo.ClearBalanceExhaustedTempUnschedulable(ctx, account)
+				if clearErr != nil {
+					errs = append(errs, fmt.Errorf("restore account %d scheduling: %w", account.ID, clearErr))
+				} else if cleared && s.runtimeBlocker != nil {
+					s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
+				}
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
+type accountMonitorBalanceRecoveryRepository interface {
+	ClearBalanceExhaustedTempUnschedulable(context.Context, *Account) (bool, error)
+}
+
+func accountBalanceSnapshotHealthy(account *Account) bool {
+	snapshot := decodeAccountMonitorBalance(account.Extra)
+	return snapshot != nil && snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD >= 5
+}
+
+func isDeterministicBalanceTempReason(reason string) bool {
+	var payload struct {
+		Source       string `json:"source"`
+		FailureClass string `json:"failure_class"`
+	}
+	return json.Unmarshal([]byte(strings.TrimSpace(reason)), &payload) == nil &&
+		payload.Source == deterministicFailureSource && payload.FailureClass == deterministicBalanceClass
 }
 
 // SettleDueProbeBuckets is a lightweight watchdog pass used by the runner.

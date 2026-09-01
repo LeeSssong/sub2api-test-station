@@ -81,6 +81,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
+	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+		h.responsesErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		return
+	}
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)

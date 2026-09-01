@@ -215,6 +215,19 @@ func TestOpenAIUnifiedFailureSafetyBlocksNonReplayableAttempts(t *testing.T) {
 	}
 }
 
+func TestOpenAIUnifiedFailureSafetyBlocksSentHTTP404WithUnknownExecution(t *testing.T) {
+	failure := service.ClassifyOpenAIUpstreamFailure(
+		http.StatusNotFound,
+		"endpoint route not found",
+		[]byte(`{"error":{"message":"endpoint route not found"}}`),
+		false,
+		false,
+	)
+	err := &service.UpstreamFailoverError{NextAccountAction: service.NextAccountRetry}
+
+	require.False(t, openAIUnifiedFailureSafeToReplay(failure, err, false))
+}
+
 func TestOpenAIUnifiedOAuth429KeepsNativeCooldownAndStopSemantics(t *testing.T) {
 	account := &service.Account{ID: 9001, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
 	failure := &service.UpstreamFailoverError{

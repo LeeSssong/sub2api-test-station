@@ -74,6 +74,25 @@ func TestClassifyOpenAIUpstreamFailure_StatusZeroRequiresTransportSignature(t *t
 	require.True(t, got.Transient)
 }
 
+func TestClassifyOpenAIUpstreamFailure_NonModel404BlocksReplayWhenRequestWasSent(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(http.StatusNotFound, "endpoint route not found", []byte(`{"error":{"message":"endpoint route not found"}}`), false, false)
+
+	if !got.Transient || got.Retryable || got.SafeToReplay {
+		t.Fatalf("non-model 404 should retain diagnostics but block replay after a sent request, got %+v", got)
+	}
+	if got.Hard {
+		t.Fatalf("non-model 404 must not be hard account/model failure: %+v", got)
+	}
+}
+
+func TestClassifyOpenAIUpstreamFailure_Model404KeepsModelFailureSemantics(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(http.StatusNotFound, "model not found", []byte(`{"error":{"code":"model_not_found"}}`), false, false)
+
+	if got.Transient || got.Retryable || got.SafeToReplay || !got.Hard {
+		t.Fatalf("model 404 should remain a hard model failure, got %+v", got)
+	}
+}
+
 func TestNewRetryableOpenAIStreamErrorCarriesRecoveryContract(t *testing.T) {
 	err := NewRetryableOpenAIStreamError(10*time.Second, "resp_123", true)
 	var recovery *OpenAIStreamRecoveryError

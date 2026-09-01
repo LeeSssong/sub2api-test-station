@@ -64,6 +64,10 @@ func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
+	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		return
+	}
 
 	setOpsRequestContext(c, reqModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(false, false)))
@@ -236,6 +240,10 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	// openai 与 CN 供应商；CN 账号由 ForwardCountTokensAsAnthropic 本地估算。
 	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
+		return
+	}
+	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+		h.anthropicErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
 		return
 	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)

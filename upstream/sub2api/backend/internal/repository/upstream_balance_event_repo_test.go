@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -392,6 +393,25 @@ func TestUpstreamBalanceEventRepositoryContractCannotCarrySecrets(t *testing.T) 
 			require.Empty(t, name, "%s must not expose sensitive repository input field %s", typ.Name(), typ.Field(i).Name)
 		}
 	}
+}
+
+func TestUpstreamBalanceEventRepositorySilenceByActionTokenIsScopedToActiveEvent(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	repo := newUpstreamBalanceEventRepository(db, nil)
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	until := now.Add(6 * time.Hour)
+	hash := strings.Repeat("a", 64)
+	mock.ExpectExec(`(?s)UPDATE ops_alert_events.*silenced_until.*action_token_hash = \$4`).
+		WithArgs(until, service.OpsAlertStatusFiring, service.UpstreamBalanceScopeTypeBaseURL, hash).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	changed, err := repo.SilenceByActionToken(context.Background(), hash, until, now)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func upstreamBalanceEventRows() *sqlmock.Rows {

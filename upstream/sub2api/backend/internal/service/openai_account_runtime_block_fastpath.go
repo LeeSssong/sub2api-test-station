@@ -145,6 +145,13 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s.rateLimitService != nil && len(canonicalModel) > 0 && s.rateLimitService.HandleUpstreamModelNotFound(stateCtx, account, canonicalModel[0], statusCode, responseBody) {
 		return true
 	}
+	// A non-model OpenAI 404 is a request-scoped route/channel failure. Let the
+	// handler make one bounded account switch, but do not write account or
+	// account-model persistent failure state.
+	notFound := ClassifyOpenAINotFound(statusCode, responseBody)
+	if account.Platform == PlatformOpenAI && notFound.Kind != OpenAINotFoundNone && notFound.Kind != OpenAINotFoundModel {
+		return true
+	}
 	// Isolate a custom temporary-unschedulable match to the known upstream
 	// model before entering the generic account error path. This keeps the
 	// account available to other models and avoids the account runtime blocker.

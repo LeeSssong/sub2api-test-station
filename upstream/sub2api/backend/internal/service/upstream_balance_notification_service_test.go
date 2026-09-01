@@ -185,6 +185,24 @@ func TestUpstreamBalanceNotificationServiceRunDueIgnoresNewScopes(t *testing.T) 
 	require.Len(t, sender.inputs, 1)
 }
 
+func TestUpstreamBalanceNotificationServiceRunDueRefreshesZeroScopeBeforeProjection(t *testing.T) {
+	now := time.Date(2026, 9, 2, 1, 0, 0, 0, time.UTC)
+	zero := upstreamBalanceEvaluationFixture("zero account", UpstreamBalanceStateZero, 0, now.Add(-time.Minute))
+	healthy := upstreamBalanceEvaluationFixture("recharged account", UpstreamBalanceStateHealthy, 8, now)
+	reader := &upstreamBalanceRefreshingReaderStub{
+		upstreamBalanceEvaluationReaderStub: upstreamBalanceEvaluationReaderStub{results: [][]UpstreamBalanceEvaluation{{healthy}}},
+	}
+	repo := newUpstreamBalanceEventRepoStub(zero, now)
+	sender := &upstreamBalanceSenderStub{}
+	svc := NewUpstreamBalanceNotificationService(repo, reader, sender, upstreamBalanceLoginLookupStub{}, nil)
+	svc.now = func() time.Time { return now }
+
+	require.NoError(t, svc.RunDue(context.Background()))
+	require.Equal(t, []string{"https://upstream.invalid"}, reader.refreshedScopes)
+	require.Equal(t, []string{"https://upstream.invalid"}, repo.resolved)
+	require.Empty(t, sender.inputs)
+}
+
 func TestUpstreamBalanceFailureDelay(t *testing.T) {
 	tests := []struct {
 		attempt int
@@ -207,15 +225,17 @@ func TestBuildUpstreamBalanceEvaluationsPreservesBaseURLPathAndGroupRanks(t *tes
 	observedAt := time.Date(2026, 8, 31, 11, 59, 0, 0, time.UTC)
 	value := 4.25
 	rank := 2
+	fingerprint := accountMonitorBalanceCredentialFingerprint("test-key")
 	raw := []Account{{
 		ID: 9, Name: "native account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
-		Credentials: map[string]any{"base_url": "HTTPS://Upstream.Invalid/native/v1/"},
+		Credentials: map[string]any{"base_url": "HTTPS://Upstream.Invalid/native/v1/", "api_key": "test-key"},
 	}}
 	page := AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
+		ObservedAt: observedAt.Add(time.Minute),
 		Accounts: []AccountMonitorAccount{{
 			AccountID: 9, Balance: &AccountMonitorBalance{
 				Version: 1, Status: AccountMonitorBalanceStatusOK, Source: AccountMonitorBalanceSourceSub2API,
-				ValueUSD: &value, ObservedAt: &observedAt,
+				ValueUSD: &value, ObservedAt: &observedAt, CredentialFingerprint: fingerprint,
 			},
 		}},
 		Groups: []AccountMonitorGroup{{
@@ -246,7 +266,7 @@ func TestReadUpstreamBalanceEvaluationsUsesWindowSchedulerRanks(t *testing.T) {
 		Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
 			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK,
 			Source:   AccountMonitorBalanceSourceSub2API,
-			ValueUSD: &value, ObservedAt: &observedAt,
+			ValueUSD: &value, ObservedAt: &observedAt, CredentialFingerprint: accountMonitorBalanceCredentialFingerprint("test-key"),
 		}},
 	}
 	repo := &accountMonitorRepoStub{
@@ -308,6 +328,18 @@ type upstreamBalanceEvaluationReaderStub struct {
 	results  [][]UpstreamBalanceEvaluation
 	fallback []UpstreamBalanceEvaluation
 	err      error
+}
+
+type upstreamBalanceRefreshingReaderStub struct {
+	upstreamBalanceEvaluationReaderStub
+	refreshedScopes []string
+}
+
+func (s *upstreamBalanceRefreshingReaderStub) RefreshUpstreamBalanceScopes(_ context.Context, scopes map[string]struct{}) error {
+	for scope := range scopes {
+		s.refreshedScopes = append(s.refreshedScopes, scope)
+	}
+	return nil
 }
 
 func (s *upstreamBalanceEvaluationReaderStub) ReadUpstreamBalanceEvaluations(context.Context) ([]UpstreamBalanceEvaluation, error) {

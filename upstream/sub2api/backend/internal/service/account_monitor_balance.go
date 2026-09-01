@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +25,7 @@ const (
 	AccountMonitorBalanceStatusFailed      = "failed"
 	AccountMonitorBalanceStatusUnsupported = "unsupported"
 	AccountMonitorBalanceStatusUnavailable = "unavailable"
+	AccountMonitorBalanceMaxAge            = 10 * time.Minute
 )
 
 var errExplicitBalanceUnavailable = errors.New("explicit upstream balance unavailable")
@@ -45,13 +48,14 @@ func (e *accountMonitorHTTPError) Error() string {
 // AccountMonitorBalance is display-only upstream balance evidence. It is
 // deliberately separate from cost scoring and account scheduling state.
 type AccountMonitorBalance struct {
-	Version       int        `json:"version"`
-	ValueUSD      *float64   `json:"value_usd,omitempty"`
-	Source        string     `json:"source,omitempty"`
-	Status        string     `json:"status"`
-	ObservedAt    *time.Time `json:"observed_at,omitempty"`
-	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
-	FailureCode   string     `json:"failure_code,omitempty"`
+	Version               int        `json:"version"`
+	ValueUSD              *float64   `json:"value_usd,omitempty"`
+	Source                string     `json:"source,omitempty"`
+	Status                string     `json:"status"`
+	ObservedAt            *time.Time `json:"observed_at,omitempty"`
+	LastAttemptAt         *time.Time `json:"last_attempt_at,omitempty"`
+	FailureCode           string     `json:"failure_code,omitempty"`
+	CredentialFingerprint string     `json:"credential_fingerprint,omitempty"`
 }
 
 type accountMonitorBalanceWriter interface {
@@ -120,7 +124,7 @@ func (s *AccountMultiplierService) readSub2APIBalance(
 	if err != nil {
 		return nil, err
 	}
-	return successfulAccountMonitorBalance(value, AccountMonitorBalanceSourceSub2API, now), nil
+	return successfulAccountMonitorBalance(value, AccountMonitorBalanceSourceSub2API, now, accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey())), nil
 }
 
 func (s *AccountMultiplierService) readNewAPIBalance(
@@ -144,7 +148,7 @@ func (s *AccountMultiplierService) readNewAPIBalance(
 	if err != nil {
 		return nil, err
 	}
-	return successfulAccountMonitorBalance(value, AccountMonitorBalanceSourceNewAPI, now), nil
+	return successfulAccountMonitorBalance(value, AccountMonitorBalanceSourceNewAPI, now, accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey())), nil
 }
 
 func (s *AccountMultiplierService) accountMonitorBalanceRequestIdentity(account *Account) (string, string, string, error) {
@@ -251,17 +255,23 @@ func decodeAccountMonitorBalance(extra map[string]any) *AccountMonitorBalance {
 	return &snapshot
 }
 
-func successfulAccountMonitorBalance(value float64, source string, now time.Time) *AccountMonitorBalance {
+func successfulAccountMonitorBalance(value float64, source string, now time.Time, credentialFingerprint string) *AccountMonitorBalance {
 	valueCopy := value
 	observedAt := now.UTC()
 	return &AccountMonitorBalance{
-		Version:       AccountMonitorBalanceVersion,
-		ValueUSD:      &valueCopy,
-		Source:        source,
-		Status:        AccountMonitorBalanceStatusOK,
-		ObservedAt:    &observedAt,
-		LastAttemptAt: &observedAt,
+		Version:               AccountMonitorBalanceVersion,
+		ValueUSD:              &valueCopy,
+		Source:                source,
+		Status:                AccountMonitorBalanceStatusOK,
+		ObservedAt:            &observedAt,
+		LastAttemptAt:         &observedAt,
+		CredentialFingerprint: credentialFingerprint,
 	}
+}
+
+func accountMonitorBalanceCredentialFingerprint(apiKey string) string {
+	hash := sha256.Sum256([]byte(strings.TrimSpace(apiKey)))
+	return hex.EncodeToString(hash[:])
 }
 
 func failedAccountMonitorBalance(previous *AccountMonitorBalance, failureCode string, now time.Time) *AccountMonitorBalance {

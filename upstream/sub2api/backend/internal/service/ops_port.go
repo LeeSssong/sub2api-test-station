@@ -72,6 +72,12 @@ type UpstreamBalanceEventRepository interface {
 	WithScopeLock(ctx context.Context, ruleID int64, scopeKey string, fn func(context.Context) error) (bool, error)
 }
 
+// UpstreamBalanceNotificationSilenceRepository is implemented separately so
+// existing event repository test doubles do not need unrelated methods.
+type UpstreamBalanceNotificationSilenceRepository interface {
+	SilenceByActionToken(ctx context.Context, actionTokenHash string, until, now time.Time) (bool, error)
+}
+
 type OpsInsertErrorLogInput struct {
 	RequestID       string
 	ClientRequestID string

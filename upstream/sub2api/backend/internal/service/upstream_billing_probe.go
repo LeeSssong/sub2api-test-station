@@ -214,22 +214,19 @@ type UpstreamBillingProbeService struct {
 	accountTestService *AccountTestService
 	settingService     *SettingService
 
-	parentCtx      context.Context
-	parentCancel   context.CancelFunc
-	wg             sync.WaitGroup
-	mu             sync.Mutex
-	started        bool
-	stopped        bool
-	cycleMu        sync.Mutex
-	probeGroup     singleflight.Group
-	probeSlots     chan struct{}
-	now            func() time.Time
-	lockCache      LeaderLockCache
-	db             *sql.DB
-	instanceID     string
-	runtimeBlocker AccountRuntimeBlocker
-	recoveryMu     sync.Mutex
-	recoveryStreak map[int64]int
+	parentCtx    context.Context
+	parentCancel context.CancelFunc
+	wg           sync.WaitGroup
+	mu           sync.Mutex
+	started      bool
+	stopped      bool
+	cycleMu      sync.Mutex
+	probeGroup   singleflight.Group
+	probeSlots   chan struct{}
+	now          func() time.Time
+	lockCache    LeaderLockCache
+	db           *sql.DB
+	instanceID   string
 }
 
 type upstreamBillingProbeSnapshotWriter interface {
@@ -263,7 +260,6 @@ func NewUpstreamBillingProbeService(
 		probeSlots:         make(chan struct{}, upstreamBillingProbeConcurrency),
 		now:                time.Now,
 		instanceID:         uuid.NewString(),
-		recoveryStreak:     make(map[int64]int),
 	}
 }
 
@@ -275,14 +271,11 @@ func (s *UpstreamBillingProbeService) SetLeaderLock(lockCache LeaderLockCache, d
 	s.db = db
 }
 
-// SetAccountRuntimeBlocker wires probe recovery into the native in-memory
-// scheduler blocker. Persisted temp-unschedulable state alone is insufficient
-// for long-lived balance isolation because the runtime fast path may retain a
-// separate cooldown deadline.
+// SetAccountRuntimeBlocker is retained for wiring compatibility. Billing probes
+// are observational and do not change account scheduling state.
 func (s *UpstreamBillingProbeService) SetAccountRuntimeBlocker(blocker AccountRuntimeBlocker) {
-	if s != nil {
-		s.runtimeBlocker = blocker
-	}
+	_ = s
+	_ = blocker
 }
 
 // ProvideUpstreamBillingProbeService starts the process-wide periodic runner.
@@ -760,7 +753,6 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 	if err := s.updateSnapshot(ctx, account, snapshot, syncRate); err != nil {
 		return nil, err
 	}
-	s.recordSuccessfulProbeRecovery(ctx, account, snapshot)
 	if syncRate != nil {
 		// 写回是后台任务的裸 SQL，不经过管理端路由，因此不会产生 audit_logs 行。
 		// old_rate_multiplier 是本次探测开始时读到的值（写回的 CAS 不比对该列）。
@@ -772,33 +764,6 @@ func (s *UpstreamBillingProbeService) probeLoadedAccount(ctx context.Context, ac
 		)
 	}
 	return snapshot, nil
-}
-
-func (s *UpstreamBillingProbeService) recordSuccessfulProbeRecovery(ctx context.Context, account *Account, snapshot *UpstreamBillingProbeSnapshot) {
-	if s == nil || account == nil || snapshot == nil || snapshot.Status != UpstreamBillingProbeStatusOK || account.TempUnschedulableUntil == nil {
-		return
-	}
-	s.recoveryMu.Lock()
-	if s.recoveryStreak == nil {
-		s.recoveryStreak = make(map[int64]int)
-	}
-	s.recoveryStreak[account.ID]++
-	streak := s.recoveryStreak[account.ID]
-	s.recoveryMu.Unlock()
-	if streak < 2 {
-		return
-	}
-	if err := s.accountRepo.ClearTempUnschedulable(ctx, account.ID); err != nil {
-		slog.Warn("upstream_billing_probe_recovery_clear_temp_failed", "account_id", account.ID, "error", err)
-		return
-	}
-	if s.runtimeBlocker != nil {
-		s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
-	}
-	s.recoveryMu.Lock()
-	delete(s.recoveryStreak, account.ID)
-	s.recoveryMu.Unlock()
-	slog.Info("upstream_billing_probe_recovered_account", "account_id", account.ID, "probes", streak)
 }
 
 func (s *UpstreamBillingProbeService) persistProbeFailure(
@@ -840,9 +805,6 @@ func (s *UpstreamBillingProbeService) persistProbeFailure(
 	if err := s.updateSnapshot(ctx, account, snapshot, nil); err != nil {
 		return nil, err
 	}
-	s.recoveryMu.Lock()
-	delete(s.recoveryStreak, account.ID)
-	s.recoveryMu.Unlock()
 	return snapshot, nil
 }
 

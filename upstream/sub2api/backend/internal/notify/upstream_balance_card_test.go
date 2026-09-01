@@ -68,6 +68,32 @@ func TestRenderUpstreamBalanceCardP1MentionsWithoutUrgency(t *testing.T) {
 	}
 }
 
+func TestRenderUpstreamBalanceCardAddsFixedSilenceActions(t *testing.T) {
+	payload, err := RenderUpstreamBalanceCard(UpstreamBalanceCardInput{
+		State: UpstreamBalanceCardStateLow, ValueUSD: 4.25, BaseURL: "https://upstream.example",
+		Accounts: []UpstreamBalanceCardAccount{{ID: 1, Name: "account"}}, SilenceToken: "opaque-action-token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var card interactiveCard
+	if err := json.Unmarshal(payload, &card); err != nil {
+		t.Fatal(err)
+	}
+	var actions []interactiveCardAction
+	for _, element := range card.Elements {
+		actions = append(actions, element.Actions...)
+	}
+	if len(actions) != 3 {
+		t.Fatalf("actions = %#v", actions)
+	}
+	for index, duration := range []string{"1h", "6h", "24h"} {
+		if actions[index].Value["duration"] != duration || actions[index].Value["token"] != "opaque-action-token" {
+			t.Fatalf("action %d = %#v", index, actions[index])
+		}
+	}
+}
+
 func TestRenderUpstreamBalanceCardPreservesTinyPositiveClassification(t *testing.T) {
 	payload, err := RenderUpstreamBalanceCard(UpstreamBalanceCardInput{
 		State: UpstreamBalanceCardStateLow, ValueUSD: 0.0000001, BaseURL: "https://tiny.example",

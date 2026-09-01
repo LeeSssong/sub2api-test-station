@@ -55,7 +55,7 @@ const upstreamBalanceEventSelectColumns = `
   COALESCE(delivery_lease_token, ''),
   delivery_lease_until,
   COALESCE(last_delivery_error_code, ''),
-  created_at`
+	  created_at`
 
 type upstreamBalanceEventRepository struct {
 	db       *sql.DB
@@ -134,6 +134,12 @@ func (r *upstreamBalanceEventRepository) Claim(ctx context.Context, input servic
 		}
 		return service.UpstreamBalanceDeliveryLease{}, false, nil
 	}
+	if !insertEvent && upstreamBalanceSilenced(ctx, tx, input.RuleID, input.ScopeKey, input.Now) {
+		if err := tx.Commit(); err != nil {
+			return service.UpstreamBalanceDeliveryLease{}, false, err
+		}
+		return service.UpstreamBalanceDeliveryLease{}, false, nil
+	}
 
 	leaseUntil := input.Now.Add(input.LeaseDuration)
 	token := r.newToken()
@@ -155,10 +161,17 @@ func (r *upstreamBalanceEventRepository) Claim(ctx context.Context, input servic
 	if err != nil {
 		return service.UpstreamBalanceDeliveryLease{}, false, err
 	}
+	if strings.TrimSpace(input.ActionTokenHash) != "" {
+		if err := persistUpstreamBalanceActionTokenHash(ctx, tx, event.ID, input.ActionTokenHash); err != nil {
+			return service.UpstreamBalanceDeliveryLease{}, false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return service.UpstreamBalanceDeliveryLease{}, false, err
 	}
-	return upstreamBalanceDeliveryLease(*event), true, nil
+	lease := upstreamBalanceDeliveryLease(*event)
+	lease.ActionToken = input.ActionToken
+	return lease, true, nil
 }
 
 func (r *upstreamBalanceEventRepository) GetCurrent(ctx context.Context, eventID int64) (*service.UpstreamBalanceEvent, error) {
@@ -326,6 +339,38 @@ func (r *upstreamBalanceEventRepository) WithScopeLock(ctx context.Context, rule
 	return true, fn(ctx)
 }
 
+func (r *upstreamBalanceEventRepository) IsSilenced(ctx context.Context, ruleID int64, scopeKey string, now time.Time) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, errors.New("nil upstream balance event repository")
+	}
+	var until sql.NullTime
+	err := r.db.QueryRowContext(ctx, `SELECT silenced_until FROM ops_alert_events WHERE rule_id=$1 AND scope_type=$2 AND scope_key=$3 AND status=$4`, ruleID, service.UpstreamBalanceScopeTypeBaseURL, scopeKey, service.OpsAlertStatusFiring).Scan(&until)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return until.Valid && until.Time.After(now), err
+}
+
+func (r *upstreamBalanceEventRepository) Silence(ctx context.Context, input service.UpstreamBalanceNotificationSilenceInput) (bool, error) {
+	if r == nil || r.db == nil || input.RuleID <= 0 || strings.TrimSpace(input.ScopeKey) == "" || len(input.ActionTokenHash) != 64 || input.Until.Before(input.Now) {
+		return false, errors.New("invalid upstream balance silence input")
+	}
+	res, err := r.db.ExecContext(ctx, `UPDATE ops_alert_events SET silenced_until=$1, delivery_lease_token=NULL, delivery_lease_until=NULL, next_attempt_at=$2 WHERE rule_id=$3 AND scope_type=$4 AND scope_key=$5 AND status=$6 AND action_token_hash=$7`, input.Until, input.Until, input.RuleID, service.UpstreamBalanceScopeTypeBaseURL, input.ScopeKey, service.OpsAlertStatusFiring, input.ActionTokenHash)
+	return upstreamBalanceCASResult(res, err)
+}
+
+func (r *upstreamBalanceEventRepository) SilenceByActionToken(ctx context.Context, actionTokenHash string, until, now time.Time) (bool, error) {
+	if r == nil || r.db == nil || len(actionTokenHash) != 64 || until.Before(now) {
+		return false, errors.New("invalid upstream balance silence token input")
+	}
+	res, err := r.db.ExecContext(ctx, `
+UPDATE ops_alert_events
+SET silenced_until = $1, delivery_lease_token = NULL, delivery_lease_until = NULL, next_attempt_at = $1
+WHERE status = $2 AND scope_type = $3 AND action_token_hash = $4`,
+		until, service.OpsAlertStatusFiring, service.UpstreamBalanceScopeTypeBaseURL, actionTokenHash)
+	return upstreamBalanceCASResult(res, err)
+}
+
 func selectActiveUpstreamBalanceEvent(ctx context.Context, tx *sql.Tx, ruleID int64, scopeKey string) (*service.UpstreamBalanceEvent, error) {
 	row := tx.QueryRowContext(ctx, `
 SELECT`+upstreamBalanceEventSelectColumns+`
@@ -467,6 +512,24 @@ func upstreamBalanceDeliveryLease(event service.UpstreamBalanceEvent) service.Up
 		lease.LeaseUntil = *event.DeliveryLeaseUntil
 	}
 	return lease
+}
+
+func upstreamBalanceSilenced(ctx context.Context, tx *sql.Tx, ruleID int64, scopeKey string, now time.Time) bool {
+	var until sql.NullTime
+	err := tx.QueryRowContext(ctx, `
+SELECT silenced_until
+FROM ops_alert_events
+WHERE rule_id = $1 AND scope_type = $2 AND scope_key = $3 AND status = $4`,
+		ruleID, service.UpstreamBalanceScopeTypeBaseURL, scopeKey, service.OpsAlertStatusFiring).Scan(&until)
+	return err == nil && until.Valid && until.Time.After(now)
+}
+
+func persistUpstreamBalanceActionTokenHash(ctx context.Context, tx *sql.Tx, eventID int64, hash string) error {
+	if len(hash) != 64 {
+		return errors.New("invalid upstream balance action token hash")
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE ops_alert_events SET action_token_hash = $2 WHERE id = $1`, eventID, hash)
+	return err
 }
 
 func validateUpstreamBalanceClaimInput(input service.UpstreamBalanceClaimInput) error {

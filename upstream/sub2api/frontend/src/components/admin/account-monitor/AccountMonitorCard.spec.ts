@@ -24,6 +24,9 @@ const account = {
   account_type: 'oauth',
   status: 'active',
   schedulable: true,
+  effective_schedulable: true,
+  effective_schedulable_at: '2026-09-01T00:00:00Z',
+  effective_unschedulable_reason: '',
   priority: 1,
   group_names: ['GPT-Pro'],
   request_count: 12846,
@@ -89,6 +92,33 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.find('[data-test="quality-column"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="ranking-explanation"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="cost-metric"]').exists()).toBe(false)
+  })
+
+  it('separates the manual switch from native effective schedulability and reason', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        schedulable: true,
+        effective_schedulable: false,
+        effective_unschedulable_reason: 'quota_exceeded',
+        balance: { status: 'ok', value_usd: 12, observed_at: '2026-09-01T00:00:00Z' },
+      },
+    })
+
+    const text = wrapper.get('[data-test="identity-column"]').text()
+    expect(text).toContain('人工开关：可调度')
+    expect(text).toContain('有效调度：不可调度（额度耗尽）')
+    expect(text).not.toContain('余额探针已恢复')
+  })
+
+  it('labels a raw manual pause as manual and does not infer balance isolation', () => {
+    const wrapper = mountCard({
+      account: { ...account, schedulable: false, effective_schedulable: false, effective_unschedulable_reason: 'manual_disabled' },
+    })
+    const text = wrapper.get('[data-test="identity-column"]').text()
+    expect(text).toContain('人工开关：不可调度')
+    expect(text).toContain('有效调度：不可调度（人工暂停）')
+    expect(text).not.toContain('余额')
   })
 
   it('shows multiplier-estimated profit before real requests exist', () => {

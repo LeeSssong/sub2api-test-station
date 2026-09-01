@@ -394,6 +394,9 @@ func TestAccountMonitorListRestoresLegacyQualityScoreProjection(t *testing.T) {
 	if len(page.Accounts) != 1 || page.Accounts[0].QualityScore == nil || !page.Accounts[0].Eligible {
 		t.Fatalf("legacy account projection did not restore score: %#v", page.Accounts)
 	}
+	if !page.Accounts[0].EffectiveSchedulable || page.Accounts[0].EffectiveUnschedulableReason != "" || !page.Accounts[0].EffectiveSchedulableAt.Equal(page.ObservedAt) {
+		t.Fatalf("effective schedulability projection = %#v, observed_at=%s", page.Accounts[0], page.ObservedAt)
+	}
 	if len(page.Groups) != 1 || len(page.Groups[0].Accounts) != 1 || !page.Groups[0].Accounts[0].Evidence.Known {
 		t.Fatalf("legacy group evidence lost Known state: %#v", page.Groups)
 	}
@@ -496,6 +499,11 @@ func TestAccountMonitorListWindowIgnoresPersistedGlobalScoreWeightsForPrimaryOrd
 	}
 	if page.SchemaVersion != AccountMonitorSchemaVersion {
 		t.Fatalf("schema version changed: %d", page.SchemaVersion)
+	}
+	for _, row := range page.Accounts {
+		if !row.EffectiveSchedulable || row.EffectiveSchedulableAt.IsZero() || !row.EffectiveSchedulableAt.Equal(page.ObservedAt) {
+			t.Fatalf("window effective schedulability projection = %#v, observed_at=%s", row, page.ObservedAt)
+		}
 	}
 }
 
@@ -804,6 +812,60 @@ func findAccountMonitorAccount(t *testing.T, rows []AccountMonitorAccount, accou
 	}
 	t.Fatalf("account %d not found in rows %#v", accountID, rows)
 	return AccountMonitorAccount{}
+}
+
+func TestProjectEffectiveSchedulabilityUsesNativeGateOrder(t *testing.T) {
+	fixedNow := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	future := fixedNow.Add(time.Hour)
+	past := fixedNow.Add(-time.Hour)
+	tests := []struct {
+		name   string
+		mutate func(*Account)
+		want   bool
+		reason string
+	}{
+		{name: "active and manually enabled", want: true},
+		{name: "inactive", mutate: func(a *Account) { a.Status = StatusDisabled }, reason: "inactive"},
+		{name: "manual pause", mutate: func(a *Account) { a.Schedulable = false }, reason: "manual_disabled"},
+		{name: "expired", mutate: func(a *Account) { a.AutoPauseOnExpired = true; a.ExpiresAt = &fixedNow }, reason: "expired"},
+		{name: "overload", mutate: func(a *Account) { a.OverloadUntil = &future }, reason: "overload"},
+		{name: "rate limit", mutate: func(a *Account) { a.RateLimitResetAt = &future }, reason: "rate_limited"},
+		{name: "temporary native pause", mutate: func(a *Account) { a.TempUnschedulableUntil = &future }, reason: "temp_unschedulable"},
+		{name: "quota exceeded", mutate: func(a *Account) {
+			a.Type = AccountTypeAPIKey
+			a.Extra = map[string]any{"quota_limit": 1.0, "quota_used": 1.0}
+		}, reason: "quota_exceeded"},
+		{name: "native order wins", mutate: func(a *Account) {
+			a.Schedulable = false
+			a.AutoPauseOnExpired = true
+			a.ExpiresAt = &past
+			a.OverloadUntil = &future
+			a.RateLimitResetAt = &future
+			a.TempUnschedulableUntil = &future
+		}, reason: "manual_disabled"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{Status: StatusActive, Schedulable: true}
+			if tt.mutate != nil {
+				tt.mutate(account)
+			}
+			rawSchedulable := account.Schedulable
+			got, reason := projectEffectiveSchedulability(account, fixedNow)
+			if got != tt.want {
+				t.Fatalf("effective schedulable = %v, want %v", got, tt.want)
+			}
+			if got != account.IsSchedulableAt(fixedNow) {
+				t.Fatalf("projection disagrees with Account.IsSchedulableAt(%s)", fixedNow.Format(time.RFC3339))
+			}
+			if reason != tt.reason {
+				t.Fatalf("reason = %q, want %q", reason, tt.reason)
+			}
+			if account.Schedulable != rawSchedulable {
+				t.Fatalf("projection mutated raw schedulable flag")
+			}
+		})
+	}
 }
 
 type accountMonitorMultiplierStub struct {

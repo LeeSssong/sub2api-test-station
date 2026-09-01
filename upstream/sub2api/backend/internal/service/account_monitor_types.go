@@ -458,6 +458,9 @@ type AccountMonitorAccount struct {
 	AccountType                string                                   `json:"account_type"`
 	Status                     string                                   `json:"status"`
 	Schedulable                bool                                     `json:"schedulable"`
+	EffectiveSchedulable       bool                                     `json:"effective_schedulable"`
+	EffectiveSchedulableAt     time.Time                                `json:"effective_schedulable_at"`
+	EffectiveUnschedulableReason string                                  `json:"effective_unschedulable_reason"`
 	Priority                   int                                      `json:"priority"`
 	HomepageURL                string                                   `json:"homepage_url,omitempty"`
 	GroupIDs                   []int64                                  `json:"group_ids"`

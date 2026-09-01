@@ -5,7 +5,7 @@
         <section class="monitor-card-identity" data-test="identity-column" aria-label="账号身份与状态">
           <div class="monitor-card-eyeline">
             <span class="monitor-card-status-dot" :class="statusDotClass" aria-hidden="true" />
-            <span>{{ statusLabel }} · {{ schedulableLabel }} · {{ platformLabel }} · 目标组 {{ currentGroupLabel }}</span>
+            <span>{{ statusLabel }} · 人工开关：{{ schedulableLabel }} · 有效调度：{{ effectiveSchedulableLabel }}<template v-if="effectiveUnschedulableReason">（{{ effectiveUnschedulableReason }}）</template> · {{ platformLabel }} · 目标组 {{ currentGroupLabel }}</span>
           </div>
           <h2 data-test="account-identity">
             <a v-if="account.homepage_url" :href="account.homepage_url" target="_blank" rel="noopener noreferrer" data-test="account-homepage-link">{{ account.name }}</a>
@@ -270,6 +270,16 @@ function openModelDetectionEntry() {
 const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
 const schedulableLabel = computed(() => props.account.status !== 'active' ? '暂停' : props.account.schedulable ? '可调度' : '不可调度')
+const effectiveSchedulableLabel = computed(() => props.account.effective_schedulable ? '可调度' : '不可调度')
+const effectiveUnschedulableReason = computed(() => ({
+  inactive: '账号未激活',
+  manual_disabled: '人工暂停',
+  expired: '已过期',
+  overload: '过载冷却',
+  rate_limited: '限流冷却',
+  temp_unschedulable: '临时不可调度',
+  quota_exceeded: '额度耗尽',
+})[props.account.effective_unschedulable_reason] ?? (props.account.effective_unschedulable_reason || ''))
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
 const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)

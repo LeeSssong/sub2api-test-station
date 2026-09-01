@@ -238,6 +238,9 @@ export interface AccountMonitorAccount {
   account_type: string
   status: string
   schedulable: boolean
+  effective_schedulable: boolean
+  effective_schedulable_at: string
+  effective_unschedulable_reason: string
   management_state: string
   service_state: string
   group_eligibility: string

@@ -21,6 +21,9 @@ describe('AccountMonitorAccountInfoDialog', () => {
           type: 'apikey',
           status: 'active',
           schedulable: true,
+          effective_schedulable: false,
+          effective_schedulable_at: '2026-09-01T00:00:00Z',
+          effective_unschedulable_reason: 'temp_unschedulable',
           priority: 2,
           proxy_id: 9,
           proxy: { id: 9, name: 'Primary proxy' },
@@ -50,6 +53,10 @@ describe('AccountMonitorAccountInfoDialog', () => {
     expect(wrapper.text()).toContain('2 / 10')
     expect(wrapper.text()).toContain('GPT-Pro')
     expect(wrapper.text()).toContain('25.0%')
+    expect(wrapper.text()).toContain('人工调度开关')
+    expect(wrapper.text()).toContain('有效调度状态')
+    expect(wrapper.text()).toContain('临时不可调度')
+    expect(wrapper.text()).toContain('有效状态快照')
     expect(wrapper.text()).toContain('internal note')
     expect(wrapper.text()).not.toContain('sk-secret-value')
     expect(wrapper.text()).not.toContain('Bearer')

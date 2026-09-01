@@ -251,41 +251,45 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	}
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
+		effectiveSchedulable, effectiveUnschedulableReason := projectEffectiveSchedulability(&account, observedAt)
 		aggregate := aggregates[account.ID]
 		modelID := monitorModelForAccount(&account)
 		if current, ok := latest[account.ID]; ok {
 			modelID = current.ModelID
 		}
 		row := AccountMonitorAccount{
-			AccountID:                  account.ID,
-			Name:                       account.Name,
-			Platform:                   account.Platform,
-			AccountType:                account.Type,
-			Status:                     account.Status,
-			Schedulable:                account.Schedulable,
-			Priority:                   account.Priority,
-			HomepageURL:                accountMonitorHomepageURL(account),
-			GroupIDs:                   append([]int64{}, account.GroupIDs...),
-			GroupNames:                 accountGroupNames(account),
-			ModelID:                    modelID,
-			ConnectionProbeModel:       s.connectionProbeModel(ctx, &account),
-			LatestStatus:               "unavailable",
-			SuccessRate:                aggregate.SuccessRate,
-			SampleCount:                aggregate.SampleCount,
-			SuccessSampleCount:         aggregate.SuccessSampleCount,
-			TTFTSampleCount:            aggregate.TTFTSampleCount,
-			LatencySampleCount:         aggregate.LatencySampleCount,
-			TTFTP50MS:                  aggregate.TTFTP50MS,
-			TTFTP95MS:                  aggregate.TTFTP95MS,
-			LatencyP95MS:               aggregate.LatencyP95MS,
-			Multiplier:                 s.resolveMultiplier(&account, observedAt),
-			Balance:                    s.resolveBalance(&account, observedAt),
-			ProcurementCostCNY:         account.ProcurementCostCNY,
-			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
-			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
-			ExpiresAt:                  account.ExpiresAt,
-			ErrorCount:                 int64(aggregate.ErrorCount),
-			Timeline:                   append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
+			AccountID:                    account.ID,
+			Name:                         account.Name,
+			Platform:                     account.Platform,
+			AccountType:                  account.Type,
+			Status:                       account.Status,
+			Schedulable:                  account.Schedulable,
+			EffectiveSchedulable:         effectiveSchedulable,
+			EffectiveSchedulableAt:       observedAt,
+			EffectiveUnschedulableReason: effectiveUnschedulableReason,
+			Priority:                     account.Priority,
+			HomepageURL:                  accountMonitorHomepageURL(account),
+			GroupIDs:                     append([]int64{}, account.GroupIDs...),
+			GroupNames:                   accountGroupNames(account),
+			ModelID:                      modelID,
+			ConnectionProbeModel:         s.connectionProbeModel(ctx, &account),
+			LatestStatus:                 "unavailable",
+			SuccessRate:                  aggregate.SuccessRate,
+			SampleCount:                  aggregate.SampleCount,
+			SuccessSampleCount:           aggregate.SuccessSampleCount,
+			TTFTSampleCount:              aggregate.TTFTSampleCount,
+			LatencySampleCount:           aggregate.LatencySampleCount,
+			TTFTP50MS:                    aggregate.TTFTP50MS,
+			TTFTP95MS:                    aggregate.TTFTP95MS,
+			LatencyP95MS:                 aggregate.LatencyP95MS,
+			Multiplier:                   s.resolveMultiplier(&account, observedAt),
+			Balance:                      s.resolveBalance(&account, observedAt),
+			ProcurementCostCNY:           account.ProcurementCostCNY,
+			EstimatedUsableQuotaUSD:      account.EstimatedUsableQuotaUSD,
+			ProcurementCostEffectiveAt:   account.ProcurementCostEffectiveAt,
+			ExpiresAt:                    account.ExpiresAt,
+			ErrorCount:                   int64(aggregate.ErrorCount),
+			Timeline:                     append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
 		projectAccountMonitorEffectiveCost(&row, &account)
 		row.UpstreamMultiplier = &row.Multiplier
@@ -330,6 +334,36 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		Groups:        groups,
 		Accounts:      rows,
 	}}, nil
+}
+
+// projectEffectiveSchedulability exposes the native account gate result to
+// monitoring without creating a second scheduling decision or mutating state.
+func projectEffectiveSchedulability(account *Account, snapshotAt time.Time) (bool, string) {
+	if account == nil {
+		return false, "inactive"
+	}
+	effective := account.IsSchedulableAt(snapshotAt)
+	if effective {
+		return true, ""
+	}
+	switch {
+	case !account.IsActive():
+		return false, "inactive"
+	case !account.Schedulable:
+		return false, "manual_disabled"
+	case account.AutoPauseOnExpired && account.ExpiresAt != nil && !snapshotAt.Before(*account.ExpiresAt):
+		return false, "expired"
+	case account.OverloadUntil != nil && snapshotAt.Before(*account.OverloadUntil):
+		return false, "overload"
+	case account.RateLimitResetAt != nil && snapshotAt.Before(*account.RateLimitResetAt):
+		return false, "rate_limited"
+	case account.TempUnschedulableUntil != nil && snapshotAt.Before(*account.TempUnschedulableUntil):
+		return false, "temp_unschedulable"
+	case account.IsAPIKeyOrBedrock() && account.IsQuotaExceeded():
+		return false, "quota_exceeded"
+	default:
+		return false, ""
+	}
 }
 
 // ProjectMonitorV2Groups returns a read-only native probe projection for the
@@ -655,6 +689,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
+		effectiveSchedulable, effectiveUnschedulableReason := projectEffectiveSchedulability(&account, observedAt)
 		window := windowAggregates[account.ID]
 		resolvedMultiplier := s.resolveMultiplier(&account, observedAt)
 		modelID := monitorModelForAccount(&account)
@@ -663,7 +698,9 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		}
 		row := AccountMonitorAccount{
 			AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type,
-			Status: account.Status, Schedulable: account.Schedulable, Priority: account.Priority,
+			Status: account.Status, Schedulable: account.Schedulable,
+			EffectiveSchedulable: effectiveSchedulable, EffectiveSchedulableAt: observedAt,
+			EffectiveUnschedulableReason: effectiveUnschedulableReason, Priority: account.Priority,
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),
 			GroupNames: accountGroupNames(account), ModelID: modelID,
 			ConnectionProbeModel: s.connectionProbeModel(ctx, &account),

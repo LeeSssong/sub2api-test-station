@@ -7,7 +7,10 @@
         <InfoField label="平台" :value="account.platform" />
         <InfoField label="账号类型" :value="account.type" />
         <InfoField label="状态" :value="account.status" />
-        <InfoField label="调度状态" :value="account.schedulable ? '可调度' : '不可调度'" />
+        <InfoField label="人工调度开关" :value="account.schedulable ? '开启' : '人工暂停'" />
+        <InfoField label="有效调度状态" :value="effectiveSchedulableLabel" />
+        <InfoField v-if="effectiveUnschedulableReason" label="有效阻断原因" :value="effectiveUnschedulableReason" />
+        <InfoField v-if="account.effective_schedulable_at" label="有效状态快照" :value="formatDate(account.effective_schedulable_at)" mono />
       </section>
 
       <section class="space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700" aria-label="账号运行配置">
@@ -42,7 +45,13 @@ import { computed, defineComponent, h } from 'vue'
 import type { Account } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 
-const props = defineProps<{ show: boolean; account: Account | null }>()
+type AccountInfo = Account & {
+  effective_schedulable?: boolean
+  effective_schedulable_at?: string | null
+  effective_unschedulable_reason?: string | null
+}
+
+const props = defineProps<{ show: boolean; account: AccountInfo | null }>()
 const emit = defineEmits<{ (event: 'close'): void }>()
 
 const InfoField = defineComponent({
@@ -64,6 +73,27 @@ const groupNames = computed(() => {
   if (groups.length) return groups.join('、')
   const ids = props.account?.group_ids ?? []
   return ids.length ? ids.map((id) => `分组 #${id}`).join('、') : '未加入分组'
+})
+
+const effectiveSchedulableLabel = computed(() => {
+  const account = props.account
+  if (!account || account.effective_schedulable == null) return account?.schedulable ? '可调度' : '不可调度'
+  return account.effective_schedulable ? '可调度' : '不可调度'
+})
+
+const effectiveUnschedulableReason = computed(() => {
+  const account = props.account
+  const reason = account?.effective_unschedulable_reason
+  if (!reason || account?.effective_schedulable) return ''
+  return ({
+    inactive: '账号未激活',
+    manual_disabled: '人工暂停',
+    expired: '已过期',
+    overload: '过载冷却',
+    rate_limited: '限流冷却',
+    temp_unschedulable: '临时不可调度',
+    quota_exceeded: '额度耗尽',
+  } as Record<string, string>)[reason] ?? reason
 })
 
 const proxyName = computed(() => {

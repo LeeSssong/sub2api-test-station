@@ -298,6 +298,11 @@ type ProcurementMutationSession = {
   payload: string
   idempotencyKey: string
 }
+type NativeAccountWithMonitorProjection = Account & {
+  effective_schedulable?: boolean
+  effective_schedulable_at?: string | null
+  effective_unschedulable_reason?: string | null
+}
 
 const ranges: { value: AccountMonitorRange; label: string }[] = [
   { value: '24h', label: '24 小时' },
@@ -335,7 +340,7 @@ const savingCost = ref(false)
 const costDialogError = ref<string | null>(null)
 const selectedCostAccount = ref<AccountMonitorAccount | null>(null)
 let procurementMutationSession: ProcurementMutationSession | null = null
-const selectedNativeAccount = ref<Account | null>(null)
+const selectedNativeAccount = ref<NativeAccountWithMonitorProjection | null>(null)
 const showAccountInfoDialog = ref(false)
 const showEditAccountDialog = ref(false)
 const showDeleteAccountDialog = ref(false)
@@ -823,7 +828,12 @@ async function openAccountInfo(account: AccountMonitorAccount): Promise<void> {
   const generation = beginNativeEntry()
   const native = await loadNativeForEntry(account.account_id, generation)
   if (!native || generation !== nativeEntryGeneration) return
-  selectedNativeAccount.value = native
+  selectedNativeAccount.value = {
+    ...native,
+    effective_schedulable: account.effective_schedulable,
+    effective_schedulable_at: account.effective_schedulable_at,
+    effective_unschedulable_reason: account.effective_unschedulable_reason,
+  }
   showAccountInfoDialog.value = true
 }
 

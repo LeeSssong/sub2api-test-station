@@ -231,6 +231,7 @@ func TestOpenAIUnifiedOAuth429KeepsNativeCooldownAndStopSemantics(t *testing.T) 
 	require.True(t, handleOpenAIUnifiedOAuth429(gateway, context.Background(), account, failure, 3, state))
 	require.Equal(t, 3, gateway.persistCalls)
 	require.Equal(t, account.ID, gateway.lastAccountID)
+	require.Equal(t, http.StatusTooManyRequests, gateway.lastStatusCode)
 	require.Equal(t, 3, gateway.lastFailedSwitches)
 }
 
@@ -242,11 +243,13 @@ func TestOpenAIUnifiedModeSkipsLegacyOAuth429GroupReset(t *testing.T) {
 type recordingOpenAIUnifiedOAuth429Gateway struct {
 	persistCalls       int
 	lastAccountID      int64
+	lastStatusCode     int
 	lastFailedSwitches int
 }
 
-func (g *recordingOpenAIUnifiedOAuth429Gateway) PersistOpenAIOAuth429Cooldown(_ context.Context, account *service.Account, _ http.Header, _ []byte) {
+func (g *recordingOpenAIUnifiedOAuth429Gateway) PersistOpenAIOAuth429Cooldown(_ context.Context, account *service.Account, statusCode int, _ http.Header, _ []byte) {
 	g.persistCalls++
+	g.lastStatusCode = statusCode
 	if account != nil {
 		g.lastAccountID = account.ID
 	}

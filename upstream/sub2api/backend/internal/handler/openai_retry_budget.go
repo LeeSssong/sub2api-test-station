@@ -202,7 +202,7 @@ func annotateOpenAIUnifiedDecision(decision *service.OpenAIAccountScheduleDecisi
 // many distinct accounts may be attempted. The persistence helper is a no-op
 // for non-OAuth accounts and non-transient 429 classifications.
 type openAIUnifiedOAuth429Gateway interface {
-	PersistOpenAIOAuth429Cooldown(context.Context, *service.Account, http.Header, []byte)
+	PersistOpenAIOAuth429Cooldown(context.Context, *service.Account, int, http.Header, []byte)
 	ShouldStopOpenAIOAuth429Failover(*service.Account, int, int, *service.OpenAIOAuth429FailoverState) bool
 }
 
@@ -217,7 +217,7 @@ func handleOpenAIUnifiedOAuth429(
 	if gateway == nil || failure == nil || failure.StatusCode != http.StatusTooManyRequests {
 		return false
 	}
-	gateway.PersistOpenAIOAuth429Cooldown(ctx, account, failure.ResponseHeaders, failure.ResponseBody)
+	gateway.PersistOpenAIOAuth429Cooldown(ctx, account, failure.StatusCode, failure.ResponseHeaders, failure.ResponseBody)
 	return gateway.ShouldStopOpenAIOAuth429Failover(account, failure.StatusCode, failedSwitches, state)
 }
 

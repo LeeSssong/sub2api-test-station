@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"time"
 
@@ -53,7 +54,14 @@ func classifyDeterministicUpstreamFailure(account *Account, statusCode int, resp
 	if statusCode == 402 && strings.EqualFold(strings.TrimSpace(gjson.GetBytes(responseBody, "detail.code").String()), "deactivated_workspace") {
 		return DeterministicFailureDecision{}
 	}
-	if isDeterministicBalanceEvidence(code, text) {
+	errorType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "error.type").String()))
+	if errorType == "" {
+		errorType = strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "type").String()))
+	}
+	// An explicit balance decision is valid only for a client-side upstream
+	// response. Status alone is never sufficient, and 429/5xx retain their
+	// existing rate-limit/transient semantics.
+	if account.Platform == PlatformOpenAI && statusCode >= 400 && statusCode < 500 && statusCode != http.StatusTooManyRequests && isDeterministicBalanceEvidence(code, errorType, text) {
 		return DeterministicFailureDecision{Classified: true, FailureClass: deterministicBalanceClass, Scope: deterministicAccountScope, EvidenceCode: firstNonEmptyDeterministic(code, "insufficient_balance"), RecoveryPolicy: deterministicProbePolicy}
 	}
 	if statusCode == 401 && (account.Type == AccountTypeAPIKey || isCredentialFailureCode(code, text)) {
@@ -70,9 +78,22 @@ func classifyDeterministicUpstreamFailure(account *Account, statusCode int, resp
 	return DeterministicFailureDecision{}
 }
 
-func isDeterministicBalanceEvidence(code, text string) bool {
-	for _, token := range []string{"insufficient_balance", "insufficient balance", "balance_exhausted", "quota_exhausted", "quota exhausted", "credits_exhausted"} {
-		if code == token || strings.Contains(text, token) {
+func isDeterministicBalanceEvidence(code, errorType, text string) bool {
+	for _, token := range []string{
+		"insufficient_balance", "insufficient_quota", "insufficient_user_quota",
+		"quota_exhausted", "balance_exhausted", "credits_exhausted", "e44001",
+	} {
+		if code == token || errorType == token || strings.Contains(text, token) {
+			return true
+		}
+	}
+	for _, phrase := range []string{
+		"insufficient balance", "insufficient quota", "balance exhausted", "balance is exhausted",
+		"quota exhausted", "quota is exhausted", "run out of credits", "out of credits",
+		"credits have run out", "余额不足", "余额耗尽", "余额已耗尽", "额度不足", "额度耗尽",
+		"额度已用完", "配额已用完", "spending limit reached", "spending limit exceeded",
+	} {
+		if strings.Contains(text, phrase) {
 			return true
 		}
 	}

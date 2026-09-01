@@ -58,8 +58,11 @@ describe('SchedulerSettingsView', () => {
       openai_advanced_scheduler_enabled: true,
       openai_advanced_scheduler_group_policies: {
         11: {
+          mode: 'custom',
+          extra_retry_count: 1,
           priority: { profit: 1, ttft: 2, latency: 3 },
           operations: { balance: 'standard', peak_protection: 'strict', session_continuity: 'standard' },
+          weight_overrides: { ttft: 2 },
         },
       },
     })
@@ -70,33 +73,31 @@ describe('SchedulerSettingsView', () => {
     updateSettings.mockImplementation(async (payload) => payload)
   })
 
-  it('shows a selected state after choosing a priority and operational option', async () => {
+  it('shows the group recovery control and defaults missing values to zero', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('[data-testid="scheduler-priority-profit-3"]').trigger('click')
-    await wrapper.get('[data-testid="scheduler-operation-balance-high"]').trigger('click')
+    expect(wrapper.get('[data-testid="scheduler-extra-retry-count"]').element.value).toBe('1')
 
-    expect(wrapper.get('[data-testid="scheduler-priority-profit-3"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('[data-testid="scheduler-priority-profit-3"]').classes()).toContain('scheduler-option-selected')
-    expect(wrapper.get('[data-testid="scheduler-operation-balance-high"]').attributes('aria-pressed')).toBe('true')
-    expect(wrapper.get('[data-testid="scheduler-operation-balance-high"]').classes()).toContain('scheduler-option-selected')
+    await wrapper.get('[data-testid="scheduler-group-12"]').trigger('click')
+    expect(wrapper.get('[data-testid="scheduler-extra-retry-count"]').element.value).toBe('0')
+    expect(wrapper.find('[data-testid="scheduler-priority-profit-3"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="scheduler-operation-balance-high"]').exists()).toBe(false)
   })
 
-  it('updates the normal-traffic preview when account balance changes', async () => {
+  it('limits recovery attempts to zero through three', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('[data-testid="scheduler-operation-balance-high"]').trigger('click')
-
-    expect(wrapper.get('[data-testid="scheduler-preview-normal"]').text()).toContain('优先补齐长期未参与的健康账号')
+    const options = wrapper.get('[data-testid="scheduler-extra-retry-count"]').findAll('option')
+    expect(options.map((option) => option.element.value)).toEqual(['0', '1', '2', '3'])
   })
 
-  it('saves the existing native policy together with the current business draft', async () => {
+  it('saves extra recovery count while preserving legacy policy fields', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('[data-testid="scheduler-operation-balance-high"]').trigger('click')
+    await wrapper.get('[data-testid="scheduler-extra-retry-count"]').setValue('3')
     await wrapper.get('[data-testid="scheduler-save"]').trigger('click')
     await flushPromises()
 
@@ -104,7 +105,11 @@ describe('SchedulerSettingsView', () => {
       openai_advanced_scheduler_enabled: true,
       openai_advanced_scheduler_group_policies: expect.objectContaining({
         11: expect.objectContaining({
-          operations: expect.objectContaining({ balance: 'high' }),
+          mode: 'custom',
+          extra_retry_count: 3,
+          priority: { profit: 1, ttft: 2, latency: 3 },
+          operations: { balance: 'standard', peak_protection: 'strict', session_continuity: 'standard' },
+          weight_overrides: { ttft: 2 },
         }),
       }),
     }))
@@ -116,11 +121,11 @@ describe('SchedulerSettingsView', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('[data-testid="scheduler-operation-balance-high"]').trigger('click')
+    await wrapper.get('[data-testid="scheduler-extra-retry-count"]').setValue('2')
     await wrapper.get('[data-testid="scheduler-save"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="scheduler-operation-balance-high"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-testid="scheduler-extra-retry-count"]').element.value).toBe('2')
     expect(showError).toHaveBeenCalledWith('保存调度策略失败')
   })
 })

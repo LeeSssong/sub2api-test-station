@@ -621,6 +621,13 @@ type AccountSelectionResult struct {
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
 	profitGate *openAIProfitControlGate
+	// profitBypass marks the T96 availability-first fallback. The native gate
+	// remains attached for diagnostics, but post-slot checks must not turn this
+	// explicitly allowed fallback back into a hard rejection.
+	profitBypass bool
+	// unifiedQuality lets the handler distinguish retry-next slot outcomes from
+	// legacy terminal slot errors without exposing scheduler internals publicly.
+	unifiedQuality bool
 }
 
 // CompleteHalfOpenProbe records the outcome of the one upstream call admitted
@@ -635,6 +642,16 @@ func (r *AccountSelectionResult) CompleteHalfOpenProbe(success bool) {
 // ProfitGateActive 报告本次选号是否处于利润门之下。
 func (r *AccountSelectionResult) ProfitGateActive() bool {
 	return r != nil && r.profitGate != nil
+}
+
+// ProfitBypassActive reports that the selection used the T96 availability-first
+// fallback after no profit-qualified account was available.
+func (r *AccountSelectionResult) ProfitBypassActive() bool {
+	return r != nil && r.profitBypass
+}
+
+func (r *AccountSelectionResult) UnifiedQualityActive() bool {
+	return r != nil && r.unifiedQuality
 }
 
 // ClaudeUsage 表示Claude API返回的usage信息

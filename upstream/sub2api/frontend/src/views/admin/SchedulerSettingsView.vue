@@ -55,79 +55,25 @@
               <span class="scheduler-locked">{{ t('admin.schedulerSettings.fixed') }}</span>
             </section>
 
-            <section aria-labelledby="scheduler-priorities-heading">
+            <section class="scheduler-recovery" aria-labelledby="scheduler-recovery-heading">
               <div class="scheduler-section-heading">
                 <div>
-                  <h2 id="scheduler-priorities-heading">{{ t('admin.schedulerSettings.priorities') }}</h2>
-                  <p>{{ t('admin.schedulerSettings.prioritiesHint') }}</p>
+                  <h2 id="scheduler-recovery-heading">{{ t('admin.schedulerSettings.recoveryTitle') }}</h2>
+                  <p>{{ t('admin.schedulerSettings.recoveryHint') }}</p>
                 </div>
               </div>
-
-              <div class="scheduler-priority-list">
-                <div v-for="metric in metrics" :key="metric.key" class="scheduler-priority-row">
-                  <span class="scheduler-priority-label">{{ metric.label }}</span>
-                  <div class="scheduler-number-group" role="group" :aria-label="metric.label">
-                    <button
-                      v-for="value in [1, 2, 3]"
-                      :key="value"
-                      type="button"
-                      class="scheduler-option scheduler-number"
-                      :class="{ 'scheduler-option-selected': draft.priority[metric.key] === value }"
-                      :aria-pressed="draft.priority[metric.key] === value"
-                      :data-testid="`scheduler-priority-${metric.key}-${value}`"
-                      @click="draft.priority[metric.key] = value"
-                    >
-                      {{ value }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <p class="scheduler-summary" data-testid="scheduler-priority-summary">{{ prioritySummary }}</p>
-            </section>
-
-            <section class="scheduler-adjustments" :aria-label="t('admin.schedulerSettings.adjustments')">
-              <div v-for="control in controls" :key="control.key" class="scheduler-adjustment">
-                <h2>{{ control.label }}</h2>
-                <div class="scheduler-segments" role="group" :aria-label="control.label">
-                  <button
-                    v-for="option in control.options"
-                    :key="option.value"
-                    type="button"
-                    class="scheduler-option scheduler-segment"
-                    :class="{ 'scheduler-option-selected': draft.operations[control.key] === option.value }"
-                    :aria-pressed="draft.operations[control.key] === option.value"
-                    :data-testid="`scheduler-operation-${control.key}-${option.value}`"
-                    @click="setOperation(control.key, option.value)"
-                  >
-                    {{ option.label }}
-                  </button>
-                </div>
-                <p>{{ control.hint }}</p>
-              </div>
-            </section>
-
-            <section class="scheduler-preview" aria-labelledby="scheduler-preview-heading">
-              <div class="scheduler-section-heading">
-                <div>
-                  <h2 id="scheduler-preview-heading">{{ t('admin.schedulerSettings.preview') }}</h2>
-                  <p>{{ selectedGroup.name }} · {{ t('admin.schedulerSettings.draft') }}</p>
-                </div>
-              </div>
-              <div class="scheduler-preview-grid">
-                <article class="scheduler-preview-item">
-                  <h3>{{ t('admin.schedulerSettings.normal') }}</h3>
-                  <p data-testid="scheduler-preview-normal">{{ previews.normal }}</p>
-                </article>
-                <article class="scheduler-preview-item">
-                  <h3>{{ t('admin.schedulerSettings.peakPreview') }}</h3>
-                  <p data-testid="scheduler-preview-peak">{{ previews.peak }}</p>
-                </article>
-                <article class="scheduler-preview-item">
-                  <h3>{{ t('admin.schedulerSettings.sessionPreview') }}</h3>
-                  <p data-testid="scheduler-preview-session">{{ previews.session }}</p>
-                </article>
-              </div>
+              <label class="scheduler-recovery-control" for="scheduler-extra-retry-count">
+                <span>{{ t('admin.schedulerSettings.extraRetryCount') }}</span>
+                <select
+                  id="scheduler-extra-retry-count"
+                  v-model.number="draft.extraRetryCount"
+                  class="scheduler-select"
+                  data-testid="scheduler-extra-retry-count"
+                >
+                  <option v-for="value in [0, 1, 2, 3]" :key="value" :value="value">{{ value }}</option>
+                </select>
+              </label>
+              <p class="scheduler-recovery-note">{{ t('admin.schedulerSettings.extraRetryCountHint') }}</p>
             </section>
           </template>
         </div>
@@ -154,31 +100,16 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { adminAPI } from '@/api/admin'
-import type {
-  OpenAISchedulerBusinessPriority,
-  OpenAISchedulerGroupPolicy,
-  OpenAISchedulerOperations,
-} from '@/api/admin/settings'
+import type { OpenAISchedulerGroupPolicy } from '@/api/admin/settings'
 import Toggle from '@/components/common/Toggle.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import type { AdminGroup } from '@/types'
-import {
-  createSchedulerScenarioPreviews,
-  DEFAULT_SCHEDULER_OPERATIONS,
-  hasValidBusinessPriority,
-  recommendedBusinessPriority,
-  schedulerPrioritySummary,
-} from './scheduler/schedulerPolicy'
 
 type SchedulerDraft = {
-  priority: OpenAISchedulerBusinessPriority
-  operations: OpenAISchedulerOperations
+  extraRetryCount: number
 }
-
-type MetricKey = keyof OpenAISchedulerBusinessPriority
-type ControlKey = keyof OpenAISchedulerOperations
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -193,70 +124,22 @@ const selectedGroupId = ref('')
 const policies = ref<Record<string, OpenAISchedulerGroupPolicy>>({})
 const drafts = reactive<Record<string, SchedulerDraft>>({})
 const draft = reactive<SchedulerDraft>({
-  priority: { profit: 1, ttft: 1, latency: 1 },
-  operations: { ...DEFAULT_SCHEDULER_OPERATIONS },
+  extraRetryCount: 0,
 })
 
 const selectedGroup = computed(() => groups.value.find((group) => String(group.id) === selectedGroupId.value))
 
-const metrics = computed((): Array<{ key: MetricKey; label: string }> => [
-  { key: 'profit', label: t('admin.schedulerSettings.profit') },
-  { key: 'ttft', label: t('admin.schedulerSettings.ttft') },
-  { key: 'latency', label: t('admin.schedulerSettings.latency') },
-])
-
-const controls = computed((): Array<{
-  key: ControlKey
-  label: string
-  hint: string
-  options: Array<{ value: string; label: string }>
-}> => [
-  {
-    key: 'balance',
-    label: t('admin.schedulerSettings.balanceTitle'),
-    hint: t('admin.schedulerSettings.balanceHint'),
-    options: ['low', 'standard', 'high'].map((value) => ({ value, label: t(`admin.schedulerSettings.balance.${value}`) })),
-  },
-  {
-    key: 'peak_protection',
-    label: t('admin.schedulerSettings.peakTitle'),
-    hint: t('admin.schedulerSettings.peakHint'),
-    options: ['strict', 'standard', 'open'].map((value) => ({ value, label: t(`admin.schedulerSettings.peak.${value}`) })),
-  },
-  {
-    key: 'session_continuity',
-    label: t('admin.schedulerSettings.sessionTitle'),
-    hint: t('admin.schedulerSettings.sessionHint'),
-    options: ['keep', 'standard', 'switch'].map((value) => ({ value, label: t(`admin.schedulerSettings.session.${value}`) })),
-  },
-])
-
-const prioritySummary = computed(() => schedulerPrioritySummary(draft.priority, {
-  profit: t('admin.schedulerSettings.profit'),
-  ttft: t('admin.schedulerSettings.ttft'),
-  latency: t('admin.schedulerSettings.latency'),
-}))
-
-const previews = computed(() => createSchedulerScenarioPreviews(draft))
-
 function cloneDraft(source: SchedulerDraft): SchedulerDraft {
-  return {
-    priority: { ...source.priority },
-    operations: { ...source.operations },
-  }
+  return { extraRetryCount: source.extraRetryCount }
+}
+
+function normalizeExtraRetryCount(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) ? Math.min(3, Math.max(0, value)) : 0
 }
 
 function draftForGroup(group: AdminGroup): SchedulerDraft {
   const policy = policies.value[String(group.id)]
-  return {
-    priority: hasValidBusinessPriority(policy?.priority)
-      ? { ...policy.priority }
-      : recommendedBusinessPriority(group.name),
-    operations: {
-      ...DEFAULT_SCHEDULER_OPERATIONS,
-      ...(policy?.operations ?? {}),
-    },
-  }
+  return { extraRetryCount: normalizeExtraRetryCount(policy?.extra_retry_count) }
 }
 
 function storeDraft(): void {
@@ -271,10 +154,6 @@ function selectGroup(groupId: string): void {
   Object.assign(draft, cloneDraft(drafts[groupId] ?? draftForGroup(group)))
 }
 
-function setOperation(key: ControlKey, value: string): void {
-  draft.operations[key] = value as never
-}
-
 async function save(): Promise<void> {
   storeDraft()
   saveError.value = ''
@@ -284,8 +163,7 @@ async function save(): Promise<void> {
     for (const [groupId, currentDraft] of Object.entries(drafts)) {
       nextPolicies[groupId] = {
         ...nextPolicies[groupId],
-        priority: { ...currentDraft.priority },
-        operations: { ...currentDraft.operations },
+        extra_retry_count: currentDraft.extraRetryCount,
       }
     }
     const updated = await adminAPI.settings.updateSettings({
@@ -344,8 +222,8 @@ onMounted(load)
 .scheduler-kicker { margin: 0 0 .35rem; color: rgb(71 85 105); font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .dark .scheduler-kicker { color: rgb(148 163 184); }
 .scheduler-title { margin: 0; font-size: 1.25rem; font-weight: 650; letter-spacing: -.02em; text-wrap: balance; }
-.scheduler-description, .scheduler-section-heading p, .scheduler-adjustment > p, .scheduler-preview-item p { margin: .35rem 0 0; color: rgb(71 85 105); font-size: .875rem; line-height: 1.5; }
-.dark .scheduler-description, .dark .scheduler-section-heading p, .dark .scheduler-adjustment > p, .dark .scheduler-preview-item p { color: rgb(165 180 202); }
+.scheduler-description, .scheduler-section-heading p, .scheduler-recovery-note { margin: .35rem 0 0; color: rgb(71 85 105); font-size: .875rem; line-height: 1.5; }
+.dark .scheduler-description, .dark .scheduler-section-heading p, .dark .scheduler-recovery-note { color: rgb(165 180 202); }
 .scheduler-switch-row { display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
 .scheduler-workbench-body { display: grid; gap: 1.5rem; padding: 1.5rem; }
 .scheduler-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
@@ -370,25 +248,14 @@ onMounted(load)
 .dark .scheduler-guard p { color: rgb(183 222 197); }
 .scheduler-locked { color: rgb(35 100 67); background: rgb(255 255 255); }
 .dark .scheduler-locked { color: rgb(166 233 191); background: rgb(18 49 42); }
-.scheduler-priority-list { display: grid; gap: .5rem; margin-top: .85rem; }
-.scheduler-priority-row { display: grid; grid-template-columns: minmax(7rem, .8fr) 1fr; align-items: center; gap: .75rem; padding: .65rem .75rem; border: 1px solid rgb(210 219 232); border-radius: 9px; background: rgb(255 255 255); }
-.dark .scheduler-priority-row { border-color: rgb(51 68 95); background: rgb(16 29 51); }
-.scheduler-priority-label { font-size: .875rem; font-weight: 600; }
-.scheduler-number-group { display: flex; gap: .4rem; }
-.scheduler-number { min-width: 2.2rem; padding: .25rem .65rem; font-size: .875rem; font-weight: 700; }
-.scheduler-summary { margin: .85rem 0 0; padding: .7rem .85rem; border-radius: 8px; color: rgb(49 72 111); background: rgb(242 246 255); font-size: .875rem; line-height: 1.5; }
-.dark .scheduler-summary { color: rgb(219 232 255); background: rgb(20 41 73); }
-.scheduler-adjustments, .scheduler-preview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
-.scheduler-adjustment, .scheduler-preview-item { padding: .85rem; border: 1px solid rgb(210 219 232); border-radius: 9px; background: rgb(255 255 255); }
-.dark .scheduler-adjustment, .dark .scheduler-preview-item { border-color: rgb(51 68 95); background: rgb(16 29 51); }
-.scheduler-segments { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; margin-top: .7rem; }
-.scheduler-segment { min-height: 2.65rem; padding: .35rem; font-size: .75rem; line-height: 1.2; }
-.scheduler-preview { padding-top: 1.25rem; border-top: 1px solid rgb(214 222 234); }
-.dark .scheduler-preview { border-color: rgb(45 62 90); }
-.scheduler-preview-grid { margin-top: .85rem; }
-.scheduler-preview-item h3 { font-size: .8125rem; }
+.scheduler-recovery { display: grid; gap: .9rem; padding: 1rem; border: 1px solid rgb(210 219 232); border-radius: 9px; background: rgb(255 255 255); }
+.dark .scheduler-recovery { border-color: rgb(51 68 95); background: rgb(16 29 51); }
+.scheduler-recovery-control { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .9375rem; font-weight: 650; }
+.scheduler-select { min-width: 8rem; min-height: 2.5rem; padding: .35rem .6rem; border: 1px solid rgb(148 163 184); border-radius: 7px; color: rgb(15 23 42); background: white; font-size: .9375rem; }
+.dark .scheduler-select { border-color: rgb(71 85 105); color: rgb(226 232 240); background: rgb(15 29 52); }
+.scheduler-select:focus-visible { outline: 2px solid rgb(59 130 246); outline-offset: 2px; }
 .scheduler-workbench-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.5rem; border-top: 1px solid rgb(226 232 240); background: rgb(255 255 255); }
 .dark .scheduler-workbench-footer { border-color: rgb(42 59 87); background: rgb(15 29 52); }
-@media (max-width: 700px) { .scheduler-workbench-header, .scheduler-workbench-footer { align-items: flex-start; flex-direction: column; } .scheduler-adjustments, .scheduler-preview-grid { grid-template-columns: 1fr; } .scheduler-priority-row { grid-template-columns: 1fr; } .scheduler-workbench-footer .btn { width: 100%; } }
+@media (max-width: 700px) { .scheduler-workbench-header, .scheduler-workbench-footer { align-items: flex-start; flex-direction: column; } .scheduler-recovery-control { align-items: flex-start; flex-direction: column; } .scheduler-select, .scheduler-workbench-footer .btn { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .scheduler-group, .scheduler-option { transition: none; } }
 </style>

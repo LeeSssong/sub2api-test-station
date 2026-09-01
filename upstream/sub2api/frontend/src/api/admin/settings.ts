@@ -22,6 +22,7 @@ export type OpenAISchedulerPreset = "special_offer" | "balanced" | "pro";
 export type OpenAISchedulerPresetID = `builtin:${OpenAISchedulerPreset}` | `custom:${string}` | `custom:new:${string}`;
 export const OPENAI_SCHEDULER_LIMITS = {
   topK: { min: 1, max: 32, step: 1 },
+  extraRetryCount: { min: 0, max: 3, step: 1 },
   weight: { min: 0, max: 10, step: 0.1 },
   explorationRatio: { min: 0, max: 100, step: 1 },
   starvationThreshold: { min: 0, max: 86400, step: 300 },
@@ -53,6 +54,7 @@ export interface OpenAISchedulerGroupPolicy {
   mode?: OpenAISchedulerGroupPolicyMode | LegacyOpenAISchedulerGroupPolicyMode;
   preset?: OpenAISchedulerPreset;
   preset_id?: OpenAISchedulerPresetID;
+  extra_retry_count?: number;
   priority?: OpenAISchedulerBusinessPriority;
   operations?: OpenAISchedulerOperations;
   compiled_snapshot?: OpenAISchedulerPolicyValues;

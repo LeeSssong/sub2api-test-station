@@ -212,6 +212,7 @@ type OpenAISchedulerGroupPolicy struct {
 	Mode             OpenAISchedulerGroupPolicyMode      `json:"mode,omitempty"`
 	Preset           OpenAISchedulerPreset               `json:"preset,omitempty"`
 	PresetID         string                              `json:"preset_id,omitempty"`
+	ExtraRetryCount  *int                                `json:"extra_retry_count,omitempty"`
 	Priority         OpenAISchedulerBusinessPriority     `json:"priority,omitempty"`
 	Operations       OpenAISchedulerOperations           `json:"operations,omitempty"`
 	CompiledSnapshot OpenAISchedulerPolicyValues         `json:"compiled_snapshot,omitempty"`

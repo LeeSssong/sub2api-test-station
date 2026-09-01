@@ -317,6 +317,57 @@ func TestSettingHandlerSchedulerBusinessPolicyCompilesOnServerAndRejectsInvalidP
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestSettingHandlerSchedulerExtraRetryCountRoundTripsWithLegacyPolicyFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{values: map[string]string{service.SettingKeyPromoCodeEnabled: "true"}}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	h := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"openai_advanced_scheduler_group_policies": map[string]any{
+			"11": map[string]any{
+				"extra_retry_count": 3,
+				"mode":              "custom",
+				"priority":          map[string]any{"profit": 1, "ttft": 2, "latency": 3},
+				"operations":        map[string]any{"balance": "high", "peak_protection": "strict", "session_continuity": "keep"},
+				"weight_overrides":  map[string]any{"priority": 1.5},
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.UpdateSettings(c)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var stored map[string]map[string]any
+	require.NoError(t, json.Unmarshal([]byte(repo.values[service.SettingKeyOpenAIAdvancedSchedulerGroupOverrides]), &stored))
+	policy := stored["11"]
+	require.Equal(t, float64(3), policy["extra_retry_count"])
+	require.Equal(t, float64(1), policy["priority"].(map[string]any)["profit"])
+	require.Equal(t, "high", policy["operations"].(map[string]any)["balance"])
+	require.NotNil(t, policy["weight_overrides"])
+
+	for _, invalid := range []int{-1, 4} {
+		invalidBody := map[string]any{"openai_advanced_scheduler_group_policies": map[string]any{"11": map[string]any{
+			"extra_retry_count": invalid,
+			"mode":              "custom",
+			"weight_overrides":  map[string]any{"priority": 1},
+		}}}
+		raw, err = json.Marshal(invalidBody)
+		require.NoError(t, err)
+		rec = httptest.NewRecorder()
+		c, _ = gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(raw))
+		c.Request.Header.Set("Content-Type", "application/json")
+		h.UpdateSettings(c)
+		require.Equal(t, http.StatusBadRequest, rec.Code, invalidBody)
+	}
+}
+
 func TestSettingHandlerSchedulerPresetsRoundTripAndRejectsReferencedPresetDeletion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	customID := "custom:550e8400-e29b-41d4-a716-446655440000"

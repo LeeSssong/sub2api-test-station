@@ -482,6 +482,7 @@ type OpenAIGatewayService struct {
 	openaiWSPassthroughDialer      openAIWSClientDialer
 	openaiWSSessionPreemptions     openAIWSSessionPreemptRegistry
 	openaiAccountStats             *openAIAccountRuntimeStats
+	openaiQuality                  OpenAIAccountQualitySnapshotProvider
 	openaiModelTransient           *openAIAccountModelTransientState
 	openaiRecoveryExclusions       *openAIRecoveryExclusionState
 	openaiProxyStreamCircuit       *openAIProxyStreamCircuit
@@ -599,6 +600,9 @@ func NewOpenAIGatewayService(
 		sharedHealthLeases:    make(map[string]OpenAISharedHalfOpenLease),
 		sharedHealthOwner:     newOpenAISharedHealthOwner(),
 	}
+	if qualityRepo, ok := usageLogRepo.(OpenAIAccountQualityRepository); ok {
+		svc.openaiQuality = NewOpenAIAccountQualitySnapshotProvider(qualityRepo, time.Minute, time.Now)
+	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)
 	}
@@ -607,6 +611,16 @@ func NewOpenAIGatewayService(
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
+}
+
+// OpenAIAccountQualitySnapshot returns the latest read-only account quality
+// projection. A missing repository/provider is intentionally non-blocking and
+// yields an empty stale snapshot so routing can continue with NULL quality.
+func (s *OpenAIGatewayService) OpenAIAccountQualitySnapshot(ctx context.Context) OpenAIAccountQualitySnapshot {
+	if s == nil || s.openaiQuality == nil {
+		return OpenAIAccountQualitySnapshot{Stale: true, Accounts: map[int64]OpenAIAccountQuality{}}
+	}
+	return s.openaiQuality.Snapshot(ctx)
 }
 
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）

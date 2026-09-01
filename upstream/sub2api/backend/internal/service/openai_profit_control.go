@@ -92,6 +92,8 @@ type openAIProfitControlGateCtxKey struct{}
 // 标记后一律不装门，防止 service 层防御性装门把边界外流量重新拉回利润过滤。
 type openAIProfitControlSuppressCtxKey struct{}
 
+type openAIProfitControlBypassCtxKey struct{}
+
 // openAIPricingAtCtxKey 携带请求级定价时刻 pricingAt：门的 D 与 RecordUsage
 // 的高峰因子共用，保证一个请求从准入到扣费不中途变价。
 type openAIPricingAtCtxKey struct{}
@@ -291,6 +293,9 @@ func ContextWithSelectionProfitGate(ctx context.Context, sel *AccountSelectionRe
 	if sel == nil || sel.profitGate == nil {
 		return ctx
 	}
+	if sel.profitBypass {
+		ctx = context.WithValue(ctx, openAIProfitControlBypassCtxKey{}, struct{}{})
+	}
 	if existing, ok := ctx.Value(openAIProfitControlGateCtxKey{}).(*openAIProfitControlGate); ok && existing == sel.profitGate {
 		return ctx
 	}
@@ -311,6 +316,9 @@ func openAIProfitControlVetoReason(ctx context.Context, account *Account) (bool,
 }
 
 func openAIProfitControlVetoReasonReadOnly(ctx context.Context, account *Account) (bool, string) {
+	if _, bypassed := ctx.Value(openAIProfitControlBypassCtxKey{}).(struct{}); bypassed {
+		return false, ""
+	}
 	gate, _ := ctx.Value(openAIProfitControlGateCtxKey{}).(*openAIProfitControlGate)
 	if gate == nil || account == nil {
 		return false, ""

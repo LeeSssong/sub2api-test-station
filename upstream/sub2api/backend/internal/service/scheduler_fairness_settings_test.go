@@ -242,6 +242,43 @@ func TestNormalizeOpenAISchedulerGroupPoliciesRejectsInvalidPayload(t *testing.T
 	require.Error(t, err)
 }
 
+func TestOpenAISchedulerGroupPolicyExtraRetryCountRoundTripAndValidation(t *testing.T) {
+	raw := `{"11":{"extra_retry_count":3,"mode":"custom","priority":{"profit":1,"ttft":2,"latency":3},"operations":{"balance":"high","peak_protection":"strict","session_continuity":"keep"},"compiled_snapshot":{"top_k":7,"weight_overrides":{"priority":1},"fairness":{"candidate_pool_mode":"hybrid","exploration_ratio":20,"starvation_threshold_seconds":21600,"fairness_weight":2}}}}`
+	policies, err := parseOpenAISchedulerGroupPolicies(raw)
+	require.NoError(t, err)
+	require.NotNil(t, policies[11].ExtraRetryCount)
+	require.Equal(t, 3, *policies[11].ExtraRetryCount)
+	require.Equal(t, 1, policies[11].Priority.Profit)
+	require.Equal(t, "high", policies[11].Operations.Balance)
+
+	encoded, err := json.Marshal(policies)
+	require.NoError(t, err)
+	var roundTrip map[string]map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &roundTrip))
+	require.Equal(t, float64(3), roundTrip["11"]["extra_retry_count"])
+	require.NotNil(t, roundTrip["11"]["priority"])
+	require.NotNil(t, roundTrip["11"]["operations"])
+	require.NotNil(t, roundTrip["11"]["compiled_snapshot"])
+
+	for _, invalid := range []string{
+		`{"11":{"extra_retry_count":-1}}`,
+		`{"11":{"extra_retry_count":4}}`,
+		`{"11":{"extra_retry_count":1.5}}`,
+	} {
+		_, err := parseOpenAISchedulerGroupPolicies(invalid)
+		require.Error(t, err, invalid)
+	}
+
+	legacy, err := parseOpenAISchedulerGroupPolicies(`{"11":{"candidate_pool_mode":"all_eligible","extra_retry_count":2}}`)
+	require.NoError(t, err)
+	require.Equal(t, 2, resolveOpenAIExtraRetryCount(legacy[11]))
+	require.Equal(t, 0, resolveOpenAIExtraRetryCount(OpenAISchedulerGroupPolicy{}))
+	clamped := normalizeOpenAISchedulerGroupPoliciesForRead(map[int64]OpenAISchedulerGroupPolicy{
+		12: {ExtraRetryCount: intPtrForTest(9)},
+	})
+	require.Equal(t, 3, resolveOpenAIExtraRetryCount(clamped[12]))
+}
+
 func TestRecommendedOpenAISchedulerBusinessPolicyUsesApprovedPriorityDefaults(t *testing.T) {
 	tests := []struct {
 		name string

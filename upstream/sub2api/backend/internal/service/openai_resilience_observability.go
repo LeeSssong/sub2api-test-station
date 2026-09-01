@@ -73,6 +73,26 @@ type OpenAIResilienceEvent struct {
 	TTFTReportEligible    bool
 	RetryBudgetExhausted  bool
 	FinalOutcome          string
+	// Unified-quality scheduling details. These fields are intentionally
+	// non-sensitive and remain in the existing bounded process-local ledger.
+	SelectedAccountID    int64
+	SelectedRank         int
+	UnifiedQuality       bool
+	ImageIntent          bool
+	QualityWindowEnd     time.Time
+	QualitySnapshotStale bool
+	ProfitMode           string
+	ProfitBypass         bool
+	ProfitBypassReason   string
+	ExtraRetryCount      int
+	ExtraUsed            int
+	SwitchCount          int
+	SafeToReplay         bool
+	StopReason           string
+	NativeSlotWaitMs     int64
+	RoutingMs            int64
+	UpstreamTTFTMs       int64
+	TotalMs              int64
 }
 
 type openAIResilienceCacheModeContextKey struct{}
@@ -164,6 +184,15 @@ func RecordOpenAISchedulerSelection(ctx context.Context, platform string, groupI
 		StickyEscapeReason: decision.StickyEscapeReason, TTFTReportEligible: decision.TTFTReportEligible,
 		CandidateAccountIDs: decision.CandidateAccountIDs, ExcludedAccountIDs: decision.ExcludedAccountIDs,
 		ExcludeReasons: decision.ExcludeReasons, HealthState: decision.HealthState, CooldownUntil: decision.CooldownUntil,
+		SelectedAccountID: decision.SelectedAccountID, SelectedRank: decision.SelectedRank,
+		UnifiedQuality: decision.UnifiedQuality, ImageIntent: decision.ImageIntent,
+		QualityWindowEnd: decision.QualityWindowEnd, QualitySnapshotStale: decision.QualitySnapshotStale,
+		ProfitMode: decision.ProfitMode, ProfitBypass: decision.ProfitBypass, ProfitBypassReason: decision.ProfitBypassReason,
+		ExtraRetryCount: decision.ExtraRetryCount, ExtraUsed: decision.ExtraUsed, SwitchCount: decision.SwitchCount,
+		SafeToReplay: decision.SafeToReplay, SwitchAllowed: decision.SwitchAllowed,
+		SwitchBlockReason: decision.SwitchBlockReason, StopReason: decision.StopReason,
+		NativeSlotWaitMs: decision.NativeSlotWaitMs, RoutingMs: decision.RoutingMs,
+		UpstreamTTFTMs: decision.UpstreamTTFTMs, TotalMs: decision.TotalMs,
 	})
 }
 

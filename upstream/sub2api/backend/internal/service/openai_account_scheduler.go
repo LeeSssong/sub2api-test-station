@@ -98,6 +98,9 @@ type OpenAIAccountScheduleRequest struct {
 	RequireCompact  bool
 	ExcludedIDs     map[int64]struct{}
 	ForcedAccountID int64
+	// unifiedQuality is set by the enabled advanced OpenAI text path. Keeping
+	// it request-scoped preserves direct legacy scheduler callers.
+	unifiedQuality  bool
 	halfOpenProbe   bool
 	halfOpenLease   *openAIAccountModelHalfOpenLease
 	decisionDetails *openAIAccountScheduleDecisionDetails
@@ -116,6 +119,27 @@ type openAIAccountScheduleDecisionDetails struct {
 }
 
 type openAIForcedAccountContextKey struct{}
+
+type openAIUnifiedQualitySchedulingContextKey struct{}
+
+// WithOpenAIUnifiedQualityScheduling explicitly opts an ordinary HTTP text
+// request into T96's unified quality selector. Special protocol paths (for
+// example Responses WebSocket and alpha-search) intentionally omit this
+// marker so their existing scheduler/recovery semantics remain aligned.
+func WithOpenAIUnifiedQualityScheduling(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIUnifiedQualitySchedulingContextKey{}, true)
+}
+
+func OpenAIUnifiedQualitySchedulingRequested(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	requested, _ := ctx.Value(openAIUnifiedQualitySchedulingContextKey{}).(bool)
+	return requested
+}
 
 // WithOpenAIForcedAccount pins one retry attempt to the account that just
 // failed. The scheduler still validates its current availability and capacity.
@@ -143,19 +167,40 @@ type OpenAIAccountScheduleDecision struct {
 	LatencyMs             int64
 	LoadSkew              float64
 	SelectedAccountID     int64
+	SelectedRank          int
 	SelectedAccountType   string
 	EligibleCount         int
 	EffectiveTopK         int
 	MinimumScoreThreshold float64
 	SelectionLayer        string
+	UnifiedQuality        bool
 	StickyKept            bool
 	StickyEscapeReason    string
 	TTFTReportEligible    bool
 	CandidateAccountIDs   []int64
 	ExcludedAccountIDs    []int64
 	ExcludeReasons        map[string]int
-	HealthState           string
-	CooldownUntil         time.Time
+	ProfitMode            string
+	ProfitBypass          bool
+	ProfitBypassReason    string
+	// T96 unified-quality observability fields. They are additive and do not
+	// participate in account ordering.
+	ImageIntent          bool
+	QualityWindowEnd     time.Time
+	QualitySnapshotStale bool
+	ExtraRetryCount      int
+	ExtraUsed            int
+	SwitchCount          int
+	SafeToReplay         bool
+	SwitchAllowed        bool
+	SwitchBlockReason    string
+	StopReason           string
+	NativeSlotWaitMs     int64
+	RoutingMs            int64
+	UpstreamTTFTMs       int64
+	TotalMs              int64
+	HealthState          string
+	CooldownUntil        time.Time
 }
 
 type OpenAIAccountSchedulerMetricsSnapshot struct {
@@ -466,6 +511,7 @@ type defaultOpenAIAccountScheduler struct {
 	service                *OpenAIGatewayService
 	metrics                openAIAccountSchedulerMetrics
 	stats                  *openAIAccountRuntimeStats
+	unifiedQualityEnabled  bool
 	now                    func() time.Time
 	grokFreeQuotaGateCache sync.Map // key: int64(accountID), value: grokFreeQuotaGateCacheEntry
 }
@@ -705,6 +751,21 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			decision.SelectedAccountType = selection.Account.Type
 			return selection, decision, nil
 		}
+	}
+
+	// Ordinary OpenAI text requests use the deterministic quality selector.
+	// Protocol-mandated bindings above remain authoritative; image requests and
+	// non-OpenAI-compatible platforms continue through their native path below.
+	if req.unifiedQuality && req.RequiredImageCapability == "" && NormalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI {
+		selection, unifiedDecision, err := s.selectByUnifiedQuality(ctx, req)
+		unifiedDecision.ExcludedAccountIDs = append(unifiedDecision.ExcludedAccountIDs, decision.ExcludedAccountIDs...)
+		if len(unifiedDecision.ExcludedAccountIDs) > 1 {
+			sort.Slice(unifiedDecision.ExcludedAccountIDs, func(i, j int) bool {
+				return unifiedDecision.ExcludedAccountIDs[i] < unifiedDecision.ExcludedAccountIDs[j]
+			})
+		}
+		decision = unifiedDecision
+		return selection, decision, err
 	}
 
 	if !req.StickyWeighted {
@@ -2826,6 +2887,23 @@ func (s *OpenAIGatewayService) isOpenAIAdvancedSchedulerSubscriptionPriorityEnab
 	return settings.enabled && settings.subscriptionPriorityEnabled
 }
 
+// OpenAIUnifiedQualityEnabled reports whether the T96 selector is available for
+// an ordinary OpenAI text request. Image and non-OpenAI-compatible paths remain
+// on their existing native selectors.
+func (s *OpenAIGatewayService) OpenAIUnifiedQualityEnabled(ctx context.Context, platform string, image bool) bool {
+	return s != nil && !image && NormalizeOpenAICompatiblePlatform(platform) == PlatformOpenAI && s.openaiQuality != nil && s.isOpenAIAdvancedSchedulerEnabled(ctx)
+}
+
+// OpenAIUnifiedExtraRetryCount resolves the group-scoped T96 recovery budget;
+// missing or invalid policy data deliberately defaults to zero.
+func (s *OpenAIGatewayService) OpenAIUnifiedExtraRetryCount(ctx context.Context, groupID *int64) int {
+	if s == nil || groupID == nil || *groupID <= 0 {
+		return 0
+	}
+	runtime := s.openAIAdvancedSchedulerRuntimeSettings(ctx)
+	return resolveOpenAIExtraRetryCount(runtime.groupPolicies[*groupID])
+}
+
 func openAIAdvancedSchedulerRuntimeSettingKeys() []string {
 	keys := []string{
 		SettingKeyOpenAILowUpstreamRatePriorityEnabled,
@@ -3007,6 +3085,11 @@ func (s *OpenAIGatewayService) getOrCreateOpenAIAccountScheduler() OpenAIAccount
 		}
 		if s.openaiScheduler == nil {
 			s.openaiScheduler = newDefaultOpenAIAccountScheduler(s, s.openaiAccountStats)
+			if scheduler, ok := s.openaiScheduler.(*defaultOpenAIAccountScheduler); ok {
+				// getOrCreate is reached only after the advanced scheduler switch has
+				// been confirmed enabled; this flag selects T96's unified text layer.
+				scheduler.unifiedQualityEnabled = true
+			}
 		}
 	})
 	return s.openaiScheduler
@@ -3321,6 +3404,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		CacheMode:               openAIResilienceCacheModeFromContext(ctx),
 		ExcludedIDs:             excludedIDs,
 		ForcedAccountID:         openAIForcedAccountFromContext(ctx),
+		unifiedQuality:          OpenAIUnifiedQualitySchedulingRequested(ctx) && requiredImageCapability == "" && platform == PlatformOpenAI && s.openaiQuality != nil,
 	})
 }
 

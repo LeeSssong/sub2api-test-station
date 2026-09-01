@@ -482,13 +482,11 @@ WITH scopes AS (
   WHERE request_exclusion.request_key IS NULL
     AND logical_exclusion.request_key IS NULL
 ), usage_request_keys AS (
-  SELECT DISTINCT group_id, account_id, request_id AS request_key, request_key AS canonical_request_key
+  -- request_id is the only exact bridge available on ops_error_logs. Keep
+  -- the mapping group-scoped so failover across accounts remains one request.
+  SELECT DISTINCT group_id, request_id AS request_key, request_key AS canonical_request_key
   FROM usage_candidates
   WHERE request_id IS NOT NULL
-  UNION
-  SELECT DISTINCT group_id, account_id, logical_request_id AS request_key, request_key AS canonical_request_key
-  FROM usage_candidates
-  WHERE logical_request_id IS NOT NULL
 ), error_candidates AS (
   SELECT o.group_id, o.account_id, o.id::bigint AS source_id, o.created_at AS observed_at,
          date_bin($3::interval, o.created_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
@@ -498,18 +496,13 @@ WITH scopes AS (
 	         NULL::double precision AS input_tokens,
 	         NULL::double precision AS cache_creation_tokens,
          NULL::double precision AS cache_read_tokens,
-         COALESCE(request_match.canonical_request_key, client_match.canonical_request_key, NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text) AS request_key,
+         COALESCE(request_match.canonical_request_key, NULLIF(o.request_id, ''), 'error:' || o.id::text) AS request_key,
          0 AS source_priority
   FROM ops_error_logs o
   JOIN groups g ON g.group_id = o.group_id
   LEFT JOIN usage_request_keys request_match
     ON request_match.group_id = o.group_id
-   AND request_match.account_id IS NOT DISTINCT FROM o.account_id
    AND request_match.request_key = NULLIF(o.request_id, '')
-  LEFT JOIN usage_request_keys client_match
-    ON client_match.group_id = o.group_id
-   AND client_match.account_id IS NOT DISTINCT FROM o.account_id
-   AND client_match.request_key = NULLIF(o.client_request_id, '')
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND COALESCE(o.status_code, 0) >= 400
@@ -533,7 +526,7 @@ WITH scopes AS (
   FROM (
     SELECT rc.*, ROW_NUMBER() OVER (
       PARTITION BY rc.group_id, rc.request_key
-      ORDER BY rc.source_priority ASC, rc.observed_at DESC, rc.source_id DESC
+      ORDER BY rc.observed_at DESC, rc.successful DESC, rc.source_id DESC
     ) AS position
     FROM real_candidates rc
   ) ranked
@@ -1059,14 +1052,23 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 				(u.actual_cost > 0) AS successful,
 				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
 			FROM usage_logs u WHERE u.group_id = ANY($1) AND u.account_id = ANY($2) AND u.created_at >= $3 AND u.created_at < $4 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), usage_request_keys AS (
+			SELECT DISTINCT group_id, request_id AS request_key, request_key AS canonical_request_key
+			FROM usage_events
+			WHERE NULLIF(request_id, '') IS NOT NULL
 		), error_events AS (
 			SELECT e.group_id, e.account_id, e.id::bigint AS source_id, e.created_at,
 				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
 				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
-				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
-			FROM ops_error_logs e WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+				COALESCE(ur.canonical_request_key, NULLIF(e.request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
+			FROM ops_error_logs e
+			LEFT JOIN usage_request_keys ur ON ur.group_id = e.group_id AND ur.request_key = NULLIF(e.request_id, '')
+			WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
 		), dedup AS (
-			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.group_id, e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
+			-- A logical request may fail on account A and complete on account B.
+			-- Select one terminal event per group/request, then attribute the
+			-- result to the account that produced that terminal event.
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.group_id, e.request_key ORDER BY e.created_at DESC, e.successful DESC, e.source_id DESC) AS rn FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
 		)
 		SELECT group_id, account_id, COUNT(*)::bigint, COUNT(*) FILTER (WHERE successful)::bigint, COUNT(*) FILTER (WHERE NOT successful)::bigint,
 			COALESCE(SUM(revenue), 0)::double precision, COALESCE(SUM(account_cost) FILTER (WHERE cost_complete), 0)::double precision,

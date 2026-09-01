@@ -43,11 +43,12 @@ func SecretErrorCode(err error) string {
 func newSecretError(code string) error { return &secretLoadError{code: code} }
 
 type UpstreamBalanceSecretPaths struct {
-	AppID      string
-	AppSecret  string
-	ChatID     string
-	Recipients string
-	Registry   string
+	AppID         string
+	AppSecret     string
+	ChatID        string
+	Recipients    string
+	Registry      string
+	CallbackToken string
 }
 
 type UpstreamBalanceSecrets struct {
@@ -56,6 +57,7 @@ type UpstreamBalanceSecrets struct {
 	ChatID           string
 	RecipientOpenIDs []string
 	Registry         LoginRegistry
+	CallbackToken    string
 }
 
 type LoginRegistryEntry struct {
@@ -114,9 +116,13 @@ func LoadUpstreamBalanceSecrets(paths UpstreamBalanceSecretPaths) (UpstreamBalan
 	if err != nil {
 		return UpstreamBalanceSecrets{}, err
 	}
+	callbackToken, err := readOptionalProtectedText(paths.CallbackToken, maxSmallSecretBytes)
+	if err != nil {
+		return UpstreamBalanceSecrets{}, err
+	}
 	return UpstreamBalanceSecrets{
 		AppID: appID, AppSecret: appSecret, ChatID: chatID,
-		RecipientOpenIDs: recipients, Registry: registry,
+		RecipientOpenIDs: recipients, Registry: registry, CallbackToken: callbackToken,
 	}, nil
 }
 
@@ -131,6 +137,13 @@ func readProtectedText(path string, maxBytes int64) (string, error) {
 		return "", newSecretError(SecretErrorInvalidValue)
 	}
 	return value, nil
+}
+
+func readOptionalProtectedText(path string, maxBytes int64) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil
+	}
+	return readProtectedText(path, maxBytes)
 }
 
 func readProtectedFile(path string, maxBytes int64) ([]byte, error) {

@@ -1310,11 +1310,12 @@ func ProvideUpstreamBalanceNotificationService(
 		return disabled
 	}
 	secrets, err := upstreamnotify.LoadUpstreamBalanceSecrets(upstreamnotify.UpstreamBalanceSecretPaths{
-		AppID:      os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_APP_ID_FILE"),
-		AppSecret:  os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_APP_SECRET_FILE"),
-		ChatID:     os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_CHAT_ID_FILE"),
-		Recipients: os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_RECIPIENTS_FILE"),
-		Registry:   os.Getenv("SUB2API_UPSTREAM_BALANCE_LOGIN_REGISTRY_FILE"),
+		AppID:         os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_APP_ID_FILE"),
+		AppSecret:     os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_APP_SECRET_FILE"),
+		ChatID:        os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_CHAT_ID_FILE"),
+		Recipients:    os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_RECIPIENTS_FILE"),
+		Registry:      os.Getenv("SUB2API_UPSTREAM_BALANCE_LOGIN_REGISTRY_FILE"),
+		CallbackToken: os.Getenv("SUB2API_UPSTREAM_BALANCE_FEISHU_CALLBACK_TOKEN_FILE"),
 	})
 	if err != nil {
 		code := upstreamnotify.SecretErrorCode(err)
@@ -1330,6 +1331,11 @@ func ProvideUpstreamBalanceNotificationService(
 	}
 	sender := upstreamnotify.NewFeishuSender(baseURL, secrets)
 	svc := NewUpstreamBalanceNotificationService(repo, reader, sender, secrets.Registry, secrets.RecipientOpenIDs)
+	if secrets.CallbackToken != "" {
+		if silenceRepo, ok := repo.(UpstreamBalanceNotificationSilenceRepository); ok {
+			svc.ConfigureFeishuSilence(silenceRepo, secrets.CallbackToken)
+		}
+	}
 	svc.Start()
 	return svc
 }

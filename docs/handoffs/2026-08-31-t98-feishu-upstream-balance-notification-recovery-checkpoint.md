@@ -85,3 +85,12 @@
 - 刷新后直接验证：`go test ./internal/service -run 'TestUpstreamBalance' -count=1`、`go test -vet=off ./internal/repository -run 'TestUpstreamBalanceEventRepository' -count=1`、notify 相关测试、`go build ./cmd/server`、`git diff --check` 全部通过。
 - 默认仓储 vet 的既有 `usage_log_repo_stats.go:1004` 格式参数错误仍未修改；本任务未执行任何生产/验收站/真实飞书动作。
 - 状态：`READY_FOR_ROOT_REVIEW`。请根总控仅按单车道继续根审、整合和发布，不要从本候选直接部署。
+
+## T96 发布闭环后刷新交接（2026-09-01）
+
+- 已按发布总控 CONTEXT_RECOVERY 完整复核项目约束、T98 spec/plan/handoff/checkpoint/verification、候选 Git 历史与直接测试证据；Git 现场确认精度修复提交 `82d33cb62a2fb9fe29d9784925e7fd0cf771cd64` 仍为候选祖先。
+- 候选已刷新到根 `main@069ef439a8586b20e35754247d78784cd86abed0`（tree `8622dc7961317ca95fafa54297a0e6299f5d3bc6`），合并无冲突；两处 PostgreSQL 微秒/JSON 纳秒时间指纹比较继续统一使用 `Truncate(time.Microsecond)`，未改变余额、状态、generation、lease 或 CAS 严格语义。
+- 刷新后验证通过：service `TestUpstreamBalance*`、repository T98（`-vet=off`）、notify 相关测试、`go build ./cmd/server`、目标文件 gofmt 检查、`git diff --check`；native-only guard 返回 `passed mode=native_account_concurrency_only`。
+- 迁移/配置属性：精度修复本身无新增迁移、配置、secret 或数据写入；候选仍包含既有 T98 migration 231 与 worker secret 配置，是否需要停机只能由根 `main` 合并后的发布预检判定。
+- 未验证项：真实飞书投递、验收站/主站线上专项验证和发布预检；本窗口未触碰生产、验收站、secret，未发送真实飞书。
+- 状态：`READY_FOR_ROOT_REVIEW`。不得从候选直接合并、推送、部署或清理；由发布总控按单车道处理。

@@ -109,7 +109,7 @@ WITH usage_events AS (
     ul.account_id,
     ul.group_id,
     ul.stream,
-    (COALESCE(NULLIF(ul.usage_completeness, ''), 'complete') = 'complete' AND ul.actual_cost > 0) AS terminal_success,
+    (COALESCE(NULLIF(ul.usage_completeness, ''), 'complete') = 'complete') AS terminal_success,
     FALSE AS terminal_error,
     COALESCE(NULLIF(ul.usage_completeness, ''), 'complete') AS usage_completeness,
     TRUE AS usage_present,

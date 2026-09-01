@@ -441,6 +441,19 @@ export default {
         copyFailed: 'Copy failed',
         copy: 'Copy',
         viewError: 'View Error',
+        lifecycle: {
+          terminal: 'Terminal',
+          attempts: 'Attempts',
+          failovers: 'Failovers',
+          upstreamErrors: 'Upstream errors',
+          success: 'Success',
+          autoRetryRecovered: 'Recovered after retry',
+          singleAttemptUserVisible: 'Single-attempt failure',
+          retryExhaustedUserVisible: 'Retries exhausted',
+          stoppedUnsafeToReplay: 'Stopped: unsafe to replay',
+          incompleteUnknown: 'Insufficient evidence',
+          unknown: 'Unknown'
+        },
         kind: {
           success: 'SUCCESS',
           error: 'ERROR'

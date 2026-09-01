@@ -20,7 +20,7 @@ func TestOpsRepositoryListRequestDetailsProjectsOneRecoveredLogicalRequest(t *te
 	end := start.Add(time.Hour)
 	completed := end.Add(-time.Minute)
 
-	query := `(?s)WITH usage_events AS.*logical_keys AS.*terminal_kind.*auto_retry_recovered.*`
+	query := `(?s)WITH usage_events AS.*COALESCE\(NULLIF\(ul\.usage_completeness, ''\), 'complete'\) = 'complete'\) AS terminal_success.*logical_keys AS.*terminal_kind.*auto_retry_recovered.*`
 	columns := []string{
 		"kind", "created_at", "request_id", "logical_request_id", "correlation_quality", "attempt_count", "failover_count", "upstream_error_count",
 		"final_status", "final_protocol", "terminal_kind", "terminal_reason", "user_visible", "auto_retry_recovered", "retry_exhausted",

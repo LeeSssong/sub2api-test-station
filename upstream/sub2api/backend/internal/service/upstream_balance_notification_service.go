@@ -25,6 +25,10 @@ type UpstreamBalanceEvaluationReader interface {
 	ReadUpstreamBalanceEvaluations(context.Context) ([]UpstreamBalanceEvaluation, error)
 }
 
+type UpstreamBalanceScopeRefresher interface {
+	RefreshUpstreamBalanceScopes(context.Context, map[string]struct{}) error
+}
+
 type UpstreamBalanceNotificationSender interface {
 	Send(context.Context, upstreamnotify.UpstreamBalanceCardInput) (string, error)
 }
@@ -89,17 +93,18 @@ func buildUpstreamBalanceEvaluations(accounts []Account, page AccountMonitorPage
 		account := accounts[i]
 		baseURL, _ := account.Credentials["base_url"].(string)
 		projected = append(projected, UpstreamBalanceAccount{
-			AccountID: account.ID,
-			Name:      account.Name,
-			Platform:  account.Platform,
-			Type:      account.Type,
-			Status:    account.Status,
-			BaseURL:   baseURL,
-			Snapshot:  balances[account.ID],
-			Ranks:     append([]UpstreamBalanceAccountRank(nil), ranks[account.ID]...),
+			AccountID:             account.ID,
+			Name:                  account.Name,
+			Platform:              account.Platform,
+			Type:                  account.Type,
+			Status:                account.Status,
+			BaseURL:               baseURL,
+			Snapshot:              balances[account.ID],
+			CredentialFingerprint: accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey()),
+			Ranks:                 append([]UpstreamBalanceAccountRank(nil), ranks[account.ID]...),
 		})
 	}
-	return EvaluateUpstreamBaseURLBalance(projected)
+	return EvaluateUpstreamBaseURLBalance(projected, page.ObservedAt)
 }
 
 func NewUpstreamBalanceNotificationService(
@@ -249,6 +254,17 @@ func (s *UpstreamBalanceNotificationService) RunDue(ctx context.Context) error {
 	}
 	if len(active) == 0 {
 		return nil
+	}
+	zeroScopes := make(map[string]struct{})
+	for _, event := range active {
+		if event.NotificationState == UpstreamBalanceNotificationStateZero {
+			zeroScopes[event.ScopeKey] = struct{}{}
+		}
+	}
+	if refresher, ok := s.reader.(UpstreamBalanceScopeRefresher); ok && len(zeroScopes) > 0 {
+		if err := refresher.RefreshUpstreamBalanceScopes(ctx, zeroScopes); err != nil {
+			return errors.New("refresh active upstream balance scopes")
+		}
 	}
 	scopes := make(map[string]struct{}, len(active))
 	for _, event := range active {

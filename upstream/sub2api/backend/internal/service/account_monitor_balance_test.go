@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"net/http"
@@ -191,6 +193,10 @@ func TestRefreshBalanceSelectsExactlyOneSourceFromDeclaration(t *testing.T) {
 			got := decodeAccountMonitorBalance(account.Extra)
 			if got == nil || got.Source != tt.wantSource || got.Status != AccountMonitorBalanceStatusOK {
 				t.Fatalf("stored balance = %#v", got)
+			}
+			expectedHash := sha256.Sum256([]byte("sk-test"))
+			if got.CredentialFingerprint != hex.EncodeToString(expectedHash[:]) {
+				t.Fatalf("credential fingerprint = %q", got.CredentialFingerprint)
 			}
 			if !reflect.DeepEqual(upstream.paths, tt.wantPaths) {
 				t.Fatalf("balance paths = %#v, want %#v", upstream.paths, tt.wantPaths)

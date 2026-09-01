@@ -2451,6 +2451,38 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 	return nil
 }
 
+func (r *accountRepository) ClearBalanceExhaustedTempUnschedulable(ctx context.Context, account *service.Account) (bool, error) {
+	if account == nil || account.ID <= 0 || strings.TrimSpace(account.TempUnschedulableReason) == "" {
+		return false, nil
+	}
+	credentials, err := json.Marshal(account.Credentials)
+	if err != nil {
+		return false, err
+	}
+	result, err := r.sql.ExecContext(ctx, `
+		UPDATE accounts
+		SET temp_unschedulable_until = NULL,
+			temp_unschedulable_reason = NULL,
+			updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
+		WHERE id = $1
+			AND credentials = $2::jsonb
+			AND temp_unschedulable_reason = $3
+			AND deleted_at IS NULL
+	`, account.ID, string(credentials), account.TempUnschedulableReason)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &account.ID, nil, nil); err != nil {
+		return false, err
+	}
+	r.syncSchedulerAccountSnapshot(ctx, account.ID)
+	return true, nil
+}
+
 func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error {
 	_, err := r.execAccountMonotonicUpdate(ctx, id,
 		"rate_limited_at = NULL, rate_limit_reset_at = NULL, overload_until = NULL", "")

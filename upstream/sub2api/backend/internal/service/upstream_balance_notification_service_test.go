@@ -276,6 +276,8 @@ func TestReadUpstreamBalanceEvaluationsUsesWindowSchedulerRanks(t *testing.T) {
 	card := upstreamBalanceCardInput(evaluations[0], "login", "password", nil)
 	require.Len(t, card.Accounts[0].Ranks, 1)
 	require.Equal(t, rank, *card.Accounts[0].Ranks[0].Rank)
+	require.NotNil(t, card.Accounts[0].BalanceUSD)
+	require.Equal(t, value, *card.Accounts[0].BalanceUSD)
 }
 
 func TestProvideUpstreamBalanceNotificationServiceIsDisabledByDefault(t *testing.T) {

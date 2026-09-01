@@ -373,13 +373,21 @@ func upstreamBalanceCardInput(
 		for _, rank := range account.Ranks {
 			ranks = append(ranks, upstreamnotify.UpstreamBalanceCardRank{GroupName: rank.GroupName, Rank: rank.Rank})
 		}
-		accounts = append(accounts, upstreamnotify.UpstreamBalanceCardAccount{ID: account.AccountID, Name: account.Name, Ranks: ranks})
+		accounts = append(accounts, upstreamnotify.UpstreamBalanceCardAccount{ID: account.AccountID, Name: account.Name, BalanceUSD: balanceValue(account.Snapshot), Ranks: ranks})
 	}
 	return upstreamnotify.UpstreamBalanceCardInput{
 		State: evaluation.State, ValueUSD: *evaluation.ValueUSD, BaseURL: evaluation.NormalizedBaseURL,
 		LoginAccount: loginAccount, LoginPassword: loginPassword,
 		RecipientOpenIDs: append([]string(nil), recipients...), Accounts: accounts,
 	}
+}
+
+func balanceValue(snapshot *AccountMonitorBalance) *float64 {
+	if snapshot == nil || snapshot.ValueUSD == nil || snapshot.Status != AccountMonitorBalanceStatusOK {
+		return nil
+	}
+	value := *snapshot.ValueUSD
+	return &value
 }
 
 func upstreamBalanceFailureDelay(attemptCount int, state string) time.Duration {

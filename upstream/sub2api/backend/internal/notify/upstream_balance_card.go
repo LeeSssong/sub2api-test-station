@@ -38,9 +38,10 @@ type UpstreamBalanceCardRank struct {
 }
 
 type UpstreamBalanceCardAccount struct {
-	ID    int64
-	Name  string
-	Ranks []UpstreamBalanceCardRank
+	ID         int64
+	Name       string
+	BalanceUSD *float64
+	Ranks      []UpstreamBalanceCardRank
 }
 
 type UpstreamBalanceCardInput struct {
@@ -122,6 +123,9 @@ func RenderUpstreamBalanceCard(input UpstreamBalanceCardInput) ([]byte, error) {
 			name = "未命名账号"
 		}
 		lines := []string{"**" + cardValue(name) + "**", "账号 ID：" + strconv.FormatInt(account.ID, 10)}
+		if account.BalanceUSD != nil && !math.IsNaN(*account.BalanceUSD) && !math.IsInf(*account.BalanceUSD, 0) && *account.BalanceUSD >= 0 {
+			lines = append(lines, "余额：USD "+formatBalanceUSD(*account.BalanceUSD))
+		}
 		ranks := append([]UpstreamBalanceCardRank(nil), account.Ranks...)
 		sort.SliceStable(ranks, func(i, j int) bool {
 			left, right := rankSortValue(ranks[i].Rank), rankSortValue(ranks[j].Rank)

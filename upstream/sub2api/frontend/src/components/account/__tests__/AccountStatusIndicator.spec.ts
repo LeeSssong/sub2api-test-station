@@ -81,7 +81,7 @@ describe('AccountStatusIndicator', () => {
     expect(wrapper.text()).not.toContain('claude-sonnet-5')
   })
 
-  it('Grok 账号额度限流时显示自动恢复时间而非临时不可调度', () => {
+  it('临时不可调度时优先显示 Sub 原生临时不可调度标签，即使残留 429 字段', () => {
     const wrapper = mount(AccountStatusIndicator, {
       props: {
         account: makeAccount({
@@ -101,9 +101,9 @@ describe('AccountStatusIndicator', () => {
       }
     })
 
-    expect(wrapper.find('.badge-warning').text()).toBe('admin.accounts.status.rateLimited')
-    expect(wrapper.text()).toContain('admin.accounts.status.rateLimitedAutoResume')
-    expect(wrapper.text()).not.toContain('admin.accounts.status.tempUnschedulable')
+    expect(wrapper.find('button.badge-warning').text()).toBe('admin.accounts.status.tempUnschedulable')
+    expect(wrapper.text()).toContain('admin.accounts.status.tempUnschedulableUntil')
+    expect(wrapper.text()).toContain('admin.accounts.status.rateLimitedUntil')
   })
 
   it('模型限流 + overages 启用 + 无 AICredits key → 显示 ⚡ (credits_active)', () => {

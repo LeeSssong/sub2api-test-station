@@ -1,7 +1,22 @@
 <template>
   <div class="flex items-center gap-2">
+    <!-- Native temporary isolation is the authoritative account-level status. -->
+    <div v-if="isTempUnschedulable" class="flex flex-col items-center gap-1">
+      <button
+        type="button"
+        :class="['badge text-xs', statusClass, 'cursor-pointer']"
+        :title="t('admin.accounts.status.viewTempUnschedDetails')"
+        @click="handleTempUnschedClick"
+      >
+        {{ statusText }}
+      </button>
+      <span class="max-w-[180px] text-center text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+        {{ tempUnschedRecoveryText }}
+      </span>
+    </div>
+
     <!-- Rate Limit Display (429) - Two-line layout -->
-    <div v-if="isRateLimited" class="flex flex-col items-center gap-1">
+    <div v-else-if="isRateLimited" class="flex flex-col items-center gap-1">
       <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
       <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ rateLimitResumeText }}</span>
     </div>
@@ -12,25 +27,10 @@
       <span class="text-[11px] text-gray-400 dark:text-gray-500">{{ overloadCountdown }}</span>
     </div>
 
-    <!-- Main Status Badge (shown when not rate limited/overloaded) -->
-    <template v-else>
-      <div v-if="isTempUnschedulable" class="flex flex-col items-center gap-1">
-        <button
-          type="button"
-          :class="['badge text-xs', statusClass, 'cursor-pointer']"
-          :title="t('admin.accounts.status.viewTempUnschedDetails')"
-          @click="handleTempUnschedClick"
-        >
-          {{ statusText }}
-        </button>
-        <span class="max-w-[180px] text-center text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-          {{ tempUnschedRecoveryText }}
-        </span>
-      </div>
-      <span v-else :class="['badge text-xs', statusClass]">
-        {{ statusText }}
-      </span>
-    </template>
+    <!-- Main Status Badge -->
+    <span v-else :class="['badge text-xs', statusClass]">
+      {{ statusText }}
+    </span>
 
     <!-- Error Info Indicator -->
     <div v-if="hasError && account.error_message" class="group/error relative">
@@ -315,11 +315,11 @@ const tempUnschedRecoveryText = computed(() => {
 
 // Computed: status badge class
 const statusClass = computed(() => {
-  if (hasError.value) {
-    return 'badge-danger'
-  }
   if (isTempUnschedulable.value) {
     return 'badge-warning'
+  }
+  if (hasError.value) {
+    return 'badge-danger'
   }
   if (props.account.status !== 'active') {
     return props.account.status === 'error' ? 'badge-danger' : 'badge-gray'
@@ -335,11 +335,11 @@ const statusClass = computed(() => {
 
 // Computed: status text
 const statusText = computed(() => {
-  if (hasError.value) {
-    return t('admin.accounts.status.error')
-  }
   if (isTempUnschedulable.value) {
     return t('admin.accounts.status.tempUnschedulable')
+  }
+  if (hasError.value) {
+    return t('admin.accounts.status.error')
   }
   if (props.account.status !== 'active') {
     return t(`admin.accounts.status.${props.account.status}`)

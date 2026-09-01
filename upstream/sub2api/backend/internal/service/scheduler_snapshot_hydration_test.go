@@ -136,6 +136,31 @@ func TestOpenAISelectAccountWithLoadAwareness_HydratesSelectedAccountFromSchedul
 	}
 }
 
+func TestSchedulerSnapshot_DropsTemporarilyUnschedulableCachedAccounts(t *testing.T) {
+	until := time.Now().Add(10 * time.Minute)
+	cache := &snapshotHydrationCache{
+		snapshot: []*Account{{
+			ID:                     42,
+			Platform:               PlatformOpenAI,
+			Status:                 StatusActive,
+			Schedulable:            true,
+			TempUnschedulableUntil: &until,
+		}},
+	}
+
+	svc := NewSchedulerSnapshotService(cache, nil, nil, nil, &config.Config{
+		RunMode: config.RunModeStandard,
+	})
+
+	accounts, _, err := svc.ListSchedulableAccounts(context.Background(), nil, PlatformOpenAI, false)
+	if err != nil {
+		t.Fatalf("ListSchedulableAccounts error: %v", err)
+	}
+	if len(accounts) != 0 {
+		t.Fatalf("expected temporarily unschedulable cached account to be dropped, got %d", len(accounts))
+	}
+}
+
 func TestSchedulerSnapshotGetAccountRejectsExplicitBalanceVeto(t *testing.T) {
 	now := time.Now().UTC()
 	cache := &snapshotHydrationCache{accounts: map[int64]*Account{

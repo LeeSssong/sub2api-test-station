@@ -225,7 +225,7 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 		if err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] cache read failed: bucket=%s err=%v", bucket.String(), err)
 		} else if hit {
-			return derefAccounts(cached), useMixed, nil
+			return filterCurrentlySchedulableAccounts(cached), useMixed, nil
 		}
 		token, err := s.cache.CaptureBucketWriteToken(ctx, bucket)
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -269,6 +269,17 @@ func (s *SchedulerSnapshotService) ListSchedulableAccounts(ctx context.Context, 
 	}
 
 	return accounts, useMixed, nil
+}
+
+func filterCurrentlySchedulableAccounts(accounts []*Account) []Account {
+	now := time.Now()
+	filtered := make([]Account, 0, len(accounts))
+	for _, account := range accounts {
+		if account != nil && account.IsSchedulableAt(now) && !accountBalanceVetoesScheduling(account) {
+			filtered = append(filtered, *account)
+		}
+	}
+	return filtered
 }
 
 func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int64) (*Account, error) {

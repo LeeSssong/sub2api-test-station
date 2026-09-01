@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**本轮发布收口（2026-09-01）：** T107、T7、T108 已完成根 `main` 推送、主站快速发布、同 commit/tree 验收站同步和健康核对，候选 worktree/分支已用恢复 bundle 保全后删除。T106 的用量汇总 SQL 修复已在当前主线中随发布树生效。T98-R2/R3、T109、T110、T91/充值体系和 P1 仍为活动或保护对象，未进入本轮清理。
+
 **2026-09-01 根总控快速部署与 T96 生产配置补做：** 状态 `DONE`（本轮不推送远端）。根 `main@41a36389a0229d537ef2a6c1f0f219ec6a77f513`、tree `75eef88041ea5928b8b65772885346f35e5162f2` 已完成主站快速部署，主站 green 槽和三项公网健康探针通过；验收站以同一 commit/tree 同步成功，六服务及 `/admin/lab/health` 通过。T96 账号归组和账号级 `priority=50` 已实际完成；此前缺失的组级 `extra_retry_count` 已补齐并回读：group 2=1、17=1、6=2、20=3。新增 294、295、296、298、299、300、301 因缺少同口径质量证据保持现状。非 `main` 仅清理已合并且干净候选，`p1-task4`、T87、T91-A、T96 活动证据/脏 worktree 及用户保护对象保留；恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-workspaces-2026-09-01/non-main-refs.bundle`。
 
 **T91-A 额度账务 schema、Ent、迁移与只读对账基础（2026-09-01）：** 状态 `DESIGNING`（Task 0 源码核验门禁）。用户批准原 T91 按 T91-A～T91-E 拆分并先启动 T91-A；本包只交付源码映射与现网只读基线、十进制定点适配合同、additive schema/Ent、迁移重跑/回滚验证和只读 reconciliation 基础。固定 `attempted_quota_usd` 为应扣额度、`delta_usd` 为实际扣费，未扣差额不进余额公式、不形成欠款；旧 Ent `float64` 只能经统一适配器进入 `decimal.Decimal` 新账务域。退款 Saga、`quota_refund.requested` worker 和 dead-letter 合同属于 T91-D，仅在 T91-A 做可复用能力核验；不确定结果不得落终态 `failed`。Task 0 报告获发布总控接受前不得修改 schema、迁移或运行代码。当前根 `main` 尚未与 `origin/main` 同步，本任务不得进入整合、验收迁移或发布车道。

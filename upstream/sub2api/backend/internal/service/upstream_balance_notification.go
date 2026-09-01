@@ -18,14 +18,15 @@ const (
 // the BaseURL evaluator. Credentials are intentionally absent; the sender
 // obtains login values from the protected registry only after claiming an event.
 type UpstreamBalanceAccount struct {
-	AccountID int64
-	Name      string
-	Platform  string
-	Type      string
-	Status    string
-	BaseURL   string
-	Snapshot  *AccountMonitorBalance
-	Ranks     []UpstreamBalanceAccountRank
+	AccountID             int64
+	Name                  string
+	Platform              string
+	Type                  string
+	Status                string
+	BaseURL               string
+	Snapshot              *AccountMonitorBalance
+	CredentialFingerprint string
+	Ranks                 []UpstreamBalanceAccountRank
 }
 
 type UpstreamBalanceAccountRank struct {
@@ -52,7 +53,7 @@ func NormalizeNotificationBaseURL(raw string) (string, error) {
 // groups them by normalized BaseURL, and selects one latest strict-valid USD
 // snapshot per key. A same-time value conflict fails closed for that scope
 // because the current value is not unique, while unrelated scopes continue.
-func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount) ([]UpstreamBalanceEvaluation, error) {
+func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.Time) ([]UpstreamBalanceEvaluation, error) {
 	groups := make(map[string][]UpstreamBalanceAccount)
 	for _, account := range accounts {
 		if account.Status != StatusActive || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
@@ -77,7 +78,7 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount) ([]Upstre
 		conflict := false
 		for i := range members {
 			snapshot := members[i].Snapshot
-			if !validNotificationSnapshot(snapshot) {
+			if !validNotificationSnapshotForAccount(snapshot, members[i], now) {
 				continue
 			}
 			if latest == nil || snapshot.ObservedAt.After(*latest.ObservedAt) {
@@ -109,6 +110,17 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount) ([]Upstre
 		})
 	}
 	return result, nil
+}
+
+func validNotificationSnapshotForAccount(snapshot *AccountMonitorBalance, account UpstreamBalanceAccount, now time.Time) bool {
+	if !validNotificationSnapshot(snapshot) || snapshot.ObservedAt == nil {
+		return false
+	}
+	age := now.UTC().Sub(snapshot.ObservedAt.UTC())
+	if age < 0 || age > AccountMonitorBalanceMaxAge {
+		return false
+	}
+	return snapshot.CredentialFingerprint != "" && snapshot.CredentialFingerprint == account.CredentialFingerprint
 }
 
 func validNotificationSnapshot(snapshot *AccountMonitorBalance) bool {

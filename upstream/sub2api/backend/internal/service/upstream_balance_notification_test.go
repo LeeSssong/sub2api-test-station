@@ -40,13 +40,14 @@ func TestEvaluateUpstreamBaseURLBalanceUsesLatestValidSnapshot(t *testing.T) {
 	valueOld := 12.0
 	valueNew := 4.5
 	failedValue := 0.0
+	oldFingerprint, newFingerprint := accountMonitorBalanceCredentialFingerprint("old"), accountMonitorBalanceCredentialFingerprint("new")
 	result, err := EvaluateUpstreamBaseURLBalance([]UpstreamBalanceAccount{
-		{AccountID: 11, Name: "active-one", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://UPSTREAM.example/", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &valueOld, ObservedAt: &older}},
-		{AccountID: 12, Name: "active-two", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://upstream.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK, ValueUSD: &valueNew, ObservedAt: &newer}},
+		{AccountID: 11, Name: "active-one", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://UPSTREAM.example/", CredentialFingerprint: oldFingerprint, Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &valueOld, ObservedAt: &older, CredentialFingerprint: oldFingerprint}},
+		{AccountID: 12, Name: "active-two", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://upstream.example", CredentialFingerprint: newFingerprint, Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK, ValueUSD: &valueNew, ObservedAt: &newer, CredentialFingerprint: newFingerprint}},
 		{AccountID: 13, Name: "inactive", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: "error", BaseURL: "https://upstream.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &failedValue, ObservedAt: &newer}},
 		{AccountID: 14, Name: "failed", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://upstream.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusFailed, ValueUSD: &failedValue, ObservedAt: &newer}},
 		{AccountID: 15, Name: "oauth", Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, BaseURL: "https://upstream.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &failedValue, ObservedAt: &newer}},
-	})
+	}, newer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,11 +68,12 @@ func TestEvaluateUpstreamBaseURLBalanceSkipsAmbiguousScope(t *testing.T) {
 	zero := 0.0
 	conflicting := 1.0
 	healthy := 7.0
+	fingerprint := accountMonitorBalanceCredentialFingerprint("key")
 	result, err := EvaluateUpstreamBaseURLBalance([]UpstreamBalanceAccount{
-		{AccountID: 1, Name: "one", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://same.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &zero, ObservedAt: &now}},
-		{AccountID: 2, Name: "two", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://same.example/", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK, ValueUSD: &conflicting, ObservedAt: &now}},
-		{AccountID: 3, Name: "healthy", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://healthy.example", Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &healthy, ObservedAt: &now}},
-	})
+		{AccountID: 1, Name: "one", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://same.example", CredentialFingerprint: fingerprint, Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &zero, ObservedAt: &now, CredentialFingerprint: fingerprint}},
+		{AccountID: 2, Name: "two", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://same.example/", CredentialFingerprint: fingerprint, Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK, ValueUSD: &conflicting, ObservedAt: &now, CredentialFingerprint: fingerprint}},
+		{AccountID: 3, Name: "healthy", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, BaseURL: "https://healthy.example", CredentialFingerprint: fingerprint, Snapshot: &AccountMonitorBalance{Version: 1, Source: AccountMonitorBalanceSourceSub2API, Status: AccountMonitorBalanceStatusOK, ValueUSD: &healthy, ObservedAt: &now, CredentialFingerprint: fingerprint}},
+	}, now)
 	if err != nil {
 		t.Fatalf("ambiguous scope should not block other scopes: %v", err)
 	}
@@ -80,5 +82,60 @@ func TestEvaluateUpstreamBaseURLBalanceSkipsAmbiguousScope(t *testing.T) {
 	}
 	if result[0].ValueUSD == nil || *result[0].ValueUSD != healthy {
 		t.Fatalf("healthy value = %#v", result[0].ValueUSD)
+	}
+}
+
+func TestBuildUpstreamBalanceEvaluationsRejectsOldCredentialSnapshot(t *testing.T) {
+	now := time.Date(2026, 9, 2, 1, 0, 0, 0, time.UTC)
+	value := 0.0
+	oldFingerprint := accountMonitorBalanceCredentialFingerprint("old-key")
+	accounts := []Account{{
+		ID: 1, Name: "rotated", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{"base_url": "https://upstream.example", "api_key": "new-key"},
+	}}
+	page := AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
+		ObservedAt: now,
+		Accounts: []AccountMonitorAccount{{AccountID: 1, Balance: &AccountMonitorBalance{
+			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK,
+			Source: AccountMonitorBalanceSourceSub2API, ValueUSD: &value, ObservedAt: &now,
+			CredentialFingerprint: oldFingerprint,
+		}}},
+	}}
+
+	evaluations, err := buildUpstreamBalanceEvaluations(accounts, page)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evaluations) != 0 {
+		t.Fatalf("old-key snapshot produced evaluations: %#v", evaluations)
+	}
+}
+
+func TestBuildUpstreamBalanceEvaluationsRejectsStaleZeroSnapshot(t *testing.T) {
+	now := time.Date(2026, 9, 2, 1, 0, 0, 0, time.UTC)
+	observedAt := now.Add(-11 * time.Minute)
+	value := 0.0
+	fingerprint := accountMonitorBalanceCredentialFingerprint("current-key")
+	accounts := []Account{{
+		ID: 1, Name: "recharged", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{"base_url": "https://upstream.example", "api_key": "current-key"},
+	}}
+	page := AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
+		ObservedAt: now,
+		Accounts: []AccountMonitorAccount{{AccountID: 1, Balance: &AccountMonitorBalance{
+			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK,
+			Source: AccountMonitorBalanceSourceSub2API, ValueUSD: &value, ObservedAt: &observedAt,
+			CredentialFingerprint: fingerprint,
+		}}},
+	}}
+
+	evaluations, err := buildUpstreamBalanceEvaluations(accounts, page)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evaluations) != 0 {
+		t.Fatalf("stale zero snapshot produced evaluations: %#v", evaluations)
 	}
 }

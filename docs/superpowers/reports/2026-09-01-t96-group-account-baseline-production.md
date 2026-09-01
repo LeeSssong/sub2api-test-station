@@ -16,6 +16,79 @@
 
 以下为账号原分组 -> 新分组；同一账号的 `priority` 均为原值 -> `50`。
 
+### 逐账号变更表
+
+| 质量排名 | 账号 ID | 账号名 | 原分组 | 新分组 | Sub 原生账号级 priority |
+|---:|---:|---|---|---|---:|
+| 24 | 21 | Pro-SHUAI-0.17 | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 13 | 23 | Pro20x-SHUAI-0.2 | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 3 -> 50 |
+| 14 | 42 | Plus-WAWAZZ | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 2 -> 50 |
+| 38 | 50 | 特惠-佛爷-0.08 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 1 | 78 | plus-a6-0.1 | GPT-Plus | GPT-特惠 | 3 -> 50 |
+| 54 | 81 | plus-Auv | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 2 -> 50 |
+| 26 | 82 | pro-Auv | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 41 | 83 | pro20x-Auv | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 3 -> 50 |
+| 21 | 86 | plus-XN | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 32 | 87 | pro-XN | GPT-Plus | GPT-Plus | 3 -> 50 |
+| 18 | 94 | apizh-0.12 | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 62 | 99 | plus-猫哥 | GPT-特惠 | GPT-特惠 | 1 -> 50 |
+| 43 | 100 | pro-猫哥 | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 2 -> 50 |
+| 56 | 101 | pro20x-猫哥 | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 3 -> 50 |
+| 2 | 117 | ai8-plus | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 17 | 119 | 特惠2-mosshub | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 2 -> 50 |
+| 11 | 120 | plus-mosshub | GPT-Pro、【专属】GPT-PRO | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 36 | 134 | 特惠-SHUAI-0.08 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 生图 | 135 | 生图-SHUAI | 生图 | 生图 | 1 -> 50 |
+| 34 | 146 | SheApi-0.08 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 35 | 147 | SheApi-0.2 | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 3 -> 50 |
+| 生图 | 156 | 生图-XN | 生图 | 生图 | 2 -> 50 |
+| 33 | 157 | apizh-0.15 | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 3 -> 50 |
+| 59 | 158 | ai8-plus | GPT-Plus | GPT-特惠 | 3 -> 50 |
+| 65 | 159 | ai8-pro | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 3 -> 50 |
+| 生图 | 162 | 生图-CX | 生图 | 生图 | 1 -> 50 |
+| 7 | 164 | 海豚科技1 | 【专属】GPT-PRO、GPT-Pro | GPT-Pro、【专属】GPT-PRO | 2 -> 50 |
+| 19 | 165 | 海豚科技2 | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 2 -> 50 |
+| 44 | 175 | pwtk-特惠1 | GPT-特惠 | GPT-特惠 | 1 -> 50 |
+| 25 | 176 | pwtk-plus | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 48 | 177 | pwtk-pro | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 2 -> 50 |
+| 31 | 182 | never-plus | GPT-Plus | GPT-Plus | 3 -> 50 |
+| 39 | 183 | never-pro | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 3 -> 50 |
+| 4 | 190 | CX-Pro | 【专属】GPT-PRO、GPT-Pro | GPT-Pro、【专属】GPT-PRO | 2 -> 50 |
+| 28 | 196 | haha-pro | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 3 -> 50 |
+| 60 | 198 | 云桥-特惠1 | GPT-特惠 | GPT-特惠 | 1 -> 50 |
+| 10 | 213 | Vokly-pro | 【专属】GPT-PRO、GPT-Pro | GPT-Pro、【专属】GPT-PRO | 2 -> 50 |
+| 46 | 214 | CallAI-特惠 | GPT-Plus | GPT-特惠 | 1 -> 50 |
+| 6 | 215 | CallAI-pro | 【专属】GPT-PRO、GPT-Pro | GPT-Pro、【专属】GPT-PRO | 2 -> 50 |
+| 20 | 216 | SHUAI-plus1-0.12 | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 49 | 219 | 河图-plus | GPT-Plus | GPT-特惠 | 3 -> 50 |
+| 61 | 220 | 河图-pro | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 3 -> 50 |
+| 55 | 221 | baitumax-pro | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 3 -> 50 |
+| 57 | 229 | 风岚-plus | GPT-Plus | GPT-特惠 | 1 -> 50 |
+| 64 | 230 | 风岚-pro | GPT-Pro、【专属】GPT-PRO | GPT-特惠 | 2 -> 50 |
+| 58 | 236 | 星辰-plus2 | GPT-Plus | GPT-特惠 | 1 -> 50 |
+| 生图 | 238 | haha-生图 | 生图 | 生图 | 1 -> 50 |
+| 生图 | 241 | 合租巴士-生图 | 生图 | 生图 | 3 -> 50 |
+| 37 | 242 | 合租巴士-特惠-0.08 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 51 | 243 | 合租巴士-pro | GPT-Pro、【专属】GPT-PRO | GPT-特惠 | 3 -> 50 |
+| 52 | 244 | NV-plus | GPT-Plus | GPT-特惠 | 1 -> 50 |
+| 22 | 245 | NV-PRO | 【专属】GPT-PRO、GPT-Pro | GPT-Plus | 3 -> 50 |
+| 53 | 264 | 星辰AI-plus2 | GPT-Pro | GPT-特惠 | 1 -> 50 |
+| 42 | 266 | loveapi-特惠 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 45 | 267 | loveapi-plus1 | GPT-Plus | GPT-特惠 | 1 -> 50 |
+| 40 | 268 | loveapi-plus2 | GPT-Plus | GPT-Plus | 1 -> 50 |
+| 15 | 269 | loveapi-pro | GPT-Pro、【专属】GPT-PRO | GPT-Pro、【专属】GPT-PRO | 2 -> 50 |
+| 生图 | 274 | 云桥-生图 | 生图 | 生图 | 1 -> 50 |
+| 63 | 276 | 云桥-特惠 | GPT-特惠 | GPT-特惠 | 1 -> 50 |
+| 12 | 278 | xian-plus | GPT-Plus | GPT-Pro、【专属】GPT-PRO | 1 -> 50 |
+| 23 | 279 | xian-pro | GPT-Pro、【专属】GPT-PRO | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 30 | 280 | makeup-特惠 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 27 | 281 | makeup-特惠2 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 29 | 282 | makeup-特惠3 | GPT-特惠 | GPT-Plus | 1 -> 50 |
+| 16 | 289 | mmc-pro | GPT-Pro、【专属】GPT-PRO | GPT-Pro、【专属】GPT-PRO | 3 -> 50 |
+| 66 | 290 | 柚子-plus | GPT-Plus | GPT-特惠 | 1 -> 50 |
+| 47 | 291 | 云桥-pro | 【专属】GPT-PRO、GPT-Pro | GPT-特惠 | 2 -> 50 |
+| 生图 | 292 | moss-生图 | 生图 | 生图 | 1 -> 50 |
+
 ### GPT-Pro + 【专属】GPT-PRO
 
 `Pro-SHUAI-0.17`、`pro-Auv`、`plus-XN`、`apizh-0.12`、`ai8-plus`、`特惠2-mosshub`、`plus-mosshub`、`海豚科技1`、`pwtk-plus`、`CX-Pro`、`Vokly-pro`、`CallAI-pro`、`SHUAI-plus1-0.12`、`loveapi-pro`、`xian-plus`、`xian-pro`、`mmc-pro`。

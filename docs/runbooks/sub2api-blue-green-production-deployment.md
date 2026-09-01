@@ -128,7 +128,7 @@ Current T98-R3 transition:
 
 ```text
 from 17621492b7321c85cdab9ae0813e902dd64bf0bbe4d6b6d6b97f8926bacdfd2f
-to   a26e13fd562198f92a51a920543c9f2ca9f0423bf9c8abf774b0b130b25defed
+to   d9a19c7ac0b6686acd8b281fa0310c8e6aaf6e747ea1733cf973583c4d937ca3
 file 233_upstream_balance_notification_silence.sql — add-only alert silence columns and a partial BaseURL alert index; no account, balance, usage, credential, or business-data rewrite.
 ```
 

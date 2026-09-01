@@ -77,3 +77,11 @@
 - 最小修复：新增 `upstreamBalanceObservationTimeEqual`，双方先 `Truncate(time.Microsecond)` 再比较；仅应用于最终投递指纹的两处时间比较，不改变余额、状态、generation、lease 或 CAS 语义。
 - TDD GREEN：两个纳秒/微秒回归测试通过；`go test ./internal/service -run 'TestUpstreamBalance'` 通过；`go test -vet=off ./internal/repository -run 'TestUpstreamBalanceEventRepository'` 通过；notify 相关测试、`go build ./cmd/server`、`git diff --check` 通过。
 - 未验证/基线阻断：仓储包默认 vet 仍被既有 `internal/repository/usage_log_repo_stats.go:1004` 的 `fmt.Sprintf` 参数数量错误阻断；未修改该无关文件。未执行生产/验收站/真实飞书动作。
+
+## T105-R1 后刷新交接（2026-09-01）
+
+- 根总控已完成 T105-R1 主站/验收站同 commit/tree 发布；T98 候选已先刷新到 `main@c828b9574`，随后因根总控新增 T106 登记再次刷新到最新 `main@b2d504797`，两次均无冲突。
+- 当前候选：`/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t98-feishu-upstream-balance-notification`，分支 `codex/t98-feishu-upstream-balance-notification`，HEAD `999c3c1ee96d5ca78aa01343346d75dea1841453`，tree `40fff2f01e937f66989225b5e246a514583d6dc4`；相对当前本地 `main` ahead 6、behind 0，工作树干净。
+- 刷新后直接验证：`go test ./internal/service -run 'TestUpstreamBalance' -count=1`、`go test -vet=off ./internal/repository -run 'TestUpstreamBalanceEventRepository' -count=1`、notify 相关测试、`go build ./cmd/server`、`git diff --check` 全部通过。
+- 默认仓储 vet 的既有 `usage_log_repo_stats.go:1004` 格式参数错误仍未修改；本任务未执行任何生产/验收站/真实飞书动作。
+- 状态：`READY_FOR_ROOT_REVIEW`。请根总控仅按单车道继续根审、整合和发布，不要从本候选直接部署。

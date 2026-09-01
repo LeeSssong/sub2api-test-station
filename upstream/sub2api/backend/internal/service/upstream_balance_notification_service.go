@@ -51,7 +51,7 @@ func (s *AccountMonitorService) ReadUpstreamBalanceEvaluations(ctx context.Conte
 	if s == nil {
 		return nil, errors.New("account monitor service unavailable")
 	}
-	page, err := s.List(ctx)
+	page, err := s.ListWindow(ctx, string(AccountMonitorRange24Hours))
 	if err != nil {
 		return nil, err
 	}

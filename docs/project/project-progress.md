@@ -1,5 +1,7 @@
 # 项目全局进度总账
 
+**根总控非 `main` 盘点与 T106 整合阻塞（2026-09-01）：** 状态：进行中（`BLOCKED`）。盘点确认当前根 `main@143d9e0fd` 之前并非所有非 `main` 都已完成收口：T106 候选已刷新到当前根 `main`，直接相关 repository 测试、gofmt、`git diff --check` 和范围检查通过，并已快进合入本地根 `main@c75a95b3d955097a8c7fe89d1aa075c8b48ae79e`（tree `ea86ef58521427ba0dca045dcacb741c88c7bcbb`）。T107 运行时代码已在当前 `main` 祖先链中，旧分支仅多出 handoff 文档，不再合并其旧历史。推送 `origin/main` 失败：GitHub SSH 在 `20.205.243.166:22` 被远端关闭，HTTPS 无可用凭据；因此当前 `main` 仍领先 `origin/main` 1 个提交，尚未执行主站或验收站部署，也不得归档非 `main` worktree/分支。待远端推送恢复后，必须从干净且与 `origin/main` 一致的根 `main` 继续既有主站/验收站发布链；保留当前候选、临时刷新 worktree和失败证据。
+
 **T98 飞书上游余额通知精度修复（2026-09-01）：** 状态：已完成（`DONE`）。根因是 PostgreSQL `TIMESTAMPTZ` 微秒精度与 JSON 余额快照纳秒精度不一致，导致通知 claim 后最终复核严格 `time.Equal` 失败并静默丢弃；现已在两处事件指纹比较统一到微秒精度，并以回归测试覆盖。根 `main@2a72edbf975908a457ff6c6b30b0fc7ef75d35c1`（tree `db0a74b264b97d0d8e37b05389ee28cf1ef9bf1e`）已推送；主站蓝绿发布成功，随后验收站同 commit/tree 同步成功，公网与验收健康探针均通过。0600 证据：`/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-01-main-2a72edbf9-t98-feishu-precision.json`。未发送真实飞书消息、未写生产业务数据或 secret；T106 保持独立进行中。
 
 **T96 分组账号基线与统一质量调度（2026-09-01）：** 状态：已完成（`DONE`）。统一质量调度候选已刷新并合入推送 `main@069ef439a8586b20e35754247d78784cd86abed0`（tree `8622dc7961317ca95fafa54297a0e6299f5d3bc6`），主站先发布、验收站同 commit/tree 同步成功，公网 `/healthz`、`/readyz`、`/health` 及验收健康/登录探针通过。范围限定普通 HTTP 文本显式 opt-in；生图、WebSocket、alpha-search 保留原生路径。账号并发永久只使用 Sub 原生槽位，不恢复 admission、slow-session 或首输出前账号锁。

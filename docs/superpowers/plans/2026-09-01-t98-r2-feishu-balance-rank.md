@@ -22,10 +22,10 @@
 - Modify: `upstream/sub2api/backend/internal/service/account_monitor_service.go`
 - Test: `upstream/sub2api/backend/internal/service/account_monitor_service_test.go`
 
-- [ ] **Step 1: Write the failing regression test** for a real-traffic account that skips the active probe but still refreshes auxiliary balance/declaration state.
-- [ ] **Step 2: Run the focused test and confirm it fails** because the current early return skips refresh.
-- [ ] **Step 3: Move auxiliary refresh before the active-probe skip return**, preserving the existing probe skip semantics and error handling.
-- [ ] **Step 4: Run the focused test and confirm it passes.**
+- [x] **Step 1: Write the failing regression test** for a real-traffic account that skips the active probe but still refreshes auxiliary balance/declaration state.
+- [x] **Step 2: Run the focused test and confirm it fails** because the current early return skips refresh.
+- [x] **Step 3: Move auxiliary refresh before the active-probe skip return**, preserving the existing probe skip semantics and error handling.
+- [x] **Step 4: Run the focused test and confirm it passes.**
 
 ### Task 2: Notification ranking projection
 
@@ -33,17 +33,17 @@
 - Modify: `upstream/sub2api/backend/internal/service/upstream_balance_notification_service.go`
 - Test: `upstream/sub2api/backend/internal/service/upstream_balance_notification_service_test.go`
 
-- [ ] **Step 1: Write the failing regression test** asserting the balance reader uses the 24-hour window projection and the card input carries all group scheduler ranks.
-- [ ] **Step 2: Run the focused test and confirm it fails** because `ReadUpstreamBalanceEvaluations` currently calls `List()`.
-- [ ] **Step 3: Change the reader call to `ListWindow(ctx, string(AccountMonitorRange24Hours))`**, leaving evaluator and card conversion unchanged.
-- [ ] **Step 4: Run service and notify focused tests.**
+- [x] **Step 1: Write the failing regression test** asserting the balance reader uses the 24-hour window projection and the card input carries all group scheduler ranks.
+- [x] **Step 2: Run the focused test and confirm it fails** because `ReadUpstreamBalanceEvaluations` currently calls `List()`.
+- [x] **Step 3: Change the reader call to `ListWindow(ctx, string(AccountMonitorRange24Hours))`**, leaving evaluator and card conversion unchanged.
+- [x] **Step 4: Run service and notify focused tests.**
 
 ### Task 3: Final verification and handoff
 
 **Files:**
 - Modify: `docs/handoffs/2026-09-01-t98-r2-feishu-balance-rank-handoff.md`
 
-- [ ] **Step 1: Run T98 service/notify focused tests, `go build ./cmd/server`, `gofmt -l`, and `git diff --check`.**
-- [ ] **Step 2: Review the diff for scope, sensitive values, migration/config changes, and real-send paths.**
-- [ ] **Step 3: Write the handoff with baseline, commit, changed files, test evidence, release boundary, rollback and remaining risks.**
-- [ ] **Step 4: Mark the candidate `READY_FOR_ROOT_REVIEW`; do not merge, push, deploy, or delete the worktree.**
+- [x] **Step 1: Run T98 service/notify focused tests, `go build ./cmd/server`, `gofmt -l`, and `git diff --check`.**
+- [x] **Step 2: Review the diff for scope, sensitive values, migration/config changes, and real-send paths.**
+- [x] **Step 3: Write the handoff with baseline, commit, changed files, test evidence, release boundary, rollback and remaining risks.**
+- [x] **Step 4: Mark the candidate `READY_FOR_ROOT_REVIEW`; do not merge, push, deploy, or delete the worktree.**

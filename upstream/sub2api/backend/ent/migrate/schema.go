@@ -713,7 +713,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "channel_monitors_channel_monitor_request_templates_request_template",
-				Columns:    []*schema.Column{ChannelMonitorsColumns[21]},
+				Columns:    []*schema.Column{ChannelMonitorsColumns[23]},
 				RefColumns: []*schema.Column{ChannelMonitorRequestTemplatesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -722,7 +722,7 @@ var (
 			{
 				Name:    "channelmonitor_enabled_last_checked_at",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelMonitorsColumns[12], ChannelMonitorsColumns[15]},
+				Columns: []*schema.Column{ChannelMonitorsColumns[14], ChannelMonitorsColumns[17]},
 			},
 			{
 				Name:    "channelmonitor_provider",
@@ -742,12 +742,17 @@ var (
 			{
 				Name:    "channelmonitor_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelMonitorsColumns[11]},
+				Columns: []*schema.Column{ChannelMonitorsColumns[13]},
 			},
 			{
 				Name:    "channelmonitor_template_id",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelMonitorsColumns[21]},
+				Columns: []*schema.Column{ChannelMonitorsColumns[23]},
+			},
+			{
+				Name:    "channelmonitor_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelMonitorsColumns[6]},
 			},
 		},
 	}
@@ -1188,6 +1193,15 @@ var (
 		{Name: "amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "pay_amount", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "fee_rate", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
+		{Name: "paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "gift_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "total_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "quota_rule_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "refunded_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "quota_accounting_status", Type: field.TypeString, Size: 24, Default: "legacy_unknown"},
+		{Name: "operator_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "operator_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "operator_recharged_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "recharge_code", Type: field.TypeString, Size: 64},
 		{Name: "out_trade_no", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "payment_type", Type: field.TypeString, Size: 30},
@@ -1230,7 +1244,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "payment_orders_users_payment_orders",
-				Columns:    []*schema.Column{PaymentOrdersColumns[39]},
+				Columns:    []*schema.Column{PaymentOrdersColumns[48]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1239,7 +1253,7 @@ var (
 			{
 				Name:    "paymentorder_out_trade_no",
 				Unique:  true,
-				Columns: []*schema.Column{PaymentOrdersColumns[8]},
+				Columns: []*schema.Column{PaymentOrdersColumns[17]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "out_trade_no <> ''",
 				},
@@ -1247,37 +1261,37 @@ var (
 			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[39]},
+				Columns: []*schema.Column{PaymentOrdersColumns[48]},
 			},
 			{
 				Name:    "paymentorder_status",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[21]},
+				Columns: []*schema.Column{PaymentOrdersColumns[30]},
 			},
 			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[29]},
+				Columns: []*schema.Column{PaymentOrdersColumns[38]},
 			},
 			{
 				Name:    "paymentorder_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[37]},
+				Columns: []*schema.Column{PaymentOrdersColumns[46]},
 			},
 			{
 				Name:    "paymentorder_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[30]},
+				Columns: []*schema.Column{PaymentOrdersColumns[39]},
 			},
 			{
 				Name:    "paymentorder_payment_type_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[30]},
+				Columns: []*schema.Column{PaymentOrdersColumns[18], PaymentOrdersColumns[39]},
 			},
 			{
 				Name:    "paymentorder_order_type",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[14]},
+				Columns: []*schema.Column{PaymentOrdersColumns[23]},
 			},
 		},
 	}
@@ -2191,6 +2205,185 @@ var (
 			},
 		},
 	}
+	// UserQuotaAdjustmentsColumns holds the columns for the "user_quota_adjustments" table.
+	UserQuotaAdjustmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "adjustment_type", Type: field.TypeString, Size: 32},
+		{Name: "reserved_allocations", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "applied_allocations", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "refund_amount", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "refund_currency", Type: field.TypeString, Nullable: true, Size: 8},
+		{Name: "refund_method", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "refund_trade_no", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "refund_provider_instance_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "provider_refund_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "provider_request_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "provider_state", Type: field.TypeString, Size: 20, Default: "not_started"},
+		{Name: "provider_response_snapshot", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "provider_error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "provider_error_message", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "attempt_count", Type: field.TypeInt, Default: 0},
+		{Name: "last_attempt_at", Type: field.TypeTime, Nullable: true},
+		{Name: "next_retry_at", Type: field.TypeTime, Nullable: true},
+		{Name: "reconciliation_note", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "reconciled_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "reconciled_at", Type: field.TypeTime, Nullable: true},
+		{Name: "requested_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "applied_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "applied_gift_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "shortfall_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "force_refund", Type: field.TypeBool, Default: false},
+		{Name: "approval_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "approved_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "approved_at", Type: field.TypeTime, Nullable: true},
+		{Name: "financial_exception_ref", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "operator_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "actor_type", Type: field.TypeString, Size: 16},
+		{Name: "reason", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "pending"},
+		{Name: "idempotency_key", Type: field.TypeString, Size: 128},
+		{Name: "adjusted_at", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "payment_order_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// UserQuotaAdjustmentsTable holds the schema information for the "user_quota_adjustments" table.
+	UserQuotaAdjustmentsTable = &schema.Table{
+		Name:       "user_quota_adjustments",
+		Columns:    UserQuotaAdjustmentsColumns,
+		PrimaryKey: []*schema.Column{UserQuotaAdjustmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_quota_adjustments_payment_orders_quota_adjustments",
+				Columns:    []*schema.Column{UserQuotaAdjustmentsColumns[38]},
+				RefColumns: []*schema.Column{PaymentOrdersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_quota_adjustments_users_quota_adjustments",
+				Columns:    []*schema.Column{UserQuotaAdjustmentsColumns[39]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userquotaadjustment_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserQuotaAdjustmentsColumns[39], UserQuotaAdjustmentsColumns[36]},
+			},
+			{
+				Name:    "userquotaadjustment_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaAdjustmentsColumns[39], UserQuotaAdjustmentsColumns[34]},
+			},
+			{
+				Name:    "userquotaadjustment_refund_provider_instance_id_provider_request_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaAdjustmentsColumns[8], UserQuotaAdjustmentsColumns[10]},
+			},
+			{
+				Name:    "userquotaadjustment_refund_provider_instance_id_provider_refund_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaAdjustmentsColumns[8], UserQuotaAdjustmentsColumns[9]},
+			},
+			{
+				Name:    "userquotaadjustment_refund_method_refund_trade_no",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaAdjustmentsColumns[6], UserQuotaAdjustmentsColumns[7]},
+			},
+		},
+	}
+	// UserQuotaGrantsColumns holds the columns for the "user_quota_grants" table.
+	UserQuotaGrantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "grant_type", Type: field.TypeString, Size: 32},
+		{Name: "affiliate_ledger_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "gift_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "total_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "consumed_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "consumed_gift_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "refunded_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "deducted_gift_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "reserved_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "legacy_debt_offset_paid_quota_usd", Type: field.TypeOther, SchemaType: map[string]string{"postgres": "numeric(20,8)", "sqlite3": "decimal"}},
+		{Name: "operator_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "idempotency_key", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "rule_snapshot", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "note", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "granted_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "payment_order_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "promo_code_usage_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "redeem_code_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// UserQuotaGrantsTable holds the schema information for the "user_quota_grants" table.
+	UserQuotaGrantsTable = &schema.Table{
+		Name:       "user_quota_grants",
+		Columns:    UserQuotaGrantsColumns,
+		PrimaryKey: []*schema.Column{UserQuotaGrantsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_quota_grants_payment_orders_quota_grants",
+				Columns:    []*schema.Column{UserQuotaGrantsColumns[18]},
+				RefColumns: []*schema.Column{PaymentOrdersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_quota_grants_promo_code_usages_quota_grants",
+				Columns:    []*schema.Column{UserQuotaGrantsColumns[19]},
+				RefColumns: []*schema.Column{PromoCodeUsagesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_quota_grants_redeem_codes_quota_grants",
+				Columns:    []*schema.Column{UserQuotaGrantsColumns[20]},
+				RefColumns: []*schema.Column{RedeemCodesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_quota_grants_users_quota_grants",
+				Columns:    []*schema.Column{UserQuotaGrantsColumns[21]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "userquotagrant_user_id_granted_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{UserQuotaGrantsColumns[21], UserQuotaGrantsColumns[16], UserQuotaGrantsColumns[0]},
+			},
+			{
+				Name:    "userquotagrant_payment_order_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaGrantsColumns[18]},
+			},
+			{
+				Name:    "userquotagrant_redeem_code_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaGrantsColumns[20]},
+			},
+			{
+				Name:    "userquotagrant_promo_code_usage_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaGrantsColumns[19]},
+			},
+			{
+				Name:    "userquotagrant_affiliate_ledger_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaGrantsColumns[2]},
+			},
+			{
+				Name:    "userquotagrant_user_id_idempotency_key",
+				Unique:  true,
+				Columns: []*schema.Column{UserQuotaGrantsColumns[21], UserQuotaGrantsColumns[13]},
+			},
+		},
+	}
 	// UserQuotaLedgerEntriesColumns holds the columns for the "user_quota_ledger_entries" table.
 	UserQuotaLedgerEntriesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2416,6 +2609,8 @@ var (
 		UserAttributeDefinitionsTable,
 		UserAttributeValuesTable,
 		UserPlatformQuotasTable,
+		UserQuotaAdjustmentsTable,
+		UserQuotaGrantsTable,
 		UserQuotaLedgerEntriesTable,
 		UserSubscriptionsTable,
 		UserWalletsTable,
@@ -2589,6 +2784,18 @@ func init() {
 	UserPlatformQuotasTable.ForeignKeys[0].RefTable = UsersTable
 	UserPlatformQuotasTable.Annotation = &entsql.Annotation{
 		Table: "user_platform_quotas",
+	}
+	UserQuotaAdjustmentsTable.ForeignKeys[0].RefTable = PaymentOrdersTable
+	UserQuotaAdjustmentsTable.ForeignKeys[1].RefTable = UsersTable
+	UserQuotaAdjustmentsTable.Annotation = &entsql.Annotation{
+		Table: "user_quota_adjustments",
+	}
+	UserQuotaGrantsTable.ForeignKeys[0].RefTable = PaymentOrdersTable
+	UserQuotaGrantsTable.ForeignKeys[1].RefTable = PromoCodeUsagesTable
+	UserQuotaGrantsTable.ForeignKeys[2].RefTable = RedeemCodesTable
+	UserQuotaGrantsTable.ForeignKeys[3].RefTable = UsersTable
+	UserQuotaGrantsTable.Annotation = &entsql.Annotation{
+		Table: "user_quota_grants",
 	}
 	UserQuotaLedgerEntriesTable.ForeignKeys[0].RefTable = UsersTable
 	UserQuotaLedgerEntriesTable.ForeignKeys[1].RefTable = UsersTable

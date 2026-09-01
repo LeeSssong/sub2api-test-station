@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 )
 
 // PromoCodeUsageUpdate is the builder for updating PromoCodeUsage entities.
@@ -103,6 +104,21 @@ func (_u *PromoCodeUsageUpdate) SetUser(v *User) *PromoCodeUsageUpdate {
 	return _u.SetUserID(v.ID)
 }
 
+// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
+func (_u *PromoCodeUsageUpdate) AddQuotaGrantIDs(ids ...int64) *PromoCodeUsageUpdate {
+	_u.mutation.AddQuotaGrantIDs(ids...)
+	return _u
+}
+
+// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *PromoCodeUsageUpdate) AddQuotaGrants(v ...*UserQuotaGrant) *PromoCodeUsageUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaGrantIDs(ids...)
+}
+
 // Mutation returns the PromoCodeUsageMutation object of the builder.
 func (_u *PromoCodeUsageUpdate) Mutation() *PromoCodeUsageMutation {
 	return _u.mutation
@@ -118,6 +134,27 @@ func (_u *PromoCodeUsageUpdate) ClearPromoCode() *PromoCodeUsageUpdate {
 func (_u *PromoCodeUsageUpdate) ClearUser() *PromoCodeUsageUpdate {
 	_u.mutation.ClearUser()
 	return _u
+}
+
+// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *PromoCodeUsageUpdate) ClearQuotaGrants() *PromoCodeUsageUpdate {
+	_u.mutation.ClearQuotaGrants()
+	return _u
+}
+
+// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
+func (_u *PromoCodeUsageUpdate) RemoveQuotaGrantIDs(ids ...int64) *PromoCodeUsageUpdate {
+	_u.mutation.RemoveQuotaGrantIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
+func (_u *PromoCodeUsageUpdate) RemoveQuotaGrants(v ...*UserQuotaGrant) *PromoCodeUsageUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaGrantIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -237,6 +274,51 @@ func (_u *PromoCodeUsageUpdate) sqlSave(ctx context.Context) (_node int, err err
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   promocodeusage.QuotaGrantsTable,
+			Columns: []string{promocodeusage.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   promocodeusage.QuotaGrantsTable,
+			Columns: []string{promocodeusage.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   promocodeusage.QuotaGrantsTable,
+			Columns: []string{promocodeusage.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{promocodeusage.Label}
@@ -330,6 +412,21 @@ func (_u *PromoCodeUsageUpdateOne) SetUser(v *User) *PromoCodeUsageUpdateOne {
 	return _u.SetUserID(v.ID)
 }
 
+// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
+func (_u *PromoCodeUsageUpdateOne) AddQuotaGrantIDs(ids ...int64) *PromoCodeUsageUpdateOne {
+	_u.mutation.AddQuotaGrantIDs(ids...)
+	return _u
+}
+
+// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *PromoCodeUsageUpdateOne) AddQuotaGrants(v ...*UserQuotaGrant) *PromoCodeUsageUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaGrantIDs(ids...)
+}
+
 // Mutation returns the PromoCodeUsageMutation object of the builder.
 func (_u *PromoCodeUsageUpdateOne) Mutation() *PromoCodeUsageMutation {
 	return _u.mutation
@@ -345,6 +442,27 @@ func (_u *PromoCodeUsageUpdateOne) ClearPromoCode() *PromoCodeUsageUpdateOne {
 func (_u *PromoCodeUsageUpdateOne) ClearUser() *PromoCodeUsageUpdateOne {
 	_u.mutation.ClearUser()
 	return _u
+}
+
+// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *PromoCodeUsageUpdateOne) ClearQuotaGrants() *PromoCodeUsageUpdateOne {
+	_u.mutation.ClearQuotaGrants()
+	return _u
+}
+
+// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
+func (_u *PromoCodeUsageUpdateOne) RemoveQuotaGrantIDs(ids ...int64) *PromoCodeUsageUpdateOne {
+	_u.mutation.RemoveQuotaGrantIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
+func (_u *PromoCodeUsageUpdateOne) RemoveQuotaGrants(v ...*UserQuotaGrant) *PromoCodeUsageUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaGrantIDs(ids...)
 }
 
 // Where appends a list predicates to the PromoCodeUsageUpdate builder.
@@ -487,6 +605,51 @@ func (_u *PromoCodeUsageUpdateOne) sqlSave(ctx context.Context) (_node *PromoCod
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   promocodeusage.QuotaGrantsTable,
+			Columns: []string{promocodeusage.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   promocodeusage.QuotaGrantsTable,
+			Columns: []string{promocodeusage.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   promocodeusage.QuotaGrantsTable,
+			Columns: []string{promocodeusage.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

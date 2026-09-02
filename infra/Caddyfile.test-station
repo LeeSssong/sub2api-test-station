@@ -1,0 +1,9 @@
+:80 {
+  encode zstd gzip
+  reverse_proxy /api/* test-station-api:8080
+  reverse_proxy /ws/* test-station-api:8080
+  reverse_proxy /health test-station-api:8080
+  reverse_proxy /readyz test-station-api:8080
+  reverse_proxy test-station-gateway:8088
+  log { output stdout format json }
+}

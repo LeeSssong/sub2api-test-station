@@ -387,6 +387,11 @@ type OpsUpstreamErrorEvent struct {
 	Message string `json:"message,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 
+	// StreamObservation is a sanitized lifecycle snapshot for streaming failures.
+	// It is embedded in the existing upstream_errors JSON column to avoid a new
+	// persistence table or migration.
+	StreamObservation *StreamObservationSnapshot `json:"stream_observation,omitempty"`
+
 	// SkipMonitoring is request-local rule state. It is intentionally excluded
 	// from persisted attempt JSON. The logger consults it only when this event is
 	// the final client-visible failure; recovered attempts remain provider-health
@@ -411,6 +416,12 @@ func appendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
 	ev.UpstreamURL = strings.TrimSpace(ev.UpstreamURL)
 	ev.Message = strings.TrimSpace(ev.Message)
 	ev.Detail = strings.TrimSpace(ev.Detail)
+	if ev.StreamObservation == nil {
+		if obs := StreamObservationFromContext(c); obs != nil {
+			snapshot := obs.Snapshot()
+			ev.StreamObservation = &snapshot
+		}
+	}
 	if ev.Message != "" {
 		ev.Message = sanitizeUpstreamErrorMessage(ev.Message)
 	}

@@ -272,6 +272,11 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	startTime time.Time,
 	requestBodyLen int,
 ) (*OpenAIForwardResult, error) {
+	streamObs := StreamObservationFromContext(c)
+	if streamObs == nil {
+		streamObs = BeginStreamObservation(c, originalModel, upstreamModel, string(account.Platform), account)
+	}
+	ObserveUpstreamHeaders(c, resp)
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -287,6 +292,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
+	defer func() { FinishStreamObservation(c, false) }()
 
 	writeLine := func(line string) {
 		if clientDisconnected {
@@ -301,6 +307,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			for _, pending := range pendingLines {
 				if _, werr := c.Writer.WriteString(pending + "\n"); werr != nil {
 					clientDisconnected = true
+					ObserveClientWriteFailure(c, werr)
 					logger.L().Debug("openai chat_completions raw: client disconnected, continuing to drain upstream for billing",
 						zap.Error(werr),
 						zap.String("request_id", requestID),
@@ -313,6 +320,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 		if _, werr := c.Writer.WriteString(line + "\n"); werr != nil {
 			clientDisconnected = true
+			ObserveClientWriteFailure(c, werr)
 			logger.L().Debug("openai chat_completions raw: client disconnected, continuing to drain upstream for billing",
 				zap.Error(werr),
 				zap.String("request_id", requestID),
@@ -322,11 +330,14 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		streamEventIndex := streamObs.Snapshot().EventIndex + 1
 		refusalDetector.ObserveSSELine(line)
 		semanticOutput := false
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
 			if trimmedPayload != "[DONE]" {
+				eventType := strings.TrimSpace(gjson.Get(trimmedPayload, "type").String())
+				ObserveSSEEvent(c, eventType, streamEventIndex, int64(len(line)))
 				if actualResponseModel == "" {
 					actualResponseModel = ExtractOpenAIResponseModelSSEEvent("", []byte(trimmedPayload))
 				}
@@ -340,6 +351,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 					firstTokenMs = &elapsed
 				}
 				semanticOutput = !usageOnlyChunk && chatChunkPayloadStartsSemanticOutput(trimmedPayload)
+				if eventType == "response.completed" || eventType == "response.done" {
+					ObserveTerminal(c, eventType, strings.TrimSpace(gjson.Get(trimmedPayload, "response.id").String()), usage.InputTokens, usage.OutputTokens, usage.InputTokens+usage.OutputTokens, int64(len(line)))
+				}
 			}
 		}
 		line = applyOllamaCloudRawChatCompletionsSSELine(account, line)
@@ -347,6 +361,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 
 		writeLine(line)
 		if semanticOutput && !clientDisconnected && clientOutputStarted {
+			ObserveVisibleOutput(c, int64(len(line)))
 			notifyOpenAIFirstSemanticOutput(ctx)
 		}
 		if line == "" {
@@ -361,6 +376,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	if err := scanner.Err(); err != nil {
+		ObserveReadFailure(c, StreamFailureStageUpstreamBodyRead, err)
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			logger.L().Warn("openai chat_completions raw: stream read error",
 				zap.Error(err),
@@ -376,6 +392,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 			for _, pending := range pendingLines {
 				if _, werr := c.Writer.WriteString(pending + "\n"); werr != nil {
 					clientDisconnected = true
+					ObserveClientWriteFailure(c, werr)
 					logger.L().Debug("openai chat_completions raw: client disconnected during final flush",
 						zap.Error(werr),
 						zap.String("request_id", requestID),

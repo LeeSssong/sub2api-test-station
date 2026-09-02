@@ -141,6 +141,7 @@ var ProviderSet = wire.NewSet(
 	ProvideSchedulerCache,
 	ProvideOpenAISharedHealthStore,
 	NewSchedulerOutboxRepository,
+	NewOpenAISchedulerLogRepository,
 	NewAuthCacheInvalidationOutboxRepository,
 	NewProxyLatencyCache,
 	NewTotpCache,

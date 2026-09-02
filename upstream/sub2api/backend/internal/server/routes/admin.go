@@ -136,6 +136,17 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+
+		// OpenAI 调度决策日志（只读）
+		registerSchedulerLogRoutes(admin, h)
+	}
+}
+
+func registerSchedulerLogRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	logs := admin.Group("/scheduler/logs")
+	{
+		logs.GET("", h.Admin.SchedulerLog.List)
+		logs.GET("/:logical_request_id", h.Admin.SchedulerLog.GetTimeline)
 	}
 }
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,16 +17,27 @@ type OpenAISchedulerLogSinkHealth struct {
 	QueueCapacity int       `json:"queue_capacity"`
 	DroppedCount  uint64    `json:"dropped_count"`
 	LastDropAt    time.Time `json:"last_drop_at"`
+	WriteFailed   uint64    `json:"write_failed_count"`
+	WrittenCount  uint64    `json:"written_count"`
+	LastErrorAt   time.Time `json:"last_error_at"`
 }
 
 // OpenAISchedulerLogSink owns a bounded queue of immutable scheduler event
 // snapshots. Persistence is deliberately injected separately so that choosing
 // an account can never block on database availability.
 type OpenAISchedulerLogSink struct {
-	queue            chan OpenAIResilienceEvent
-	droppedCount     atomic.Uint64
-	lastDropUnixNano atomic.Int64
-	writer           OpenAISchedulerLogWriter
+	queue             chan OpenAIResilienceEvent
+	droppedCount      atomic.Uint64
+	lastDropUnixNano  atomic.Int64
+	writeFailed       atomic.Uint64
+	writtenCount      atomic.Uint64
+	lastErrorUnixNano atomic.Int64
+	writer            OpenAISchedulerLogWriter
+	ctx               context.Context
+	cancel            context.CancelFunc
+	wg                sync.WaitGroup
+	startOnce         sync.Once
+	stopOnce          sync.Once
 }
 
 type OpenAISchedulerLogInsert struct {
@@ -49,6 +61,10 @@ type OpenAISchedulerLogWriter interface {
 	BatchInsertOpenAISchedulerLogs(context.Context, []OpenAISchedulerLogInsert) (int, error)
 }
 
+type openAISchedulerLogCleaner interface {
+	DeleteOpenAISchedulerLogsBefore(context.Context, time.Time, int) (int64, error)
+}
+
 func NewOpenAISchedulerLogSink(capacity int) *OpenAISchedulerLogSink {
 	if capacity <= 0 {
 		capacity = openAISchedulerLogDefaultQueueCapacity
@@ -60,6 +76,79 @@ func NewOpenAISchedulerLogSinkWithWriter(writer OpenAISchedulerLogWriter, capaci
 	sink := NewOpenAISchedulerLogSink(capacity)
 	sink.writer = writer
 	return sink
+}
+
+// Start owns asynchronous batch persistence. Enqueue stays non-blocking even
+// while the database is unavailable.
+func (s *OpenAISchedulerLogSink) Start() {
+	if s == nil || s.writer == nil {
+		return
+	}
+	s.startOnce.Do(func() {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+		s.wg.Add(1)
+		go s.run()
+	})
+}
+
+func (s *OpenAISchedulerLogSink) Stop() {
+	if s == nil {
+		return
+	}
+	s.stopOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.wg.Wait()
+	})
+}
+
+func (s *OpenAISchedulerLogSink) run() {
+	defer s.wg.Done()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	cleanupTicker := time.NewTicker(time.Hour)
+	defer cleanupTicker.Stop()
+	s.cleanupWithTimeout(context.Background())
+	for {
+		select {
+		case <-s.ctx.Done():
+			s.flushWithTimeout(context.Background())
+			return
+		case <-ticker.C:
+			s.flushWithTimeout(s.ctx)
+		case <-cleanupTicker.C:
+			s.cleanupWithTimeout(s.ctx)
+		}
+	}
+}
+
+func (s *OpenAISchedulerLogSink) flushWithTimeout(base context.Context) {
+	if base == nil || base.Err() != nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, 5*time.Second)
+	defer cancel()
+	if err := s.Flush(ctx); err != nil {
+		s.writeFailed.Add(1)
+		s.lastErrorUnixNano.Store(time.Now().UTC().UnixNano())
+	}
+}
+
+func (s *OpenAISchedulerLogSink) cleanupWithTimeout(base context.Context) {
+	cleaner, ok := s.writer.(openAISchedulerLogCleaner)
+	if !ok {
+		return
+	}
+	if base == nil || base.Err() != nil {
+		base = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(base, 5*time.Second)
+	defer cancel()
+	if _, err := cleaner.DeleteOpenAISchedulerLogsBefore(ctx, OpenAISchedulerLogRetentionCutoff(time.Now()), 0); err != nil {
+		s.writeFailed.Add(1)
+		s.lastErrorUnixNano.Store(time.Now().UTC().UnixNano())
+	}
 }
 
 func isOpenAISchedulerLogEvent(name string) bool {
@@ -115,9 +204,13 @@ func (s *OpenAISchedulerLogSink) Health() OpenAISchedulerLogSinkHealth {
 	}
 	health := OpenAISchedulerLogSinkHealth{
 		QueueDepth: len(s.queue), QueueCapacity: cap(s.queue), DroppedCount: s.droppedCount.Load(),
+		WriteFailed: s.writeFailed.Load(), WrittenCount: s.writtenCount.Load(),
 	}
 	if unixNano := s.lastDropUnixNano.Load(); unixNano > 0 {
 		health.LastDropAt = time.Unix(0, unixNano).UTC()
+	}
+	if unixNano := s.lastErrorUnixNano.Load(); unixNano > 0 {
+		health.LastErrorAt = time.Unix(0, unixNano).UTC()
 	}
 	return health
 }
@@ -163,13 +256,16 @@ func (s *OpenAISchedulerLogSink) Flush(ctx context.Context) error {
 				AttemptID: event.AttemptID, AttemptNumber: event.AttemptNumber, EventName: event.Name,
 				AccountID: event.AccountID, CanonicalModel: event.CanonicalModel, Outcome: event.Outcome,
 				FinalOutcome: event.FinalOutcome, SelectionLayer: event.SelectionLayer,
-				AlgorithmVersion: "openai-unified-quality-v1", DecisionJSON: string(decision),
+				AlgorithmVersion: OpenAISchedulerAlgorithmVersion, DecisionJSON: string(decision),
 			})
 		default:
 			if len(inputs) == 0 {
 				return nil
 			}
-			_, err := s.writer.BatchInsertOpenAISchedulerLogs(ctx, inputs)
+			inserted, err := s.writer.BatchInsertOpenAISchedulerLogs(ctx, inputs)
+			if err == nil {
+				s.writtenCount.Add(uint64(inserted))
+			}
 			return err
 		}
 	}
@@ -180,3 +276,16 @@ func OpenAISchedulerLogRetentionCutoff(now time.Time) time.Time {
 }
 
 var defaultOpenAISchedulerLogSink = NewOpenAISchedulerLogSink(openAISchedulerLogDefaultQueueCapacity)
+
+// ConfigureDefaultOpenAISchedulerLogSink replaces the unstarted in-memory
+// sink during application wiring. It is called once during startup only.
+func ConfigureDefaultOpenAISchedulerLogSink(writer OpenAISchedulerLogWriter) *OpenAISchedulerLogSink {
+	sink := NewOpenAISchedulerLogSinkWithWriter(writer, openAISchedulerLogDefaultQueueCapacity)
+	sink.Start()
+	defaultOpenAISchedulerLogSink = sink
+	return sink
+}
+
+func DefaultOpenAISchedulerLogSinkHealth() OpenAISchedulerLogSinkHealth {
+	return defaultOpenAISchedulerLogSink.Health()
+}

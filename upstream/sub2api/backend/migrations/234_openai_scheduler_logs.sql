@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS openai_scheduler_logs (
     outcome VARCHAR(48) NULL,
     final_outcome VARCHAR(48) NULL,
     selection_layer VARCHAR(96) NULL,
-    algorithm_version VARCHAR(64) NOT NULL DEFAULT 'openai-unified-quality-v1',
+    algorithm_version VARCHAR(64) NOT NULL DEFAULT 'openai-multi-window-quality-v1',
     decision JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 

@@ -57,6 +57,6 @@ func TestOpenAISchedulerLogSinkFlushesEventAsControlledDecisionSnapshot(t *testi
 	require.NoError(t, sink.Flush(context.Background()))
 	require.Len(t, writer.inputs, 1)
 	require.Equal(t, "logical-1", writer.inputs[0].LogicalRequestID)
-	require.Equal(t, "openai-unified-quality-v1", writer.inputs[0].AlgorithmVersion)
+	require.Equal(t, OpenAISchedulerAlgorithmVersion, writer.inputs[0].AlgorithmVersion)
 	require.Contains(t, writer.inputs[0].DecisionJSON, "candidate_account_ids")
 }

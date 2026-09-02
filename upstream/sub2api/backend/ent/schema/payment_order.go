@@ -50,6 +50,16 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.Float("fee_rate").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(0),
+		quotaDecimal("paid_quota_usd"),
+		quotaDecimal("gift_quota_usd"),
+		quotaDecimal("total_quota_usd"),
+		field.JSON("quota_rule_snapshot", map[string]any{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		quotaDecimal("refunded_paid_quota_usd"),
+		field.String("quota_accounting_status").MaxLen(24).Default("legacy_unknown"),
+		field.Int64("operator_user_id").Optional().Nillable(),
+		field.String("operator_note").Optional().Nillable().SchemaType(map[string]string{dialect.Postgres: "text"}),
+		field.Time("operator_recharged_at").Optional().Nillable().SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 		field.String("recharge_code").
 			MaxLen(64),
 
@@ -180,6 +190,8 @@ func (PaymentOrder) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
+		edge.To("quota_grants", UserQuotaGrant.Type),
+		edge.To("quota_adjustments", UserQuotaAdjustment.Type),
 	}
 }
 

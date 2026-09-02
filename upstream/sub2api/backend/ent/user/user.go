@@ -95,6 +95,10 @@ const (
 	EdgeQuotaLedgerEntries = "quota_ledger_entries"
 	// EdgeOperatedQuotaLedgerEntries holds the string denoting the operated_quota_ledger_entries edge name in mutations.
 	EdgeOperatedQuotaLedgerEntries = "operated_quota_ledger_entries"
+	// EdgeQuotaGrants holds the string denoting the quota_grants edge name in mutations.
+	EdgeQuotaGrants = "quota_grants"
+	// EdgeQuotaAdjustments holds the string denoting the quota_adjustments edge name in mutations.
+	EdgeQuotaAdjustments = "quota_adjustments"
 	// EdgeQuotaIdempotencyRecords holds the string denoting the quota_idempotency_records edge name in mutations.
 	EdgeQuotaIdempotencyRecords = "quota_idempotency_records"
 	// EdgeUserAllowedGroups holds the string denoting the user_allowed_groups edge name in mutations.
@@ -211,6 +215,20 @@ const (
 	OperatedQuotaLedgerEntriesInverseTable = "user_quota_ledger_entries"
 	// OperatedQuotaLedgerEntriesColumn is the table column denoting the operated_quota_ledger_entries relation/edge.
 	OperatedQuotaLedgerEntriesColumn = "operator_id"
+	// QuotaGrantsTable is the table that holds the quota_grants relation/edge.
+	QuotaGrantsTable = "user_quota_grants"
+	// QuotaGrantsInverseTable is the table name for the UserQuotaGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "userquotagrant" package.
+	QuotaGrantsInverseTable = "user_quota_grants"
+	// QuotaGrantsColumn is the table column denoting the quota_grants relation/edge.
+	QuotaGrantsColumn = "user_id"
+	// QuotaAdjustmentsTable is the table that holds the quota_adjustments relation/edge.
+	QuotaAdjustmentsTable = "user_quota_adjustments"
+	// QuotaAdjustmentsInverseTable is the table name for the UserQuotaAdjustment entity.
+	// It exists in this package in order to avoid circular dependency with the "userquotaadjustment" package.
+	QuotaAdjustmentsInverseTable = "user_quota_adjustments"
+	// QuotaAdjustmentsColumn is the table column denoting the quota_adjustments relation/edge.
+	QuotaAdjustmentsColumn = "user_id"
 	// QuotaIdempotencyRecordsTable is the table that holds the quota_idempotency_records relation/edge.
 	QuotaIdempotencyRecordsTable = "quota_idempotency_records"
 	// QuotaIdempotencyRecordsInverseTable is the table name for the QuotaIdempotencyRecord entity.
@@ -673,6 +691,34 @@ func ByOperatedQuotaLedgerEntries(term sql.OrderTerm, terms ...sql.OrderTerm) Or
 	}
 }
 
+// ByQuotaGrantsCount orders the results by quota_grants count.
+func ByQuotaGrantsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newQuotaGrantsStep(), opts...)
+	}
+}
+
+// ByQuotaGrants orders the results by quota_grants terms.
+func ByQuotaGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newQuotaGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByQuotaAdjustmentsCount orders the results by quota_adjustments count.
+func ByQuotaAdjustmentsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newQuotaAdjustmentsStep(), opts...)
+	}
+}
+
+// ByQuotaAdjustments orders the results by quota_adjustments terms.
+func ByQuotaAdjustments(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newQuotaAdjustmentsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByQuotaIdempotencyRecordsCount orders the results by quota_idempotency_records count.
 func ByQuotaIdempotencyRecordsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -810,6 +856,20 @@ func newOperatedQuotaLedgerEntriesStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(OperatedQuotaLedgerEntriesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, OperatedQuotaLedgerEntriesTable, OperatedQuotaLedgerEntriesColumn),
+	)
+}
+func newQuotaGrantsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(QuotaGrantsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
+	)
+}
+func newQuotaAdjustmentsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(QuotaAdjustmentsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, QuotaAdjustmentsTable, QuotaAdjustmentsColumn),
 	)
 }
 func newQuotaIdempotencyRecordsStep() *sqlgraph.Step {

@@ -28,6 +28,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaadjustment"
+	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/ent/userwallet"
@@ -56,6 +58,8 @@ type UserQuery struct {
 	withWallet                     *UserWalletQuery
 	withQuotaLedgerEntries         *UserQuotaLedgerEntryQuery
 	withOperatedQuotaLedgerEntries *UserQuotaLedgerEntryQuery
+	withQuotaGrants                *UserQuotaGrantQuery
+	withQuotaAdjustments           *UserQuotaAdjustmentQuery
 	withQuotaIdempotencyRecords    *QuotaIdempotencyRecordQuery
 	withUserAllowedGroups          *UserAllowedGroupQuery
 	modifiers                      []func(*sql.Selector)
@@ -447,6 +451,50 @@ func (_q *UserQuery) QueryOperatedQuotaLedgerEntries() *UserQuotaLedgerEntryQuer
 	return query
 }
 
+// QueryQuotaGrants chains the current query on the "quota_grants" edge.
+func (_q *UserQuery) QueryQuotaGrants() *UserQuotaGrantQuery {
+	query := (&UserQuotaGrantClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(userquotagrant.Table, userquotagrant.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.QuotaGrantsTable, user.QuotaGrantsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryQuotaAdjustments chains the current query on the "quota_adjustments" edge.
+func (_q *UserQuery) QueryQuotaAdjustments() *UserQuotaAdjustmentQuery {
+	query := (&UserQuotaAdjustmentClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(userquotaadjustment.Table, userquotaadjustment.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.QuotaAdjustmentsTable, user.QuotaAdjustmentsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryQuotaIdempotencyRecords chains the current query on the "quota_idempotency_records" edge.
 func (_q *UserQuery) QueryQuotaIdempotencyRecords() *QuotaIdempotencyRecordQuery {
 	query := (&QuotaIdempotencyRecordClient{config: _q.config}).Query()
@@ -699,6 +747,8 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withWallet:                     _q.withWallet.Clone(),
 		withQuotaLedgerEntries:         _q.withQuotaLedgerEntries.Clone(),
 		withOperatedQuotaLedgerEntries: _q.withOperatedQuotaLedgerEntries.Clone(),
+		withQuotaGrants:                _q.withQuotaGrants.Clone(),
+		withQuotaAdjustments:           _q.withQuotaAdjustments.Clone(),
 		withQuotaIdempotencyRecords:    _q.withQuotaIdempotencyRecords.Clone(),
 		withUserAllowedGroups:          _q.withUserAllowedGroups.Clone(),
 		// clone intermediate query.
@@ -883,6 +933,28 @@ func (_q *UserQuery) WithOperatedQuotaLedgerEntries(opts ...func(*UserQuotaLedge
 	return _q
 }
 
+// WithQuotaGrants tells the query-builder to eager-load the nodes that are connected to
+// the "quota_grants" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithQuotaGrants(opts ...func(*UserQuotaGrantQuery)) *UserQuery {
+	query := (&UserQuotaGrantClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withQuotaGrants = query
+	return _q
+}
+
+// WithQuotaAdjustments tells the query-builder to eager-load the nodes that are connected to
+// the "quota_adjustments" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithQuotaAdjustments(opts ...func(*UserQuotaAdjustmentQuery)) *UserQuery {
+	query := (&UserQuotaAdjustmentClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withQuotaAdjustments = query
+	return _q
+}
+
 // WithQuotaIdempotencyRecords tells the query-builder to eager-load the nodes that are connected to
 // the "quota_idempotency_records" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithQuotaIdempotencyRecords(opts ...func(*QuotaIdempotencyRecordQuery)) *UserQuery {
@@ -983,7 +1055,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [18]bool{
+		loadedTypes = [20]bool{
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -1000,6 +1072,8 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withWallet != nil,
 			_q.withQuotaLedgerEntries != nil,
 			_q.withOperatedQuotaLedgerEntries != nil,
+			_q.withQuotaGrants != nil,
+			_q.withQuotaAdjustments != nil,
 			_q.withQuotaIdempotencyRecords != nil,
 			_q.withUserAllowedGroups != nil,
 		}
@@ -1141,6 +1215,20 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			func(n *User, e *UserQuotaLedgerEntry) {
 				n.Edges.OperatedQuotaLedgerEntries = append(n.Edges.OperatedQuotaLedgerEntries, e)
 			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withQuotaGrants; query != nil {
+		if err := _q.loadQuotaGrants(ctx, query, nodes,
+			func(n *User) { n.Edges.QuotaGrants = []*UserQuotaGrant{} },
+			func(n *User, e *UserQuotaGrant) { n.Edges.QuotaGrants = append(n.Edges.QuotaGrants, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withQuotaAdjustments; query != nil {
+		if err := _q.loadQuotaAdjustments(ctx, query, nodes,
+			func(n *User) { n.Edges.QuotaAdjustments = []*UserQuotaAdjustment{} },
+			func(n *User, e *UserQuotaAdjustment) { n.Edges.QuotaAdjustments = append(n.Edges.QuotaAdjustments, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1678,6 +1766,66 @@ func (_q *UserQuery) loadOperatedQuotaLedgerEntries(ctx context.Context, query *
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "operator_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadQuotaGrants(ctx context.Context, query *UserQuotaGrantQuery, nodes []*User, init func(*User), assign func(*User, *UserQuotaGrant)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(userquotagrant.FieldUserID)
+	}
+	query.Where(predicate.UserQuotaGrant(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.QuotaGrantsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadQuotaAdjustments(ctx context.Context, query *UserQuotaAdjustmentQuery, nodes []*User, init func(*User), assign func(*User, *UserQuotaAdjustment)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(userquotaadjustment.FieldUserID)
+	}
+	query.Where(predicate.UserQuotaAdjustment(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.QuotaAdjustmentsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

@@ -53,11 +53,9 @@ type RedeemCodeEdges struct {
 	User *User `json:"user,omitempty"`
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
-	// QuotaGrants holds the value of the quota_grants edge.
-	QuotaGrants []*UserQuotaGrant `json:"quota_grants,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [2]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -80,15 +78,6 @@ func (e RedeemCodeEdges) GroupOrErr() (*Group, error) {
 		return nil, &NotFoundError{label: group.Label}
 	}
 	return nil, &NotLoadedError{edge: "group"}
-}
-
-// QuotaGrantsOrErr returns the QuotaGrants value or an error if the edge
-// was not loaded in eager-loading.
-func (e RedeemCodeEdges) QuotaGrantsOrErr() ([]*UserQuotaGrant, error) {
-	if e.loadedTypes[2] {
-		return e.QuotaGrants, nil
-	}
-	return nil, &NotLoadedError{edge: "quota_grants"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -217,11 +206,6 @@ func (_m *RedeemCode) QueryUser() *UserQuery {
 // QueryGroup queries the "group" edge of the RedeemCode entity.
 func (_m *RedeemCode) QueryGroup() *GroupQuery {
 	return NewRedeemCodeClient(_m.config).QueryGroup(_m)
-}
-
-// QueryQuotaGrants queries the "quota_grants" edge of the RedeemCode entity.
-func (_m *RedeemCode) QueryQuotaGrants() *UserQuotaGrantQuery {
-	return NewRedeemCodeClient(_m.config).QueryQuotaGrants(_m)
 }
 
 // Update returns a builder for updating this RedeemCode.

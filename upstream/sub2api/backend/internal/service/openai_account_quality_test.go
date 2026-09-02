@@ -80,3 +80,22 @@ func TestOpenAIAccountQualitySnapshotProviderColdStartFailureIsNonBlocking(t *te
 	require.Empty(t, snapshot.WindowStart)
 	require.Empty(t, snapshot.WindowEnd)
 }
+
+func TestOpenAIAccountQualitySnapshotProviderDeepClonesWindowMetrics(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	repo := &openAIAccountQualityRepoStub{rows: []OpenAIAccountQuality{{
+		AccountID: 7,
+		Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow1H: {AttemptCount: 2},
+		},
+	}}}
+	provider := NewOpenAIAccountQualitySnapshotProvider(repo, time.Minute, func() time.Time { return now })
+
+	first := provider.Snapshot(context.Background())
+	window := first.Accounts[7].Windows[OpenAIQualityWindow1H]
+	window.AttemptCount = 99
+	first.Accounts[7].Windows[OpenAIQualityWindow1H] = window
+
+	second := provider.Snapshot(context.Background())
+	require.Equal(t, int64(2), second.Accounts[7].Windows[OpenAIQualityWindow1H].AttemptCount)
+}

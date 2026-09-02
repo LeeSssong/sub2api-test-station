@@ -11,8 +11,29 @@ import (
 // OpenAIAccountQuality is the account-level, non-image quality projection used
 // by the unified scheduler. U is deliberately absent: effective cost is read
 // live from EffectiveCostForAccount at candidate-build time.
+type OpenAIQualityWindow string
+
+const (
+	OpenAIQualityWindow1H  OpenAIQualityWindow = "w1"
+	OpenAIQualityWindow24H OpenAIQualityWindow = "w24"
+	OpenAIQualityWindow7D  OpenAIQualityWindow = "w7"
+)
+
+type OpenAIQualityWindowMetrics struct {
+	AttemptCount              int64
+	SuccessCount              int64
+	SuccessRate               *float64
+	TTFTSampleCount           int64
+	TTFTP50MS                 *float64
+	TTFTP90MS                 *float64
+	OutputRateSampleCount     int64
+	OutputRateTokensPerSecond *float64
+}
+
 type OpenAIAccountQuality struct {
-	AccountID            int64
+	AccountID int64
+	Windows   map[OpenAIQualityWindow]OpenAIQualityWindowMetrics
+	// Legacy aggregate fields remain additive for callers not yet migrated.
 	AttemptCount         int64
 	SuccessCount         int64
 	SuccessRate          *float64
@@ -136,6 +157,13 @@ func (p *openAIAccountQualitySnapshotProvider) coldStartFailure() OpenAIAccountQ
 func cloneOpenAIAccountQualitySnapshot(snapshot OpenAIAccountQualitySnapshot) OpenAIAccountQualitySnapshot {
 	accounts := make(map[int64]OpenAIAccountQuality, len(snapshot.Accounts))
 	for id, quality := range snapshot.Accounts {
+		if len(quality.Windows) > 0 {
+			windows := make(map[OpenAIQualityWindow]OpenAIQualityWindowMetrics, len(quality.Windows))
+			for window, metrics := range quality.Windows {
+				windows[window] = metrics
+			}
+			quality.Windows = windows
+		}
 		accounts[id] = quality
 	}
 	snapshot.Accounts = accounts

@@ -12,8 +12,8 @@ import (
 
 // openAIAccountQualityQuery combines successful native usage rows with
 // account-owned failures from the native operations error log. A physical
-// attempt is deduplicated by persisted request identity, while successful
-// latency samples are trimmed independently at both ends by floor(n*5%).
+// attempt is deduplicated by persisted request identity and assigned to one
+// mutually exclusive scheduling window in the same seven-day scan.
 const openAIAccountQualityQuery = `
 WITH usage_attempts AS (
     SELECT DISTINCT ON (
@@ -27,8 +27,10 @@ WITH usage_attempts AS (
         u.request_id,
         COALESCE(NULLIF(u.usage_completeness, ''), 'complete') AS usage_completeness,
         u.actual_cost,
+		u.created_at,
         u.first_token_ms::double precision AS first_token_ms,
-        u.duration_ms::double precision AS duration_ms
+		u.duration_ms::double precision AS duration_ms,
+		u.output_tokens::double precision AS output_tokens
     FROM usage_logs u
     WHERE u.created_at >= $1
       AND u.created_at < $2
@@ -52,8 +54,10 @@ error_attempts AS (
         o.request_id,
         'failed'::text AS usage_completeness,
         0::numeric AS actual_cost,
+		o.created_at,
         NULL::double precision AS first_token_ms,
-        NULL::double precision AS duration_ms
+		NULL::double precision AS duration_ms,
+		NULL::double precision AS output_tokens
     FROM ops_error_logs o
     WHERE o.created_at >= $1
       AND o.created_at < $2
@@ -88,7 +92,14 @@ all_attempts AS (
     SELECT * FROM error_attempts
 ),
 physical_attempts AS (
-    SELECT * FROM all_attempts
+    SELECT
+		a.*,
+		CASE
+			WHEN a.created_at >= $2 - interval '1 hour' THEN 'w1'
+			WHEN a.created_at >= $2 - interval '24 hours' THEN 'w24'
+			ELSE 'w7'
+		END AS quality_window
+	FROM all_attempts a
 ),
 successful AS (
     SELECT p.*
@@ -96,70 +107,48 @@ successful AS (
     WHERE p.usage_completeness = 'complete'
       AND p.actual_cost > 0
 ),
-ttft_samples AS (
-    SELECT
-        s.account_id,
-        s.first_token_ms,
-        row_number() OVER (PARTITION BY s.account_id ORDER BY s.first_token_ms) AS ttft_rn,
-        count(*) OVER (PARTITION BY s.account_id) AS ttft_n
-    FROM successful s
-    WHERE s.first_token_ms IS NOT NULL
-),
-latency_samples AS (
-    SELECT
-        s.account_id,
-        s.duration_ms,
-        row_number() OVER (PARTITION BY s.account_id ORDER BY s.duration_ms) AS latency_rn,
-        count(*) OVER (PARTITION BY s.account_id) AS latency_n
-    FROM successful s
-    WHERE s.duration_ms IS NOT NULL
-),
-attempt_aggregates AS (
+window_aggregates AS (
     SELECT
         p.account_id,
+		p.quality_window,
         count(*)::bigint AS attempt_count,
-        count(*) FILTER (WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0)::bigint AS success_count
+		count(*) FILTER (WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0)::bigint AS success_count,
+		count(p.first_token_ms) FILTER (WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0)::bigint AS ttft_sample_count,
+		PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY p.first_token_ms)
+			FILTER (WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0 AND p.first_token_ms IS NOT NULL) AS ttft_p50_ms,
+		PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY p.first_token_ms)
+			FILTER (WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0 AND p.first_token_ms IS NOT NULL) AS ttft_p90_ms,
+		count(*) FILTER (
+			WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0
+			  AND p.output_tokens > 0 AND p.first_token_ms IS NOT NULL
+			  AND p.duration_ms > p.first_token_ms
+		)::bigint AS output_rate_sample_count,
+		PERCENTILE_CONT(0.50) WITHIN GROUP (
+			ORDER BY p.output_tokens / ((p.duration_ms - p.first_token_ms) / 1000.0)
+		) FILTER (
+			WHERE p.usage_completeness = 'complete' AND p.actual_cost > 0
+			  AND p.output_tokens > 0 AND p.first_token_ms IS NOT NULL
+			  AND p.duration_ms > p.first_token_ms
+		) AS output_rate_tokens_per_second
     FROM physical_attempts p
-    GROUP BY p.account_id
-),
-ttft_aggregates AS (
-    SELECT
-        t.account_id,
-        count(*)::bigint AS ttft_sample_count,
-        avg(t.first_token_ms) FILTER (
-            WHERE t.ttft_rn > floor(t.ttft_n * 0.05)::bigint
-              AND t.ttft_rn <= t.ttft_n - floor(t.ttft_n * 0.05)::bigint
-        ) AS ttft_trimmed_mean_ms
-    FROM ttft_samples t
-    GROUP BY t.account_id
-),
-latency_aggregates AS (
-    SELECT
-        l.account_id,
-        count(*)::bigint AS latency_sample_count,
-        avg(l.duration_ms) FILTER (
-            WHERE l.latency_rn > floor(l.latency_n * 0.05)::bigint
-              AND l.latency_rn <= l.latency_n - floor(l.latency_n * 0.05)::bigint
-        ) AS latency_trimmed_mean_ms
-    FROM latency_samples l
-    GROUP BY l.account_id
+	GROUP BY p.account_id, p.quality_window
 )
 SELECT
-    a.account_id,
-    a.attempt_count,
-    a.success_count,
-    CASE WHEN a.attempt_count > 0
-        THEN a.success_count::double precision / a.attempt_count
+	w.account_id,
+	w.quality_window,
+	w.attempt_count,
+	w.success_count,
+	CASE WHEN w.attempt_count > 0
+		THEN w.success_count::double precision / w.attempt_count
         ELSE NULL
     END AS success_rate,
-    COALESCE(t.ttft_sample_count, 0)::bigint AS ttft_sample_count,
-    t.ttft_trimmed_mean_ms,
-    COALESCE(l.latency_sample_count, 0)::bigint AS latency_sample_count,
-    l.latency_trimmed_mean_ms
-FROM attempt_aggregates a
-LEFT JOIN ttft_aggregates t ON t.account_id = a.account_id
-LEFT JOIN latency_aggregates l ON l.account_id = a.account_id
-ORDER BY a.account_id
+	w.ttft_sample_count,
+	w.ttft_p50_ms,
+	w.ttft_p90_ms,
+	w.output_rate_sample_count,
+	w.output_rate_tokens_per_second
+FROM window_aggregates w
+ORDER BY w.account_id, w.quality_window
 `
 
 var _ service.OpenAIAccountQualityRepository = (*usageLogRepository)(nil)
@@ -178,35 +167,47 @@ func (r *usageLogRepository) ListOpenAIAccountQuality(ctx context.Context, start
 	defer rows.Close()
 
 	result := make([]service.OpenAIAccountQuality, 0)
+	byAccount := make(map[int64]int)
 	for rows.Next() {
 		var (
-			quality              service.OpenAIAccountQuality
-			successRate          sql.NullFloat64
-			ttftTrimmedMeanMS    sql.NullFloat64
-			latencyTrimmedMeanMS sql.NullFloat64
+			accountID                                 int64
+			windowName                                string
+			metrics                                   service.OpenAIQualityWindowMetrics
+			successRate, ttftP50, ttftP90, outputRate sql.NullFloat64
 		)
 		if err := rows.Scan(
-			&quality.AccountID,
-			&quality.AttemptCount,
-			&quality.SuccessCount,
+			&accountID,
+			&windowName,
+			&metrics.AttemptCount,
+			&metrics.SuccessCount,
 			&successRate,
-			&quality.TTFTSampleCount,
-			&ttftTrimmedMeanMS,
-			&quality.LatencySampleCount,
-			&latencyTrimmedMeanMS,
+			&metrics.TTFTSampleCount,
+			&ttftP50,
+			&ttftP90,
+			&metrics.OutputRateSampleCount,
+			&outputRate,
 		); err != nil {
 			return nil, err
 		}
 		if successRate.Valid {
-			quality.SuccessRate = &successRate.Float64
+			metrics.SuccessRate = &successRate.Float64
 		}
-		if ttftTrimmedMeanMS.Valid {
-			quality.TTFTTrimmedMeanMS = &ttftTrimmedMeanMS.Float64
+		if ttftP50.Valid {
+			metrics.TTFTP50MS = &ttftP50.Float64
 		}
-		if latencyTrimmedMeanMS.Valid {
-			quality.LatencyTrimmedMeanMS = &latencyTrimmedMeanMS.Float64
+		if ttftP90.Valid {
+			metrics.TTFTP90MS = &ttftP90.Float64
 		}
-		result = append(result, quality)
+		if outputRate.Valid {
+			metrics.OutputRateTokensPerSecond = &outputRate.Float64
+		}
+		index, ok := byAccount[accountID]
+		if !ok {
+			index = len(result)
+			byAccount[accountID] = index
+			result = append(result, service.OpenAIAccountQuality{AccountID: accountID, Windows: make(map[service.OpenAIQualityWindow]service.OpenAIQualityWindowMetrics)})
+		}
+		result[index].Windows[service.OpenAIQualityWindow(windowName)] = metrics
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

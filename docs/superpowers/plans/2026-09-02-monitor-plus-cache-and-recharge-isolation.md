@@ -32,11 +32,11 @@
 - [x] Confirm completed non-recharge candidates and their exact commits.
 - [x] Selectively integrate T113 runtime/docs while excluding T91 files and migrations.
 - [x] Run direct tests, build/typecheck, source guard, and diff checks on clean root `main`.
-- [ ] Push `origin/main`.
+- [x] Push `origin/main`.
 
 ### Task 5: Main-Site Release and Reconciliation
 
-- [ ] Run the existing main-site preflight from clean `main`.
-- [ ] Deploy only the main site using the approved fast-deploy path.
-- [ ] Verify health, version/tree identity, monitor `1h`, Plus metrics, and cache output.
-- [ ] Read-only reconcile acceptance station commit/tree without deploying it.
+- [x] Run the existing main-site preflight from clean `main`.
+- [x] Deploy only the main site using the approved fast-deploy path.
+- [x] Verify health, version/tree identity, monitor `1h`, Plus metrics, and cache output.
+- [x] Read-only reconcile acceptance station commit/tree without deploying it.

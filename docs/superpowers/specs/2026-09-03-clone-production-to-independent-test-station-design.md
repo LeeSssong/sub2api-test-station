@@ -8,13 +8,13 @@
 
 ## 2. 目标与非目标
 
-目标：在独立服务器上重建主站的应用部署形态，使业务代码、前端首页、Caddy 路由、API、worker 和 model-detector 与主站当前运行基线内容对齐；根路径通过裸 IP 提供与主站一致的星桥首页；保留独立测试站的数据库、Redis、应用数据、管理员凭据、测试 provider/mock 配置和独立 Docker project/network/volumes。测试站发布源使用包含本任务部署代码的最终已推送 `main`，并记录该提交；业务版本一致性使用 Sub2API 与 homepage 源码子树哈希、制品哈希和路由合同证明，不能把不同 Git 提交伪称为同一提交。
+目标：直接复制主站当前实际运行的 Sub2API 不可变镜像、homepage/Caddy 静态制品和路由形态到独立服务器；根路径通过裸 IP 提供与主站一致的星桥首页；保留独立测试站的数据库、Redis、应用数据、管理员凭据、测试 provider/mock 配置和独立 Docker project/network/volumes。测试站运行记录保存主站制品原始 source commit/tree、镜像 ID 和静态资源 manifest，不重新编译或修改业务代码。
 
 非目标：不把测试站挂回主站 `/admin/lab`；不复制主站 PostgreSQL/Redis/对象存储、生产账号、支付/上游/通知凭据；不改主站；不使用 GitHub Actions；不删除旧测试栈或原始备份，直到新栈完成验证并由用户另行决定。
 
 ## 3. 方案比较与选择
 
-方案 A（采用）：以主站生产 Compose/Caddy 为模板，在独立服务器建立同构但改名的 Compose project。应用镜像从最终根 `main` 的相同生产构建入口生成，homepage 从同一源码树构建独立镜像；所有测试站秘密、卷、网络和 provider 指向独立资源。对账同时记录测试站发布提交，以及它与主站当前 `e00c37e0e...` 的 Sub2API/homepage 子树哈希关系。优点是运行时和主站可逐项对账，且隔离边界清晰。
+方案 A（采用）：从主站宿主导出当前活动 Sub2API 镜像和当前 homepage/Caddy 镜像或其只读静态制品，在独立服务器以测试站专用 Compose 配置运行；只替换环境相关的 project、网络、卷、裸 IP、数据库、Redis、管理员和 mock/provider 配置。优点是应用字节与主站当前运行版本完全一致，不引入重新构建漂移。
 
 方案 B：继续修补现有测试站 Compose，仅替换 API/前端镜像。不能覆盖主站首页、Caddy 路由、detector 和生产拓扑差异，且保留旧镜像/旧配置漂移风险，不采用。
 
@@ -22,10 +22,10 @@
 
 ## 4. 端到端控制流
 
-1. 在根目录干净且已推送的最终 `main` 上确定 source commit/tree，确认其 Sub2API/homepage 子树相对主站运行基线是否有内容变化，并生成带 commit/tree/subtree/digest 标签的 Sub2API 与 homepage 制品。若业务子树已前进，则以发布时主站实际运行版本为目标基线重新判断，不把未部署到主站的新业务内容冒充主站版本。
+1. 在根目录干净且已推送的 `main` 上启动只读制品盘点，锁定主站活动 Sub2API 镜像、homepage/Caddy 镜像、source commit/tree、image ID 和静态资源 manifest；不得重新构建应用或修改业务代码。
 2. 在独立服务器建立专用 Compose project、internal 应用网络、边缘网络、PostgreSQL/Redis/app-data 卷和受限配置目录；边缘代理仅监听该服务器的 80/IPv6 80。
 3. 在切换前只读核对旧测试站容器、数据卷、备份 checksum，以及主站运行容器健康；停止或保留旧栈仅限测试站专用 project。
-4. 将新制品、同构 Compose/Caddy、脱敏配置模板和独立测试站秘密传输到服务器；服务器端再次校验 checksum 与 source identity。
+4. 将主站当前运行制品、适配裸 IP 的测试站 Compose/Caddy 配置和独立测试站秘密传输到服务器；服务器端再次校验 checksum 与 source identity。
 5. 启动数据库/Redis，恢复已确认属于测试站的备份；启动 detector、API、worker、homepage、gateway 和 Caddy，等待所有健康检查通过。
 6. 通过 IPv4/IPv6 验证 `/`、`/login`、`/health`、`/readyz`、API 路由、静态首页 assets 和登录会话；只读核对主站健康与容器身份未改变。
 7. 记录发布状态、source commit/tree、各镜像 digest、容器身份、备份 checksum、数据行数/容量和回滚点。
@@ -35,7 +35,7 @@
 - 根首页：`GET /`、`GET /home/` 返回主站同一 homepage HTML/asset manifest；不得返回 Sub2API 默认登录首页。
 - 应用入口：`GET /login`、`/admin/*`、`/api/*`、`/ws/*` 按主站 Caddy 路由语义工作，但使用独立测试站 cookie 命名空间和独立 API base URL。
 - 健康：`GET /health`、`GET /readyz` 返回 HTTP 200；应用和 detector 健康检查不得访问主站网络或生产数据。
-- 发布身份：Sub2API 应用镜像必须带 `com.xingqiao.sub2api.source.commit`、`source.tree`、`tested.tree`、`migrations.sha256` 标签；homepage 镜像必须记录 source commit/tree 和 homepage subtree hash；运行记录必须保存这些字段及 image digest。另保存与主站基线对账的 Sub2API/homepage subtree hash，明确区分“部署代码提交”和“业务内容基线”。
+- 发布身份：测试站 Sub2API 镜像 ID必须与主站活动镜像 ID一致，并保留原始 `com.xingqiao.sub2api.source.commit`、`source.tree`、`tested.tree`、`migrations.sha256` 标签；homepage/Caddy 制品保存主站镜像 ID、导出 checksum 和静态资源 manifest。测试站运行记录保存全部身份字段。
 - 配置：测试站使用独立变量命名空间和独立 secrets 文件；不得将生产 `.env`、API key、JWT/TOTP/支付/通知 secret 写入仓库或日志。
 
 ## 6. 失败、安全与回滚
@@ -52,7 +52,7 @@
 
 | 场景 | 通过条件 |
 |---|---|
-| 版本身份 | 测试站发布 source commit/tree 为最终已推送 `main`；Sub2API/homepage 子树、制品与主站实际运行基线内容一致，digest 可追溯 |
+| 版本身份 | 测试站 Sub2API image ID、source commit/tree 与主站活动镜像一致；homepage/Caddy 制品与主站运行镜像或导出 checksum/manifest 一致 |
 | 首页 | 裸 IP `/` HTML、标题、`/home-assets/*` manifest 与主站一致 |
 | 登录与路由 | `/login`、管理员路由、API、WebSocket 均可用，资产路径无 `/admin/lab` 前缀 |
 | 健康 | API、worker、detector、PostgreSQL、Redis、Caddy healthy，三项健康端点 200 |
@@ -71,4 +71,4 @@
 
 ## 11. 待决事项与批准记录
 
-实施时记录而非产品待决项包括：测试备份的最终 checksum/行数、主站 homepage 运行 manifest、独立服务器 Docker/Compose 版本和 IPv6 防火墙状态。homepage 固定从最终已推送 `main` 的 `homepage/` 使用仓库既有生产构建方式生成，并与主站运行 manifest 做内容对账。业务范围已由用户于 2026-09-03 明确批准：独立测试服务器应完全克隆主站部署形态和差异内容，同时保持测试站数据、凭据和运行资源独立。
+实施时记录而非产品待决项包括：测试备份的最终 checksum/行数、主站 homepage 运行 manifest、独立服务器 Docker/Compose 版本和 IPv6 防火墙状态。homepage/Caddy 固定复制主站当前运行制品，不从源码重新构建。业务范围已由用户于 2026-09-03 明确批准：直接克隆主站当前运行制品到独立测试服务器，同时保持测试站数据、凭据和运行资源独立；不修改业务代码。

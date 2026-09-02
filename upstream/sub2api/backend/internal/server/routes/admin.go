@@ -138,7 +138,9 @@ func RegisterAdminRoutes(
 		registerAuditLogRoutes(admin, h, stepUpAuth)
 
 		// OpenAI 调度决策日志（只读）
-		registerSchedulerLogRoutes(admin, h)
+		if h != nil && h.Admin != nil && h.Admin.SchedulerLog != nil {
+			registerSchedulerLogRoutes(admin, h)
+		}
 	}
 }
 

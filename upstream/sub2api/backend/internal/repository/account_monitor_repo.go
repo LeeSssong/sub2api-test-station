@@ -1253,6 +1253,25 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				AND u.account_id = ANY($2)
 				AND u.created_at >= $3
 				AND u.created_at < $4
+				AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), unknown_usage_keys AS (
+			SELECT DISTINCT NULLIF(u.request_id, '') AS request_key, u.account_id
+			FROM usage_logs u
+			WHERE u.group_id = $1
+				AND u.account_id = ANY($2)
+				AND u.created_at >= $3
+				AND u.created_at < $4
+				AND u.usage_completeness = 'unknown'
+				AND NULLIF(u.request_id, '') IS NOT NULL
+			UNION
+			SELECT DISTINCT NULLIF(u.logical_request_id, '') AS request_key, u.account_id
+			FROM usage_logs u
+			WHERE u.group_id = $1
+				AND u.account_id = ANY($2)
+				AND u.created_at >= $3
+				AND u.created_at < $4
+				AND u.usage_completeness = 'unknown'
+				AND NULLIF(u.logical_request_id, '') IS NOT NULL
 		), group_errors AS (
 			SELECT e.request_id, e.account_id, e.created_at
 			FROM ops_error_logs e
@@ -1262,6 +1281,12 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				AND e.created_at < $4
 				AND COALESCE(e.is_count_tokens, FALSE) = FALSE
 				AND COALESCE(e.status_code, 0) >= 400
+				AND NOT EXISTS (
+					SELECT 1
+					FROM unknown_usage_keys unknown_usage
+					WHERE unknown_usage.account_id = e.account_id
+						AND unknown_usage.request_key IN (NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''))
+				)
 		), group_requests AS (
 			SELECT
 				u.account_id,

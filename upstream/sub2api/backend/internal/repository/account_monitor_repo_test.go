@@ -902,7 +902,7 @@ func TestAccountMonitorRepositoryGroupWindowAggregatesIncludeRequestedGroupID(t 
 	until := since.Add(24 * time.Hour)
 	observedAt := until.Add(-time.Minute)
 
-	mock.ExpectQuery(`(?s)WITH group_usage.*output_tokens.*FROM usage_logs u.*u\.group_id = \$1.*u\.account_id = ANY\(\$2\).*u\.created_at >= \$3.*u\.created_at < \$4.*FROM ops_error_logs e.*e\.group_id = \$1.*e\.account_id = ANY\(\$2\).*e\.created_at >= \$3.*e\.created_at < \$4.*SUM\(output_tokens\).*duration_ms - first_token_ms`).
+	mock.ExpectQuery(`(?s)WITH group_usage.*unknown_usage_keys AS.*group_errors AS.*NOT EXISTS.*unknown_usage_keys.*group_requests AS.*SUM\(output_tokens\).*duration_ms - first_token_ms`).
 		WithArgs(int64(77), sqlmock.AnyArg(), since, until).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count", "success_count", "error_count", "base_cost", "success_rate", "ttft_sample_count", "latency_sample_count", "ttft_p50", "latency_p95", "output_rate_sample_count", "output_tokens", "generation_ms", "last_observed_at"}).
 			AddRow(11, 4, 3, 1, 8.0, 0.75, 3, 4, 80.0, 300.0, 2, 240, 4000.0, observedAt))

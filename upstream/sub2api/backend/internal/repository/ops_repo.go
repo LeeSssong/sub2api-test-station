@@ -1000,6 +1000,10 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		args = append(args, crid)
 		clauses = append(clauses, "COALESCE(e.client_request_id,'') = $"+itoa(len(args)))
 	}
+	if logicalID := strings.TrimSpace(filter.LogicalRequestID); logicalID != "" {
+		args = append(args, logicalID)
+		clauses = append(clauses, "EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(e.upstream_errors, '[]'::jsonb)) item WHERE item->'stream_observation'->>'logical_request_id' = $"+itoa(len(args))+")")
+	}
 
 	if q := strings.TrimSpace(filter.Query); q != "" {
 		like := "%" + q + "%"

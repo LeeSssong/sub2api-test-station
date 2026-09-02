@@ -35,6 +35,7 @@
 - [ ] Run `go test ./internal/repository -run 'TestUsageLogRepositoryListOpenAIAccountQuality|TestOpenAIAccountQualityQuery' -count=1` and confirm the old one-row trimmed-mean contract fails.
 - [ ] Change the single query to classify each attempt with one `CASE` window and aggregate by account/window; keep all existing failure exclusions.
 - [ ] Add a provider test proving returned window maps are deep clones, then implement cloning.
+- [ ] Add a refresh-throttle test proving expired snapshots inside the five-minute production cooldown serve stale data without another SQL scan, then allow one scan after cooldown.
 - [ ] Run focused repository/provider tests and commit `feat: aggregate OpenAI quality by scheduling windows`.
 
 ### Task 2: Pure Scoring and Slow Evidence State

@@ -15,6 +15,7 @@
 - Composite quality ranking uses success, P50/P90 TTFT, output-rate, and native live-load components while preserving native eligibility, profit partition, slots, waits, retries, billing, and account state.
 - Process-local 60-second slow first-output observation records `openai.first_output_slow`, overlays later W1 ranking, and never cancels, closes, retries, switches, or changes billing for the active attempt.
 - Existing Ops scheduler experience exposes an additive slow-output count.
+- Quality SQL refresh is single-flight and production-throttled: the one-minute freshness TTL may mark a snapshot stale, but the service constructor permits at most one PostgreSQL quality scan per five minutes; ranking remains in-memory over the cached snapshot and native short-TTL load cache.
 
 ## Verification
 
@@ -26,6 +27,7 @@
 - `pnpm typecheck`: pass.
 - `pnpm build`: pass.
 - Full frontend run was not used as a gate because it contains seven unrelated existing failures in HomeView/refresh/MonitorForm/ChannelStatus/OpsErrorDetail paths.
+- Refresh-throttle regression: an expired snapshot inside cooldown performs no second scan; after cooldown one refresh succeeds.
 
 ## Release Boundary
 

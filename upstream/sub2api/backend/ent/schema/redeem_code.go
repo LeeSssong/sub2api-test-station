@@ -85,7 +85,6 @@ func (RedeemCode) Edges() []ent.Edge {
 			Ref("redeem_codes").
 			Field("group_id").
 			Unique(),
-		edge.To("quota_grants", UserQuotaGrant.Type),
 	}
 }
 

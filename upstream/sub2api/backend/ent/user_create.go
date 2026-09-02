@@ -24,6 +24,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaadjustment"
+	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/ent/userwallet"
@@ -599,6 +601,36 @@ func (_c *UserCreate) AddOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) 
 		ids[i] = v[i].ID
 	}
 	return _c.AddOperatedQuotaLedgerEntryIDs(ids...)
+}
+
+// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
+func (_c *UserCreate) AddQuotaGrantIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddQuotaGrantIDs(ids...)
+	return _c
+}
+
+// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
+func (_c *UserCreate) AddQuotaGrants(v ...*UserQuotaGrant) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddQuotaGrantIDs(ids...)
+}
+
+// AddQuotaAdjustmentIDs adds the "quota_adjustments" edge to the UserQuotaAdjustment entity by IDs.
+func (_c *UserCreate) AddQuotaAdjustmentIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddQuotaAdjustmentIDs(ids...)
+	return _c
+}
+
+// AddQuotaAdjustments adds the "quota_adjustments" edges to the UserQuotaAdjustment entity.
+func (_c *UserCreate) AddQuotaAdjustments(v ...*UserQuotaAdjustment) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddQuotaAdjustmentIDs(ids...)
 }
 
 // AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
@@ -1188,6 +1220,38 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaGrantsTable,
+			Columns: []string{user.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.QuotaAdjustmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.QuotaAdjustmentsTable,
+			Columns: []string{user.QuotaAdjustmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

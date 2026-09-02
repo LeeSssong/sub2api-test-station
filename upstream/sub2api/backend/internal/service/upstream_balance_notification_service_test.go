@@ -319,7 +319,10 @@ func TestBuildUpstreamBalanceEvaluationsCarriesT114SnapshotAndRankMetadata(t *te
 	rank := 2
 	value := 2.5
 	observedAt := now.Add(-time.Minute)
-	page := AccountMonitorPage{ObservedAt: now, Accounts: []AccountMonitorAccount{{AccountID: 9}}, Groups: []AccountMonitorGroup{{
+	page := AccountMonitorPage{ObservedAt: now, Accounts: []AccountMonitorAccount{{AccountID: 9, Balance: &AccountMonitorBalance{
+		Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK, Source: AccountMonitorBalanceSourceSub2API,
+		ValueUSD: &value, ObservedAt: &observedAt, CredentialFingerprint: accountMonitorBalanceCredentialFingerprint(""),
+	}}}, Groups: []AccountMonitorGroup{{
 		ID: 7, Name: "GPT-Pro", Accounts: []AccountMonitorGroupAccount{{
 			AccountMonitorAccount: AccountMonitorAccount{AccountID: 9, SchedulerRank: &rank, SchedulerRankTotal: 4,
 				SchedulerExplanation: &AccountMonitorSchedulerExplanation{Rank: &rank, RankTotal: 4, Eligible: true}},
@@ -327,7 +330,11 @@ func TestBuildUpstreamBalanceEvaluationsCarriesT114SnapshotAndRankMetadata(t *te
 	}}}
 	accounts := []Account{{ID: 9, Name: "ranked", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
 		Credentials: map[string]any{"base_url": "https://upstream.invalid/v1"},
-		Extra:       map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{Status: AccountMonitorBalanceStatusOK, ValueUSD: &value, ObservedAt: &observedAt}},
+		Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
+			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK,
+			Source: AccountMonitorBalanceSourceSub2API, ValueUSD: &value, ObservedAt: &observedAt,
+			CredentialFingerprint: accountMonitorBalanceCredentialFingerprint(""),
+		}},
 	}}
 
 	evaluations, err := buildUpstreamBalanceEvaluations(accounts, page)

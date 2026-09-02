@@ -30,7 +30,7 @@ func TestRenderUpstreamBalanceCardP2ShowsOneWalletAndAllAccounts(t *testing.T) {
 		t.Fatalf("card header = %#v", card.Header)
 	}
 	text := renderedCardText(card)
-	for _, value := range []string{"USD 4.25", "https://upstream.example", "registry-user.invalid", "fake-password-value", "first", "账号 ID：11", "余额：USD 4.25", "GPT-Plus：第 1 名", "Unranked：未排名", "second", "账号 ID：12", "余额：USD 8.50", "GPT-Pro：第 2 名"} {
+	for _, value := range []string{"USD 4.25", "https://upstream.example", "registry-user.invalid", "fake-password-value", "first", "账号 ID：11", "余额：USD 4.25", "GPT-Plus：第 1 名", "Unranked：未启用 T114 排名", "second", "账号 ID：12", "余额：USD 8.50", "GPT-Pro：第 2 名"} {
 		if !strings.Contains(text, value) {
 			t.Fatalf("card missing %q: %s", value, text)
 		}
@@ -99,9 +99,10 @@ func TestRenderUpstreamBalanceCardAddsFixedSilenceActions(t *testing.T) {
 
 func TestRenderUpstreamBalanceCardShowsT114RankMetadata(t *testing.T) {
 	rank := 3
+	snapshotAt := time.Date(2026, 9, 2, 14, 5, 0, 0, time.UTC)
 	payload, err := RenderUpstreamBalanceCard(UpstreamBalanceCardInput{
 		State: UpstreamBalanceCardStateLow, ValueUSD: 4.25, BaseURL: "https://upstream.example",
-		RankingSnapshotAt: time.Date(2026, 9, 2, 14, 5, 0, 0, time.UTC),
+		RankingSnapshotAt: snapshotAt,
 		Accounts: []UpstreamBalanceCardAccount{{ID: 1, Name: "account", Ranks: []UpstreamBalanceCardRank{{
 			GroupName: "GPT-Pro", Rank: &rank, RankTotal: 12, Eligible: true, T114Enabled: true,
 		}}}},
@@ -111,7 +112,7 @@ func TestRenderUpstreamBalanceCardShowsT114RankMetadata(t *testing.T) {
 	require.NoError(t, json.Unmarshal(payload, &card))
 	text := renderedCardText(card)
 	require.Contains(t, text, "T114 调度排名")
-	require.Contains(t, text, "2026-09-02 14:05:00")
+	require.Contains(t, text, snapshotAt.Local().Format("2006-01-02 15:04:05"))
 	require.Contains(t, text, "GPT-Pro：第 3 / 12 名")
 }
 

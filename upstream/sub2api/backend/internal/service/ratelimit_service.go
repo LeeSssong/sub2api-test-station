@@ -312,10 +312,6 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
 		return false
 	}
-	if handled, disable := s.handleDeterministicUpstreamFailure(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)); handled {
-		return disable
-	}
-
 	if statusCode == 529 {
 		if customErrorCodesEnabled {
 			s.handleCustomErrorCode(ctx, account, statusCode, extractUpstreamErrorMessage(responseBody))
@@ -533,6 +529,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	return shouldDisable
 }
 
+<<<<<<< HEAD
 // handleDeterministicUpstreamFailure projects only confirmed, narrowly scoped
 // failures into the existing native account state. It runs before generic
 // 402/403/404 handling so a deterministic decision cannot be widened by a
@@ -588,6 +585,8 @@ func (s *RateLimitService) handleDeterministicBalanceFailureWithReason(ctx conte
 	return true
 }
 
+=======
+>>>>>>> codex/p1-task4
 // PreCheckUsage proactively checks local quota before dispatching a request.
 // Returns false when the account should be skipped.
 func (s *RateLimitService) PreCheckUsage(ctx context.Context, account *Account, requestedModel string) (bool, error) {

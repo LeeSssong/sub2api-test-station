@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T114 账号监控排名对齐补丁（2026-09-02）：** 状态 `INTEGRATING`。候选 `codex/account-monitor-t114-alignment@ba92de5fd` 已合入根 `main`；全站账号卡片按 T114 质量分排序，分组视图仍保持原生调度排名，lifetime 真实请求计数读取失败不再导致整页失败。无迁移、配置或业务数据写入。按用户快速主站授权执行直接回归、推送、主站发布及同 commit/tree 验收站同步；`quota-accounting-long-lived` 与 `codex/account-monitor-scheduler-real-first` 保留不动。
+
 **T113 流式请求全链路可观测与根因诊断（2026-09-02）：** 状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t113-stream-observability@ed66c30ca`，基线 `main@5bff30023`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t113-stream-observability`，交接 `docs/handoffs/2026-09-02-t113-stream-observability-handoff.md`。已完成现有 OpenAI SSE 主路径 lifecycle 观测、关联 ID、错误分类/脱敏、Ops 只读精确查询、管理员 Usage 详情和 Caddy/Compose environment/commit/slot 日志合同；无迁移、无业务数据写入、无真实上游流量、不改变调度/重试/计费/账号状态。直接相关测试与必要构建通过；宽泛 `go test ./cmd/server` 被既有 `wire_gen_test.go` 参数漂移阻断，已在交接记录。候选不得自行合并、推送、部署；等待根总控 `AUTHORIZE_MERGE_TO_MAIN`。
 
 **T113 流式请求全链路可观测与根因诊断（2026-09-02）：** 状态 `DESIGNING`。用户已批准正式规格 `docs/superpowers/specs/2026-09-02-stream-observability-root-cause-diagnosis-design.md` 并要求开始实施。任务复用现有 OpenAI 流式链、请求/错误/usage 日志、管理员请求详情和 Caddy/蓝绿发布元数据，增加生命周期关键节点、稳定 request/logical request/attempt/upstream/response 关联、脱敏底层传输错误分类、environment/commit/slot/container 身份及只读管理员根因证据投影。不得改变调度、重试预算、计费、账号状态、上游协议或部署授权，不新增外部 tracing 平台、平行业务事实源、生产数据写入或真实上游测试。现有两个非 main worktree 均干净且已被 main 包含，不构成领先合并阻塞；计划从登记后的最新干净 main 创建 `.worktrees/t113-stream-observability`，先写实施计划，再按 TDD 完成功能和直接相关测试。预期无迁移，`downtime_required` 仅在未来根发布预检时判定；本规格不授权验收站或主站部署。

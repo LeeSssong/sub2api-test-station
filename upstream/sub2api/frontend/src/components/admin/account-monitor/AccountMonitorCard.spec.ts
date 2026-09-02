@@ -77,6 +77,13 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="account-more"]').text()).toContain('账号操作')
   })
 
+  it('labels the global rank as the best group scheduler position', () => {
+    const wrapper = mountCard({ rankingScope: 'global' })
+
+    expect(wrapper.get('[data-test="scheduler-column"]').text()).toContain('最佳组内调度排名')
+    expect(wrapper.get('[data-test="scheduler-column"]').text()).toContain('第 2 / 12')
+  })
+
   it('uses persisted real-request evidence and does not render legacy explanatory surfaces', () => {
     const wrapper = mountCard()
     const text = wrapper.text()

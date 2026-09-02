@@ -2,8 +2,8 @@
 export default {
   channelMonitorV2: {
     hybrid: {
-      title: 'Group performance monitor', updated: 'Updated {time}', successRate: 'Success rate', monitoring: 'Monitoring', loadError: 'This time range failed to load. Retry.', retry: 'Retry',
-      ttftP95: 'First token P95', latencyP95: 'Total duration P95', cacheHitRate: 'Cache hit rate', requestCount: 'Success {success}/{total} requests', multiplier: 'Multiplier: {value}x', empty: 'No visible groups',
+      title: 'Group performance monitor', updated: 'Updated {time}', successRate: 'Experience success rate', monitoring: 'Monitoring', loadError: 'This time range failed to load. Retry.', retry: 'Retry',
+      ttftP95: 'First token P95', latencyP95: 'Total duration P95', cacheHitRate: 'Cache hit rate', requestCount: 'Combined success {success}/{total}', realRequestCount: 'Real requests succeeded {success}/{total}', probeFallbackCount: 'Probe fallback for {count} empty buckets', multiplier: 'Multiplier: {value}x', empty: 'No visible groups',
     },
     title: 'Channel Monitor',
     updating: 'Updating data',

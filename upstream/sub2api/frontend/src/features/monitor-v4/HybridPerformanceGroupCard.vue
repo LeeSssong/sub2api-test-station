@@ -39,6 +39,8 @@
 
     <footer class="hybrid-card__footer">
       <span data-test="request-count">{{ t('channelMonitorV2.hybrid.requestCount', { success: group.success_count, total: group.request_count }) }}</span>
+      <span data-test="real-request-count">{{ t('channelMonitorV2.hybrid.realRequestCount', { success: group.real_success_count, total: group.real_request_count }) }}</span>
+      <span data-test="probe-fallback-count">{{ t('channelMonitorV2.hybrid.probeFallbackCount', { count: group.probe_fallback_bucket_count }) }}</span>
     </footer>
   </article>
 </template>

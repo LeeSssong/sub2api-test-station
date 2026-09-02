@@ -22,7 +22,7 @@ func TestAccountMonitorRepositoryGroupRealRequestProjectionDeduplicatesAcrossAcc
 	require.True(t, ok)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*unknown_usage_keys AS.*error_events AS.*NOT EXISTS.*unknown_usage_keys.*PARTITION BY e\.group_id, e\.request_key ORDER BY e\.created_at DESC, e\.successful DESC`).
+	mock.ExpectQuery(`(?s)WITH usage_events AS.*unknown_usage_keys AS.*usage_request_keys AS.*FROM usage_logs u.*error_events AS.*NOT EXISTS.*unknown_usage_keys.*PARTITION BY e\.group_id, e\.request_key ORDER BY e\.created_at DESC, e\.successful DESC`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
@@ -160,7 +160,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4ReportsMissingProbeWithoutServi
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(10*time.Minute + 30*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.has_real IS NOT TRUE\s+AND bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",

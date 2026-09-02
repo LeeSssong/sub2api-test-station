@@ -5,7 +5,7 @@ import HybridPerformanceGroupCard from '../HybridPerformanceGroupCard.vue'
 
 const componentSource = readFileSync('src/features/monitor-v4/HybridPerformanceGroupCard.vue', 'utf8')
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: Record<string, unknown>) => key === 'channelMonitorV2.hybrid.multiplier' ? `倍率：${args?.value}x` : key === 'channelMonitorV2.hybrid.requestCount' ? `成功 ${args?.success}/${args?.total} 次请求` : key }) }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: Record<string, unknown>) => key === 'channelMonitorV2.hybrid.multiplier' ? `倍率：${args?.value}x` : key === 'channelMonitorV2.hybrid.requestCount' ? `成功 ${args?.success}/${args?.total} 次请求` : key === 'channelMonitorV2.hybrid.realRequestCount' ? `真实请求成功 ${args?.success}/${args?.total}` : key === 'channelMonitorV2.hybrid.probeFallbackCount' ? `探测补足 ${args?.count} 个空桶` : key }) }))
 
 const group = { id: 1, name: 'Primary', platform: 'openai', rate_multiplier: 0.3, success_rate: 85, request_count: 20, success_count: 17, real_request_count: 15, real_success_count: 14, probe_fallback_bucket_count: 5, probe_fallback_request_count: 5, ttft_p95_ms: 120, ttft_sample_count: 12, latency_p95_ms: 900, latency_sample_count: 12, cache_hit_rate: 0.4, source_updated_at: '2026-08-25T00:00:00Z', current_operational: true }
 
@@ -17,6 +17,8 @@ describe('HybridPerformanceGroupCard', () => {
     expect(wrapper.get('[data-test="request-count"]').text()).toContain('成功 17/20 次请求')
     expect(wrapper.get('header [data-test="multiplier"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="ring"]').classes()).not.toContain('orbit')
+    expect(wrapper.get('[data-test="real-request-count"]').text()).toBe('真实请求成功 14/15')
+    expect(wrapper.get('[data-test="probe-fallback-count"]').text()).toBe('探测补足 5 个空桶')
   })
 
   it('formats latency metrics in seconds with two decimal places', () => {

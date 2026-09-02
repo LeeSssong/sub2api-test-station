@@ -2,8 +2,8 @@
 export default {
   channelMonitorV2: {
     hybrid: {
-      title: '分组性能监控', updated: '更新于 {time}', successRate: '成功率', monitoring: '持续监控', loadError: '该时间范围加载失败，请重试', retry: '重试',
-      ttftP95: '首字 P95', latencyP95: '总耗时 P95', cacheHitRate: '缓存命中率', requestCount: '成功 {success}/{total} 次请求', multiplier: '倍率：{value}x', empty: '暂无可见分组',
+      title: '分组性能监控', updated: '更新于 {time}', successRate: '体验成功率', monitoring: '持续监控', loadError: '该时间范围加载失败，请重试', retry: '重试',
+      ttftP95: '首字 P95', latencyP95: '总耗时 P95', cacheHitRate: '缓存命中率', requestCount: '综合成功 {success}/{total}', realRequestCount: '真实请求成功 {success}/{total}', probeFallbackCount: '探测补足 {count} 个空桶', multiplier: '倍率：{value}x', empty: '暂无可见分组',
     },
     title: '渠道监控',
     updating: '正在更新数据',

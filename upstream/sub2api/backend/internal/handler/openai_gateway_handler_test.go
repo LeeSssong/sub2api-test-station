@@ -99,6 +99,51 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	}
 }
 
+func TestApplyOpenAIUsageRequestMetadataUsesNativeSources(t *testing.T) {
+	tests := []struct {
+		name          string
+		userAgent     string
+		sessionID     string
+		wantUserAgent string
+		wantSessionID string
+	}{
+		{
+			name:          "optional metadata propagates",
+			userAgent:     "codex-test/1.0",
+			sessionID:     "session-t118",
+			wantUserAgent: "codex-test/1.0",
+			wantSessionID: "session-t118",
+		},
+		{
+			name: "optional metadata remains empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5.6-sol"}`))
+			c.Request.RemoteAddr = "203.0.113.10:443"
+			c.Request.Header.Set("User-Agent", tt.userAgent)
+			c.Request.Header.Set("X-Session-Id", tt.sessionID)
+			c.Set("_gateway_inbound_endpoint", EndpointResponses)
+
+			input := &service.OpenAIRecordUsageInput{}
+			account := &service.Account{Platform: service.PlatformOpenAI}
+			result := &service.OpenAIForwardResult{Model: "gpt-5.6-sol"}
+			body := []byte(`{"model":"gpt-5.6-sol"}`)
+			applyOpenAIUsageRequestMetadata(c, body, account, result, input)
+
+			require.Equal(t, "/v1/responses", input.InboundEndpoint)
+			require.NotEmpty(t, input.UpstreamEndpoint)
+			require.Equal(t, "203.0.113.10", input.IPAddress)
+			require.Equal(t, tt.wantUserAgent, input.UserAgent)
+			require.Equal(t, tt.wantSessionID, input.SessionID)
+			require.NotEmpty(t, input.RequestPayloadHash)
+		})
+	}
+}
+
 func TestOpenAIHandleStreamingAwareErrorWithCode_EmitsStableClassification(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

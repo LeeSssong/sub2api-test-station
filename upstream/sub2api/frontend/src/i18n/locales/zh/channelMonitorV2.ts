@@ -28,7 +28,7 @@ export default {
     currentUser: '当前用户',
     readiness: { noTraffic: '已就绪·暂无流量', observing: '待观察' },
     details: { title: '详细分析', description: '模型、错误分类与用户排行', expand: '展开详细分析', collapse: '收起详细分析' },
-    ranges: { '1h': '1 小时', '24h': '24 小时', '7d': '7 天' },
+    ranges: { '1h': '1小时', '24h': '24小时', '7d': '7天' },
     filters: {
       platform: '平台', allPlatforms: '全部', group: '分组', allGroups: '全部', model: '模型', allModels: '全部',
       empty: '暂无可选项', selectedCount: '{count} 项', labelValue: '{label}：{value}'

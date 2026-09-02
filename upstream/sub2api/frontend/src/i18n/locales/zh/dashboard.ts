@@ -68,9 +68,9 @@ export default {
     freshness: { latestProbe: '探测于 {time}', noProbe: '暂无最新探测' },
     refresh: '刷新',
     window: {
-      '24h': '24 小时',
-      '7d': '7 天',
-      '30d': '30 天'
+      '1h': '1小时',
+      '24h': '24小时',
+      '7d': '7天'
     },
     overall: {
       operational: '运行中',

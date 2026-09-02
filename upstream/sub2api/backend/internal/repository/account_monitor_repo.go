@@ -433,6 +433,7 @@ WITH scopes AS (
   FROM usage_logs u
   JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
+    AND NOT (u.created_at >= TIMESTAMPTZ '2026-08-31 00:00:00+08' AND u.created_at < TIMESTAMPTZ '2026-09-02 00:00:00+08')
     AND u.usage_completeness IS DISTINCT FROM 'unknown'
 ), unknown_usage_keys AS (
   SELECT DISTINCT u.group_id, NULLIF(u.request_id, '') AS request_key
@@ -453,6 +454,7 @@ WITH scopes AS (
   FROM ops_error_logs o
   JOIN groups g ON g.group_id = o.group_id
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND NOT (o.created_at >= TIMESTAMPTZ '2026-08-31 00:00:00+08' AND o.created_at < TIMESTAMPTZ '2026-09-02 00:00:00+08')
     AND COALESCE(o.status_code, 0) >= 400
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND NULLIF(o.request_id, '') IS NOT NULL
@@ -470,6 +472,7 @@ WITH scopes AS (
   FROM ops_error_logs o
   JOIN groups g ON g.group_id = o.group_id
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND NOT (o.created_at >= TIMESTAMPTZ '2026-08-31 00:00:00+08' AND o.created_at < TIMESTAMPTZ '2026-09-02 00:00:00+08')
     AND COALESCE(o.status_code, 0) >= 400
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND NULLIF(o.client_request_id, '') IS NOT NULL

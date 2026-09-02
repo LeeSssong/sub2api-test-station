@@ -1408,6 +1408,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		recordInput := buildSuccessfulOpenAIUsageRecordInput(result, apiKey, account, subscription, result.AttemptMetadata, requestHasSideEffects, quotaPlatform)
+		applyOpenAIUsageRequestMetadata(c, body, account, result, recordInput)
 		recordInput.APIKeyService, recordInput.QuotaPlatform = h.apiKeyService, quotaPlatform
 		recordInput.ChannelUsageFields = clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
 		recordInput.PricingAt, recordInput.CyberBlocked = pricingAt, cyberBlocked
@@ -3656,6 +3657,18 @@ func buildSuccessfulOpenAIUsageRecordInput(result *service.OpenAIForwardResult, 
 		AttemptMetadata: metadata, LogicalRequestID: metadata.LogicalRequestID, AttemptID: metadata.AttemptID,
 		UnsafeToReplay: requestHasSideEffects || metadata.OutputStarted, QuotaPlatform: quotaPlatform,
 	}
+}
+
+func applyOpenAIUsageRequestMetadata(c *gin.Context, body []byte, account *service.Account, result *service.OpenAIForwardResult, input *service.OpenAIRecordUsageInput) {
+	if input == nil {
+		return
+	}
+	input.UserAgent = c.GetHeader("User-Agent")
+	input.IPAddress = ip.GetClientIP(c)
+	input.RequestPayloadHash = service.HashUsageRequestPayload(body)
+	input.InboundEndpoint = GetInboundEndpoint(c)
+	input.UpstreamEndpoint = resolveOpenAIUpstreamEndpoint(c, account, result)
+	input.SessionID = service.ExtractClientSessionID(c)
 }
 
 func (h *OpenAIGatewayHandler) recordFailedOpenAIUsageAttempt(ctx context.Context, result *service.OpenAIForwardResult, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, model string, metadata service.OpenAIRequestAttemptMetadata, failure service.OpenAIUpstreamFailureClass) {

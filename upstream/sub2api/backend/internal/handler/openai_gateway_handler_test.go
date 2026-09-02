@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -97,6 +101,98 @@ func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 			assert.Equal(t, service.ProjectNativeUserError(service.NativeUserErrorInput{Status: http.StatusBadGateway, Type: tt.errType, Message: tt.message}).Message, errorObj["message"])
 		})
 	}
+}
+
+func TestApplyOpenAIUsageRequestMetadataUsesNativeSources(t *testing.T) {
+	tests := []struct {
+		name          string
+		userAgent     string
+		sessionID     string
+		wantUserAgent string
+		wantSessionID string
+	}{
+		{
+			name:          "optional metadata propagates",
+			userAgent:     "codex-test/1.0",
+			sessionID:     "session-t118",
+			wantUserAgent: "codex-test/1.0",
+			wantSessionID: "session-t118",
+		},
+		{
+			name: "optional metadata remains empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5.6-sol"}`))
+			c.Request.RemoteAddr = "203.0.113.10:443"
+			c.Request.Header.Set("User-Agent", tt.userAgent)
+			c.Request.Header.Set("X-Session-Id", tt.sessionID)
+			c.Set("_gateway_inbound_endpoint", EndpointResponses)
+
+			input := &service.OpenAIRecordUsageInput{}
+			account := &service.Account{Platform: service.PlatformOpenAI}
+			result := &service.OpenAIForwardResult{Model: "gpt-5.6-sol"}
+			body := []byte(`{"model":"gpt-5.6-sol"}`)
+			applyOpenAIUsageRequestMetadata(c, body, account, result, input)
+
+			require.Equal(t, "/v1/responses", input.InboundEndpoint)
+			require.NotEmpty(t, input.UpstreamEndpoint)
+			require.Equal(t, "203.0.113.10", input.IPAddress)
+			require.Equal(t, tt.wantUserAgent, input.UserAgent)
+			require.Equal(t, tt.wantSessionID, input.SessionID)
+			require.Equal(t, "f8f504ce3a794486c3e96151e0061aa2c8fcb8e4572a375ff46aa45d313c6636", input.RequestPayloadHash)
+		})
+	}
+}
+
+func TestResponsesSuccessPathAppliesOpenAIUsageRequestMetadata(t *testing.T) {
+	const sourcePath = "openai_gateway_handler.go"
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, sourcePath, nil, 0)
+	require.NoError(t, err)
+	source, err := os.ReadFile(sourcePath)
+	require.NoError(t, err)
+
+	var responses *ast.FuncDecl
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == "Responses" {
+			responses = fn
+			break
+		}
+	}
+	require.NotNil(t, responses, "Responses handler declaration must exist")
+
+	var buildOffset, applyOffset int
+	ast.Inspect(responses.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := call.Fun.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		offset := fileSet.Position(call.Pos()).Offset
+		switch ident.Name {
+		case "buildSuccessfulOpenAIUsageRecordInput":
+			if buildOffset == 0 || offset < buildOffset {
+				buildOffset = offset
+			}
+		case "applyOpenAIUsageRequestMetadata":
+			if applyOffset == 0 || offset < applyOffset {
+				applyOffset = offset
+			}
+		}
+		return true
+	})
+	require.NotZero(t, buildOffset, "Responses success path must build a usage record input")
+	require.NotZero(t, applyOffset, "Responses success path must apply request metadata")
+	require.Greater(t, applyOffset, buildOffset, "metadata must be applied after the success input is built")
+	require.Contains(t, string(source[buildOffset:applyOffset]), "buildSuccessfulOpenAIUsageRecordInput")
 }
 
 func TestOpenAIHandleStreamingAwareErrorWithCode_EmitsStableClassification(t *testing.T) {

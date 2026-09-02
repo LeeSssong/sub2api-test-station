@@ -49,6 +49,7 @@ func (r *openAISchedulerLogRepository) BatchInsertOpenAISchedulerLogs(ctx contex
 		return 0, err
 	}
 	defer func() { _ = stmt.Close() }()
+	inserted := 0
 	for _, input := range inputs {
 		if strings.TrimSpace(input.LogicalRequestID) == "" {
 			continue
@@ -75,12 +76,13 @@ func (r *openAISchedulerLogRepository) BatchInsertOpenAISchedulerLogs(ctx contex
 			openAISchedulerLogNullableString(input.SelectionLayer), version, decision); err != nil {
 			return 0, err
 		}
+		inserted++
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	committed = true
-	return len(inputs), nil
+	return inserted, nil
 }
 
 func (r *openAISchedulerLogRepository) DeleteOpenAISchedulerLogsBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {

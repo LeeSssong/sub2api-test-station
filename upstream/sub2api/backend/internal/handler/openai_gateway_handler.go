@@ -947,6 +947,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
+		if scheduleDecision.UnifiedQuality {
+			attemptCtx = h.gatewayService.BeginOpenAIFirstOutputSlowObservation(attemptCtx, derefGroupID(apiKey.GroupID), account.ID, attemptMetadata.AttemptID, time.Now())
+		}
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
 		if retryBudget.unified && !retryBudget.RecordForwardStarted(account.ID) {
 			if accountReleaseFunc != nil {
@@ -991,6 +994,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
 		}
+		h.gatewayService.FinishOpenAIFirstOutputSlowObservation(attemptCtx, err == nil && result != nil && openAIForwardSucceededForScheduling(result), result == nil)
 		var cyberBlockBodyHTTP []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyHTTP = sessionHashBody
@@ -1871,6 +1875,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		attemptMetadata := attemptSequence.next(account.ID, canonicalSchedulingModel, attemptMode)
 		attemptCtx := service.WithOpenAIRequestAttemptMetadata(c.Request.Context(), attemptMetadata)
 		attemptCtx = service.WithOpenAIResilienceCorrelationID(attemptCtx, attemptSequence.logicalRequestID)
+		if scheduleDecision.UnifiedQuality {
+			attemptCtx = h.gatewayService.BeginOpenAIFirstOutputSlowObservation(attemptCtx, derefGroupID(apiKey.GroupID), account.ID, attemptMetadata.AttemptID, time.Now())
+		}
 		if retryBudget.unified && !retryBudget.RecordForwardStarted(account.ID) {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -1914,6 +1921,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
 		}
+		h.gatewayService.FinishOpenAIFirstOutputSlowObservation(attemptCtx, err == nil && result != nil && result.SucceededForScheduling(), result == nil)
 		var cyberBlockBodyMsg []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyMsg = body

@@ -40,6 +40,7 @@ type OpsOpenAISchedulerExperienceMetrics struct {
 	StickyEscapeRate         OpsSchedulerRateMetric     `json:"sticky_escape_rate"`
 	TopKFilteredRate         OpsSchedulerRateMetric     `json:"top_k_filtered_rate"`
 	TTFTReportEligibleRate   OpsSchedulerRateMetric     `json:"ttft_report_eligible_rate"`
+	FirstOutputSlowCount     int64                      `json:"first_output_slow_count"`
 }
 
 type OpsOpenAISchedulerExperienceResponse struct {
@@ -97,6 +98,7 @@ func aggregateOpenAISchedulerExperience(events []OpenAIResilienceEvent, start, e
 	var stickyKept, stickyEscaped, stickyDenominator int64
 	var topKFiltered, topKEligible int64
 	var ttftEligible, ttftDenominator int64
+	var firstOutputSlowCount int64
 
 	for _, event := range events {
 		if response.LatestEventAt == nil || event.At.After(*response.LatestEventAt) {
@@ -115,6 +117,8 @@ func aggregateOpenAISchedulerExperience(events []OpenAIResilienceEvent, start, e
 		}
 
 		switch event.Name {
+		case OpenAIEventFirstOutputSlow:
+			firstOutputSlowCount++
 		case OpenAIEventSchedulerSelection:
 			request.attempts++
 			if request.hadFailure && event.SelectionLayer != "half_open_probe" {
@@ -183,6 +187,7 @@ func aggregateOpenAISchedulerExperience(events []OpenAIResilienceEvent, start, e
 		StickyEscapeRate:         newOpsSchedulerRateMetric(stickyEscaped, stickyDenominator),
 		TopKFilteredRate:         newOpsSchedulerRateMetric(topKFiltered, topKEligible),
 		TTFTReportEligibleRate:   newOpsSchedulerRateMetric(ttftEligible, ttftDenominator),
+		FirstOutputSlowCount:     firstOutputSlowCount,
 	}
 	return response
 }

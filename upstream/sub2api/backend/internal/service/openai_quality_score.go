@@ -138,3 +138,87 @@ func clampOpenAIScore(value float64) float64 {
 	}
 	return value
 }
+
+func buildOpenAIQualityBreakdowns(accounts []*Account, qualities map[int64]OpenAIAccountQuality, loads map[int64]*AccountLoadInfo, slow *OpenAIFirstOutputSlowTracker, groupID int64) map[int64]OpenAIQualityBreakdown {
+	result := make(map[int64]OpenAIQualityBreakdown, len(accounts))
+	for _, account := range accounts {
+		if account == nil {
+			continue
+		}
+		quality := qualities[account.ID]
+		var success, p50, p90, rate float64
+		var successWeight, p50Weight, p90Weight, rateWeight float64
+		for window, metrics := range quality.Windows {
+			target := float64(openAIQualityWindowTarget(window))
+			weight := map[OpenAIQualityWindow]float64{OpenAIQualityWindow1H: .5, OpenAIQualityWindow24H: .3, OpenAIQualityWindow7D: .2}[window]
+			confidence := 0.0
+			if target > 0 {
+				confidence = math.Min(1, float64(metrics.AttemptCount)/target)
+			}
+			weight *= confidence
+			if finiteQualityValue(metrics.SuccessRate) {
+				success += scoreOpenAISuccessRate(*metrics.SuccessRate) * weight
+				successWeight += weight
+			}
+			if finiteQualityValue(metrics.TTFTP50MS) {
+				p50 += scoreOpenAITTFT(*metrics.TTFTP50MS) * weight
+				p50Weight += weight
+			}
+			if finiteQualityValue(metrics.TTFTP90MS) {
+				p90 += scoreOpenAITTFT(*metrics.TTFTP90MS) * weight
+				p90Weight += weight
+			}
+			if finiteQualityValue(metrics.OutputRateTokensPerSecond) {
+				rate += *metrics.OutputRateTokensPerSecond * weight
+				rateWeight += weight
+			}
+		}
+		if successWeight == 0 {
+			success = 50
+		} else {
+			success /= successWeight
+		}
+		if p50Weight == 0 {
+			p50 = 50
+		} else {
+			p50 /= p50Weight
+		}
+		if p90Weight == 0 {
+			p90 = 50
+		} else {
+			p90 /= p90Weight
+		}
+		if rateWeight == 0 {
+			rate = 50
+		} else {
+			rate /= rateWeight
+		}
+		loadScore := scoreOpenAILiveLoad(loads[account.ID], account.Concurrency, 0, 0)
+		breakdown := OpenAIQualityBreakdown{QualityScore: .4*success + .4*(.6*p50+.4*p90) + .1*50 + .1*loadScore, SuccessScore: success, FirstOutputScore: .6*p50 + .4*p90, OutputRateScore: 50, LiveLoadScore: loadScore}
+		for _, window := range []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D} {
+			metrics := quality.Windows[window]
+			if breakdown.P50TTFTMS == nil && finiteQualityValue(metrics.TTFTP50MS) {
+				breakdown.P50TTFTMS = floatPointer(*metrics.TTFTP50MS)
+			}
+			if breakdown.P90TTFTMS == nil && finiteQualityValue(metrics.TTFTP90MS) {
+				breakdown.P90TTFTMS = floatPointer(*metrics.TTFTP90MS)
+			}
+			if breakdown.OutputRate == nil && finiteQualityValue(metrics.OutputRateTokensPerSecond) {
+				breakdown.OutputRate = floatPointer(*metrics.OutputRateTokensPerSecond)
+			}
+		}
+		result[account.ID] = breakdown
+	}
+	return result
+}
+
+func openAIQualityWindowTarget(window OpenAIQualityWindow) int64 {
+	switch window {
+	case OpenAIQualityWindow1H:
+		return 20
+	case OpenAIQualityWindow24H:
+		return 100
+	default:
+		return 300
+	}
+}

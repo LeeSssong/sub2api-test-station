@@ -31,6 +31,7 @@ type OpenAIFirstOutputSlowTracker struct {
 	mu      sync.Mutex
 	now     func() time.Time
 	after   func(time.Duration, func()) openAISlowTimer
+	onSlow  func(openAIFirstOutputSlowKey, float64)
 	entries map[openAIFirstOutputSlowKey]openAIFirstOutputSlowEntry
 }
 
@@ -75,6 +76,9 @@ func (t *OpenAIFirstOutputSlowTracker) markSlow(key openAIFirstOutputSlowKey) {
 	t.cleanupLocked(t.now())
 	if _, exists := t.entries[key]; !exists {
 		t.entries[key] = openAIFirstOutputSlowEntry{observedAt: t.now(), ttftMS: 60000}
+		if t.onSlow != nil {
+			t.onSlow(key, 60000)
+		}
 	}
 }
 

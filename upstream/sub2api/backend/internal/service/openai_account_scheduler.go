@@ -187,6 +187,14 @@ type OpenAIAccountScheduleDecision struct {
 	// participate in account ordering.
 	ImageIntent          bool
 	QualityWindowEnd     time.Time
+	QualityScore         float64
+	SuccessScore         float64
+	FirstOutputScore     float64
+	OutputRateScore      float64
+	LiveLoadScore        float64
+	FirstOutputSlowCount int
+	SlowEvidenceReplaced bool
+	QualityScoreGap      float64
 	QualitySnapshotStale bool
 	ExtraRetryCount      int
 	ExtraUsed            int

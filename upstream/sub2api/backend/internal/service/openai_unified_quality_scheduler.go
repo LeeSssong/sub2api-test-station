@@ -16,8 +16,7 @@ type openAIUnifiedQualityRecheckKey struct{}
 // and total duration deliberately do not appear in this comparator contract.
 type openAIUnifiedQualityCandidate struct {
 	account             *Account
-	successRate         *float64
-	ttftMS              *float64
+	quality             OpenAIQualityBreakdown
 	effectiveU          *float64
 	effectiveCostStatus string
 }
@@ -87,13 +86,13 @@ func isOpenAIUnifiedQualityCandidateBetter(left, right openAIUnifiedQualityCandi
 	if left.account == nil || right.account == nil {
 		return left.account != nil
 	}
-	if cmp := compareOpenAIUnifiedQualityNullableDesc(left.successRate, right.successRate); cmp != 0 {
-		return cmp < 0
+	if left.quality.QualityScore != right.quality.QualityScore {
+		return left.quality.QualityScore > right.quality.QualityScore
 	}
-	if cmp := compareOpenAIUnifiedQualityNullableAsc(left.ttftMS, right.ttftMS); cmp != 0 {
-		return cmp < 0
+	if left.quality.SuccessScore != right.quality.SuccessScore {
+		return left.quality.SuccessScore > right.quality.SuccessScore
 	}
-	if cmp := compareOpenAIUnifiedQualityNullableAsc(left.effectiveU, right.effectiveU); cmp != 0 {
+	if cmp := compareOpenAIUnifiedQualityNullableAsc(left.quality.P50TTFTMS, right.quality.P50TTFTMS); cmp != 0 {
 		return cmp < 0
 	}
 	return left.account.ID < right.account.ID
@@ -229,22 +228,49 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 			continue
 		}
 
-		var successRate, ttftMS *float64
-		if quality, ok := snapshot.Accounts[account.ID]; ok {
-			successRate = finiteQualityPointer(quality.SuccessRate)
-			ttftMS = finiteQualityPointer(quality.TTFTTrimmedMeanMS)
-		}
 		var effectiveU *float64
 		cost := EffectiveCostForAccount(account)
 		if cost.Status == EffectiveCostStatusReady {
 			effectiveU = finiteQualityPointer(cost.U)
 		}
 		qualityCandidates = append(qualityCandidates, openAIUnifiedQualityCandidate{
-			account: account, successRate: successRate, ttftMS: ttftMS, effectiveU: effectiveU, effectiveCostStatus: cost.Status,
+			account: account, effectiveU: effectiveU, effectiveCostStatus: cost.Status,
 		})
+	}
+	candidateAccounts := make([]*Account, 0, len(qualityCandidates))
+	loadRequest := make([]AccountWithConcurrency, 0, len(qualityCandidates))
+	for _, candidate := range qualityCandidates {
+		candidateAccounts = append(candidateAccounts, candidate.account)
+		loadRequest = append(loadRequest, AccountWithConcurrency{ID: candidate.account.ID, MaxConcurrency: candidate.account.Concurrency})
+	}
+	loadMap := map[int64]*AccountLoadInfo{}
+	if s.service.concurrencyService != nil {
+		if loads, loadErr := s.service.concurrencyService.GetAccountsLoadBatch(ctx, loadRequest); loadErr == nil {
+			loadMap = loads
+		}
+	}
+	groupID := int64(0)
+	if req.GroupID != nil {
+		groupID = *req.GroupID
+	}
+	breakdowns := buildOpenAIQualityBreakdowns(candidateAccounts, snapshot.Accounts, loadMap, s.service.openaiFirstOutputSlow, groupID)
+	for i := range qualityCandidates {
+		qualityCandidates[i].quality = breakdowns[qualityCandidates[i].account.ID]
 	}
 	partition := partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates)
 	ordered := partition.candidates
+	if len(ordered) > 0 {
+		decision.QualityScore = ordered[0].quality.QualityScore
+		decision.SuccessScore = ordered[0].quality.SuccessScore
+		decision.FirstOutputScore = ordered[0].quality.FirstOutputScore
+		decision.OutputRateScore = ordered[0].quality.OutputRateScore
+		decision.LiveLoadScore = ordered[0].quality.LiveLoadScore
+		decision.FirstOutputSlowCount = ordered[0].quality.FirstOutputSlowCount
+		decision.SlowEvidenceReplaced = ordered[0].quality.SlowEvidenceReplaced
+		if len(ordered) > 1 {
+			decision.QualityScoreGap = ordered[0].quality.QualityScore - ordered[1].quality.QualityScore
+		}
+	}
 	decision.EligibleCount = len(ordered)
 	decision.CandidateAccountIDs = unifiedCandidateIDs(ordered)
 	if gatewayProfitControlGateActive(ctx) {

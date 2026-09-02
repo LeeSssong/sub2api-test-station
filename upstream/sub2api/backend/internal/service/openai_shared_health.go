@@ -247,6 +247,7 @@ var openAISharedHealthOwnerSequence atomic.Uint64
 type openAISharedHealthReadTrackerContextKey struct{}
 type openAIAdmissionRequestShapeContextKey struct{}
 type openAIFirstSemanticOutputCallbackContextKey struct{}
+type openAIFirstOutputSlowObservationContextKey struct{}
 
 // OpenAISharedHealthReadTracker records that a logical request could no longer
 // rely on either Redis or a fresh local projection. Callers use this signal to
@@ -293,6 +294,16 @@ func notifyOpenAIFirstSemanticOutput(ctx context.Context) {
 	if callback, ok := ctx.Value(openAIFirstSemanticOutputCallbackContextKey{}).(func()); ok && callback != nil {
 		callback()
 	}
+	if observation, ok := ctx.Value(openAIFirstOutputSlowObservationContextKey{}).(*OpenAIFirstOutputObservation); ok && observation != nil {
+		observation.ObserveSemanticOutput(0)
+	}
+}
+
+func withOpenAIFirstOutputSlowObservation(ctx context.Context, observation *OpenAIFirstOutputObservation) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIFirstOutputSlowObservationContextKey{}, observation)
 }
 
 func (t *OpenAISharedHealthReadTracker) MarkDegraded() {

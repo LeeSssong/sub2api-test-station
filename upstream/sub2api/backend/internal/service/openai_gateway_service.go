@@ -483,6 +483,7 @@ type OpenAIGatewayService struct {
 	openaiWSSessionPreemptions     openAIWSSessionPreemptRegistry
 	openaiAccountStats             *openAIAccountRuntimeStats
 	openaiQuality                  OpenAIAccountQualitySnapshotProvider
+	openaiFirstOutputSlow          *OpenAIFirstOutputSlowTracker
 	openaiModelTransient           *openAIAccountModelTransientState
 	openaiRecoveryExclusions       *openAIRecoveryExclusionState
 	openaiProxyStreamCircuit       *openAIProxyStreamCircuit
@@ -599,6 +600,14 @@ func NewOpenAIGatewayService(
 		sharedHealthSnapshots: make(map[string]OpenAISharedHealthSnapshot),
 		sharedHealthLeases:    make(map[string]OpenAISharedHalfOpenLease),
 		sharedHealthOwner:     newOpenAISharedHealthOwner(),
+		openaiFirstOutputSlow: newOpenAIFirstOutputSlowTracker(nil, nil),
+	}
+	svc.openaiFirstOutputSlow.onSlow = func(key openAIFirstOutputSlowKey, ttftMS float64) {
+		RecordOpenAIResilienceOutcome(OpenAIResilienceEvent{
+			At: time.Now().UTC(), Platform: PlatformOpenAI, GroupID: optionalInt64Ptr(key.groupID),
+			Name: OpenAIEventFirstOutputSlow, AccountID: key.accountID, AttemptID: key.attemptID,
+			Outcome: "slow", UpstreamTTFTMs: int64(ttftMS),
+		})
 	}
 	if qualityRepo, ok := usageLogRepo.(OpenAIAccountQualityRepository); ok {
 		svc.openaiQuality = NewOpenAIAccountQualitySnapshotProvider(qualityRepo, time.Minute, time.Now)
@@ -621,6 +630,26 @@ func (s *OpenAIGatewayService) OpenAIAccountQualitySnapshot(ctx context.Context)
 		return OpenAIAccountQualitySnapshot{Stale: true, Accounts: map[int64]OpenAIAccountQuality{}}
 	}
 	return s.openaiQuality.Snapshot(ctx)
+}
+
+func (s *OpenAIGatewayService) BeginOpenAIFirstOutputSlowObservation(ctx context.Context, groupID, accountID int64, attemptID string, startedAt time.Time) context.Context {
+	if s == nil || s.openaiFirstOutputSlow == nil || accountID <= 0 || attemptID == "" {
+		return ctx
+	}
+	return withOpenAIFirstOutputSlowObservation(ctx, s.openaiFirstOutputSlow.Start(groupID, accountID, attemptID, startedAt))
+}
+
+func (s *OpenAIGatewayService) FinishOpenAIFirstOutputSlowObservation(ctx context.Context, success, keepUnknown bool) {
+	if ctx == nil {
+		return
+	}
+	if observation, ok := ctx.Value(openAIFirstOutputSlowObservationContextKey{}).(*OpenAIFirstOutputObservation); ok && observation != nil {
+		if success {
+			observation.ObserveSemanticOutput(0)
+		} else {
+			observation.ObserveFailure(keepUnknown)
+		}
+	}
 }
 
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）

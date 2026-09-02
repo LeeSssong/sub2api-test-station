@@ -21,7 +21,6 @@ func TestRateLimitService_HandleUpstreamError_DoesNotUseDeterministicBalanceClas
 	shouldDisable := svc.HandleUpstreamError(context.Background(), account, http.StatusPaymentRequired, http.Header{}, []byte(`{"error":{"code":"insufficient_user_quota","message":"balance exhausted"}}`))
 
 	require.True(t, shouldDisable)
-<<<<<<< HEAD
 	require.Equal(t, 1, repo.tempCalls)
 	require.Zero(t, repo.setErrorCalls)
 	require.Contains(t, repo.lastTempReason, `"failure_class":"balance_exhausted"`)
@@ -83,8 +82,6 @@ func TestRateLimitService_GenericForbiddenDoesNotCreateDeterministicIsolation(t 
 
 	_ = svc.HandleUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{}, []byte(`{"error":{"message":"forbidden"}}`), "gpt-5.6-sol")
 
-=======
->>>>>>> codex/p1-task4
 	require.Zero(t, repo.tempCalls)
 	require.Equal(t, 1, repo.setErrorCalls)
 	require.NotContains(t, repo.lastErrorMsg, "deterministic_failure_isolation")

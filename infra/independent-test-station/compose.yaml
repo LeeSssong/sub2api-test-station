@@ -85,7 +85,7 @@ services:
     healthcheck: {test: ["CMD", "redis-cli", "-a", "${ADMIN_LAB_REDIS_PASSWORD}", "PING"], interval: 5s, timeout: 5s, retries: 20}
   test-station-caddy:
     image: ${CLONE_CADDY_IMAGE:?required}
-    ports: ["80:80", "[::]:80:80"]
+    ports: ["0.0.0.0:80:80"]
     volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro]
     networks: [test-station]
     depends_on:

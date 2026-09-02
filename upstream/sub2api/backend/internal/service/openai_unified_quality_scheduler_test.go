@@ -20,12 +20,11 @@ func (p *recordingOpenAIQualityProvider) Snapshot(context.Context) OpenAIAccount
 }
 
 func TestOpenAIUnifiedQualityComparatorUsesDeterministicLexicographicOrder(t *testing.T) {
-	value := func(v float64) *float64 { return &v }
 	candidates := []openAIUnifiedQualityCandidate{
-		{account: &Account{ID: 40}, successRate: value(0.8), ttftMS: value(100), effectiveU: value(0.1)},
-		{account: &Account{ID: 30}, successRate: value(0.9), ttftMS: value(500), effectiveU: value(0.9)},
-		{account: &Account{ID: 20}, successRate: value(0.9), ttftMS: value(100), effectiveU: value(0.8)},
-		{account: &Account{ID: 10}, successRate: value(0.9), ttftMS: value(100), effectiveU: value(0.2)},
+		{account: &Account{ID: 40}, quality: OpenAIQualityBreakdown{QualityScore: 60, SuccessScore: 90, P50TTFTMS: floatPtr(100)}},
+		{account: &Account{ID: 30}, quality: OpenAIQualityBreakdown{QualityScore: 80, SuccessScore: 90, P50TTFTMS: floatPtr(500)}},
+		{account: &Account{ID: 20}, quality: OpenAIQualityBreakdown{QualityScore: 80, SuccessScore: 90, P50TTFTMS: floatPtr(100)}},
+		{account: &Account{ID: 10}, quality: OpenAIQualityBreakdown{QualityScore: 80, SuccessScore: 95, P50TTFTMS: floatPtr(900)}},
 	}
 
 	for seed := int64(0); seed < 100; seed++ {
@@ -43,30 +42,41 @@ func TestOpenAIUnifiedQualityRequiresExplicitRequestOptIn(t *testing.T) {
 }
 
 func TestOpenAIUnifiedQualityComparatorKeepsNullsLastAtEachPosition(t *testing.T) {
-	value := func(v float64) *float64 { return &v }
 	candidates := []openAIUnifiedQualityCandidate{
-		{account: &Account{ID: 1}, successRate: nil, ttftMS: value(1), effectiveU: value(1)},
-		{account: &Account{ID: 2}, successRate: value(0.5), ttftMS: nil, effectiveU: value(1)},
-		{account: &Account{ID: 3}, successRate: value(0.5), ttftMS: value(2), effectiveU: nil},
-		{account: &Account{ID: 4}, successRate: value(0.5), ttftMS: value(2), effectiveU: value(2)},
-		{account: &Account{ID: 5}, successRate: value(0.5), ttftMS: value(2), effectiveU: value(2)},
+		{account: &Account{ID: 1}, quality: OpenAIQualityBreakdown{QualityScore: 70, SuccessScore: 90}},
+		{account: &Account{ID: 2}, quality: OpenAIQualityBreakdown{QualityScore: 70, SuccessScore: 90, P50TTFTMS: floatPtr(2)}},
+		{account: &Account{ID: 3}, quality: OpenAIQualityBreakdown{QualityScore: 70, SuccessScore: 95, P50TTFTMS: floatPtr(5)}},
 	}
 	ordered := sortOpenAIUnifiedQualityCandidates(candidates)
-	require.Equal(t, []int64{4, 5, 3, 2, 1}, unifiedCandidateIDs(ordered))
+	require.Equal(t, []int64{3, 2, 1}, unifiedCandidateIDs(ordered))
 }
 
 func TestOpenAIUnifiedQualityComparatorIgnoresLegacySchedulingSignals(t *testing.T) {
 	value := func(v float64) *float64 { return &v }
 	base := openAIUnifiedQualityCandidate{
-		account:     &Account{ID: 10, Priority: 99},
-		successRate: value(0.9),
-		ttftMS:      value(100),
-		effectiveU:  value(0.2),
+		account:    &Account{ID: 10, Priority: 99},
+		quality:    OpenAIQualityBreakdown{QualityScore: 80, SuccessScore: 90, P50TTFTMS: value(100)},
+		effectiveU: value(0.2),
 	}
 	other := base
 	other.account = &Account{ID: 20, Priority: 1}
 	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{other, base})
 	require.Equal(t, []int64{10, 20}, unifiedCandidateIDs(ordered))
+}
+
+func TestOpenAIUnifiedQualityCompositePrefersFasterNearPerfectAccount(t *testing.T) {
+	slowPerfect := OpenAIAccountQuality{AccountID: 1, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+		OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 20, SuccessRate: floatPtr(1), TTFTSampleCount: 20, TTFTP50MS: floatPtr(18000), TTFTP90MS: floatPtr(18000)},
+	}}
+	fastNearPerfect := OpenAIAccountQuality{AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+		OpenAIQualityWindow1H: {AttemptCount: 2000, SuccessCount: 1993, SuccessRate: floatPtr(.9965), TTFTSampleCount: 20, TTFTP50MS: floatPtr(4700), TTFTP90MS: floatPtr(4700)},
+	}}
+	breakdowns := buildOpenAIQualityBreakdowns([]*Account{{ID: 1, Concurrency: 1}, {ID: 2, Concurrency: 1}}, map[int64]OpenAIAccountQuality{1: slowPerfect, 2: fastNearPerfect}, nil, nil, 0)
+	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{
+		{account: &Account{ID: 1}, quality: breakdowns[1]},
+		{account: &Account{ID: 2}, quality: breakdowns[2]},
+	})
+	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
 }
 
 func TestOpenAIUnifiedQualitySelectorUsesQualityOrderForOrdinaryText(t *testing.T) {
@@ -77,9 +87,9 @@ func TestOpenAIUnifiedQualitySelectorUsesQualityOrderForOrdinaryText(t *testing.
 		unifiedQualityTestAccount(30, groupID),
 	}
 	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
-		10: {AccountID: 10, SuccessRate: floatPtr(0.9), TTFTTrimmedMeanMS: floatPtr(900)},
-		20: {AccountID: 20, SuccessRate: floatPtr(0.9), TTFTTrimmedMeanMS: floatPtr(100)},
-		30: {AccountID: 30, SuccessRate: floatPtr(0.8), TTFTTrimmedMeanMS: floatPtr(1)},
+		10: {AccountID: 10, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 18, SuccessRate: floatPtr(.9), TTFTSampleCount: 20, TTFTP50MS: floatPtr(900), TTFTP90MS: floatPtr(900)}}},
+		20: {AccountID: 20, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 18, SuccessRate: floatPtr(.9), TTFTSampleCount: 20, TTFTP50MS: floatPtr(100), TTFTP90MS: floatPtr(100)}}},
+		30: {AccountID: 30, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 16, SuccessRate: floatPtr(.8), TTFTSampleCount: 20, TTFTP50MS: floatPtr(1), TTFTP90MS: floatPtr(1)}}},
 	}}}
 	repo := &schedulerTestOpenAIAccountRepo{accounts: accounts}
 	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality}

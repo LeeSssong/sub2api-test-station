@@ -19,6 +19,7 @@ const (
 	OpenAIEventRetryBillingReconciled           = "openai.retry_billing_reconciled"
 	OpenAIEventSchedulerSelection               = "openai.scheduler_selection"
 	OpenAIEventSchedulerRequestOutcome          = "openai.scheduler_request_outcome"
+	OpenAIEventFirstOutputSlow                  = "openai.first_output_slow"
 	OpenAIEventResponsesFailoverDecision        = "openai.responses_failover_decision"
 )
 
@@ -80,6 +81,14 @@ type OpenAIResilienceEvent struct {
 	UnifiedQuality       bool
 	ImageIntent          bool
 	QualityWindowEnd     time.Time
+	QualityScore         float64
+	SuccessScore         float64
+	FirstOutputScore     float64
+	OutputRateScore      float64
+	LiveLoadScore        float64
+	FirstOutputSlowCount int
+	SlowEvidenceReplaced bool
+	QualityScoreGap      float64
 	QualitySnapshotStale bool
 	ProfitMode           string
 	ProfitBypass         bool
@@ -187,6 +196,9 @@ func RecordOpenAISchedulerSelection(ctx context.Context, platform string, groupI
 		SelectedAccountID: decision.SelectedAccountID, SelectedRank: decision.SelectedRank,
 		UnifiedQuality: decision.UnifiedQuality, ImageIntent: decision.ImageIntent,
 		QualityWindowEnd: decision.QualityWindowEnd, QualitySnapshotStale: decision.QualitySnapshotStale,
+		QualityScore: decision.QualityScore, SuccessScore: decision.SuccessScore, FirstOutputScore: decision.FirstOutputScore,
+		OutputRateScore: decision.OutputRateScore, LiveLoadScore: decision.LiveLoadScore, FirstOutputSlowCount: decision.FirstOutputSlowCount,
+		SlowEvidenceReplaced: decision.SlowEvidenceReplaced, QualityScoreGap: decision.QualityScoreGap,
 		ProfitMode: decision.ProfitMode, ProfitBypass: decision.ProfitBypass, ProfitBypassReason: decision.ProfitBypassReason,
 		ExtraRetryCount: decision.ExtraRetryCount, ExtraUsed: decision.ExtraUsed, SwitchCount: decision.SwitchCount,
 		SafeToReplay: decision.SafeToReplay, SwitchAllowed: decision.SwitchAllowed,

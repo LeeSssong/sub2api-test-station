@@ -7,4 +7,5 @@ const (
 	SchedulerOutboxEventAccountLastUsed      = "account_last_used"
 	SchedulerOutboxEventGroupChanged         = "group_changed"
 	SchedulerOutboxEventFullRebuild          = "full_rebuild"
+	SchedulerOutboxEventQuotaRefundRequested = "quota_refund.requested"
 )

@@ -39,9 +39,11 @@ type PromoCodeUsageEdges struct {
 	PromoCode *PromoCode `json:"promo_code,omitempty"`
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
+	// QuotaGrants holds the value of the quota_grants edge.
+	QuotaGrants []*UserQuotaGrant `json:"quota_grants,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // PromoCodeOrErr returns the PromoCode value or an error if the edge
@@ -64,6 +66,15 @@ func (e PromoCodeUsageEdges) UserOrErr() (*User, error) {
 		return nil, &NotFoundError{label: user.Label}
 	}
 	return nil, &NotLoadedError{edge: "user"}
+}
+
+// QuotaGrantsOrErr returns the QuotaGrants value or an error if the edge
+// was not loaded in eager-loading.
+func (e PromoCodeUsageEdges) QuotaGrantsOrErr() ([]*UserQuotaGrant, error) {
+	if e.loadedTypes[2] {
+		return e.QuotaGrants, nil
+	}
+	return nil, &NotLoadedError{edge: "quota_grants"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -143,6 +154,11 @@ func (_m *PromoCodeUsage) QueryPromoCode() *PromoCodeQuery {
 // QueryUser queries the "user" edge of the PromoCodeUsage entity.
 func (_m *PromoCodeUsage) QueryUser() *UserQuery {
 	return NewPromoCodeUsageClient(_m.config).QueryUser(_m)
+}
+
+// QueryQuotaGrants queries the "quota_grants" edge of the PromoCodeUsage entity.
+func (_m *PromoCodeUsage) QueryQuotaGrants() *UserQuotaGrantQuery {
+	return NewPromoCodeUsageClient(_m.config).QueryQuotaGrants(_m)
 }
 
 // Update returns a builder for updating this PromoCodeUsage.

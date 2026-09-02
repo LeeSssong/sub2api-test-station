@@ -99,6 +99,12 @@ export default {
     description: 'Review CNY revenue, upstream cost, and group margin from native usage and quota records.',
   },
   usageCostDetail: {
+    streamDiagnostic: {
+      title: 'Stream Link Diagnostics', environment: 'Environment', slot: 'Active Slot', commit: 'Deployment Commit', container: 'Container ID',
+      rootCause: 'Root Cause', errorClass: 'Error Class', failureStage: 'Failure Stage', lastEvent: 'Last Event', responseId: 'Response ID',
+      bytes: 'Read/Forwarded Bytes', errorChain: 'Transport Error Chain', missingEvidence: 'Missing Evidence', noEvidence: 'No stream diagnostic evidence',
+      unavailable: 'Stream diagnostics unavailable',
+    },
     siteRequestId: 'Site Request ID',
     upstreamRequestId: 'Upstream Request ID',
     siteStandardCost: 'Site Standard Cost',

@@ -81,6 +81,17 @@ func TestStreamObservationSnapshotTracksLifecycleWithoutEventBody(t *testing.T) 
 	require.False(t, snapshot.CorrelationDegraded)
 }
 
+func TestStreamObservationDoesNotPersistEventBodyOrEmitPerDeltaContract(t *testing.T) {
+	obs := NewStreamObservation(StreamObservationInput{RequestID: "req-1", LogicalRequestID: "logical-1", AttemptID: "attempt-1"})
+	obs.RecordEvent("response.output_text.delta", 1, 10)
+	obs.RecordEvent("response.output_text.delta", 2, 20)
+	obs.RecordVisibleOutput(10)
+	snapshot := obs.Snapshot()
+	require.Equal(t, 2, snapshot.EventIndex)
+	require.Empty(t, snapshot.EventBody)
+	require.True(t, snapshot.SemanticOutputSeen)
+}
+
 func TestStreamObservationRootCauseRequiresSufficientEvidence(t *testing.T) {
 	obs := NewStreamObservation(StreamObservationInput{RequestID: "req-1"})
 	obs.RecordFailure(StreamFailureStageUpstreamBodyRead, io.ErrUnexpectedEOF, false)

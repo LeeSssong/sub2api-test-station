@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUsageCostExceptionList, AdminUsageLog, UsageCostEvidenceDetail, UsageCostFilteredReviewResult, UsageCostReviewResult, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
+import type { AdminUsageCostExceptionList, AdminUsageLog, StreamDiagnosticResponse, UsageCostEvidenceDetail, UsageCostFilteredReviewResult, UsageCostReviewResult, UsageQueryParams, PaginatedResponse, UsageRequestType } from '@/types'
 import type { EndpointStat } from '@/types'
 
 // ==================== Types ====================
@@ -129,6 +129,13 @@ export async function list(
  */
 export async function getById(id: number): Promise<AdminUsageLog> {
   const { data } = await apiClient.get<AdminUsageLog>(`/admin/usage/${id}`)
+  return data
+}
+
+export async function getStreamDiagnostic(requestID: string, logicalRequestID?: string): Promise<StreamDiagnosticResponse> {
+  const { data } = await apiClient.get<StreamDiagnosticResponse>('/admin/ops/stream-diagnostics', {
+    params: { request_id: requestID, logical_request_id: logicalRequestID || undefined },
+  })
   return data
 }
 
@@ -283,6 +290,7 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
 export const adminUsageAPI = {
   list,
   getById,
+  getStreamDiagnostic,
   getCostEvidence,
   listCostExceptions,
   reviewOne,

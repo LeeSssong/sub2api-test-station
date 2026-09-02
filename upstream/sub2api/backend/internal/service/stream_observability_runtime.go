@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -18,6 +19,10 @@ func BeginStreamObservation(c *gin.Context, model, mappedModel, platform string,
 		return nil
 	}
 	input := StreamObservationInput{Model: model, MappedModel: mappedModel, Platform: platform}
+	input.Environment = strings.TrimSpace(os.Getenv("SUB2API_ENVIRONMENT"))
+	input.DeploymentCommit = strings.TrimSpace(os.Getenv("SUB2API_DEPLOYMENT_COMMIT"))
+	input.ContainerSlot = strings.TrimSpace(os.Getenv("SUB2API_CONTAINER_SLOT"))
+	input.ContainerID = strings.TrimSpace(os.Getenv("SUB2API_CONTAINER_ID"))
 	if c.Request != nil {
 		ctx := c.Request.Context()
 		input.RequestID, _ = ctx.Value(ctxkey.RequestID).(string)
@@ -67,12 +72,18 @@ func ObserveSSEEvent(c *gin.Context, eventType string, index int, bytesRead int6
 		return
 	}
 	obs.RecordEvent(eventType, index, bytesRead)
-	emitStreamObservation(c, obs)
+	if index == 1 {
+		emitStreamObservation(c, obs)
+	}
 }
 
 func ObserveVisibleOutput(c *gin.Context, bytesForwarded int64) {
 	obs := StreamObservationFromContext(c)
 	if obs == nil {
+		return
+	}
+	snapshot := obs.Snapshot()
+	if snapshot.SemanticOutputSeen {
 		return
 	}
 	obs.RecordVisibleOutput(bytesForwarded)

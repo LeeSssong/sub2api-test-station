@@ -312,6 +312,51 @@
             />
           </dl>
         </section>
+
+        <section
+          v-if="adminDetail && adminDetail.stream"
+          class="border-t border-gray-200 pt-5 dark:border-dark-700"
+          aria-labelledby="usage-detail-stream-diagnostic-heading"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <h4
+              id="usage-detail-stream-diagnostic-heading"
+              class="text-sm font-semibold text-gray-900 dark:text-white"
+            >
+              {{ t('admin.usage.streamDiagnostic.title') }}
+            </h4>
+            <span v-if="streamDiagnosticLoading" class="text-xs text-gray-500 dark:text-dark-400">
+              {{ t('common.loading') }}
+            </span>
+          </div>
+          <div v-if="streamDiagnosticError" class="mt-3 text-sm text-gray-500 dark:text-dark-400">
+            {{ t('admin.usage.streamDiagnostic.unavailable') }}
+          </div>
+          <div v-else-if="streamDiagnostic" class="mt-3 space-y-4">
+            <dl class="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+              <DetailItem :label="t('admin.usage.streamDiagnostic.environment')" :value="displayValue(streamDiagnostic.environment)" />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.slot')" :value="displayValue(streamDiagnostic.entry?.active_slot)" />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.commit')" :value="displayValue(streamDiagnostic.entry?.deployment_commit)" mono />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.container')" :value="displayValue(streamDiagnostic.entry?.container_id)" mono />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.rootCause')" :value="displayValue(streamDiagnostic.final?.root_cause)" />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.errorClass')" :value="displayValue(streamDiagnostic.final?.error_class)" mono />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.failureStage')" :value="displayValue(streamDiagnostic.final?.failure_stage)" mono />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.lastEvent')" :value="displayValue(streamDiagnostic.final?.last_event_type)" mono />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.responseId')" :value="displayValue(streamDiagnostic.final?.response_id)" mono />
+              <DetailItem :label="t('admin.usage.streamDiagnostic.bytes')" :value="formatDiagnosticBytes(streamDiagnostic.final?.bytes_read, streamDiagnostic.final?.response_bytes_forwarded)" numeric />
+            </dl>
+            <div v-if="streamDiagnostic.final?.error_chain" class="rounded border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
+              <div class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.usage.streamDiagnostic.errorChain') }}</div>
+              <pre class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-800 dark:text-gray-200">{{ streamDiagnostic.final.error_chain }}</pre>
+            </div>
+            <div v-if="streamDiagnostic.evidence_missing?.length" class="text-xs text-gray-500 dark:text-dark-400">
+              {{ t('admin.usage.streamDiagnostic.missingEvidence') }}: {{ streamDiagnostic.evidence_missing.join(', ') }}
+            </div>
+          </div>
+          <div v-else class="mt-3 text-sm text-gray-500 dark:text-dark-400">
+            {{ t('admin.usage.streamDiagnostic.noEvidence') }}
+          </div>
+        </section>
       </div>
     </div>
   </BaseDialog>
@@ -325,7 +370,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { adminUsageAPI } from '@/api/admin/usage'
 import { usageAPI } from '@/api/usage'
 import { useClipboard } from '@/composables/useClipboard'
-import type { AdminUsageLog, UsageCostEvidenceDetail, UserUsageDetail } from '@/types'
+import type { AdminUsageLog, StreamDiagnosticResponse, UsageCostEvidenceDetail, UserUsageDetail } from '@/types'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatMultiplier } from '@/utils/formatters'
 import { getBillingModeLabel, getDisplayBillingMode } from '@/utils/billingMode'
@@ -395,6 +440,9 @@ type UsageDetailRecord = UserUsageDetail | AdminUsageLog
 
 const detail = ref<UsageDetailRecord | null>(null)
 const adminCostDetail = ref<UsageCostEvidenceDetail | null>(null)
+const streamDiagnostic = ref<StreamDiagnosticResponse | null>(null)
+const streamDiagnosticLoading = ref(false)
+const streamDiagnosticError = ref(false)
 const loading = ref(false)
 const loadError = ref(false)
 let requestSequence = 0
@@ -446,6 +494,9 @@ function clearState() {
   loadError.value = false
   detail.value = null
   adminCostDetail.value = null
+  streamDiagnostic.value = null
+  streamDiagnosticLoading.value = false
+  streamDiagnosticError.value = false
 }
 
 async function loadAdminCost(row: AdminUsageLog, sequence: number) {
@@ -458,6 +509,24 @@ async function loadAdminCost(row: AdminUsageLog, sequence: number) {
     if (sequence === requestSequence && props.show && props.scope === 'admin') {
       adminCostDetail.value = null
     }
+  }
+}
+
+async function loadStreamDiagnostic(row: AdminUsageLog, sequence: number) {
+  if (!row.stream || !row.request_id) return
+  streamDiagnosticLoading.value = true
+  streamDiagnosticError.value = false
+  try {
+    const result = await adminUsageAPI.getStreamDiagnostic(row.request_id)
+    if (sequence === requestSequence && props.show && props.scope === 'admin') {
+      streamDiagnostic.value = result
+    }
+  } catch {
+    if (sequence === requestSequence && props.show && props.scope === 'admin') {
+      streamDiagnosticError.value = true
+    }
+  } finally {
+    if (sequence === requestSequence) streamDiagnosticLoading.value = false
   }
 }
 
@@ -474,6 +543,8 @@ async function loadDetail() {
   loadError.value = false
   detail.value = null
   adminCostDetail.value = null
+  streamDiagnostic.value = null
+  streamDiagnosticError.value = false
 
   try {
     const result = props.scope === 'admin'
@@ -483,6 +554,7 @@ async function loadDetail() {
       detail.value = result
       if (props.scope === 'admin') {
         void loadAdminCost(result as AdminUsageLog, sequence)
+        void loadStreamDiagnostic(result as AdminUsageLog, sequence)
       }
     }
   } catch {
@@ -526,6 +598,10 @@ function formatDuration(milliseconds: number | null | undefined): string {
 
 function formatTokens(value: number | null | undefined): string {
   return Number.isFinite(value) ? (value as number).toLocaleString() : '-'
+}
+
+function formatDiagnosticBytes(read: number | undefined, forwarded: number | undefined): string {
+  return `${(read ?? 0).toLocaleString()} / ${(forwarded ?? 0).toLocaleString()}`
 }
 
 function formatCost(value: number | null | undefined): string {

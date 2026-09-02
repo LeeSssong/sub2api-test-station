@@ -99,6 +99,12 @@ export default {
     description: '按用户实际扣费与上游实际成本查看站内经营结果。',
   },
   usageCostDetail: {
+    streamDiagnostic: {
+      title: '流式链路诊断', environment: '环境', slot: '活动槽位', commit: '部署提交', container: '容器身份',
+      rootCause: '根因结论', errorClass: '错误分类', failureStage: '失败阶段', lastEvent: '最后事件', responseId: '响应 ID',
+      bytes: '读取/转发字节', errorChain: '底层错误链', missingEvidence: '缺失证据', noEvidence: '暂无流式诊断证据',
+      unavailable: '流式诊断暂不可用',
+    },
     siteRequestId: '本站请求 ID',
     upstreamRequestId: '上游请求 ID',
     siteStandardCost: '本站标准费用',

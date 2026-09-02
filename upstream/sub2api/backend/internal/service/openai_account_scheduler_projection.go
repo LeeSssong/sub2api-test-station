@@ -52,6 +52,11 @@ type OpenAIAccountSchedulerProjectionCandidate struct {
 	AccountID         int64                    `json:"account_id"`
 	Rank              *int                     `json:"rank,omitempty"`
 	Eligible          bool                     `json:"eligible"`
+	QualityScore      *float64                 `json:"quality_score,omitempty"`
+	SuccessScore      *float64                 `json:"success_score,omitempty"`
+	FirstOutputScore  *float64                 `json:"first_output_score,omitempty"`
+	OutputRateScore   *float64                 `json:"output_rate_score,omitempty"`
+	LiveLoadScore     *float64                 `json:"live_load_score,omitempty"`
 	PrimaryReasonCode AccountMonitorReasonCode `json:"primary_reason_code,omitempty"`
 }
 
@@ -342,7 +347,35 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	}
 
 	if len(eligible) > 0 {
+		unifiedQuality := s.service != nil && s.service.OpenAIUnifiedQualityEnabled(ctx, platform, false)
+		qualityBreakdowns := map[int64]OpenAIQualityBreakdown{}
+		if unifiedQuality {
+			snapshot := s.service.OpenAIAccountQualitySnapshot(ctx)
+			qualityBreakdowns = buildOpenAIQualityBreakdowns(eligible, snapshot.Accounts, req.LoadMap, s.service.openaiFirstOutputSlow, groupID)
+		}
 		rankPool := func(pool []*Account) []openAIAccountCandidateScore {
+			if unifiedQuality {
+				loads := req.LoadMap
+				qualityCandidates := make([]openAIUnifiedQualityCandidate, 0, len(pool))
+				for _, account := range pool {
+					cost := EffectiveCostForAccount(account)
+					var u *float64
+					if cost.Status == EffectiveCostStatusReady {
+						u = finiteQualityPointer(cost.U)
+					}
+					qualityCandidates = append(qualityCandidates, openAIUnifiedQualityCandidate{account: account, quality: qualityBreakdowns[account.ID], effectiveU: u, effectiveCostStatus: cost.Status})
+				}
+				ordered := partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates).candidates
+				result := make([]openAIAccountCandidateScore, 0, len(ordered))
+				for _, candidate := range ordered {
+					loadInfo := loads[candidate.account.ID]
+					if loadInfo == nil {
+						loadInfo = &AccountLoadInfo{AccountID: candidate.account.ID}
+					}
+					result = append(result, openAIAccountCandidateScore{account: candidate.account, loadInfo: loadInfo, loadKnown: loads[candidate.account.ID] != nil, score: candidate.quality.QualityScore})
+				}
+				return result
+			}
 			plan := s.buildOpenAIAccountLoadPlanAtWithPolicy(ctx, scheduleReq, pool, req.LoadMap, now, &policy, false)
 			ranked := append([]openAIAccountCandidateScore(nil), plan.preTopKCandidates...)
 			sort.SliceStable(ranked, func(i, j int) bool {
@@ -364,6 +397,14 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 				AccountID: rankedCandidate.account.ID,
 				Rank:      &rank,
 				Eligible:  true,
+			}
+			if unifiedQuality {
+				quality := qualityBreakdowns[rankedCandidate.account.ID]
+				candidate.QualityScore = floatPointer(quality.QualityScore)
+				candidate.SuccessScore = floatPointer(quality.SuccessScore)
+				candidate.FirstOutputScore = floatPointer(quality.FirstOutputScore)
+				candidate.OutputRateScore = floatPointer(quality.OutputRateScore)
+				candidate.LiveLoadScore = floatPointer(quality.LiveLoadScore)
 			}
 			// Eligibility fallback is a stronger explanation than a policy/order
 			// difference. A quality-gate fallback can change the visible first row

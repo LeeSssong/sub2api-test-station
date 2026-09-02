@@ -634,7 +634,8 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	if lifetimeRepo, ok := s.repo.(AccountMonitorLifetimeRealRequestRepository); ok {
 		lifetimeCounts, err = lifetimeRepo.ListLifetimeRealRequestCounts(ctx, ids)
 		if err != nil {
-			return AccountMonitorPage{}, fmt.Errorf("list lifetime real request counts: %w", err)
+			slog.WarnContext(ctx, "account monitor lifetime real request counts unavailable", "error", err)
+			lifetimeCounts = map[int64]int64{}
 		}
 	}
 	probeAggregates, err := s.repo.ListAggregates(ctx, ids, since, observedAt)
@@ -747,7 +748,6 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
 	applyRealRequestEvidence(rows, windowAggregates, observedAt)
-	applyGlobalRealRequestRanks(rows)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
 	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
 	if groupReal != nil {
@@ -756,7 +756,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		applyGroupProfitability(groups, windowAggregates)
 	}
 	applyGroupSchedulerOrder(groups)
-	applyBestGroupSchedulerRanks(rows, groups)
+	applyGlobalQualityOrder(rows, groups)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
@@ -764,49 +764,37 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	}}, nil
 }
 
-func applyBestGroupSchedulerRanks(rows []AccountMonitorAccount, groups []AccountMonitorGroup) {
-	type bestRank struct {
-		rank, total int
-		groupID     int64
-		groupName   string
-	}
-	bestByAccount := make(map[int64]bestRank)
+func applyGlobalQualityOrder(rows []AccountMonitorAccount, groups []AccountMonitorGroup) {
+	qualityByAccount := make(map[int64]*float64)
 	for _, group := range groups {
 		for _, account := range group.Accounts {
-			if account.SchedulerRank == nil {
+			if account.SchedulerQualityScore == nil {
 				continue
 			}
-			candidate := bestRank{rank: *account.SchedulerRank, total: account.SchedulerRankTotal, groupID: group.ID, groupName: group.Name}
-			current, exists := bestByAccount[account.AccountID]
-			if !exists || candidate.rank < current.rank || (candidate.rank == current.rank && candidate.groupID < current.groupID) {
-				bestByAccount[account.AccountID] = candidate
+			if current, exists := qualityByAccount[account.AccountID]; !exists || *account.SchedulerQualityScore > *current {
+				value := *account.SchedulerQualityScore
+				qualityByAccount[account.AccountID] = &value
 			}
 		}
 	}
 	for i := range rows {
+		if score, exists := qualityByAccount[rows[i].AccountID]; exists {
+			rows[i].QualityScore = score
+		}
 		rows[i].SchedulerRank = nil
 		rows[i].SchedulerRankTotal = 0
 		rows[i].SchedulerExplanation = nil
-		best, exists := bestByAccount[rows[i].AccountID]
-		if !exists {
-			continue
-		}
-		rank := best.rank
-		rows[i].SchedulerRank = &rank
-		rows[i].SchedulerRankTotal = best.total
-		rows[i].BestSchedulerGroupName = best.groupName
-		rows[i].SchedulerExplanation = &AccountMonitorSchedulerExplanation{Rank: &rank, RankTotal: best.total, Eligible: true, PolicyKey: "unified_quality", PolicyLabel: "固定质量顺序", CandidateScope: "best_group"}
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
-		l, r := rows[i].SchedulerRank, rows[j].SchedulerRank
-		if l == nil && r != nil {
+		left, right := rows[i].QualityScore, rows[j].QualityScore
+		if left == nil && right != nil {
 			return false
 		}
-		if l != nil && r == nil {
+		if left != nil && right == nil {
 			return true
 		}
-		if l != nil && r != nil && *l != *r {
-			return *l < *r
+		if left != nil && right != nil && *left != *right {
+			return *left > *right
 		}
 		return rows[i].AccountID < rows[j].AccountID
 	})
@@ -1239,6 +1227,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.SchedulerRank = nil
 			row.SchedulerRankTotal = 0
 			row.SchedulerExplanation = nil
+			row.SchedulerQualityScore = nil
 			row.EvidenceSource = evidence.Source
 			row.SampleCount = evidence.SampleCount
 			row.SuccessSampleCount = evidence.SuccessSampleCount
@@ -1448,6 +1437,10 @@ func (s *AccountMonitorService) attachSchedulerProjection(
 		if candidate.Eligible && candidate.Rank != nil {
 			rows[i].SchedulerRank = candidate.Rank
 			rows[i].SchedulerRankTotal = eligibleTotal
+		}
+		if candidate.QualityScore != nil {
+			rows[i].QualityScore = candidate.QualityScore
+			rows[i].SchedulerQualityScore = candidate.QualityScore
 		}
 	}
 }

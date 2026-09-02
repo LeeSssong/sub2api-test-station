@@ -91,7 +91,7 @@
       >
         <div class="min-w-0">
           <div class="text-sm font-medium text-gray-900 dark:text-white">当前调度排名规则</div>
-          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">成功率优先，其次 TTFT、有效成本 U 和账号 ID；旧评分权重不参与当前调度。</div>
+          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">首页按多窗口质量分排序；分组内按当前实际调度顺序排序。</div>
         </div>
       </section>
 
@@ -379,6 +379,14 @@ function uniqueAccounts(source: AccountMonitorAccount[]): AccountMonitorAccount[
 }
 
 function compareAccounts(left: AccountMonitorAccount, right: AccountMonitorAccount): number {
+  if (activeGroupId.value === null) {
+    const leftScore = left.quality_score
+    const rightScore = right.quality_score
+    if (leftScore != null && rightScore != null && leftScore !== rightScore) return Number(rightScore) - Number(leftScore)
+    if (leftScore != null) return -1
+    if (rightScore != null) return 1
+    return left.account_id - right.account_id
+  }
   const leftRank = left.scheduler_rank
   const rightRank = right.scheduler_rank
   const leftRanked = leftRank != null

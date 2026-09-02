@@ -63,24 +63,33 @@ type OpenAIAccountQualitySnapshotProvider interface {
 }
 
 type openAIAccountQualitySnapshotProvider struct {
-	repo OpenAIAccountQualityRepository
-	ttl  time.Duration
-	now  func() time.Time
+	repo            OpenAIAccountQualityRepository
+	ttl             time.Duration
+	refreshInterval time.Duration
+	now             func() time.Time
 
-	mu      sync.Mutex
-	last    OpenAIAccountQualitySnapshot
-	hasLast bool
-	refresh singleflight.Group
+	mu                 sync.Mutex
+	last               OpenAIAccountQualitySnapshot
+	hasLast            bool
+	lastRefreshAttempt time.Time
+	refresh            singleflight.Group
 }
 
 func NewOpenAIAccountQualitySnapshotProvider(repo OpenAIAccountQualityRepository, ttl time.Duration, now func() time.Time) OpenAIAccountQualitySnapshotProvider {
+	return NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(repo, ttl, ttl, now)
+}
+
+func NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(repo OpenAIAccountQualityRepository, ttl, refreshInterval time.Duration, now func() time.Time) OpenAIAccountQualitySnapshotProvider {
 	if ttl <= 0 {
 		ttl = time.Minute
+	}
+	if refreshInterval <= 0 {
+		refreshInterval = ttl
 	}
 	if now == nil {
 		now = time.Now
 	}
-	return &openAIAccountQualitySnapshotProvider{repo: repo, ttl: ttl, now: now}
+	return &openAIAccountQualitySnapshotProvider{repo: repo, ttl: ttl, refreshInterval: refreshInterval, now: now}
 }
 
 func (p *openAIAccountQualitySnapshotProvider) Snapshot(ctx context.Context) OpenAIAccountQualitySnapshot {
@@ -89,6 +98,9 @@ func (p *openAIAccountQualitySnapshotProvider) Snapshot(ctx context.Context) Ope
 	}
 	if snapshot, ok := p.cached(p.now()); ok {
 		return snapshot
+	}
+	if p.refreshThrottled(p.now()) {
+		return p.staleOrColdStart()
 	}
 
 	value, _, _ := p.refresh.Do("openai-account-quality", func() (any, error) {
@@ -100,6 +112,9 @@ func (p *openAIAccountQualitySnapshotProvider) Snapshot(ctx context.Context) Ope
 		}
 
 		end := p.now()
+		p.mu.Lock()
+		p.lastRefreshAttempt = end
+		p.mu.Unlock()
 		start := end.Add(-7 * 24 * time.Hour)
 		rows, err := p.repo.ListOpenAIAccountQuality(ctx, start, end)
 		if err != nil {
@@ -128,6 +143,12 @@ func (p *openAIAccountQualitySnapshotProvider) Snapshot(ctx context.Context) Ope
 		return snapshot
 	}
 	return p.staleOrColdStart()
+}
+
+func (p *openAIAccountQualitySnapshotProvider) refreshThrottled(now time.Time) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.hasLast && !p.lastRefreshAttempt.IsZero() && now.Sub(p.lastRefreshAttempt) < p.refreshInterval
 }
 
 func (p *openAIAccountQualitySnapshotProvider) cached(now time.Time) (OpenAIAccountQualitySnapshot, bool) {

@@ -99,3 +99,21 @@ func TestOpenAIAccountQualitySnapshotProviderDeepClonesWindowMetrics(t *testing.
 	second := provider.Snapshot(context.Background())
 	require.Equal(t, int64(2), second.Accounts[7].Windows[OpenAIQualityWindow1H].AttemptCount)
 }
+
+func TestOpenAIAccountQualitySnapshotProviderThrottlesExpiredRefreshes(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	repo := &openAIAccountQualityRepoStub{rows: []OpenAIAccountQuality{{AccountID: 7, AttemptCount: 2}}}
+	provider := NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(repo, time.Minute, 5*time.Minute, func() time.Time { return now })
+
+	first := provider.Snapshot(context.Background())
+	require.False(t, first.Stale)
+	now = now.Add(2 * time.Minute)
+	second := provider.Snapshot(context.Background())
+	require.True(t, second.Stale)
+	require.Equal(t, 1, repo.callCount(), "expired snapshots inside the refresh cooldown must not rescan PostgreSQL")
+
+	now = now.Add(4 * time.Minute)
+	third := provider.Snapshot(context.Background())
+	require.False(t, third.Stale)
+	require.Equal(t, 2, repo.callCount(), "the next refresh window may perform one new scan")
+}

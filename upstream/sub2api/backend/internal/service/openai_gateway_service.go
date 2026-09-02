@@ -610,7 +610,7 @@ func NewOpenAIGatewayService(
 		})
 	}
 	if qualityRepo, ok := usageLogRepo.(OpenAIAccountQualityRepository); ok {
-		svc.openaiQuality = NewOpenAIAccountQualitySnapshotProvider(qualityRepo, time.Minute, time.Now)
+		svc.openaiQuality = NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(qualityRepo, time.Minute, 5*time.Minute, time.Now)
 	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)

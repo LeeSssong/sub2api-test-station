@@ -43,6 +43,10 @@ func (r codexModelsFailoverAccountRepo) ListSchedulableByPlatform(_ context.Cont
 	return accounts, nil
 }
 
+func (r codexModelsFailoverAccountRepo) ListModelAvailabilityCandidates(_ context.Context, _ *int64, _ []string, _ bool) ([]service.Account, error) {
+	return append([]service.Account(nil), r.accounts...), nil
+}
+
 type codexModelsFailoverHTTPUpstream struct {
 	service.HTTPUpstream
 	mu          sync.Mutex
@@ -50,6 +54,7 @@ type codexModelsFailoverHTTPUpstream struct {
 	firstErr    error
 	firstStatus int
 	firstBody   string
+	bodies      map[int64]string
 	statuses    map[int64]int
 }
 
@@ -57,6 +62,14 @@ func (u *codexModelsFailoverHTTPUpstream) Do(_ *http.Request, _ string, accountI
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
 	u.mu.Unlock()
+	if body, ok := u.bodies[accountID]; ok {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+		}, nil
+	}
 
 	status, hasStatus := u.statuses[accountID]
 	if accountID == 1 || hasStatus {
@@ -116,12 +129,12 @@ func TestCodexModelsCanceledRequestDoesNotWriteResponse(t *testing.T) {
 	}
 }
 
-func TestCompositeCodexModelsReusesExistingManifestSelection(t *testing.T) {
+func TestCompositeCodexModelsAggregatesGroupManifests(t *testing.T) {
 	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusServiceUnavailable)
 
 	recorder := performCodexModelsRequestForPlatform(t, handler, groupID, service.PlatformComposite)
 
-	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusOK {
@@ -129,7 +142,30 @@ func TestCompositeCodexModelsReusesExistingManifestSelection(t *testing.T) {
 	}
 }
 
-func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
+func TestCodexModelsReturnsStableUnionAndAggregateETag(t *testing.T) {
+	handler, upstream, groupID := newCodexModelsAggregationTestHandler()
+
+	first := performCodexModelsRequest(t, handler, groupID)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status: got %d, want %d; body=%s", first.Code, http.StatusOK, first.Body.String())
+	}
+	if got := first.Header().Get("ETag"); got == "" {
+		t.Fatal("first response did not include aggregate ETag")
+	}
+	if !strings.Contains(first.Body.String(), `"gpt-5.5"`) || !strings.Contains(first.Body.String(), `"gpt-5.6"`) {
+		t.Fatalf("aggregate body omitted one of the account models: %s", first.Body.String())
+	}
+
+	second := performCodexModelsRequestWithETag(t, handler, groupID, first.Header().Get("ETag"))
+	if second.Code != http.StatusNotModified {
+		t.Fatalf("conditional status: got %d, want %d; body=%s", second.Code, http.StatusNotModified, second.Body.String())
+	}
+	if got, want := upstream.calls(), []int64{10, 20}; !equalInt64Sets(got, want) {
+		t.Fatalf("conditional request refetched aggregate unexpectedly: got %v, want %v", got, want)
+	}
+}
+
+func TestCodexModelsAggregatesAfterRetryableUpstreamStatus(t *testing.T) {
 	retryableStatuses := []int{
 		http.StatusTooManyRequests,
 		http.StatusInternalServerError,
@@ -142,7 +178,7 @@ func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 			handler, upstream, groupID := newCodexModelsFailoverTestHandler(status)
 			recorder := performCodexModelsRequest(t, handler, groupID)
 
-			if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+			if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 				t.Fatalf("upstream account calls: got %v, want %v", got, want)
 			}
 			if recorder.Code != http.StatusOK {
@@ -155,7 +191,7 @@ func TestCodexModelsFailsOverFromRetryableUpstreamStatus(t *testing.T) {
 	}
 }
 
-func TestCodexModelsFailsOverFromUpstreamTransportError(t *testing.T) {
+func TestCodexModelsAggregatesAfterUpstreamTransportError(t *testing.T) {
 	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusServiceUnavailable)
 	upstream.firstErr = &net.OpError{
 		Op:  "read",
@@ -164,7 +200,7 @@ func TestCodexModelsFailsOverFromUpstreamTransportError(t *testing.T) {
 	}
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusOK {
@@ -172,12 +208,12 @@ func TestCodexModelsFailsOverFromUpstreamTransportError(t *testing.T) {
 	}
 }
 
-func TestCodexModelsFailsOverFromInvalidManifestEnvelope(t *testing.T) {
+func TestCodexModelsAggregatesAfterInvalidManifestEnvelope(t *testing.T) {
 	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusOK)
 	upstream.firstBody = `{"object":"list","data":[]}`
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusOK {
@@ -188,7 +224,7 @@ func TestCodexModelsFailsOverFromInvalidManifestEnvelope(t *testing.T) {
 	}
 }
 
-func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
+func TestCodexModelsIgnoresPermanentFailureFromOneAccount(t *testing.T) {
 	statuses := []int{
 		http.StatusBadRequest,
 		http.StatusUnauthorized,
@@ -201,26 +237,26 @@ func TestCodexModelsDoesNotFailOverFromPermanentUpstreamStatus(t *testing.T) {
 			handler, upstream, groupID := newCodexModelsFailoverTestHandler(status)
 			recorder := performCodexModelsRequest(t, handler, groupID)
 
-			if got, want := upstream.calls(), []int64{1}; !equalInt64Slices(got, want) {
+			if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 				t.Fatalf("upstream account calls: got %v, want %v", got, want)
 			}
-			if recorder.Code != http.StatusBadGateway {
-				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 			}
 		})
 	}
 }
 
-func TestCodexModelsDoesNotFailOverFromUpstreamConfigurationError(t *testing.T) {
+func TestCodexModelsIgnoresConfigurationFailureFromOneAccount(t *testing.T) {
 	handler, upstream, groupID := newCodexModelsFailoverTestHandler(http.StatusServiceUnavailable)
 	upstream.firstErr = errors.New("invalid proxy URL")
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
-	if recorder.Code != http.StatusBadGateway {
-		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
 }
 
@@ -232,18 +268,15 @@ func TestCodexModelsReturnsLastUpstreamErrorWhenAccountsAreExhausted(t *testing.
 	}
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2}; !equalInt64Sets(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
 	}
-	if body := recorder.Body.String(); !strings.Contains(body, "upstream error 504") {
-		t.Fatalf("body does not preserve the last upstream error: %s", body)
-	}
 }
 
-func TestCodexModelsHonorsAccountSwitchLimit(t *testing.T) {
+func TestCodexModelsAggregatesAllGroupAccounts(t *testing.T) {
 	handler, upstream, groupID := newCodexModelsFailoverTestHandlerWithAccountCount(http.StatusServiceUnavailable, 4, 2)
 	upstream.statuses = map[int64]int{
 		1: http.StatusServiceUnavailable,
@@ -253,14 +286,11 @@ func TestCodexModelsHonorsAccountSwitchLimit(t *testing.T) {
 	}
 	recorder := performCodexModelsRequest(t, handler, groupID)
 
-	if got, want := upstream.calls(), []int64{1, 2, 3}; !equalInt64Slices(got, want) {
+	if got, want := upstream.calls(), []int64{1, 2, 3, 4}; !equalInt64Sets(got, want) {
 		t.Fatalf("upstream account calls: got %v, want %v", got, want)
 	}
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("status: got %d, want %d; body=%s", recorder.Code, http.StatusBadGateway, recorder.Body.String())
-	}
-	if body := recorder.Body.String(); !strings.Contains(body, "upstream error 504") {
-		t.Fatalf("body does not preserve the limit-ending upstream error: %s", body)
 	}
 }
 
@@ -299,6 +329,35 @@ func newCodexModelsFailoverTestHandlerWithAccountCount(firstStatus, accountCount
 	return &OpenAIGatewayHandler{gatewayService: gatewayService, maxAccountSwitches: maxSwitches}, upstream, groupID
 }
 
+func newCodexModelsAggregationTestHandler() (*OpenAIGatewayHandler, *codexModelsFailoverHTTPUpstream, int64) {
+	groupID := int64(42)
+	accounts := []service.Account{
+		{
+			ID: 10, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Credentials: map[string]any{
+				"api_key": "sk-10", "base_url": "https://upstream-10.example/v1",
+			},
+		},
+		{
+			ID: 20, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Credentials: map[string]any{
+				"api_key": "sk-20", "base_url": "https://upstream-20.example/v1",
+			},
+		},
+	}
+	upstream := &codexModelsFailoverHTTPUpstream{bodies: map[int64]string{
+		10: `{"models":[{"slug":"gpt-5.5"}]}`,
+		20: `{"models":[{"slug":"gpt-5.6"}]}`,
+	}}
+	gatewayService := service.NewOpenAIGatewayService(
+		codexModelsFailoverAccountRepo{accounts: accounts},
+		nil, nil, nil, nil, nil, nil,
+		&config.Config{RunMode: config.RunModeSimple}, nil, nil, nil, nil, nil,
+		upstream, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+	return &OpenAIGatewayHandler{gatewayService: gatewayService}, upstream, groupID
+}
+
 func performCodexModelsRequest(t *testing.T, handler *OpenAIGatewayHandler, groupID int64) *httptest.ResponseRecorder {
 	return performCodexModelsRequestForPlatform(t, handler, groupID, service.PlatformOpenAI)
 }
@@ -317,12 +376,49 @@ func performCodexModelsRequestForPlatform(t *testing.T, handler *OpenAIGatewayHa
 	return recorder
 }
 
+func performCodexModelsRequestWithETag(t *testing.T, handler *OpenAIGatewayHandler, groupID int64, etag string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models?client_version=0.144.0", nil)
+	c.Request.Header.Set("If-None-Match", etag)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+	})
+
+	handler.CodexModels(c)
+	return recorder
+}
+
 func equalInt64Slices(got, want []int64) bool {
 	if len(got) != len(want) {
 		return false
 	}
 	for i := range got {
 		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalInt64Sets(got, want []int64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	counts := make(map[int64]int, len(got))
+	for _, value := range got {
+		counts[value]++
+	}
+	for _, value := range want {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	for _, count := range counts {
+		if count != 0 {
 			return false
 		}
 	}

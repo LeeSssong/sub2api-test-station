@@ -434,6 +434,20 @@ WITH scopes AS (
   JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
     AND u.usage_completeness IS DISTINCT FROM 'unknown'
+), unknown_usage_keys AS (
+  SELECT DISTINCT group_id, NULLIF(u.request_id, '') AS request_key
+  FROM usage_logs u
+  JOIN groups g ON g.group_id = u.group_id
+  WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
+    AND u.usage_completeness = 'unknown'
+    AND NULLIF(u.request_id, '') IS NOT NULL
+  UNION
+  SELECT DISTINCT group_id, NULLIF(u.logical_request_id, '') AS request_key
+  FROM usage_logs u
+  JOIN groups g ON g.group_id = u.group_id
+  WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
+    AND u.usage_completeness = 'unknown'
+    AND NULLIF(u.logical_request_id, '') IS NOT NULL
 ), excluded_usage_keys AS (
   SELECT o.group_id, o.account_id, NULLIF(o.request_id, '') AS request_key
   FROM ops_error_logs o
@@ -514,6 +528,12 @@ WITH scopes AS (
         '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
         '%model_not_found%', '%本站暂不支持%'
       ])
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM unknown_usage_keys unknown_usage
+      WHERE unknown_usage.group_id = o.group_id
+        AND unknown_usage.request_key IN (NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''))
     )
 ), real_candidates AS (
   SELECT group_id, account_id, source_id, observed_at, bucket_start, successful, first_token_ms, duration_ms, input_tokens, cache_creation_tokens, cache_read_tokens, request_key, source_priority
@@ -931,16 +951,31 @@ func (r *accountMonitorRepository) ListRealRequestAggregates(
 				1 AS source_priority
 			FROM usage_logs u
 			WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3
-			  AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+				AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), unknown_usage_keys AS (
+			SELECT DISTINCT u.account_id, NULLIF(u.request_id, '') AS request_key
+			FROM usage_logs u
+			WHERE u.created_at >= $2 AND u.created_at < $3
+			  AND u.usage_completeness = 'unknown' AND NULLIF(u.request_id, '') IS NOT NULL
+			UNION
+			SELECT DISTINCT u.account_id, NULLIF(u.logical_request_id, '') AS request_key
+			FROM usage_logs u
+			WHERE u.created_at >= $2 AND u.created_at < $3
+			  AND u.usage_completeness = 'unknown' AND NULLIF(u.logical_request_id, '') IS NOT NULL
 		), error_events AS (
 			SELECT e.account_id, e.id::bigint AS source_id, e.created_at,
 				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
 				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
 				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key,
 				0 AS source_priority
-			FROM ops_error_logs e
-			WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3
-			  AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+				FROM ops_error_logs e
+				WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3
+				  AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+				  AND NOT EXISTS (
+					  SELECT 1 FROM unknown_usage_keys unknown_usage
+					  WHERE unknown_usage.account_id = e.account_id
+						AND unknown_usage.request_key IN (NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''))
+				  )
 		), events AS (
 			SELECT * FROM usage_events UNION ALL SELECT * FROM error_events
 		), dedup AS (
@@ -1052,6 +1087,16 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 				(u.actual_cost > 0) AS successful,
 				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
 			FROM usage_logs u WHERE u.group_id = ANY($1) AND u.account_id = ANY($2) AND u.created_at >= $3 AND u.created_at < $4 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), unknown_usage_keys AS (
+			SELECT DISTINCT u.group_id, NULLIF(u.request_id, '') AS request_key
+			FROM usage_logs u
+			WHERE u.group_id = ANY($1) AND u.created_at >= $3 AND u.created_at < $4
+			  AND u.usage_completeness = 'unknown' AND NULLIF(u.request_id, '') IS NOT NULL
+			UNION
+			SELECT DISTINCT u.group_id, NULLIF(u.logical_request_id, '') AS request_key
+			FROM usage_logs u
+			WHERE u.group_id = ANY($1) AND u.created_at >= $3 AND u.created_at < $4
+			  AND u.usage_completeness = 'unknown' AND NULLIF(u.logical_request_id, '') IS NOT NULL
 		), usage_request_keys AS (
 			SELECT DISTINCT group_id, request_id AS request_key, request_key AS canonical_request_key
 			FROM usage_events
@@ -1063,7 +1108,12 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 				COALESCE(ur.canonical_request_key, NULLIF(e.request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
 			FROM ops_error_logs e
 			LEFT JOIN usage_request_keys ur ON ur.group_id = e.group_id AND ur.request_key = NULLIF(e.request_id, '')
-			WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+				WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+				  AND NOT EXISTS (
+					  SELECT 1 FROM unknown_usage_keys unknown_usage
+					  WHERE unknown_usage.group_id = e.group_id
+						AND unknown_usage.request_key IN (NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''))
+				  )
 		), dedup AS (
 			-- A logical request may fail on account A and complete on account B.
 			-- Select one terminal event per group/request, then attribute the
@@ -1123,6 +1173,25 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				AND u.account_id = ANY($2)
 				AND u.created_at >= $3
 				AND u.created_at < $4
+				AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+		), unknown_usage_keys AS (
+			SELECT DISTINCT NULLIF(u.request_id, '') AS request_key, u.account_id
+			FROM usage_logs u
+			WHERE u.group_id = $1
+				AND u.account_id = ANY($2)
+				AND u.created_at >= $3
+				AND u.created_at < $4
+				AND u.usage_completeness = 'unknown'
+				AND NULLIF(u.request_id, '') IS NOT NULL
+			UNION
+			SELECT DISTINCT NULLIF(u.logical_request_id, '') AS request_key, u.account_id
+			FROM usage_logs u
+			WHERE u.group_id = $1
+				AND u.account_id = ANY($2)
+				AND u.created_at >= $3
+				AND u.created_at < $4
+				AND u.usage_completeness = 'unknown'
+				AND NULLIF(u.logical_request_id, '') IS NOT NULL
 		), group_errors AS (
 			SELECT e.request_id, e.account_id, e.created_at
 			FROM ops_error_logs e
@@ -1132,6 +1201,12 @@ func (r *accountMonitorRepository) ListGroupWindowAggregates(
 				AND e.created_at < $4
 				AND COALESCE(e.is_count_tokens, FALSE) = FALSE
 				AND COALESCE(e.status_code, 0) >= 400
+				AND NOT EXISTS (
+					SELECT 1
+					FROM unknown_usage_keys unknown_usage
+					WHERE unknown_usage.account_id = e.account_id
+						AND unknown_usage.request_key IN (NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''))
+				)
 		), group_requests AS (
 			SELECT
 				u.account_id,

@@ -251,15 +251,15 @@
 	log {
 		output stdout
 		format json
-		log_append environment {env.SUB2API_ENVIRONMENT}
-		log_append deployment_commit {env.SUB2API_DEPLOYMENT_COMMIT}
-		log_append container_slot {env.SUB2API_CONTAINER_SLOT}
-		log_append client_request_id {http.request.header.X-Client-Request-Id}
-		log_append window_id {http.request.header.X-Codex-Window-Id}
-		log_append thread_id {http.request.header.X-Codex-Thread-Id}
-		log_append session_id {http.request.header.X-Session-Id}
-		log_append active_upstream {env.SUB2API_ACTIVE_UPSTREAM}
 	}
+	log_append environment {env.SUB2API_ENVIRONMENT}
+	log_append deployment_commit {env.SUB2API_DEPLOYMENT_COMMIT}
+	log_append container_slot {env.SUB2API_CONTAINER_SLOT}
+	log_append client_request_id {http.request.header.X-Client-Request-Id}
+	log_append window_id {http.request.header.X-Codex-Window-Id}
+	log_append thread_id {http.request.header.X-Codex-Thread-Id}
+	log_append session_id {http.request.header.X-Session-Id}
+	log_append active_upstream {env.SUB2API_ACTIVE_UPSTREAM}
 }
 
 {$STOREFRONT_SITE_ADDRESS:https://shop.xingqiaolab.top} {

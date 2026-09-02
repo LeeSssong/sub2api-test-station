@@ -7,6 +7,16 @@ for file in "$ROOT/infra/Caddyfile" "$ROOT/infra/Caddyfile.acceptance"; do
   grep -Fq 'log_append window_id' "$file"
   grep -Fq 'log_append thread_id' "$file"
   grep -Fq 'log_append session_id' "$file"
+  if awk '
+    /^[[:space:]]*log[[:space:]]*\{/ { in_log = 1; next }
+    in_log && /^[[:space:]]*}/ { in_log = 0; next }
+    in_log && /^[[:space:]]*log_append[[:space:]]/ { exit 1 }
+  ' "$file"; then
+    :
+  else
+    echo "log_append must be a site-level directive in $file" >&2
+    exit 1
+  fi
   if grep -Eq 'log_append (authorization|cookie|api_key|token)' "$file"; then
     echo "sensitive header logging is forbidden in $file" >&2
     exit 1

@@ -121,15 +121,19 @@ func TestChannelMonitorV2ParseFilterDefaultsAndBuckets(t *testing.T) {
 
 	filter, err := svc.ParseFilter("", []string{"openai", "openai", ""}, []string{"gpt-5"}, []int64{2, 1, 2, 0})
 	require.NoError(t, err)
-	require.Equal(t, "90m", filter.Range)
+	require.Equal(t, "1h", filter.Range)
 	require.Equal(t, 5*time.Minute, filter.Bucket)
 	require.Equal(t, []string{"openai"}, filter.Platforms)
 	require.Equal(t, []int64{1, 2}, filter.GroupIDs)
-	require.Equal(t, 90*time.Minute, filter.End.Sub(filter.Start))
+	require.Equal(t, time.Hour, filter.End.Sub(filter.Start))
 
-	filter, err = svc.ParseFilter("30d", nil, nil, nil)
+	filter, err = svc.ParseFilter("1h", nil, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, 24*time.Hour, filter.Bucket)
+	require.Equal(t, time.Hour, filter.End.Sub(filter.Start))
+	_, err = svc.ParseFilter("90m", nil, nil, nil)
+	require.ErrorIs(t, err, ErrChannelMonitorV2InvalidRange)
+	_, err = svc.ParseFilter("30d", nil, nil, nil)
+	require.ErrorIs(t, err, ErrChannelMonitorV2InvalidRange)
 	_, err = svc.ParseFilter("15d", nil, nil, nil)
 	require.ErrorIs(t, err, ErrChannelMonitorV2InvalidRange)
 }

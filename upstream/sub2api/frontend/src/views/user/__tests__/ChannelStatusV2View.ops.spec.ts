@@ -44,10 +44,9 @@ vi.mock('vue-i18n', async (importOriginal) => {
         'channelMonitorV2.title': '渠道监控',
         'channelMonitorV2.updatedTo': '更新至 {time}',
         'channelMonitorV2.timeRange': '时间范围',
-        'channelMonitorV2.ranges.90m': '90m',
+        'channelMonitorV2.ranges.1h': '1小时',
         'channelMonitorV2.ranges.24h': '24h',
         'channelMonitorV2.ranges.7d': '7d',
-        'channelMonitorV2.ranges.30d': '30d',
         'channelMonitorV2.summaryAria': '整体汇总',
         'channelMonitorV2.metrics.successRate': '成功率',
         'channelMonitorV2.metrics.errorRateValue': '错误率 {value}',
@@ -198,6 +197,11 @@ describe('ChannelStatusV2View operations layout', () => {
 
     expect(apiMocks.getSnapshot).toHaveBeenCalledWith(expect.objectContaining({ range: '24h' }), false, expect.any(AbortSignal))
     expect(apiMocks.getMatrix).toHaveBeenCalledWith(expect.objectContaining({ range: '24h' }), 'platform_group', false, expect.any(AbortSignal))
+    expect(wrapper.find('[data-test="range-1h"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('1小时')
+    expect(wrapper.text()).not.toContain('channelMonitorV2.ranges.1h')
+    expect(wrapper.find('[data-test="range-90m"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="range-30d"]').exists()).toBe(false)
     expect(apiMocks.getModels).not.toHaveBeenCalled()
     expect(apiMocks.getErrors).not.toHaveBeenCalled()
     expect(apiMocks.getUsers).not.toHaveBeenCalled()

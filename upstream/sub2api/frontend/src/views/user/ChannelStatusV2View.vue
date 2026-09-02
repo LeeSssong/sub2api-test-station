@@ -54,7 +54,7 @@
           </button>
         </header>
 
-        <!-- First-upgrade silent backfill: show until 30d product window is covered -->
+        <!-- First-upgrade silent backfill status. -->
         <div
           v-if="bootstrapActive"
           class="border-b border-blue-100 bg-blue-50/90 px-5 py-3 dark:border-blue-900/40 dark:bg-blue-950/40 sm:px-6"
@@ -99,6 +99,7 @@
             <button
               v-for="option in ranges"
               :key="option.value"
+              :data-test="`range-${option.value}`"
               type="button"
               class="tab !px-2 !py-1 text-xs sm:!px-2.5"
               :class="filter.range === option.value ? 'tab-active' : ''"
@@ -534,10 +535,9 @@ const isAdmin = computed(() => authStore.isAdmin)
 const showThroughput = computed(() => isAdmin.value || !isChannelMonitorThroughputHidden())
 
 const ranges = computed(() => [
-  { value: '90m' as MonitorRange, label: t('channelMonitorV2.ranges.90m') },
+  { value: '1h' as MonitorRange, label: t('channelMonitorV2.ranges.1h') },
   { value: '24h' as MonitorRange, label: t('channelMonitorV2.ranges.24h') },
   { value: '7d' as MonitorRange, label: t('channelMonitorV2.ranges.7d') },
-  { value: '30d' as MonitorRange, label: t('channelMonitorV2.ranges.30d') },
 ])
 const tabs = computed(() => [
   { value: 'models' as Tab, label: t('channelMonitorV2.tabs.models') },
@@ -660,7 +660,7 @@ const activeRowsEmpty = computed(() =>
       ? errorRows.value.length === 0
       : userRows.value.length === 0
 )
-/** First-upgrade backfill toward 90m/24h/7d/30d; banner hides when backend omits bootstrap. */
+/** First-upgrade backfill status; banner hides when backend omits bootstrap. */
 const bootstrapActive = computed(() => Boolean(snapshot.value?.coverage?.bootstrap?.active))
 const bootstrapPercent = computed(() => {
   const raw = snapshot.value?.coverage?.bootstrap?.progress_percent
@@ -680,7 +680,7 @@ function csv(value: unknown) {
   return typeof value === 'string' ? value.split(',').filter(Boolean) : []
 }
 function parseRange(value: unknown): MonitorRange {
-  return ['90m', '24h', '7d', '30d'].includes(String(value)) ? (value as MonitorRange) : '24h'
+  return ['1h', '24h', '7d'].includes(String(value)) ? (value as MonitorRange) : '24h'
 }
 function parseMatrixGroupBy(value: unknown): MonitorMatrixGroupBy {
   const allowed: MonitorMatrixGroupBy[] = [
@@ -826,7 +826,7 @@ function scheduleAutoRefresh() {
     window.clearInterval(autoRefreshTimer)
     autoRefreshTimer = null
   }
-  // Poll faster while first-upgrade bootstrap is filling 90m→30d so the progress bar moves.
+  // Poll faster while first-upgrade bootstrap is active so the progress bar moves.
   const seconds = bootstrapActive.value
     ? 10
     : snapshot.value?.config?.refresh_interval_seconds || 300

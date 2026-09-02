@@ -427,14 +427,12 @@ func (s *ChannelMonitorV2Service) ParseFilter(rangeValue string, platforms, mode
 	now := s.now().UTC()
 	var window, bucket time.Duration
 	switch strings.TrimSpace(rangeValue) {
-	case "", "90m":
-		rangeValue, window, bucket = "90m", 90*time.Minute, 5*time.Minute
+	case "", "1h":
+		rangeValue, window, bucket = "1h", time.Hour, 5*time.Minute
 	case "24h":
 		window, bucket = 24*time.Hour, time.Hour
 	case "7d":
 		window, bucket = 7*24*time.Hour, 12*time.Hour
-	case "30d":
-		window, bucket = 30*24*time.Hour, 24*time.Hour
 	default:
 		return ChannelMonitorV2Filter{}, fmt.Errorf("%w: %s", ErrChannelMonitorV2InvalidRange, rangeValue)
 	}

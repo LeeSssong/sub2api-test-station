@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T118 Responses 流水请求元数据恢复（2026-09-03）：** 状态 `DONE`。已合并为根 `main@e00c37e0e5ac076aaddc043fccf82af6bc5a1d1b` 并推送；按用户明确“快速部署到主站，不同步验收站”完成主站发布，宿主结果 `succeeded`、`downtime_required=false`、活动槽 `green`，公网健康和 API/worker/model-detector 健康均通过。生产只读核对确认新 Responses 流水已记录 `/v1/responses` 和客户端 IP；历史空值保持不变。候选 worktree/分支已在发布后归档删除，恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/2026-09-03-t118/t118-responses-usage-metadata.bundle`，SHA-256 `6d8fe33f36fc9a26b209c9593360bff2eab1bf61e80fcb08fd3df34fbb79865d`。无迁移、配置或生产数据写入。
+
 **T118 Responses 流水请求元数据恢复（2026-09-03）：** 状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t118-responses-usage-metadata@fd9b0bd2c`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t118-responses-usage-metadata`，基线 `main@f9d606ea3`。已恢复 Responses 成功记账路径的 Sub 原生请求元数据快照，补充 Responses 调用点顺序合同和独立请求哈希断言；直接 handler 测试、`go build ./cmd/server`、gofmt、diff-check 通过。改动仅两个 handler 文件，无迁移、配置、账务、调度、生产数据或历史回填；未合并、推送或部署。等待根总控 `AUTHORIZE_MERGE_TO_MAIN`。
 
 **T118 Responses 流水请求元数据恢复（2026-09-02）：** 状态 `DESIGNING`。生产只读核对确认 2026-08-30 16:27:54 后新 Responses 成功流水的 `inbound_endpoint`、`ip_address` 成为空，根因是成功记账输入构造后遗漏 Sub 原生请求元数据快照赋值；Messages 路径和历史官方实现保持完整。范围仅恢复 Responses 成功路径的入站/上游端点、客户端 IP、User-Agent、Session ID、请求体哈希快照，保留当前定制字段；历史空记录不回填，无迁移、配置、计费、调度、重试、账号状态或生产数据变化。规格：`docs/superpowers/specs/2026-09-02-t118-responses-usage-request-metadata-design.md`。用户已确认原生语义恢复方案，待书面规格审阅批准；不得调用 writing-plans、创建实现 worktree、合并、推送或部署。

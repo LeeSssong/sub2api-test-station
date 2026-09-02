@@ -138,6 +138,8 @@ func (User) Edges() []ent.Edge {
 		edge.To("wallet", UserWallet.Type).Unique(),
 		edge.To("quota_ledger_entries", UserQuotaLedgerEntry.Type),
 		edge.To("operated_quota_ledger_entries", UserQuotaLedgerEntry.Type),
+		edge.To("quota_grants", UserQuotaGrant.Type),
+		edge.To("quota_adjustments", UserQuotaAdjustment.Type),
 		edge.To("quota_idempotency_records", QuotaIdempotencyRecord.Type),
 	}
 }

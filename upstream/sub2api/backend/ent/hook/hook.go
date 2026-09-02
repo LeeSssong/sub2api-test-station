@@ -525,6 +525,30 @@ func (f UserPlatformQuotaFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserPlatformQuotaMutation", m)
 }
 
+// The UserQuotaAdjustmentFunc type is an adapter to allow the use of ordinary
+// function as UserQuotaAdjustment mutator.
+type UserQuotaAdjustmentFunc func(context.Context, *ent.UserQuotaAdjustmentMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserQuotaAdjustmentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserQuotaAdjustmentMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserQuotaAdjustmentMutation", m)
+}
+
+// The UserQuotaGrantFunc type is an adapter to allow the use of ordinary
+// function as UserQuotaGrant mutator.
+type UserQuotaGrantFunc func(context.Context, *ent.UserQuotaGrantMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserQuotaGrantFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserQuotaGrantMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserQuotaGrantMutation", m)
+}
+
 // The UserQuotaLedgerEntryFunc type is an adapter to allow the use of ordinary
 // function as UserQuotaLedgerEntry mutator.
 type UserQuotaLedgerEntryFunc func(context.Context, *ent.UserQuotaLedgerEntryMutation) (ent.Value, error)

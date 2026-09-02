@@ -26,6 +26,8 @@ const (
 	EdgePromoCode = "promo_code"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
+	// EdgeQuotaGrants holds the string denoting the quota_grants edge name in mutations.
+	EdgeQuotaGrants = "quota_grants"
 	// Table holds the table name of the promocodeusage in the database.
 	Table = "promo_code_usages"
 	// PromoCodeTable is the table that holds the promo_code relation/edge.
@@ -42,6 +44,13 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_id"
+	// QuotaGrantsTable is the table that holds the quota_grants relation/edge.
+	QuotaGrantsTable = "user_quota_grants"
+	// QuotaGrantsInverseTable is the table name for the UserQuotaGrant entity.
+	// It exists in this package in order to avoid circular dependency with the "userquotagrant" package.
+	QuotaGrantsInverseTable = "user_quota_grants"
+	// QuotaGrantsColumn is the table column denoting the quota_grants relation/edge.
+	QuotaGrantsColumn = "promo_code_usage_id"
 )
 
 // Columns holds all SQL columns for promocodeusage fields.
@@ -109,6 +118,20 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByQuotaGrantsCount orders the results by quota_grants count.
+func ByQuotaGrantsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newQuotaGrantsStep(), opts...)
+	}
+}
+
+// ByQuotaGrants orders the results by quota_grants terms.
+func ByQuotaGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newQuotaGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newPromoCodeStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -121,5 +144,12 @@ func newUserStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
+}
+func newQuotaGrantsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(QuotaGrantsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
 	)
 }

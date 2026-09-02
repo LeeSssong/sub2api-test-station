@@ -53,6 +53,7 @@ func (PromoCodeUsage) Edges() []ent.Edge {
 			Field("user_id").
 			Required().
 			Unique(),
+		edge.To("quota_grants", UserQuotaGrant.Type),
 	}
 }
 

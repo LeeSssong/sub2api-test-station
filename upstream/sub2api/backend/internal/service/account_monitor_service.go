@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -2529,16 +2528,6 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 		if err != nil {
 			errs = append(errs, fmt.Errorf("refresh account %d upstream balance: %w", account.ID, err))
 			continue
-		}
-		if accountBalanceSnapshotHealthy(account) && isDeterministicBalanceTempReason(account.TempUnschedulableReason) {
-			if repo, ok := s.accountRepo.(accountMonitorBalanceRecoveryRepository); ok {
-				cleared, clearErr := repo.ClearBalanceExhaustedTempUnschedulable(ctx, account)
-				if clearErr != nil {
-					errs = append(errs, fmt.Errorf("restore account %d scheduling: %w", account.ID, clearErr))
-				} else if cleared && s.runtimeBlocker != nil {
-					s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
-				}
-			}
 		}
 	}
 	return errors.Join(errs...)

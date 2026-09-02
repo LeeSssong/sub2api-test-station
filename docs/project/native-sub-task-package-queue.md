@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T113 流式请求全链路可观测与根因诊断（2026-09-02）：** 状态 `DESIGNING`。用户已批准正式规格 `docs/superpowers/specs/2026-09-02-stream-observability-root-cause-diagnosis-design.md` 并要求开始实施。任务复用现有 OpenAI 流式链、请求/错误/usage 日志、管理员请求详情和 Caddy/蓝绿发布元数据，增加生命周期关键节点、稳定 request/logical request/attempt/upstream/response 关联、脱敏底层传输错误分类、environment/commit/slot/container 身份及只读管理员根因证据投影。不得改变调度、重试预算、计费、账号状态、上游协议或部署授权，不新增外部 tracing 平台、平行业务事实源、生产数据写入或真实上游测试。现有两个非 main worktree 均干净且已被 main 包含，不构成领先合并阻塞；计划从登记后的最新干净 main 创建 `.worktrees/t113-stream-observability`，先写实施计划，再按 TDD 完成功能和直接相关测试。预期无迁移，`downtime_required` 仅在未来根发布预检时判定；本规格不授权验收站或主站部署。
+
 **2026-09-02 部署窗口完成收口：** T111 分组性能指标修复已合入、维护发布主站并同步验收站；首轮运行发现 Monitor V4 刷新 SQL 的 `group_id` 歧义，已修正后再次发布。主站运行 non-recharge `1e72ae29c`，`1h/24h/7d` 三个分组快照均已实际写入；验收站随后运行 T91 充值体系 `d8a306a16`，同样生成三窗口快照，未将充值代码发布到主站。T111 两个完成 worktree/分支已归档删除，当前仅保留进行中的 T112-v2 worktree；恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-workspaces-2026-09-02/`。根 `main@d8a306a16` 已推送且干净；主站/验收站健康和版本核对通过。
 
 **2026-09-02 部署窗口最终收口：** 非充值候选已从根 `main` 快速发布主站并同步验收站；随后 T91 充值体系合入根 `main`，仅部署验收站。主站保持 non-recharge `b3cc8b5febfd7d2cdd7b545c0abe8fb698b0075c`，验收站运行 recharge `197a693628e7c12de66e3b4e6b4f9e4dac576f34`；根 `main@2335f2e7349c949a800428821f25d9a9ccc5afb0` 已推送。已归档删除已合并且干净的非 `main`，仅保留进行中的 T111 与 T112-v2 worktree；T87 未提交锁文件以 stash 保全后删除。分组性能指标的 T110 未知流水过滤已发布，T111 时间窗/快照清理仍未提交，继续保留。

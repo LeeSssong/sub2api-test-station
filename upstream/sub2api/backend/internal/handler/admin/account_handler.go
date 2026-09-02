@@ -881,7 +881,13 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 		}
 	}
 
-	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+	result := h.buildAccountResponseWithRuntime(c.Request.Context(), account)
+	if parseBoolQueryWithDefault(c.Query("include_scheduler_score"), false) {
+		scores, groupScores := h.buildOpenAIAccountSchedulerScores(c.Request.Context(), []service.Account{*account}, []service.Account{*account})
+		result.SchedulerScore = scores[account.ID]
+		result.SchedulerScores = groupScores[account.ID]
+	}
+	response.Success(c, result)
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.

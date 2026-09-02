@@ -281,8 +281,14 @@ apiClient.interceptors.response.use(
     }
 
     // Network error
+    const transport = error.code === 'ECONNABORTED'
+      ? 'timeout'
+      : error.code === 'ERR_CANCELED'
+        ? 'canceled'
+        : 'network'
     return Promise.reject({
       status: 0,
+      transport,
       message: 'Network error. Please check your connection.'
     })
   }

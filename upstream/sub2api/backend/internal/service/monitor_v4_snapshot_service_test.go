@@ -112,13 +112,26 @@ func TestMonitorV4RefreshErrorDoesNotPublish(t *testing.T) {
 	}
 }
 
-func TestMonitorV4RefreshRejectsInvalidNativeProjectionBeforePublish(t *testing.T) {
-	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, ProbeFallbackBucketCount: 0, ProbeFallbackRequestCount: 0, MissingProbeTerminalCount: 1}}}
+func TestMonitorV4RefreshAllowsMissingProbeTerminalsWithoutSyntheticRequests(t *testing.T) {
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, RealRequestCount: 1, RealSuccessCount: 1, ProbeFallbackBucketCount: 0, ProbeFallbackRequestCount: 0, MissingProbeTerminalCount: 1}}}
+	store := &monitorV4RefreshStoreStub{}
+	svc := NewMonitorV4Service(&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Status: StatusActive}}}, &monitorV4AvailableGroupReaderStub{}, native, nil, &monitorV4ConfiguredGroupReaderStub{})
+	svc.SetSnapshotStore(store)
+	if err := svc.RefreshMonitorV4Snapshots(context.Background(), time.Now()); err != nil {
+		t.Fatalf("expected missing probe terminal projection to be valid: %v", err)
+	}
+	if len(store.replaced) != 3 {
+		t.Fatalf("replacement count = %d, want 3", len(store.replaced))
+	}
+}
+
+func TestMonitorV4RefreshRejectsInconsistentRequestProjectionBeforePublish(t *testing.T) {
+	native := &monitorV4NativeReaderStub{projection: map[int64]MonitorV4GroupProjection{7: {RequestCount: 1, SuccessCount: 1, RealRequestCount: 2, RealSuccessCount: 1}}}
 	store := &monitorV4RefreshStoreStub{}
 	svc := NewMonitorV4Service(&monitorV4GroupRepoStub{groups: []Group{{ID: 7, Status: StatusActive}}}, &monitorV4AvailableGroupReaderStub{}, native, nil, &monitorV4ConfiguredGroupReaderStub{})
 	svc.SetSnapshotStore(store)
 	if err := svc.RefreshMonitorV4Snapshots(context.Background(), time.Now()); err == nil {
-		t.Fatal("expected invalid projection error")
+		t.Fatal("expected inconsistent request projection error")
 	}
 	if len(store.replaced) != 0 {
 		t.Fatalf("replacement after invalid projection = %#v", store.replaced)

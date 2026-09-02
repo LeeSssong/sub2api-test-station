@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUsageLogRepositoryListOpenAIAccountQualityUsesUsageLogsOnly(t *testing.T) {
+func TestUsageLogRepositoryListOpenAIAccountQualityCombinesUsageAndAccountOwnedErrors(t *testing.T) {
 	var captured string
 	matcher := sqlmock.QueryMatcherFunc(func(_, actual string) error {
 		captured = actual
@@ -39,7 +39,11 @@ func TestUsageLogRepositoryListOpenAIAccountQualityUsesUsageLogsOnly(t *testing.
 		{AccountID: 8, AttemptCount: 1, SuccessCount: 0, SuccessRate: qualityFloatPtr(0), TTFTSampleCount: 0, LatencySampleCount: 0},
 	}, got)
 	require.Contains(t, strings.ToLower(captured), "from usage_logs")
-	require.NotContains(t, strings.ToLower(captured), "ops_error_logs")
+	require.Contains(t, strings.ToLower(captured), "from ops_error_logs")
+	require.Contains(t, strings.ToLower(captured), "is_business_limited")
+	require.Contains(t, strings.ToLower(captured), "error_owner")
+	require.Contains(t, strings.ToLower(captured), "client_request")
+	require.Contains(t, strings.ToLower(captured), "not exists")
 	require.NotContains(t, strings.ToLower(captured), "account_probe_cost_logs")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -57,7 +61,9 @@ func TestUsageLogRepositoryListOpenAIAccountQualityRejectsInvalidWindow(t *testi
 func TestOpenAIAccountQualityQueryContainsPhysicalAttemptAndTrimmedMeanContract(t *testing.T) {
 	query := strings.ToLower(openAIAccountQualityQuery)
 	for _, fragment := range []string{
-		"with physical_attempts as",
+		"physical_attempts as",
+		"error_attempts as",
+		"all_attempts as",
 		"distinct on",
 		"u.account_id,\n        u.api_key_id",
 		"attempt_id",
@@ -68,10 +74,11 @@ func TestOpenAIAccountQualityQueryContainsPhysicalAttemptAndTrimmedMeanContract(
 		"floor(l.latency_n * 0.05)",
 		"created_at >= $1",
 		"created_at < $2",
+		"from ops_error_logs",
+		"coalesce(o.is_business_limited, false) = false",
 	} {
 		require.Contains(t, query, fragment)
 	}
-	require.NotContains(t, query, "join ops_error_logs")
 }
 
 func qualityFloatPtr(value float64) *float64 { return &value }

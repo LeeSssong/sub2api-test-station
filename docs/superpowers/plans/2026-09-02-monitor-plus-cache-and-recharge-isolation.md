@@ -16,21 +16,21 @@
 
 ### Task 2: Correct Monitor Window Contract
 
-- [ ] Add failing frontend tests for exactly `1h`, `24h`, and `7d` options and query parsing.
-- [ ] Remove `90m` and `30d` from the user monitor range type, options, parser, bootstrap copy, and polling comments.
+- [x] Add failing frontend tests for exactly `1h`, `24h`, and `7d` options and query parsing.
+- [x] Remove `90m` and `30d` from the user monitor range type, options, parser, bootstrap copy, and polling comments.
 - [ ] Run focused frontend tests and typecheck.
 
 ### Task 3: Plus and Cache Evidence
 
-- [ ] Identify native repository/service queries that produce success rate, latency, cache rate, selected account, and retry evidence.
-- [ ] Run read-only production evidence collection without printing credentials.
-- [ ] Add a focused regression only if the evidence demonstrates a calculation or scheduler behavior defect.
-- [ ] Fix the smallest proven defect and run direct tests.
+- [x] Identify native repository/service queries that produce success rate, latency, cache rate, selected account, and retry evidence.
+- [x] Run read-only production evidence collection without printing credentials.
+- [x] Add a focused regression only if the evidence demonstrates a calculation or scheduler behavior defect.
+- [x] Fix the smallest proven defect and run direct tests.
 
 ### Task 4: Non-Recharge Integration
 
-- [ ] Confirm completed non-recharge candidates and their exact commits.
-- [ ] Selectively integrate T113 runtime/docs while excluding T91 files and migrations.
+- [x] Confirm completed non-recharge candidates and their exact commits.
+- [x] Selectively integrate T113 runtime/docs while excluding T91 files and migrations.
 - [ ] Run direct tests, build/typecheck, source guard, and diff checks on clean root `main`.
 - [ ] Push `origin/main`.
 

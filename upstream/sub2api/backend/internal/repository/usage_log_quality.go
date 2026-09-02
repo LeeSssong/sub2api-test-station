@@ -10,12 +10,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// openAIAccountQualityQuery intentionally reads only the native usage ledger.
-// A physical attempt is deduplicated by the persisted attempt identity (with
-// request-id/row-id fallbacks for legacy rows), while successful latency
-// samples are trimmed independently at both ends by floor(n*5%).
+// openAIAccountQualityQuery combines successful native usage rows with
+// account-owned failures from the native operations error log. A physical
+// attempt is deduplicated by persisted request identity, while successful
+// latency samples are trimmed independently at both ends by floor(n*5%).
 const openAIAccountQualityQuery = `
-WITH physical_attempts AS (
+WITH usage_attempts AS (
     SELECT DISTINCT ON (
         u.account_id,
         u.api_key_id,
@@ -40,6 +40,55 @@ WITH physical_attempts AS (
         u.api_key_id,
         COALESCE(NULLIF(u.attempt_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text),
         u.id DESC
+),
+error_attempts AS (
+    SELECT DISTINCT ON (
+        o.account_id,
+        COALESCE(NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text)
+    )
+        o.account_id,
+        NULL::text AS logical_request_id,
+        NULL::text AS attempt_id,
+        o.request_id,
+        'failed'::text AS usage_completeness,
+        0::numeric AS actual_cost,
+        NULL::double precision AS first_token_ms,
+        NULL::double precision AS duration_ms
+    FROM ops_error_logs o
+    WHERE o.created_at >= $1
+      AND o.created_at < $2
+      AND o.account_id IS NOT NULL
+      AND COALESCE(o.is_business_limited, FALSE) = FALSE
+      AND COALESCE(o.is_count_tokens, FALSE) = FALSE
+      AND COALESCE(o.status_code, 0) >= 400
+      AND COALESCE(o.error_owner, '') <> 'client'
+      AND NOT (COALESCE(o.error_phase, '') = 'request' AND COALESCE(o.error_source, '') = 'client_request')
+      AND lower(CONCAT_WS(' ', o.error_type, o.error_message, o.error_body, o.upstream_error_message, o.upstream_error_detail)) NOT LIKE ALL (ARRAY[
+        '%model not supported%', '%unsupported model%', '%not supported by any configured account%',
+        '%does not support the requested model%', '%model_not_supported%', '%model_unsupported%',
+        '%model_not_found%', '%本站暂不支持%'
+      ])
+      AND NOT EXISTS (
+        SELECT 1
+        FROM usage_logs u
+        WHERE u.account_id = o.account_id
+          AND u.created_at >= $1
+          AND u.created_at < $2
+          AND NULLIF(u.request_id, '') = NULLIF(o.request_id, '')
+          AND COALESCE(NULLIF(u.usage_completeness, ''), 'complete') <> 'unknown'
+      )
+    ORDER BY
+        o.account_id,
+        COALESCE(NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), 'error:' || o.id::text),
+        o.id DESC
+),
+all_attempts AS (
+    SELECT * FROM usage_attempts
+    UNION ALL
+    SELECT * FROM error_attempts
+),
+physical_attempts AS (
+    SELECT * FROM all_attempts
 ),
 successful AS (
     SELECT p.*

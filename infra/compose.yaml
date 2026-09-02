@@ -29,6 +29,10 @@ x-sub2api-environment: &sub2api-environment
   JWT_SECRET: ${JWT_SECRET:?required}
   TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?required}
   TZ: ${TZ:-Asia/Shanghai}
+  SUB2API_ENVIRONMENT: ${SUB2API_ENVIRONMENT:-production}
+  SUB2API_DEPLOYMENT_COMMIT: ${SUB2API_DEPLOYMENT_COMMIT:-unknown}
+  SUB2API_CONTAINER_SLOT: ${SUB2API_CONTAINER_SLOT:-unknown}
+  SUB2API_CONTAINER_ID: ${SUB2API_CONTAINER_ID:-}
   SUB2API_MODEL_DETECTOR_URL: ${SUB2API_MODEL_DETECTOR_URL:-http://model-detector:8090}
   SUB2API_MODEL_DETECTOR_TOKEN: ${SUB2API_MODEL_DETECTOR_TOKEN:-}
   SECURITY_URL_ALLOWLIST_ENABLED: ${SECURITY_URL_ALLOWLIST_ENABLED:-false}
@@ -90,6 +94,8 @@ services:
     environment:
       <<: *sub2api-environment
       SERVER_PROCESS_ROLE: api
+      SUB2API_CONTAINER_SLOT: blue
+      SUB2API_CONTAINER_ID: ${SUB2API_BLUE_CONTAINER_ID:-}
     volumes:
       - type: bind
         source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
@@ -113,6 +119,8 @@ services:
     environment:
       <<: *sub2api-environment
       SERVER_PROCESS_ROLE: api
+      SUB2API_CONTAINER_SLOT: green
+      SUB2API_CONTAINER_ID: ${SUB2API_GREEN_CONTAINER_ID:-}
     volumes:
       - type: bind
         source: ${SUB2API_DATA_DIR:?SUB2API_DATA_DIR is required}
@@ -131,6 +139,8 @@ services:
     environment:
       <<: *sub2api-environment
       SERVER_PROCESS_ROLE: worker
+      SUB2API_CONTAINER_SLOT: worker
+      SUB2API_CONTAINER_ID: ${SUB2API_WORKER_CONTAINER_ID:-}
       SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED: ${SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED:-false}
       SUB2API_UPSTREAM_BALANCE_FEISHU_APP_ID_FILE: /run/secrets/upstream-balance/feishu-app-id
       SUB2API_UPSTREAM_BALANCE_FEISHU_APP_SECRET_FILE: /run/secrets/upstream-balance/feishu-app-secret
@@ -282,6 +292,9 @@ services:
       CADDY_TRUSTED_PROXIES: ${CADDY_TRUSTED_PROXIES:-172.30.0.3/32}
       SUB2API_ACTIVE_UPSTREAM: ${SUB2API_ACTIVE_UPSTREAM:?SUB2API_ACTIVE_UPSTREAM is required}
       ACCEPTANCE_LAB_UPSTREAM: ${ACCEPTANCE_LAB_UPSTREAM:-172.18.0.1:8181}
+      SUB2API_ENVIRONMENT: ${SUB2API_ENVIRONMENT:-production}
+      SUB2API_DEPLOYMENT_COMMIT: ${SUB2API_DEPLOYMENT_COMMIT:-unknown}
+      SUB2API_CONTAINER_SLOT: ${SUB2API_ACTIVE_SLOT:-unknown}
     command:
       - /bin/sh
       - -ec

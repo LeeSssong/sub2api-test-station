@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -136,6 +137,64 @@ type StreamObservationSnapshot struct {
 	RootCause              string               `json:"root_cause"`
 	CorrelationDegraded    bool                 `json:"correlation_degraded"`
 	EventBody              string               `json:"-"`
+}
+
+type StreamDiagnosticEntry struct {
+	Environment      string `json:"environment,omitempty"`
+	Host             string `json:"host,omitempty"`
+	Route            string `json:"route,omitempty"`
+	ActiveSlot       string `json:"active_slot,omitempty"`
+	DeploymentCommit string `json:"deployment_commit,omitempty"`
+	ContainerID      string `json:"container_id,omitempty"`
+}
+
+type StreamDiagnosticResponse struct {
+	RequestID        string                      `json:"request_id,omitempty"`
+	LogicalRequestID string                      `json:"logical_request_id,omitempty"`
+	Environment      string                      `json:"environment,omitempty"`
+	Entry            StreamDiagnosticEntry       `json:"entry"`
+	Attempts         []StreamObservationSnapshot `json:"attempts"`
+	Final            StreamObservationSnapshot   `json:"final"`
+	EvidenceMissing  []string                    `json:"evidence_missing,omitempty"`
+}
+
+func ProjectStreamDiagnostic(details []*OpsErrorLogDetail, requestID, logicalRequestID string) StreamDiagnosticResponse {
+	out := StreamDiagnosticResponse{RequestID: strings.TrimSpace(requestID), LogicalRequestID: strings.TrimSpace(logicalRequestID), Attempts: []StreamObservationSnapshot{}}
+	for _, detail := range details {
+		if detail == nil || strings.TrimSpace(detail.UpstreamErrors) == "" {
+			continue
+		}
+		var events []*OpsUpstreamErrorEvent
+		if err := json.Unmarshal([]byte(detail.UpstreamErrors), &events); err != nil {
+			continue
+		}
+		for _, event := range events {
+			if event == nil || event.StreamObservation == nil {
+				continue
+			}
+			snapshot := *event.StreamObservation
+			if out.RequestID == "" {
+				out.RequestID = snapshot.RequestID
+			}
+			if out.LogicalRequestID == "" {
+				out.LogicalRequestID = snapshot.LogicalRequestID
+			}
+			if out.Environment == "" {
+				out.Environment = snapshot.Environment
+			}
+			if out.Entry.Environment == "" {
+				out.Entry = StreamDiagnosticEntry{Environment: snapshot.Environment, ActiveSlot: snapshot.ContainerSlot, DeploymentCommit: snapshot.DeploymentCommit, ContainerID: snapshot.ContainerID}
+			}
+			out.Attempts = append(out.Attempts, snapshot)
+		}
+	}
+	if len(out.Attempts) == 0 {
+		out.EvidenceMissing = []string{"stream_lifecycle"}
+		out.Final = StreamObservationSnapshot{Event: "openai.stream.lifecycle", RootCause: "insufficient_evidence", CorrelationDegraded: true}
+		return out
+	}
+	out.Final = out.Attempts[len(out.Attempts)-1]
+	return out
 }
 
 type StreamObservation struct {
@@ -285,13 +344,13 @@ func (o *StreamObservation) Snapshot() StreamObservationSnapshot {
 	return out
 }
 
-var requestSecretPattern = regexp.MustCompile(`(?i)(bearer\s+)[^\s,;]+|([?&](?:api[_-]?key|token|key|secret|password)=[^&\s]+)`)
+var requestSecretPattern = regexp.MustCompile(`(?i)(bearer\s+)[^\s,;]+|([?&](?:api[_-]?key|token|key|secret|password)=[^&\s]+)|\b(?:token|secret|password|api[_-]?key)\s*[:=]\s*[^\s,;]+`)
 
 func SanitizeStreamErrorChain(err error) string {
 	if err == nil {
 		return ""
 	}
-	value := logredact.RedactText(strings.TrimSpace(err.Error()), "api_key", "token", "secret", "cookie", "authorization")
+	value := logredact.RedactText(strings.TrimSpace(err.Error()), "api_key", "secret", "cookie", "authorization")
 	value = requestSecretPattern.ReplaceAllStringFunc(value, func(match string) string {
 		if strings.HasPrefix(strings.ToLower(match), "bearer") {
 			return "Bearer [redacted]"

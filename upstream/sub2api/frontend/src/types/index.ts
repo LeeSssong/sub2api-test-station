@@ -1766,6 +1766,67 @@ export interface AdminUsageLog extends UsageLog {
   account?: UsageLogAccountSummary
 }
 
+export interface StreamDiagnosticSnapshot {
+  event?: string
+  stage?: string
+  request_id?: string
+  logical_request_id?: string
+  attempt_id?: string
+  client_request_id?: string
+  thread_id?: string
+  window_id?: string
+  session_id?: string
+  account_id?: number
+  account_name?: string
+  model?: string
+  mapped_model?: string
+  upstream_request_id?: string
+  response_id?: string
+  environment?: string
+  deployment_commit?: string
+  container_slot?: string
+  container_id?: string
+  elapsed_ms?: number
+  http_status?: number
+  content_type?: string
+  content_encoding?: string
+  protocol?: string
+  last_event_type?: string
+  event_index?: number
+  terminal_event_type?: string
+  terminal_event_valid?: boolean
+  saw_terminal_event?: boolean
+  saw_failed_event?: boolean
+  semantic_output_seen?: boolean
+  usage_known?: boolean
+  client_output_started?: boolean
+  client_disconnected?: boolean
+  bytes_read?: number
+  response_bytes_forwarded?: number
+  failure_stage?: string
+  error_class?: string
+  error_type?: string
+  error_chain?: string
+  root_cause?: string
+  correlation_degraded?: boolean
+}
+
+export interface StreamDiagnosticResponse {
+  request_id?: string
+  logical_request_id?: string
+  environment?: string
+  entry: {
+    host?: string
+    route?: string
+    active_slot?: string
+    deployment_commit?: string
+    container_id?: string
+  }
+  attempts: StreamDiagnosticSnapshot[]
+  final: StreamDiagnosticSnapshot
+  evidence_missing?: string[]
+}
+
 export type UsageCostEvidenceStatus = 'confirmed' | 'confirmed_zero' | 'unavailable'
 export type UsageCostReviewStatus = 'pending' | 'reviewed'
 

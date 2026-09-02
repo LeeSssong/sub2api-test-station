@@ -27,11 +27,11 @@
 - Consumes: existing `HybridPerformanceGroupCard` props and i18n keys.
 - Produces: assertions requiring `成功率` and `基于 N 次调用`, with no internal source labels.
 
-- [ ] **Step 1: Update the test mock and assertions.**
+- [x] **Step 1: Update the test mock and assertions.**
 
   Replace the hybrid mock branches for `requestCount`, `realRequestCount`, and `probeFallbackCount` with a `sampleCount` branch returning `基于 {count} 次调用`; return `成功率` for the hybrid `successRate` key. Assert the center label is `成功率`, the footer is `基于 20 次调用`, and the rendered card text does not contain the three removed phrases.
 
-- [ ] **Step 2: Run the focused test to verify it fails.**
+- [x] **Step 2: Run the focused test to verify it fails.**
 
   Run from `upstream/sub2api/frontend`:
 
@@ -51,15 +51,15 @@
 - Consumes: `MonitorV4Group.success_rate` and `MonitorV4Group.request_count`.
 - Produces: card text using `channelMonitorV2.hybrid.successRate` and `channelMonitorV2.hybrid.sampleCount`.
 
-- [ ] **Step 1: Change only the card labels and footer.**
+- [x] **Step 1: Change only the card labels and footer.**
 
   Keep the existing success-rate computation, tones, metrics, and styling. Change the footer to one `data-test="sample-count"` span calling `t('channelMonitorV2.hybrid.sampleCount', { count: group.request_count })`; remove the three source-count spans. Keep all source-count fields in the TypeScript type and API validation untouched.
 
-- [ ] **Step 2: Change the Chinese hybrid translations.**
+- [x] **Step 2: Change the Chinese hybrid translations.**
 
   Set `successRate` to `成功率`, add `sampleCount: '基于 {count} 次调用'`, and remove the obsolete hybrid translation entries for `requestCount`, `realRequestCount`, and `probeFallbackCount`. Do not alter unrelated `channelMonitorV2.metrics.successRate` or English locale entries.
 
-- [ ] **Step 3: Run the focused test to verify it passes.**
+- [x] **Step 3: Run the focused test to verify it passes.**
 
   ```bash
   pnpm vitest run src/features/monitor-v4/__tests__/HybridPerformanceGroupCard.spec.ts
@@ -74,26 +74,26 @@
 - Inspect: `upstream/sub2api/frontend/src/i18n/locales/zh/channelMonitorV2.ts`
 - Inspect: `upstream/sub2api/frontend/src/features/monitor-v4/__tests__/HybridPerformanceGroupCard.spec.ts`
 
-- [ ] **Step 1: Run Monitor V4 direct tests.**
+- [x] **Step 1: Run Monitor V4 direct tests.**
 
   ```bash
   pnpm vitest run src/features/monitor-v4/__tests__/HybridPerformanceGroupCard.spec.ts src/features/monitor-v4/__tests__/HybridPerformanceView.spec.ts src/features/monitor-v4/__tests__/api.spec.ts
   ```
 
-- [ ] **Step 2: Run the required frontend type check.**
+- [x] **Step 2: Run the required frontend type check.**
 
   ```bash
   pnpm typecheck
   ```
 
-- [ ] **Step 3: Check the diff and forbidden copy.**
+- [x] **Step 3: Check the diff and forbidden copy.**
 
   ```bash
   git diff --check
   ! rg -n '综合成功|真实请求成功|探测补足|空桶' upstream/sub2api/frontend/src/features/monitor-v4 upstream/sub2api/frontend/src/i18n/locales/zh/channelMonitorV2.ts
   ```
 
-- [ ] **Step 4: Commit only the T116 implementation and tests.**
+- [x] **Step 4: Commit only the T116 implementation and tests.**
 
   ```bash
   git add upstream/sub2api/frontend/src/features/monitor-v4/HybridPerformanceGroupCard.vue upstream/sub2api/frontend/src/features/monitor-v4/__tests__/HybridPerformanceGroupCard.spec.ts upstream/sub2api/frontend/src/i18n/locales/zh/channelMonitorV2.ts

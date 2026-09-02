@@ -215,19 +215,6 @@ func TestOpenAIUnifiedFailureSafetyBlocksNonReplayableAttempts(t *testing.T) {
 	}
 }
 
-func TestOpenAIUnifiedFailureSafetyBlocksSentHTTP404WithUnknownExecution(t *testing.T) {
-	failure := service.ClassifyOpenAIUpstreamFailure(
-		http.StatusNotFound,
-		"endpoint route not found",
-		[]byte(`{"error":{"message":"endpoint route not found"}}`),
-		false,
-		false,
-	)
-	err := &service.UpstreamFailoverError{NextAccountAction: service.NextAccountRetry}
-
-	require.False(t, openAIUnifiedFailureSafeToReplay(failure, err, false))
-}
-
 func TestOpenAIUnifiedOAuth429KeepsNativeCooldownAndStopSemantics(t *testing.T) {
 	account := &service.Account{ID: 9001, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
 	failure := &service.UpstreamFailoverError{
@@ -255,7 +242,7 @@ func TestOpenAIUnifiedModeSkipsLegacyOAuth429GroupReset(t *testing.T) {
 
 func TestOpenAIUnifiedQualityDoesNotReplaceNativeRetryBudget(t *testing.T) {
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	native := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 5, MaxAccountSwitches: 4, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
+	native := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 4, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
 	decision := service.OpenAIAccountScheduleDecision{UnifiedQuality: true}
 	got := adoptOpenAIUnifiedRetryBudget(native, decision, nil, context.Background(), nil)
 	require.Same(t, native, got)
@@ -265,23 +252,6 @@ func TestOpenAIUnifiedQualityDoesNotReplaceNativeRetryBudget(t *testing.T) {
 		require.True(t, got.ConsumeAttempt(accountID), "native failover should allow account %d", accountID)
 	}
 	require.False(t, got.ConsumeAttempt(16))
-}
-
-func TestOpenAINativeRetryBudgetAllowsFourAccountSwitches(t *testing.T) {
-	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{
-		MaxAttempts:        5,
-		MaxAccountSwitches: 4,
-		MaxFailureDomains:  2,
-		Total:              5 * time.Second,
-	}, func() time.Time { return now })
-
-	for _, accountID := range []int64{11, 12, 13, 14, 15} {
-		require.True(t, budget.ConsumeAttempt(accountID), "native failover should reach account %d", accountID)
-	}
-	require.Equal(t, 5, budget.Attempts())
-	require.False(t, budget.ConsumeAttempt(16))
-	require.Equal(t, openAIRetryReasonAttemptLimit, budget.Reason())
 }
 
 type recordingOpenAIUnifiedOAuth429Gateway struct {

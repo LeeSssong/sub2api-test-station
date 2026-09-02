@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T118 Responses 流水请求元数据恢复（2026-09-02）：** 状态 `DESIGNING`。生产只读核对确认 2026-08-30 16:27:54 后新 Responses 成功流水的 `inbound_endpoint`、`ip_address` 成为空，根因是成功记账输入构造后遗漏 Sub 原生请求元数据快照赋值；Messages 路径和历史官方实现保持完整。范围仅恢复 Responses 成功路径的入站/上游端点、客户端 IP、User-Agent、Session ID、请求体哈希快照，保留当前定制字段；历史空记录不回填，无迁移、配置、计费、调度、重试、账号状态或生产数据变化。规格：`docs/superpowers/specs/2026-09-02-t118-responses-usage-request-metadata-design.md`。用户已确认原生语义恢复方案，待书面规格审阅批准；不得调用 writing-plans、创建实现 worktree、合并、推送或部署。
+
 **T117 飞书余额卡片静默按钮与 T114 调度排名对齐（2026-09-02）：** 状态 `DESIGNING`。源码确认 T98-R3 的 1h/6h/24h 静默按钮仍存在，但只有合规回调密钥和静默 repository 完成接线、卡片获得一次性 `SilenceToken` 时才渲染；截图无按钮是互动回调能力未启用时的安全降级。排名将从当前 `ListWindow("24h")` 间接读取改为显式复用 T114 `1h + 24h + 7d` 质量调度 projection；新告警和重复提醒读取发送时最新五分钟质量快照，历史卡片不回写。排名或按钮能力异常不得阻断余额告警。规格：`docs/superpowers/specs/2026-09-02-t117-feishu-balance-card-t114-ranking-silence-design.md`。待用户批准完整规格；未授权 writing-plans、实现、配置变更、推送或部署。
 
 **T114 账号监控排名对齐补丁（2026-09-02）：** 状态 `DONE`。候选已合入并推送，主站运行 `main@6fe774df5` / tree `bcf4fd8e2`；宿主记录 `20260902T152635Z-production-3515916.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`。API、worker、detector 及三项公网健康探针通过。按用户最新明确指令不同步验收站，验收站保持 `d8a306a16`；两个排除分支/worktree 保留不动。

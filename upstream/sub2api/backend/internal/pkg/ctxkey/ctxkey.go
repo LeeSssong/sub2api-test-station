@@ -26,6 +26,27 @@ const (
 	// ClientRequestID 客户端请求的唯一标识，用于追踪请求全生命周期（用于 Ops 监控与排障）。
 	ClientRequestID Key = "ctx_client_request_id"
 
+	// ThreadID identifies the client thread when supplied by a streaming client.
+	ThreadID Key = "ctx_thread_id"
+
+	// WindowID identifies the client request window when supplied by Codex.
+	WindowID Key = "ctx_window_id"
+
+	// SessionID identifies the client session for request correlation.
+	SessionID Key = "ctx_session_id"
+
+	// LogicalRequestID groups retries/attempts for one logical client request.
+	LogicalRequestID Key = "ctx_logical_request_id"
+
+	// AttemptID identifies one upstream attempt.
+	AttemptID Key = "ctx_attempt_id"
+
+	// UpstreamRequestID identifies a provider request when available.
+	UpstreamRequestID Key = "ctx_upstream_request_id"
+
+	// ResponseID identifies an OpenAI response when available.
+	ResponseID Key = "ctx_response_id"
+
 	// Model 请求模型标识（用于统一请求链路日志字段）。
 	Model Key = "ctx_model"
 

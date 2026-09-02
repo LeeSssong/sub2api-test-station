@@ -87,11 +87,6 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
-	// AttemptedQuotaUSD is the amount that should have been charged for the
-	// request. It is audit-only when the actual delta is lower or zero.
-	AttemptedQuotaUSD float64
-	// DeltaUSD is the amount actually charged after balance/eligibility rules.
-	DeltaUSD float64
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -109,9 +104,6 @@ func (c *UsageBillingCommand) Normalize() {
 		c.RequestID = c.LogicalRequestID
 	}
 	c.UsageCompleteness = c.UsageCompleteness.Normalize()
-	if c.AttemptedQuotaUSD == 0 {
-		c.AttemptedQuotaUSD = c.BalanceCost + c.SubscriptionCost
-	}
 	// The fingerprint is the immutable retry identity and must reflect the raw
 	// observed amounts. Unknown usage is zeroed below for charging safety, but
 	// that mutation must not change the request identity across versions.
@@ -137,8 +129,6 @@ func (c *UsageBillingCommand) Normalize() {
 	// 量化必须在指纹计算之后：指纹是请求幂等键，保持由原始金额派生可以避免
 	// 升级前后同一 request_id 的重试算出不同指纹而被判为 fingerprint conflict。
 	c.quantizeMonetaryFields()
-	c.AttemptedQuotaUSD = QuantizeUsageBillingAmount(c.AttemptedQuotaUSD)
-	c.DeltaUSD = QuantizeUsageBillingAmount(c.DeltaUSD)
 }
 
 // usageBillingDedupRequestID keeps the existing physical (request_id,

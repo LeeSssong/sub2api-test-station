@@ -14,9 +14,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/user"
-	"github.com/Wei-Shaw/sub2api/ent/userquotaadjustment"
-	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
-	"github.com/shopspring/decimal"
 )
 
 // PaymentOrderUpdate is the builder for updating PaymentOrder entities.
@@ -154,149 +151,6 @@ func (_u *PaymentOrderUpdate) SetNillableFeeRate(v *float64) *PaymentOrderUpdate
 // AddFeeRate adds value to the "fee_rate" field.
 func (_u *PaymentOrderUpdate) AddFeeRate(v float64) *PaymentOrderUpdate {
 	_u.mutation.AddFeeRate(v)
-	return _u
-}
-
-// SetPaidQuotaUsd sets the "paid_quota_usd" field.
-func (_u *PaymentOrderUpdate) SetPaidQuotaUsd(v decimal.Decimal) *PaymentOrderUpdate {
-	_u.mutation.SetPaidQuotaUsd(v)
-	return _u
-}
-
-// SetNillablePaidQuotaUsd sets the "paid_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillablePaidQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetPaidQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetGiftQuotaUsd sets the "gift_quota_usd" field.
-func (_u *PaymentOrderUpdate) SetGiftQuotaUsd(v decimal.Decimal) *PaymentOrderUpdate {
-	_u.mutation.SetGiftQuotaUsd(v)
-	return _u
-}
-
-// SetNillableGiftQuotaUsd sets the "gift_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableGiftQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetGiftQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetTotalQuotaUsd sets the "total_quota_usd" field.
-func (_u *PaymentOrderUpdate) SetTotalQuotaUsd(v decimal.Decimal) *PaymentOrderUpdate {
-	_u.mutation.SetTotalQuotaUsd(v)
-	return _u
-}
-
-// SetNillableTotalQuotaUsd sets the "total_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableTotalQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetTotalQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetQuotaRuleSnapshot sets the "quota_rule_snapshot" field.
-func (_u *PaymentOrderUpdate) SetQuotaRuleSnapshot(v map[string]interface{}) *PaymentOrderUpdate {
-	_u.mutation.SetQuotaRuleSnapshot(v)
-	return _u
-}
-
-// SetRefundedPaidQuotaUsd sets the "refunded_paid_quota_usd" field.
-func (_u *PaymentOrderUpdate) SetRefundedPaidQuotaUsd(v decimal.Decimal) *PaymentOrderUpdate {
-	_u.mutation.SetRefundedPaidQuotaUsd(v)
-	return _u
-}
-
-// SetNillableRefundedPaidQuotaUsd sets the "refunded_paid_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableRefundedPaidQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetRefundedPaidQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetQuotaAccountingStatus sets the "quota_accounting_status" field.
-func (_u *PaymentOrderUpdate) SetQuotaAccountingStatus(v string) *PaymentOrderUpdate {
-	_u.mutation.SetQuotaAccountingStatus(v)
-	return _u
-}
-
-// SetNillableQuotaAccountingStatus sets the "quota_accounting_status" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableQuotaAccountingStatus(v *string) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetQuotaAccountingStatus(*v)
-	}
-	return _u
-}
-
-// SetOperatorUserID sets the "operator_user_id" field.
-func (_u *PaymentOrderUpdate) SetOperatorUserID(v int64) *PaymentOrderUpdate {
-	_u.mutation.ResetOperatorUserID()
-	_u.mutation.SetOperatorUserID(v)
-	return _u
-}
-
-// SetNillableOperatorUserID sets the "operator_user_id" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableOperatorUserID(v *int64) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetOperatorUserID(*v)
-	}
-	return _u
-}
-
-// AddOperatorUserID adds value to the "operator_user_id" field.
-func (_u *PaymentOrderUpdate) AddOperatorUserID(v int64) *PaymentOrderUpdate {
-	_u.mutation.AddOperatorUserID(v)
-	return _u
-}
-
-// ClearOperatorUserID clears the value of the "operator_user_id" field.
-func (_u *PaymentOrderUpdate) ClearOperatorUserID() *PaymentOrderUpdate {
-	_u.mutation.ClearOperatorUserID()
-	return _u
-}
-
-// SetOperatorNote sets the "operator_note" field.
-func (_u *PaymentOrderUpdate) SetOperatorNote(v string) *PaymentOrderUpdate {
-	_u.mutation.SetOperatorNote(v)
-	return _u
-}
-
-// SetNillableOperatorNote sets the "operator_note" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableOperatorNote(v *string) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetOperatorNote(*v)
-	}
-	return _u
-}
-
-// ClearOperatorNote clears the value of the "operator_note" field.
-func (_u *PaymentOrderUpdate) ClearOperatorNote() *PaymentOrderUpdate {
-	_u.mutation.ClearOperatorNote()
-	return _u
-}
-
-// SetOperatorRechargedAt sets the "operator_recharged_at" field.
-func (_u *PaymentOrderUpdate) SetOperatorRechargedAt(v time.Time) *PaymentOrderUpdate {
-	_u.mutation.SetOperatorRechargedAt(v)
-	return _u
-}
-
-// SetNillableOperatorRechargedAt sets the "operator_recharged_at" field if the given value is not nil.
-func (_u *PaymentOrderUpdate) SetNillableOperatorRechargedAt(v *time.Time) *PaymentOrderUpdate {
-	if v != nil {
-		_u.SetOperatorRechargedAt(*v)
-	}
-	return _u
-}
-
-// ClearOperatorRechargedAt clears the value of the "operator_recharged_at" field.
-func (_u *PaymentOrderUpdate) ClearOperatorRechargedAt() *PaymentOrderUpdate {
-	_u.mutation.ClearOperatorRechargedAt()
 	return _u
 }
 
@@ -865,36 +719,6 @@ func (_u *PaymentOrderUpdate) SetUser(v *User) *PaymentOrderUpdate {
 	return _u.SetUserID(v.ID)
 }
 
-// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
-func (_u *PaymentOrderUpdate) AddQuotaGrantIDs(ids ...int64) *PaymentOrderUpdate {
-	_u.mutation.AddQuotaGrantIDs(ids...)
-	return _u
-}
-
-// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *PaymentOrderUpdate) AddQuotaGrants(v ...*UserQuotaGrant) *PaymentOrderUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaGrantIDs(ids...)
-}
-
-// AddQuotaAdjustmentIDs adds the "quota_adjustments" edge to the UserQuotaAdjustment entity by IDs.
-func (_u *PaymentOrderUpdate) AddQuotaAdjustmentIDs(ids ...int64) *PaymentOrderUpdate {
-	_u.mutation.AddQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// AddQuotaAdjustments adds the "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *PaymentOrderUpdate) AddQuotaAdjustments(v ...*UserQuotaAdjustment) *PaymentOrderUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaAdjustmentIDs(ids...)
-}
-
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_u *PaymentOrderUpdate) Mutation() *PaymentOrderMutation {
 	return _u.mutation
@@ -904,48 +728,6 @@ func (_u *PaymentOrderUpdate) Mutation() *PaymentOrderMutation {
 func (_u *PaymentOrderUpdate) ClearUser() *PaymentOrderUpdate {
 	_u.mutation.ClearUser()
 	return _u
-}
-
-// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *PaymentOrderUpdate) ClearQuotaGrants() *PaymentOrderUpdate {
-	_u.mutation.ClearQuotaGrants()
-	return _u
-}
-
-// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
-func (_u *PaymentOrderUpdate) RemoveQuotaGrantIDs(ids ...int64) *PaymentOrderUpdate {
-	_u.mutation.RemoveQuotaGrantIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
-func (_u *PaymentOrderUpdate) RemoveQuotaGrants(v ...*UserQuotaGrant) *PaymentOrderUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaGrantIDs(ids...)
-}
-
-// ClearQuotaAdjustments clears all "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *PaymentOrderUpdate) ClearQuotaAdjustments() *PaymentOrderUpdate {
-	_u.mutation.ClearQuotaAdjustments()
-	return _u
-}
-
-// RemoveQuotaAdjustmentIDs removes the "quota_adjustments" edge to UserQuotaAdjustment entities by IDs.
-func (_u *PaymentOrderUpdate) RemoveQuotaAdjustmentIDs(ids ...int64) *PaymentOrderUpdate {
-	_u.mutation.RemoveQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaAdjustments removes "quota_adjustments" edges to UserQuotaAdjustment entities.
-func (_u *PaymentOrderUpdate) RemoveQuotaAdjustments(v ...*UserQuotaAdjustment) *PaymentOrderUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaAdjustmentIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -994,11 +776,6 @@ func (_u *PaymentOrderUpdate) check() error {
 	if v, ok := _u.mutation.UserName(); ok {
 		if err := paymentorder.UserNameValidator(v); err != nil {
 			return &ValidationError{Name: "user_name", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.user_name": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.QuotaAccountingStatus(); ok {
-		if err := paymentorder.QuotaAccountingStatusValidator(v); err != nil {
-			return &ValidationError{Name: "quota_accounting_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.quota_accounting_status": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.RechargeCode(); ok {
@@ -1103,45 +880,6 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.AddedFeeRate(); ok {
 		_spec.AddField(paymentorder.FieldFeeRate, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.PaidQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldPaidQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.GiftQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldGiftQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.TotalQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldTotalQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.QuotaRuleSnapshot(); ok {
-		_spec.SetField(paymentorder.FieldQuotaRuleSnapshot, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.RefundedPaidQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldRefundedPaidQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.QuotaAccountingStatus(); ok {
-		_spec.SetField(paymentorder.FieldQuotaAccountingStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.OperatorUserID(); ok {
-		_spec.SetField(paymentorder.FieldOperatorUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedOperatorUserID(); ok {
-		_spec.AddField(paymentorder.FieldOperatorUserID, field.TypeInt64, value)
-	}
-	if _u.mutation.OperatorUserIDCleared() {
-		_spec.ClearField(paymentorder.FieldOperatorUserID, field.TypeInt64)
-	}
-	if value, ok := _u.mutation.OperatorNote(); ok {
-		_spec.SetField(paymentorder.FieldOperatorNote, field.TypeString, value)
-	}
-	if _u.mutation.OperatorNoteCleared() {
-		_spec.ClearField(paymentorder.FieldOperatorNote, field.TypeString)
-	}
-	if value, ok := _u.mutation.OperatorRechargedAt(); ok {
-		_spec.SetField(paymentorder.FieldOperatorRechargedAt, field.TypeTime, value)
-	}
-	if _u.mutation.OperatorRechargedAtCleared() {
-		_spec.ClearField(paymentorder.FieldOperatorRechargedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
@@ -1334,96 +1072,6 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if _u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaGrantsTable,
-			Columns: []string{paymentorder.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaGrantsTable,
-			Columns: []string{paymentorder.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaGrantsTable,
-			Columns: []string{paymentorder.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaAdjustmentsTable,
-			Columns: []string{paymentorder.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaAdjustmentsIDs(); len(nodes) > 0 && !_u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaAdjustmentsTable,
-			Columns: []string{paymentorder.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaAdjustmentsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaAdjustmentsTable,
-			Columns: []string{paymentorder.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{paymentorder.Label}
@@ -1566,149 +1214,6 @@ func (_u *PaymentOrderUpdateOne) SetNillableFeeRate(v *float64) *PaymentOrderUpd
 // AddFeeRate adds value to the "fee_rate" field.
 func (_u *PaymentOrderUpdateOne) AddFeeRate(v float64) *PaymentOrderUpdateOne {
 	_u.mutation.AddFeeRate(v)
-	return _u
-}
-
-// SetPaidQuotaUsd sets the "paid_quota_usd" field.
-func (_u *PaymentOrderUpdateOne) SetPaidQuotaUsd(v decimal.Decimal) *PaymentOrderUpdateOne {
-	_u.mutation.SetPaidQuotaUsd(v)
-	return _u
-}
-
-// SetNillablePaidQuotaUsd sets the "paid_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillablePaidQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetPaidQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetGiftQuotaUsd sets the "gift_quota_usd" field.
-func (_u *PaymentOrderUpdateOne) SetGiftQuotaUsd(v decimal.Decimal) *PaymentOrderUpdateOne {
-	_u.mutation.SetGiftQuotaUsd(v)
-	return _u
-}
-
-// SetNillableGiftQuotaUsd sets the "gift_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableGiftQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetGiftQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetTotalQuotaUsd sets the "total_quota_usd" field.
-func (_u *PaymentOrderUpdateOne) SetTotalQuotaUsd(v decimal.Decimal) *PaymentOrderUpdateOne {
-	_u.mutation.SetTotalQuotaUsd(v)
-	return _u
-}
-
-// SetNillableTotalQuotaUsd sets the "total_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableTotalQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetTotalQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetQuotaRuleSnapshot sets the "quota_rule_snapshot" field.
-func (_u *PaymentOrderUpdateOne) SetQuotaRuleSnapshot(v map[string]interface{}) *PaymentOrderUpdateOne {
-	_u.mutation.SetQuotaRuleSnapshot(v)
-	return _u
-}
-
-// SetRefundedPaidQuotaUsd sets the "refunded_paid_quota_usd" field.
-func (_u *PaymentOrderUpdateOne) SetRefundedPaidQuotaUsd(v decimal.Decimal) *PaymentOrderUpdateOne {
-	_u.mutation.SetRefundedPaidQuotaUsd(v)
-	return _u
-}
-
-// SetNillableRefundedPaidQuotaUsd sets the "refunded_paid_quota_usd" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableRefundedPaidQuotaUsd(v *decimal.Decimal) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetRefundedPaidQuotaUsd(*v)
-	}
-	return _u
-}
-
-// SetQuotaAccountingStatus sets the "quota_accounting_status" field.
-func (_u *PaymentOrderUpdateOne) SetQuotaAccountingStatus(v string) *PaymentOrderUpdateOne {
-	_u.mutation.SetQuotaAccountingStatus(v)
-	return _u
-}
-
-// SetNillableQuotaAccountingStatus sets the "quota_accounting_status" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableQuotaAccountingStatus(v *string) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetQuotaAccountingStatus(*v)
-	}
-	return _u
-}
-
-// SetOperatorUserID sets the "operator_user_id" field.
-func (_u *PaymentOrderUpdateOne) SetOperatorUserID(v int64) *PaymentOrderUpdateOne {
-	_u.mutation.ResetOperatorUserID()
-	_u.mutation.SetOperatorUserID(v)
-	return _u
-}
-
-// SetNillableOperatorUserID sets the "operator_user_id" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableOperatorUserID(v *int64) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetOperatorUserID(*v)
-	}
-	return _u
-}
-
-// AddOperatorUserID adds value to the "operator_user_id" field.
-func (_u *PaymentOrderUpdateOne) AddOperatorUserID(v int64) *PaymentOrderUpdateOne {
-	_u.mutation.AddOperatorUserID(v)
-	return _u
-}
-
-// ClearOperatorUserID clears the value of the "operator_user_id" field.
-func (_u *PaymentOrderUpdateOne) ClearOperatorUserID() *PaymentOrderUpdateOne {
-	_u.mutation.ClearOperatorUserID()
-	return _u
-}
-
-// SetOperatorNote sets the "operator_note" field.
-func (_u *PaymentOrderUpdateOne) SetOperatorNote(v string) *PaymentOrderUpdateOne {
-	_u.mutation.SetOperatorNote(v)
-	return _u
-}
-
-// SetNillableOperatorNote sets the "operator_note" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableOperatorNote(v *string) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetOperatorNote(*v)
-	}
-	return _u
-}
-
-// ClearOperatorNote clears the value of the "operator_note" field.
-func (_u *PaymentOrderUpdateOne) ClearOperatorNote() *PaymentOrderUpdateOne {
-	_u.mutation.ClearOperatorNote()
-	return _u
-}
-
-// SetOperatorRechargedAt sets the "operator_recharged_at" field.
-func (_u *PaymentOrderUpdateOne) SetOperatorRechargedAt(v time.Time) *PaymentOrderUpdateOne {
-	_u.mutation.SetOperatorRechargedAt(v)
-	return _u
-}
-
-// SetNillableOperatorRechargedAt sets the "operator_recharged_at" field if the given value is not nil.
-func (_u *PaymentOrderUpdateOne) SetNillableOperatorRechargedAt(v *time.Time) *PaymentOrderUpdateOne {
-	if v != nil {
-		_u.SetOperatorRechargedAt(*v)
-	}
-	return _u
-}
-
-// ClearOperatorRechargedAt clears the value of the "operator_recharged_at" field.
-func (_u *PaymentOrderUpdateOne) ClearOperatorRechargedAt() *PaymentOrderUpdateOne {
-	_u.mutation.ClearOperatorRechargedAt()
 	return _u
 }
 
@@ -2277,36 +1782,6 @@ func (_u *PaymentOrderUpdateOne) SetUser(v *User) *PaymentOrderUpdateOne {
 	return _u.SetUserID(v.ID)
 }
 
-// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
-func (_u *PaymentOrderUpdateOne) AddQuotaGrantIDs(ids ...int64) *PaymentOrderUpdateOne {
-	_u.mutation.AddQuotaGrantIDs(ids...)
-	return _u
-}
-
-// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *PaymentOrderUpdateOne) AddQuotaGrants(v ...*UserQuotaGrant) *PaymentOrderUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaGrantIDs(ids...)
-}
-
-// AddQuotaAdjustmentIDs adds the "quota_adjustments" edge to the UserQuotaAdjustment entity by IDs.
-func (_u *PaymentOrderUpdateOne) AddQuotaAdjustmentIDs(ids ...int64) *PaymentOrderUpdateOne {
-	_u.mutation.AddQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// AddQuotaAdjustments adds the "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *PaymentOrderUpdateOne) AddQuotaAdjustments(v ...*UserQuotaAdjustment) *PaymentOrderUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaAdjustmentIDs(ids...)
-}
-
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_u *PaymentOrderUpdateOne) Mutation() *PaymentOrderMutation {
 	return _u.mutation
@@ -2316,48 +1791,6 @@ func (_u *PaymentOrderUpdateOne) Mutation() *PaymentOrderMutation {
 func (_u *PaymentOrderUpdateOne) ClearUser() *PaymentOrderUpdateOne {
 	_u.mutation.ClearUser()
 	return _u
-}
-
-// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *PaymentOrderUpdateOne) ClearQuotaGrants() *PaymentOrderUpdateOne {
-	_u.mutation.ClearQuotaGrants()
-	return _u
-}
-
-// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
-func (_u *PaymentOrderUpdateOne) RemoveQuotaGrantIDs(ids ...int64) *PaymentOrderUpdateOne {
-	_u.mutation.RemoveQuotaGrantIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
-func (_u *PaymentOrderUpdateOne) RemoveQuotaGrants(v ...*UserQuotaGrant) *PaymentOrderUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaGrantIDs(ids...)
-}
-
-// ClearQuotaAdjustments clears all "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *PaymentOrderUpdateOne) ClearQuotaAdjustments() *PaymentOrderUpdateOne {
-	_u.mutation.ClearQuotaAdjustments()
-	return _u
-}
-
-// RemoveQuotaAdjustmentIDs removes the "quota_adjustments" edge to UserQuotaAdjustment entities by IDs.
-func (_u *PaymentOrderUpdateOne) RemoveQuotaAdjustmentIDs(ids ...int64) *PaymentOrderUpdateOne {
-	_u.mutation.RemoveQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaAdjustments removes "quota_adjustments" edges to UserQuotaAdjustment entities.
-func (_u *PaymentOrderUpdateOne) RemoveQuotaAdjustments(v ...*UserQuotaAdjustment) *PaymentOrderUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaAdjustmentIDs(ids...)
 }
 
 // Where appends a list predicates to the PaymentOrderUpdate builder.
@@ -2419,11 +1852,6 @@ func (_u *PaymentOrderUpdateOne) check() error {
 	if v, ok := _u.mutation.UserName(); ok {
 		if err := paymentorder.UserNameValidator(v); err != nil {
 			return &ValidationError{Name: "user_name", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.user_name": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.QuotaAccountingStatus(); ok {
-		if err := paymentorder.QuotaAccountingStatusValidator(v); err != nil {
-			return &ValidationError{Name: "quota_accounting_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.quota_accounting_status": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.RechargeCode(); ok {
@@ -2545,45 +1973,6 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.AddedFeeRate(); ok {
 		_spec.AddField(paymentorder.FieldFeeRate, field.TypeFloat64, value)
-	}
-	if value, ok := _u.mutation.PaidQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldPaidQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.GiftQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldGiftQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.TotalQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldTotalQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.QuotaRuleSnapshot(); ok {
-		_spec.SetField(paymentorder.FieldQuotaRuleSnapshot, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.RefundedPaidQuotaUsd(); ok {
-		_spec.SetField(paymentorder.FieldRefundedPaidQuotaUsd, field.TypeOther, value)
-	}
-	if value, ok := _u.mutation.QuotaAccountingStatus(); ok {
-		_spec.SetField(paymentorder.FieldQuotaAccountingStatus, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.OperatorUserID(); ok {
-		_spec.SetField(paymentorder.FieldOperatorUserID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedOperatorUserID(); ok {
-		_spec.AddField(paymentorder.FieldOperatorUserID, field.TypeInt64, value)
-	}
-	if _u.mutation.OperatorUserIDCleared() {
-		_spec.ClearField(paymentorder.FieldOperatorUserID, field.TypeInt64)
-	}
-	if value, ok := _u.mutation.OperatorNote(); ok {
-		_spec.SetField(paymentorder.FieldOperatorNote, field.TypeString, value)
-	}
-	if _u.mutation.OperatorNoteCleared() {
-		_spec.ClearField(paymentorder.FieldOperatorNote, field.TypeString)
-	}
-	if value, ok := _u.mutation.OperatorRechargedAt(); ok {
-		_spec.SetField(paymentorder.FieldOperatorRechargedAt, field.TypeTime, value)
-	}
-	if _u.mutation.OperatorRechargedAtCleared() {
-		_spec.ClearField(paymentorder.FieldOperatorRechargedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
@@ -2769,96 +2158,6 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaGrantsTable,
-			Columns: []string{paymentorder.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaGrantsTable,
-			Columns: []string{paymentorder.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaGrantsTable,
-			Columns: []string{paymentorder.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaAdjustmentsTable,
-			Columns: []string{paymentorder.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaAdjustmentsIDs(); len(nodes) > 0 && !_u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaAdjustmentsTable,
-			Columns: []string{paymentorder.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaAdjustmentsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   paymentorder.QuotaAdjustmentsTable,
-			Columns: []string{paymentorder.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

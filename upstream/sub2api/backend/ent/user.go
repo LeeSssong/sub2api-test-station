@@ -106,17 +106,13 @@ type UserEdges struct {
 	QuotaLedgerEntries []*UserQuotaLedgerEntry `json:"quota_ledger_entries,omitempty"`
 	// OperatedQuotaLedgerEntries holds the value of the operated_quota_ledger_entries edge.
 	OperatedQuotaLedgerEntries []*UserQuotaLedgerEntry `json:"operated_quota_ledger_entries,omitempty"`
-	// QuotaGrants holds the value of the quota_grants edge.
-	QuotaGrants []*UserQuotaGrant `json:"quota_grants,omitempty"`
-	// QuotaAdjustments holds the value of the quota_adjustments edge.
-	QuotaAdjustments []*UserQuotaAdjustment `json:"quota_adjustments,omitempty"`
 	// QuotaIdempotencyRecords holds the value of the quota_idempotency_records edge.
 	QuotaIdempotencyRecords []*QuotaIdempotencyRecord `json:"quota_idempotency_records,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [20]bool
+	loadedTypes [18]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -265,28 +261,10 @@ func (e UserEdges) OperatedQuotaLedgerEntriesOrErr() ([]*UserQuotaLedgerEntry, e
 	return nil, &NotLoadedError{edge: "operated_quota_ledger_entries"}
 }
 
-// QuotaGrantsOrErr returns the QuotaGrants value or an error if the edge
-// was not loaded in eager-loading.
-func (e UserEdges) QuotaGrantsOrErr() ([]*UserQuotaGrant, error) {
-	if e.loadedTypes[16] {
-		return e.QuotaGrants, nil
-	}
-	return nil, &NotLoadedError{edge: "quota_grants"}
-}
-
-// QuotaAdjustmentsOrErr returns the QuotaAdjustments value or an error if the edge
-// was not loaded in eager-loading.
-func (e UserEdges) QuotaAdjustmentsOrErr() ([]*UserQuotaAdjustment, error) {
-	if e.loadedTypes[17] {
-		return e.QuotaAdjustments, nil
-	}
-	return nil, &NotLoadedError{edge: "quota_adjustments"}
-}
-
 // QuotaIdempotencyRecordsOrErr returns the QuotaIdempotencyRecords value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) QuotaIdempotencyRecordsOrErr() ([]*QuotaIdempotencyRecord, error) {
-	if e.loadedTypes[18] {
+	if e.loadedTypes[16] {
 		return e.QuotaIdempotencyRecords, nil
 	}
 	return nil, &NotLoadedError{edge: "quota_idempotency_records"}
@@ -295,7 +273,7 @@ func (e UserEdges) QuotaIdempotencyRecordsOrErr() ([]*QuotaIdempotencyRecord, er
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[19] {
+	if e.loadedTypes[17] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -578,16 +556,6 @@ func (_m *User) QueryQuotaLedgerEntries() *UserQuotaLedgerEntryQuery {
 // QueryOperatedQuotaLedgerEntries queries the "operated_quota_ledger_entries" edge of the User entity.
 func (_m *User) QueryOperatedQuotaLedgerEntries() *UserQuotaLedgerEntryQuery {
 	return NewUserClient(_m.config).QueryOperatedQuotaLedgerEntries(_m)
-}
-
-// QueryQuotaGrants queries the "quota_grants" edge of the User entity.
-func (_m *User) QueryQuotaGrants() *UserQuotaGrantQuery {
-	return NewUserClient(_m.config).QueryQuotaGrants(_m)
-}
-
-// QueryQuotaAdjustments queries the "quota_adjustments" edge of the User entity.
-func (_m *User) QueryQuotaAdjustments() *UserQuotaAdjustmentQuery {
-	return NewUserClient(_m.config).QueryQuotaAdjustments(_m)
 }
 
 // QueryQuotaIdempotencyRecords queries the "quota_idempotency_records" edge of the User entity.

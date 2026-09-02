@@ -100,10 +100,6 @@ type Tx struct {
 	UserAttributeValue *UserAttributeValueClient
 	// UserPlatformQuota is the client for interacting with the UserPlatformQuota builders.
 	UserPlatformQuota *UserPlatformQuotaClient
-	// UserQuotaAdjustment is the client for interacting with the UserQuotaAdjustment builders.
-	UserQuotaAdjustment *UserQuotaAdjustmentClient
-	// UserQuotaGrant is the client for interacting with the UserQuotaGrant builders.
-	UserQuotaGrant *UserQuotaGrantClient
 	// UserQuotaLedgerEntry is the client for interacting with the UserQuotaLedgerEntry builders.
 	UserQuotaLedgerEntry *UserQuotaLedgerEntryClient
 	// UserSubscription is the client for interacting with the UserSubscription builders.
@@ -284,8 +280,6 @@ func (tx *Tx) init() {
 	tx.UserAttributeDefinition = NewUserAttributeDefinitionClient(tx.config)
 	tx.UserAttributeValue = NewUserAttributeValueClient(tx.config)
 	tx.UserPlatformQuota = NewUserPlatformQuotaClient(tx.config)
-	tx.UserQuotaAdjustment = NewUserQuotaAdjustmentClient(tx.config)
-	tx.UserQuotaGrant = NewUserQuotaGrantClient(tx.config)
 	tx.UserQuotaLedgerEntry = NewUserQuotaLedgerEntryClient(tx.config)
 	tx.UserSubscription = NewUserSubscriptionClient(tx.config)
 	tx.UserWallet = NewUserWalletClient(tx.config)

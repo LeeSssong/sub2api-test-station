@@ -25,8 +25,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
-	"github.com/Wei-Shaw/sub2api/ent/userquotaadjustment"
-	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/ent/userwallet"
@@ -681,36 +679,6 @@ func (_u *UserUpdate) AddOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntry) 
 	return _u.AddOperatedQuotaLedgerEntryIDs(ids...)
 }
 
-// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
-func (_u *UserUpdate) AddQuotaGrantIDs(ids ...int64) *UserUpdate {
-	_u.mutation.AddQuotaGrantIDs(ids...)
-	return _u
-}
-
-// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *UserUpdate) AddQuotaGrants(v ...*UserQuotaGrant) *UserUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaGrantIDs(ids...)
-}
-
-// AddQuotaAdjustmentIDs adds the "quota_adjustments" edge to the UserQuotaAdjustment entity by IDs.
-func (_u *UserUpdate) AddQuotaAdjustmentIDs(ids ...int64) *UserUpdate {
-	_u.mutation.AddQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// AddQuotaAdjustments adds the "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *UserUpdate) AddQuotaAdjustments(v ...*UserQuotaAdjustment) *UserUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaAdjustmentIDs(ids...)
-}
-
 // AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
 func (_u *UserUpdate) AddQuotaIdempotencyRecordIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddQuotaIdempotencyRecordIDs(ids...)
@@ -1050,48 +1018,6 @@ func (_u *UserUpdate) RemoveOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntr
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveOperatedQuotaLedgerEntryIDs(ids...)
-}
-
-// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *UserUpdate) ClearQuotaGrants() *UserUpdate {
-	_u.mutation.ClearQuotaGrants()
-	return _u
-}
-
-// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
-func (_u *UserUpdate) RemoveQuotaGrantIDs(ids ...int64) *UserUpdate {
-	_u.mutation.RemoveQuotaGrantIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
-func (_u *UserUpdate) RemoveQuotaGrants(v ...*UserQuotaGrant) *UserUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaGrantIDs(ids...)
-}
-
-// ClearQuotaAdjustments clears all "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *UserUpdate) ClearQuotaAdjustments() *UserUpdate {
-	_u.mutation.ClearQuotaAdjustments()
-	return _u
-}
-
-// RemoveQuotaAdjustmentIDs removes the "quota_adjustments" edge to UserQuotaAdjustment entities by IDs.
-func (_u *UserUpdate) RemoveQuotaAdjustmentIDs(ids ...int64) *UserUpdate {
-	_u.mutation.RemoveQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaAdjustments removes "quota_adjustments" edges to UserQuotaAdjustment entities.
-func (_u *UserUpdate) RemoveQuotaAdjustments(v ...*UserQuotaAdjustment) *UserUpdate {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaAdjustmentIDs(ids...)
 }
 
 // ClearQuotaIdempotencyRecords clears all "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
@@ -2025,96 +1951,6 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
-	if _u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaGrantsTable,
-			Columns: []string{user.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaGrantsTable,
-			Columns: []string{user.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaGrantsTable,
-			Columns: []string{user.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaAdjustmentsTable,
-			Columns: []string{user.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaAdjustmentsIDs(); len(nodes) > 0 && !_u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaAdjustmentsTable,
-			Columns: []string{user.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaAdjustmentsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaAdjustmentsTable,
-			Columns: []string{user.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
 	if _u.mutation.QuotaIdempotencyRecordsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -2816,36 +2652,6 @@ func (_u *UserUpdateOne) AddOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerEntr
 	return _u.AddOperatedQuotaLedgerEntryIDs(ids...)
 }
 
-// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
-func (_u *UserUpdateOne) AddQuotaGrantIDs(ids ...int64) *UserUpdateOne {
-	_u.mutation.AddQuotaGrantIDs(ids...)
-	return _u
-}
-
-// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *UserUpdateOne) AddQuotaGrants(v ...*UserQuotaGrant) *UserUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaGrantIDs(ids...)
-}
-
-// AddQuotaAdjustmentIDs adds the "quota_adjustments" edge to the UserQuotaAdjustment entity by IDs.
-func (_u *UserUpdateOne) AddQuotaAdjustmentIDs(ids ...int64) *UserUpdateOne {
-	_u.mutation.AddQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// AddQuotaAdjustments adds the "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *UserUpdateOne) AddQuotaAdjustments(v ...*UserQuotaAdjustment) *UserUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.AddQuotaAdjustmentIDs(ids...)
-}
-
 // AddQuotaIdempotencyRecordIDs adds the "quota_idempotency_records" edge to the QuotaIdempotencyRecord entity by IDs.
 func (_u *UserUpdateOne) AddQuotaIdempotencyRecordIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddQuotaIdempotencyRecordIDs(ids...)
@@ -3185,48 +2991,6 @@ func (_u *UserUpdateOne) RemoveOperatedQuotaLedgerEntries(v ...*UserQuotaLedgerE
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveOperatedQuotaLedgerEntryIDs(ids...)
-}
-
-// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
-func (_u *UserUpdateOne) ClearQuotaGrants() *UserUpdateOne {
-	_u.mutation.ClearQuotaGrants()
-	return _u
-}
-
-// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
-func (_u *UserUpdateOne) RemoveQuotaGrantIDs(ids ...int64) *UserUpdateOne {
-	_u.mutation.RemoveQuotaGrantIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
-func (_u *UserUpdateOne) RemoveQuotaGrants(v ...*UserQuotaGrant) *UserUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaGrantIDs(ids...)
-}
-
-// ClearQuotaAdjustments clears all "quota_adjustments" edges to the UserQuotaAdjustment entity.
-func (_u *UserUpdateOne) ClearQuotaAdjustments() *UserUpdateOne {
-	_u.mutation.ClearQuotaAdjustments()
-	return _u
-}
-
-// RemoveQuotaAdjustmentIDs removes the "quota_adjustments" edge to UserQuotaAdjustment entities by IDs.
-func (_u *UserUpdateOne) RemoveQuotaAdjustmentIDs(ids ...int64) *UserUpdateOne {
-	_u.mutation.RemoveQuotaAdjustmentIDs(ids...)
-	return _u
-}
-
-// RemoveQuotaAdjustments removes "quota_adjustments" edges to UserQuotaAdjustment entities.
-func (_u *UserUpdateOne) RemoveQuotaAdjustments(v ...*UserQuotaAdjustment) *UserUpdateOne {
-	ids := make([]int64, len(v))
-	for i := range v {
-		ids[i] = v[i].ID
-	}
-	return _u.RemoveQuotaAdjustmentIDs(ids...)
 }
 
 // ClearQuotaIdempotencyRecords clears all "quota_idempotency_records" edges to the QuotaIdempotencyRecord entity.
@@ -4183,96 +3947,6 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userquotaledgerentry.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaGrantsTable,
-			Columns: []string{user.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaGrantsTable,
-			Columns: []string{user.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaGrantsTable,
-			Columns: []string{user.QuotaGrantsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Add = append(_spec.Edges.Add, edge)
-	}
-	if _u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaAdjustmentsTable,
-			Columns: []string{user.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.RemovedQuotaAdjustmentsIDs(); len(nodes) > 0 && !_u.mutation.QuotaAdjustmentsCleared() {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaAdjustmentsTable,
-			Columns: []string{user.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
-	}
-	if nodes := _u.mutation.QuotaAdjustmentsIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.O2M,
-			Inverse: false,
-			Table:   user.QuotaAdjustmentsTable,
-			Columns: []string{user.QuotaAdjustmentsColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(userquotaadjustment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -39,7 +39,7 @@
         >
           全站
           <span class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-300">
-            {{ allAccounts.length }}
+            {{ projection ? allAccounts.length : '--' }}
           </span>
         </button>
         <button
@@ -487,7 +487,7 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
   } catch (reason: unknown) {
     if (controller.signal.aborted || generation !== loadGeneration) return false
     if (options.commitIf && !options.commitIf()) return false
-    rangeError.value = extractApiErrorMessage(reason, t('admin.accountMonitor.loadError'))
+    rangeError.value = accountMonitorLoadError(reason)
     if (options.notifyError !== false) appStore.showError(rangeError.value)
     return false
   } finally {
@@ -497,6 +497,14 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
       pendingRange.value = null
     }
   }
+}
+
+function accountMonitorLoadError(reason: unknown): string {
+  const message = extractApiErrorMessage(reason, t('admin.accountMonitor.loadError')).trim()
+  if (!message || /^internal error$/i.test(message) || /internal server error/i.test(message)) {
+    return '账号监控暂时无法加载，请稍后重试'
+  }
+  return message
 }
 
 function selectRange(range: AccountMonitorRange) {

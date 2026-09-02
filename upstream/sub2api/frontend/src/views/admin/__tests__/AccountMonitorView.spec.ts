@@ -474,12 +474,15 @@ describe('admin account monitor view V3', () => {
   })
 
   it('renders an explicit retryable empty state when the first native monitor load fails', async () => {
-    list.mockRejectedValueOnce(new Error('initial monitor unavailable'))
+    list.mockRejectedValueOnce(new Error('internal error'))
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-test="account-monitor-error-empty"]').text()).toContain('initial monitor unavailable')
+    expect(wrapper.get('[data-test="account-monitor-error-empty"]').text()).toContain('账号监控暂时无法加载，请稍后重试')
     expect(wrapper.get('[data-test="account-monitor-error-empty"] button').text()).toContain('刷新')
+    expect(wrapper.text()).toContain('全站 --')
+    expect(wrapper.text()).not.toContain('全站 0')
+    expect(wrapper.text()).not.toContain('internal error')
     expect(wrapper.findAll('[data-test="monitor-card"]')).toHaveLength(0)
     expect(controlPlaneDecision).not.toHaveBeenCalled()
     expect(controlPlaneMonitor).not.toHaveBeenCalled()

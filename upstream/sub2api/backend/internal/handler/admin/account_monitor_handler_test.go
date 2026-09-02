@@ -554,7 +554,7 @@ func TestAccountMonitorHandlerGroupResponseIncludesRankingContract(t *testing.T)
 	}
 }
 
-func TestAccountMonitorHandlerFullSiteRowsOmitSchedulerRanking(t *testing.T) {
+func TestAccountMonitorHandlerFullSiteRowsUseBestGroupSchedulerRanking(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	now := time.Now().UTC()
 	rate := 1.0
@@ -596,13 +596,14 @@ func TestAccountMonitorHandlerFullSiteRowsOmitSchedulerRanking(t *testing.T) {
 		t.Fatalf("full-site accounts = %s", res.Body.String())
 	}
 	row := envelope.Data.Accounts[0]
-	if _, ok := row["quality_rank"]; !ok {
-		t.Fatalf("full-site quality rank missing: %s", res.Body.String())
-	}
-	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation", "scheduler_unavailable"} {
-		if _, ok := row[field]; ok {
-			t.Fatalf("full-site row fabricated %s: %s", field, res.Body.String())
+	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation", "best_scheduler_group_name"} {
+		if _, ok := row[field]; !ok {
+			t.Fatalf("full-site row missing %s: %s", field, res.Body.String())
 		}
+	}
+	var bestGroup string
+	if err := json.Unmarshal(row["best_scheduler_group_name"], &bestGroup); err != nil || bestGroup != "GPT-Pro" {
+		t.Fatalf("best scheduler group = %q err=%v body=%s", bestGroup, err, res.Body.String())
 	}
 }
 

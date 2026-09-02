@@ -143,7 +143,7 @@ func TestApplyOpenAIUsageRequestMetadataUsesNativeSources(t *testing.T) {
 			require.Equal(t, "203.0.113.10", input.IPAddress)
 			require.Equal(t, tt.wantUserAgent, input.UserAgent)
 			require.Equal(t, tt.wantSessionID, input.SessionID)
-			require.Equal(t, service.HashUsageRequestPayload(body), input.RequestPayloadHash)
+			require.Equal(t, "f8f504ce3a794486c3e96151e0061aa2c8fcb8e4572a375ff46aa45d313c6636", input.RequestPayloadHash)
 		})
 	}
 }

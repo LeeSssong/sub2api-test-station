@@ -160,7 +160,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4ReportsMissingProbeWithoutServi
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(10*time.Minute + 30*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.has_real IS NOT TRUE AND bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",

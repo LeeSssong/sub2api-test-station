@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRenderUpstreamBalanceCardP2ShowsOneWalletAndAllAccounts(t *testing.T) {
@@ -92,6 +95,24 @@ func TestRenderUpstreamBalanceCardAddsFixedSilenceActions(t *testing.T) {
 			t.Fatalf("action %d = %#v", index, actions[index])
 		}
 	}
+}
+
+func TestRenderUpstreamBalanceCardShowsT114RankMetadata(t *testing.T) {
+	rank := 3
+	payload, err := RenderUpstreamBalanceCard(UpstreamBalanceCardInput{
+		State: UpstreamBalanceCardStateLow, ValueUSD: 4.25, BaseURL: "https://upstream.example",
+		RankingSnapshotAt: time.Date(2026, 9, 2, 14, 5, 0, 0, time.UTC),
+		Accounts: []UpstreamBalanceCardAccount{{ID: 1, Name: "account", Ranks: []UpstreamBalanceCardRank{{
+			GroupName: "GPT-Pro", Rank: &rank, RankTotal: 12, Eligible: true, T114Enabled: true,
+		}}}},
+	})
+	require.NoError(t, err)
+	var card interactiveCard
+	require.NoError(t, json.Unmarshal(payload, &card))
+	text := renderedCardText(card)
+	require.Contains(t, text, "T114 调度排名")
+	require.Contains(t, text, "2026-09-02 14:05:00")
+	require.Contains(t, text, "GPT-Pro：第 3 / 12 名")
 }
 
 func TestRenderUpstreamBalanceCardPreservesTinyPositiveClassification(t *testing.T) {

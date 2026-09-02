@@ -314,6 +314,30 @@ func TestReadUpstreamBalanceEvaluationsUsesWindowSchedulerRanks(t *testing.T) {
 	require.Equal(t, value, *card.Accounts[0].BalanceUSD)
 }
 
+func TestBuildUpstreamBalanceEvaluationsCarriesT114SnapshotAndRankMetadata(t *testing.T) {
+	now := time.Date(2026, 9, 2, 14, 0, 0, 0, time.UTC)
+	rank := 2
+	value := 2.5
+	observedAt := now.Add(-time.Minute)
+	page := AccountMonitorPage{ObservedAt: now, Accounts: []AccountMonitorAccount{{AccountID: 9}}, Groups: []AccountMonitorGroup{{
+		ID: 7, Name: "GPT-Pro", Accounts: []AccountMonitorGroupAccount{{
+			AccountMonitorAccount: AccountMonitorAccount{AccountID: 9, SchedulerRank: &rank, SchedulerRankTotal: 4,
+				SchedulerExplanation: &AccountMonitorSchedulerExplanation{Rank: &rank, RankTotal: 4, Eligible: true}},
+		}},
+	}}}
+	accounts := []Account{{ID: 9, Name: "ranked", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{"base_url": "https://upstream.invalid/v1"},
+		Extra:       map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{Status: AccountMonitorBalanceStatusOK, ValueUSD: &value, ObservedAt: &observedAt}},
+	}}
+
+	evaluations, err := buildUpstreamBalanceEvaluations(accounts, page)
+	require.NoError(t, err)
+	require.Equal(t, now, evaluations[0].RankingSnapshotAt)
+	require.False(t, evaluations[0].RankingStale)
+	require.Equal(t, 4, evaluations[0].Accounts[0].Ranks[0].RankTotal)
+	require.True(t, evaluations[0].Accounts[0].Ranks[0].Eligible)
+}
+
 func TestProvideUpstreamBalanceNotificationServiceIsDisabledByDefault(t *testing.T) {
 	t.Setenv("SUB2API_UPSTREAM_BALANCE_NOTIFICATION_ENABLED", "")
 

@@ -31,8 +31,8 @@
 - Consume existing `OpenAIAccountSchedulerProjectionProvider.Project(context.Context, OpenAIAccountSchedulerProjectionRequest)`.
 - Produce card rank metadata containing group name, rank, rank total, eligibility, T114 enabled state, and non-sensitive display state; also produce one snapshot timestamp and stale flag per evaluation.
 
-- [ ] **Step 1: Add failing service tests** for a T114 projection-backed evaluation, including rank total, projection timestamp, stale propagation, ineligible account display state, and no `ListWindow("24h")` dependency in the new path.
-- [ ] **Step 2: Run the focused service test**:
+- [x] **Step 1: Add failing service tests** for a T114 projection-backed evaluation, including rank total, projection timestamp, stale propagation, ineligible account display state, and no `ListWindow("24h")` dependency in the new path.
+- [x] **Step 2: Run the focused service test**:
 
   ```bash
   cd upstream/sub2api/backend
@@ -41,8 +41,8 @@
 
   Expected: FAIL because the card evaluation has no T114 snapshot/rank metadata contract.
 
-- [ ] **Step 3: Add failing notify tests** for normal rank text, `当前不可调度`, `未启用 T114 排名`, stale/no-snapshot labels, and rank totals.
-- [ ] **Step 4: Run the focused notify test**:
+- [x] **Step 3: Add failing notify tests** for normal rank text, `当前不可调度`, `未启用 T114 排名`, stale/no-snapshot labels, and rank totals.
+- [x] **Step 4: Run the focused notify test**:
 
   ```bash
   go test ./internal/notify -run 'TestRenderUpstreamBalanceCard.*T114' -count=1
@@ -62,15 +62,15 @@
 - `AccountMonitorService.ReadUpstreamBalanceEvaluations` reads accounts and current balance snapshots, then uses the existing injected scheduler projection for each applicable group without acquiring slots or making upstream calls.
 - The resulting `UpstreamBalanceEvaluation` carries `RankingSnapshotAt` and `RankingStale`; each `UpstreamBalanceAccountRank` carries rank total, eligibility, T114 enablement, and a safe display reason.
 
-- [ ] **Step 1: Implement a single snapshot-at evaluation path** that reuses the current quality provider and scheduler projection, preserving normalized BaseURL grouping and balance freshness checks.
-- [ ] **Step 2: Keep non-T114 groups explicit** and map unavailable/ineligible candidates to display states instead of stale numeric ranks.
-- [ ] **Step 3: Run the service RED tests again** and confirm they pass:
+- [x] **Step 1: Implement a single snapshot-at evaluation path** that reuses the current quality provider and scheduler projection, preserving normalized BaseURL grouping and balance freshness checks.
+- [x] **Step 2: Keep non-T114 groups explicit** and map unavailable/ineligible candidates to display states instead of stale numeric ranks.
+- [x] **Step 3: Run the service RED tests again** and confirm they pass:
 
   ```bash
   go test ./internal/service -run 'Test(ReadUpstreamBalanceEvaluations|BuildUpstreamBalanceEvaluations).*T114' -count=1
   ```
 
-- [ ] **Step 4: Run the existing balance-notification service focused suite**:
+- [x] **Step 4: Run the existing balance-notification service focused suite**:
 
   ```bash
   go test ./internal/service -run 'Test(NormalizeNotificationBaseURL|EvaluateUpstreamBaseURLBalance|ReadUpstreamBalanceEvaluations|UpstreamBalanceNotificationService)' -count=1
@@ -90,10 +90,10 @@
 - `UpstreamBalanceCardInput` receives the evaluation snapshot metadata and existing opaque `SilenceToken`.
 - Existing callback service/repository signatures remain unchanged.
 
-- [ ] **Step 1: Implement card rendering** for T114 source/time, stale marker, rank totals, ineligible/non-T114/no-snapshot labels, while retaining the existing 30 KiB fail-closed limit and credential escaping.
-- [ ] **Step 2: Preserve the existing conditional action rendering**: configured protected callback token yields exactly 1h/6h/24h actions; absent/unsafe token yields no actions but still sends the balance body.
-- [ ] **Step 3: Add or tighten non-sensitive structured diagnostics** for disabled silence actions without logging callback/action tokens or credentials.
-- [ ] **Step 4: Run notify, handler, and repository focused tests**:
+- [x] **Step 1: Implement card rendering** for T114 source/time, stale marker, rank totals, ineligible/non-T114/no-snapshot labels, while retaining the existing 30 KiB fail-closed limit and credential escaping.
+- [x] **Step 2: Preserve the existing conditional action rendering**: configured protected callback token yields exactly 1h/6h/24h actions; absent/unsafe token yields no actions but still sends the balance body.
+- [x] **Step 3: Add or tighten non-sensitive structured diagnostics** for disabled silence actions without logging callback/action tokens or credentials.
+- [x] **Step 4: Run notify, handler, and repository focused tests**:
 
   ```bash
   go test ./internal/notify -run 'TestRenderUpstreamBalanceCard|TestLoadUpstreamBalanceSecrets|TestFeishuSender' -count=1
@@ -108,8 +108,8 @@
 - Modify: `upstream/sub2api/backend/cmd/server/wire_gen.go` only if generated wiring changes
 - Create: `docs/handoffs/2026-09-02-t117-feishu-balance-t114-handoff.md`
 
-- [ ] **Step 1: Verify protected-file wiring** for configured, missing, unsafe-permission, and parent-permission cases using existing secret-loader tests; do not add secrets to the repository.
-- [ ] **Step 2: Run the complete direct regression set**:
+- [x] **Step 1: Verify protected-file wiring** for configured, missing, unsafe-permission, and parent-permission cases using existing secret-loader tests; do not add secrets to the repository.
+- [x] **Step 2: Run the complete direct regression set**:
 
   ```bash
   cd upstream/sub2api/backend
@@ -119,6 +119,5 @@
   git diff --check
   ```
 
-- [ ] **Step 3: Confirm no migration, configuration, production-data, or root-main changes.**
-- [ ] **Step 4: Write the handoff with base SHA, candidate SHA, changed files, tests, residual risks, and release boundary; leave the candidate unmerged and unpushed.**
-
+- [x] **Step 3: Confirm no migration, configuration, production-data, or root-main changes.**
+- [x] **Step 4: Write the handoff with base SHA, candidate SHA, changed files, tests, residual risks, and release boundary; leave the candidate unmerged and unpushed.**

@@ -494,8 +494,8 @@ func TestAccountMonitorListWindowIgnoresPersistedGlobalScoreWeightsForPrimaryOrd
 	if err != nil {
 		t.Fatalf("ListWindow() error = %v", err)
 	}
-	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{1, 2}) {
-		t.Fatalf("global scheduler fallback account ids = %v", got)
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{2, 1}) {
+		t.Fatalf("global quality score order = %v", got)
 	}
 	if page.SchemaVersion != AccountMonitorSchemaVersion {
 		t.Fatalf("schema version changed: %d", page.SchemaVersion)
@@ -532,13 +532,13 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 	rank := func(value int) *int { return &value }
 	scheduler := &accountMonitorSchedulerProjectionStub{byGroup: map[int64]*OpenAIAccountSchedulerProjection{
 		7: {SnapshotAt: now, PolicyKey: "group_policy", PolicyLabel: "利润优先", EffectiveWeights: map[string]float64{"priority": 1}, CandidateCount: 3, Candidates: []OpenAIAccountSchedulerProjectionCandidate{
-			{AccountID: 1, Rank: rank(1), Eligible: true, PrimaryReasonCode: AccountMonitorReasonStrategy},
-			{AccountID: 2, Rank: rank(2), Eligible: true},
+			{AccountID: 1, Rank: rank(1), Eligible: true, QualityScore: floatPointer(82), PrimaryReasonCode: AccountMonitorReasonStrategy},
+			{AccountID: 2, Rank: rank(2), Eligible: true, QualityScore: floatPointer(70)},
 			{AccountID: 4, Eligible: false, PrimaryReasonCode: AccountMonitorReasonNotEligible},
 		}},
 		8: {SnapshotAt: now, PolicyKey: "group_policy", PolicyLabel: "体验优先", EffectiveWeights: map[string]float64{"priority": 2}, CandidateCount: 2, Candidates: []OpenAIAccountSchedulerProjectionCandidate{
-			{AccountID: 3, Rank: rank(1), Eligible: true},
-			{AccountID: 1, Rank: rank(2), Eligible: true, PrimaryReasonCode: AccountMonitorReasonTieBreak},
+			{AccountID: 3, Rank: rank(1), Eligible: true, QualityScore: floatPointer(76)},
+			{AccountID: 1, Rank: rank(2), Eligible: true, QualityScore: floatPointer(68), PrimaryReasonCode: AccountMonitorReasonTieBreak},
 		}},
 	}}
 	repo := &accountMonitorRepoStub{
@@ -609,10 +609,10 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 		t.Fatalf("account without evidence fabricated projection: %#v", noEvidence)
 	}
 	global := findAccountMonitorAccount(t, page.Accounts, 1)
-	if global.SchedulerRank == nil || *global.SchedulerRank != 1 || global.BestSchedulerGroupName != "seven" {
-		t.Fatalf("full-site row did not project best scheduler rank: %#v", global)
+	if global.SchedulerRank != nil || global.QualityScore == nil {
+		t.Fatalf("full-site row did not project global quality rank: %#v", global)
 	}
-	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{1, 3, 2, 4}) {
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{4, 1, 3, 2}) {
 		t.Fatalf("full-site scheduler order = %v", got)
 	}
 }

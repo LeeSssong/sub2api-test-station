@@ -572,7 +572,7 @@ func TestAccountMonitorHandlerFullSiteRowsUseBestGroupSchedulerRanking(t *testin
 	rank := 1
 	scheduler := &accountMonitorHandlerSchedulerProjectionStub{projection: &service.OpenAIAccountSchedulerProjection{
 		SnapshotAt: now, PolicyLabel: "利润优先", CandidateCount: 1,
-		Candidates: []service.OpenAIAccountSchedulerProjectionCandidate{{AccountID: 7, Rank: &rank, Eligible: true}},
+		Candidates: []service.OpenAIAccountSchedulerProjectionCandidate{{AccountID: 7, Rank: &rank, Eligible: true, QualityScore: func() *float64 { v := 88.0; return &v }()}},
 	}}
 	svc := service.NewAccountMonitorService(repo, accountRepo, nil, nil, &accountMonitorHandlerMultiplierStub{})
 	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
@@ -596,14 +596,11 @@ func TestAccountMonitorHandlerFullSiteRowsUseBestGroupSchedulerRanking(t *testin
 		t.Fatalf("full-site accounts = %s", res.Body.String())
 	}
 	row := envelope.Data.Accounts[0]
-	for _, field := range []string{"scheduler_rank", "scheduler_rank_total", "scheduler_explanation", "best_scheduler_group_name"} {
-		if _, ok := row[field]; !ok {
-			t.Fatalf("full-site row missing %s: %s", field, res.Body.String())
-		}
+	if _, ok := row["quality_score"]; !ok {
+		t.Fatalf("full-site row missing quality_score: %s", res.Body.String())
 	}
-	var bestGroup string
-	if err := json.Unmarshal(row["best_scheduler_group_name"], &bestGroup); err != nil || bestGroup != "GPT-Pro" {
-		t.Fatalf("best scheduler group = %q err=%v body=%s", bestGroup, err, res.Body.String())
+	if _, ok := row["scheduler_rank"]; ok {
+		t.Fatalf("full-site row must not expose scheduler rank: %s", res.Body.String())
 	}
 }
 

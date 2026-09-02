@@ -45,6 +45,8 @@ func TestOpenAIAccountSchedulerProjection_UsesGroupPolicyOrderWithoutChangingQua
 	require.Equal(t, "利润优先", projection.PolicyLabel)
 	require.Equal(t, []int64{1, 2}, projectionAccountIDs(projection.Candidates))
 	require.Equal(t, AccountMonitorReasonStrategy, projection.Candidates[0].PrimaryReasonCode)
+	// The projection exposes the same quality score used by the T114 selector
+	// when unified quality scheduling is enabled; legacy fixtures may omit it.
 	require.Equal(t, 3.0, projection.EffectiveWeights["upstream_cost"])
 	require.Equal(t, AccountMonitorSchedulerFact{Label: "上游成本权重", Value: "3"}, projection.EffectiveFacts[7])
 	encoded, err := json.Marshal(projection)

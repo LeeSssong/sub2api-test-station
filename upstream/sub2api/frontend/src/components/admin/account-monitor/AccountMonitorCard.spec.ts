@@ -101,7 +101,7 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.find('[data-test="cost-metric"]').exists()).toBe(false)
   })
 
-  it('separates the manual switch from native effective schedulability and reason', () => {
+  it('keeps scheduling explanations out of the compact identity line', () => {
     const wrapper = mountCard({
       account: {
         ...account,
@@ -113,8 +113,8 @@ describe('AccountMonitorCard R2', () => {
     })
 
     const text = wrapper.get('[data-test="identity-column"]').text()
-    expect(text).toContain('人工开关：可调度')
-    expect(text).toContain('有效调度：不可调度（额度耗尽）')
+    expect(text).not.toContain('人工开关')
+    expect(text).not.toContain('有效调度')
     expect(text).not.toContain('余额探针已恢复')
   })
 
@@ -123,8 +123,8 @@ describe('AccountMonitorCard R2', () => {
       account: { ...account, schedulable: false, effective_schedulable: false, effective_unschedulable_reason: 'manual_disabled' },
     })
     const text = wrapper.get('[data-test="identity-column"]').text()
-    expect(text).toContain('人工开关：不可调度')
-    expect(text).toContain('有效调度：不可调度（人工暂停）')
+    expect(text).not.toContain('人工开关')
+    expect(text).not.toContain('有效调度')
     expect(text).not.toContain('余额')
   })
 
@@ -141,9 +141,9 @@ describe('AccountMonitorCard R2', () => {
     })
     const identityText = wrapper.get('[data-test="identity-column"]').text()
 
-    expect(identityText).toContain('暂停 · 人工开关：可调度')
-    expect(identityText).toContain('人工开关：可调度')
-    expect(identityText).toContain('有效调度：不可调度（账号未激活）')
+    expect(identityText).toContain('暂停 · OpenAI')
+    expect(identityText).not.toContain('人工开关')
+    expect(identityText).not.toContain('有效调度')
   })
 
   it('shows multiplier-estimated profit before real requests exist', () => {
@@ -175,12 +175,12 @@ describe('AccountMonitorCard R2', () => {
     const wrapper = mountCard({ account: { ...account, real_request_timeline: [] } })
 
     expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(24)
-    expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('真实性能 · 真实请求')
+    expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('近期真实请求')
     expect(wrapper.get('[data-test="refresh-account"]').text()).toContain('刷新探测状态')
     expect(wrapper.get('[data-test="refresh-account"]').attributes('title')).toContain('不生成真实请求样本')
   })
 
-  it('labels active-probe fallback without adding it to real-request counts', () => {
+  it('shows an immediate latency-only tooltip without adding probes to real-request counts', async () => {
     const wrapper = mountCard({
       account: {
         ...account,
@@ -195,24 +195,28 @@ describe('AccountMonitorCard R2', () => {
     })
 
     expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('0 次窗口真实请求 · 累计 51 次')
-    expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toContain('主动探测兜底')
-    expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toContain('真实请求 0')
+    expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toBeUndefined()
+    await wrapper.get('.performance-bar-wrap').trigger('mouseenter')
+    expect(wrapper.get('[data-test="real-request-tooltip"]').text()).toBe('TTFT P95 900 ms')
   })
 
   it('keeps manual model detection and account action entry points', async () => {
     const detect = vi.fn()
     const info = vi.fn()
     const more = vi.fn()
+    const edit = vi.fn()
     const editCost = vi.fn()
-    const wrapper = mountCard({ onDetectModelDetection: detect, onAccountInfo: info, onAccountMore: more, onEditCost: editCost })
+    const wrapper = mountCard({ onDetectModelDetection: detect, onAccountInfo: info, onAccountEdit: edit, onAccountMore: more, onEditCost: editCost })
 
     await wrapper.get('[data-test="detect-model-detection"]').trigger('click')
     await wrapper.get('[data-test="account-info"]').trigger('click')
+    await wrapper.get('[data-test="account-edit"]').trigger('click')
     await wrapper.get('[data-test="account-more"]').trigger('click')
     await wrapper.get('[data-test="upstream-multiplier-metric"] button').trigger('click')
 
     expect(detect).toHaveBeenCalledWith(278)
     expect(info).toHaveBeenCalledWith(account)
+    expect(edit).toHaveBeenCalledWith(account)
     expect(more).toHaveBeenCalledWith(account, expect.any(MouseEvent))
     expect(editCost).toHaveBeenCalledWith(account)
   })
@@ -224,8 +228,25 @@ describe('AccountMonitorCard R2', () => {
     await wrapper.get('[data-test="refresh-account"]').trigger('click')
     expect(refresh).toHaveBeenCalledWith(278)
     expect(wrapper.findAll('[data-test="account-actions"]')).toHaveLength(1)
-    expect(wrapper.get('[data-test="account-actions"] [data-test="account-edit"]').classes()).toContain('sr-only')
+    expect(wrapper.get('[data-test="account-actions"] [data-test="account-edit"]').classes()).not.toContain('sr-only')
     expect(wrapper.get('[data-test="account-actions"] [data-test="account-delete"]').classes()).toContain('sr-only')
+  })
+
+  it('uses the approved 10000 ms latency boundary after failure precedence', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        real_request_timeline: [
+          { start_at: '2026-09-03T00:00:00Z', request_count: 1, success_count: 1, failure_count: 0, ttft_p95_ms: 10000 },
+          { start_at: '2026-09-03T01:00:00Z', request_count: 1, success_count: 1, failure_count: 0, ttft_p95_ms: 10001 },
+          { start_at: '2026-09-03T02:00:00Z', request_count: 1, success_count: 0, failure_count: 1, ttft_p95_ms: 100 },
+        ],
+      },
+    })
+    const bars = wrapper.findAll('[data-test="real-request-bar"]')
+    expect(bars[0].classes()).toContain('bg-emerald-500')
+    expect(bars[1].classes()).toContain('bg-amber-400')
+    expect(bars[2].classes()).toContain('bg-red-500')
   })
 
   it('renders the mobile-safe card structure', () => {

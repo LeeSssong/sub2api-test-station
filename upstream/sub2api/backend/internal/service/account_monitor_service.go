@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	accountMonitorDetectionWorkers             = 8
 	accountMonitorMultiplierRefreshTimeout     = 2 * time.Minute
 	accountMonitorProbeTimeout                 = 60 * time.Second
 	accountMonitorManagementEnabled            = "enabled"
@@ -47,6 +48,47 @@ const (
 	accountMonitorScoreIneligible              = "ineligible"
 	accountMonitorAbnormalScoreCap             = 70.0
 )
+
+func (s *AccountMonitorService) projectModelDetections(ctx context.Context, accounts []Account) map[int64]AccountModelDetectionProjection {
+	results := make(map[int64]AccountModelDetectionProjection, len(accounts))
+	if s == nil || s.modelDetection == nil || len(accounts) == 0 {
+		return results
+	}
+	tasks := make(chan Account)
+	var mu sync.Mutex
+	var workers sync.WaitGroup
+	workerCount := min(accountMonitorDetectionWorkers, len(accounts))
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for account := range tasks {
+				if ctx.Err() != nil {
+					return
+				}
+				detection, err := s.modelDetection.ProjectionForAccount(ctx, &account)
+				if err != nil {
+					slog.WarnContext(ctx, "account monitor model detection projection unavailable", "account_id", account.ID, "error", err)
+					continue
+				}
+				mu.Lock()
+				results[account.ID] = detection
+				mu.Unlock()
+			}
+		}()
+	}
+sendLoop:
+	for _, account := range accounts {
+		select {
+		case tasks <- account:
+		case <-ctx.Done():
+			break sendLoop
+		}
+	}
+	close(tasks)
+	workers.Wait()
+	return results
+}
 
 var ErrAccountMonitorInvalidScoreWeights = errors.New("invalid account monitor score weights")
 
@@ -249,6 +291,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	for i := range groups {
 		groups[i].ScoreWeights = normalizeAccountMonitorScoreWeights(groups[i].ScoreWeights)
 	}
+	modelDetections := s.projectModelDetections(ctx, accounts)
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		effectiveSchedulable, effectiveUnschedulableReason := projectEffectiveSchedulability(&account, observedAt)
@@ -293,10 +336,8 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		}
 		projectAccountMonitorEffectiveCost(&row, &account)
 		row.UpstreamMultiplier = &row.Multiplier
-		if s.modelDetection != nil {
-			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
-				row.ModelDetection = &detection
-			}
+		if detection, ok := modelDetections[account.ID]; ok {
+			row.ModelDetection = &detection
 		}
 		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		if stats := today[account.ID]; stats != nil {
@@ -688,6 +729,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		}
 	}
 
+	modelDetections := s.projectModelDetections(ctx, accounts)
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		effectiveSchedulable, effectiveUnschedulableReason := projectEffectiveSchedulability(&account, observedAt)
@@ -719,10 +761,8 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		if realTimelines != nil {
 			row.RealRequestTimeline = realTimelines[account.ID]
 		}
-		if s.modelDetection != nil {
-			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
-				row.ModelDetection = &detection
-			}
+		if detection, ok := modelDetections[account.ID]; ok {
+			row.ModelDetection = &detection
 		}
 		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		cost := accountMonitorProjectedEffectiveCost(account, resolvedMultiplier, since, observedAt, window.BaseCost)

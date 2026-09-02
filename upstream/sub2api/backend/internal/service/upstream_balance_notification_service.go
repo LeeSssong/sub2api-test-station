@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -222,9 +223,13 @@ func (s *UpstreamBalanceNotificationService) loop() {
 		case <-s.ctx.Done():
 			return
 		case <-s.trigger:
-			_ = s.Evaluate(s.ctx)
+			if err := s.Evaluate(s.ctx); err != nil {
+				slog.Warn("upstream_balance_notification: evaluation failed", "error", err)
+			}
 		case <-ticker.C:
-			_ = s.RunDue(s.ctx)
+			if err := s.RunDue(s.ctx); err != nil {
+				slog.Warn("upstream_balance_notification: due delivery failed", "error", err)
+			}
 		}
 	}
 }
@@ -255,21 +260,15 @@ func (s *UpstreamBalanceNotificationService) RunDue(ctx context.Context) error {
 	if len(active) == 0 {
 		return nil
 	}
-	zeroScopes := make(map[string]struct{})
-	for _, event := range active {
-		if event.NotificationState == UpstreamBalanceNotificationStateZero {
-			zeroScopes[event.ScopeKey] = struct{}{}
-		}
-	}
-	if refresher, ok := s.reader.(UpstreamBalanceScopeRefresher); ok && len(zeroScopes) > 0 {
-		if err := refresher.RefreshUpstreamBalanceScopes(ctx, zeroScopes); err != nil {
-			return errors.New("refresh active upstream balance scopes")
-		}
-	}
 	scopes := make(map[string]struct{}, len(active))
 	for _, event := range active {
 		if event.Status == OpsAlertStatusFiring && event.ScopeType == UpstreamBalanceScopeTypeBaseURL {
 			scopes[event.ScopeKey] = struct{}{}
+		}
+	}
+	if refresher, ok := s.reader.(UpstreamBalanceScopeRefresher); ok && len(scopes) > 0 {
+		if err := refresher.RefreshUpstreamBalanceScopes(ctx, scopes); err != nil {
+			return errors.New("refresh active upstream balance scopes")
 		}
 	}
 	evaluations, err := s.reader.ReadUpstreamBalanceEvaluations(ctx)

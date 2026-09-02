@@ -5,7 +5,8 @@
 - Task: T114
 - Base main: `b15ccd267d6745166af4f36e75f31fbd2987ab13`
 - Candidate branch: `codex/t114-multi-window-quality-scheduling`
-- Candidate commit: `8c4d0061f`
+- Candidate implementation commit: `c39009039`
+- Final branch tip: recorded by the root task from `git rev-parse HEAD`
 - Worktree: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t114-multi-window-quality-scheduling`
 
 ## Delivered

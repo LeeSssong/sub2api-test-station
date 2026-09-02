@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 )
 
 // RedeemCodeUpdate is the builder for updating RedeemCode entities.
@@ -238,6 +239,21 @@ func (_u *RedeemCodeUpdate) SetGroup(v *Group) *RedeemCodeUpdate {
 	return _u.SetGroupID(v.ID)
 }
 
+// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
+func (_u *RedeemCodeUpdate) AddQuotaGrantIDs(ids ...int64) *RedeemCodeUpdate {
+	_u.mutation.AddQuotaGrantIDs(ids...)
+	return _u
+}
+
+// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *RedeemCodeUpdate) AddQuotaGrants(v ...*UserQuotaGrant) *RedeemCodeUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaGrantIDs(ids...)
+}
+
 // Mutation returns the RedeemCodeMutation object of the builder.
 func (_u *RedeemCodeUpdate) Mutation() *RedeemCodeMutation {
 	return _u.mutation
@@ -253,6 +269,27 @@ func (_u *RedeemCodeUpdate) ClearUser() *RedeemCodeUpdate {
 func (_u *RedeemCodeUpdate) ClearGroup() *RedeemCodeUpdate {
 	_u.mutation.ClearGroup()
 	return _u
+}
+
+// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *RedeemCodeUpdate) ClearQuotaGrants() *RedeemCodeUpdate {
+	_u.mutation.ClearQuotaGrants()
+	return _u
+}
+
+// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
+func (_u *RedeemCodeUpdate) RemoveQuotaGrantIDs(ids ...int64) *RedeemCodeUpdate {
+	_u.mutation.RemoveQuotaGrantIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
+func (_u *RedeemCodeUpdate) RemoveQuotaGrants(v ...*UserQuotaGrant) *RedeemCodeUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaGrantIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -404,6 +441,51 @@ func (_u *RedeemCodeUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -639,6 +721,21 @@ func (_u *RedeemCodeUpdateOne) SetGroup(v *Group) *RedeemCodeUpdateOne {
 	return _u.SetGroupID(v.ID)
 }
 
+// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
+func (_u *RedeemCodeUpdateOne) AddQuotaGrantIDs(ids ...int64) *RedeemCodeUpdateOne {
+	_u.mutation.AddQuotaGrantIDs(ids...)
+	return _u
+}
+
+// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *RedeemCodeUpdateOne) AddQuotaGrants(v ...*UserQuotaGrant) *RedeemCodeUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddQuotaGrantIDs(ids...)
+}
+
 // Mutation returns the RedeemCodeMutation object of the builder.
 func (_u *RedeemCodeUpdateOne) Mutation() *RedeemCodeMutation {
 	return _u.mutation
@@ -654,6 +751,27 @@ func (_u *RedeemCodeUpdateOne) ClearUser() *RedeemCodeUpdateOne {
 func (_u *RedeemCodeUpdateOne) ClearGroup() *RedeemCodeUpdateOne {
 	_u.mutation.ClearGroup()
 	return _u
+}
+
+// ClearQuotaGrants clears all "quota_grants" edges to the UserQuotaGrant entity.
+func (_u *RedeemCodeUpdateOne) ClearQuotaGrants() *RedeemCodeUpdateOne {
+	_u.mutation.ClearQuotaGrants()
+	return _u
+}
+
+// RemoveQuotaGrantIDs removes the "quota_grants" edge to UserQuotaGrant entities by IDs.
+func (_u *RedeemCodeUpdateOne) RemoveQuotaGrantIDs(ids ...int64) *RedeemCodeUpdateOne {
+	_u.mutation.RemoveQuotaGrantIDs(ids...)
+	return _u
+}
+
+// RemoveQuotaGrants removes "quota_grants" edges to UserQuotaGrant entities.
+func (_u *RedeemCodeUpdateOne) RemoveQuotaGrants(v ...*UserQuotaGrant) *RedeemCodeUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveQuotaGrantIDs(ids...)
 }
 
 // Where appends a list predicates to the RedeemCodeUpdate builder.
@@ -835,6 +953,51 @@ func (_u *RedeemCodeUpdateOne) sqlSave(ctx context.Context) (_node *RedeemCode, 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedQuotaGrantsIDs(); len(nodes) > 0 && !_u.mutation.QuotaGrantsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

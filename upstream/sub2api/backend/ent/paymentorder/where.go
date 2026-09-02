@@ -8,6 +8,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/shopspring/decimal"
 )
 
 // ID filters vertices based on their ID field.
@@ -88,6 +89,46 @@ func PayAmount(v float64) predicate.PaymentOrder {
 // FeeRate applies equality check predicate on the "fee_rate" field. It's identical to FeeRateEQ.
 func FeeRate(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldFeeRate, v))
+}
+
+// PaidQuotaUsd applies equality check predicate on the "paid_quota_usd" field. It's identical to PaidQuotaUsdEQ.
+func PaidQuotaUsd(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldPaidQuotaUsd, v))
+}
+
+// GiftQuotaUsd applies equality check predicate on the "gift_quota_usd" field. It's identical to GiftQuotaUsdEQ.
+func GiftQuotaUsd(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldGiftQuotaUsd, v))
+}
+
+// TotalQuotaUsd applies equality check predicate on the "total_quota_usd" field. It's identical to TotalQuotaUsdEQ.
+func TotalQuotaUsd(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldTotalQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsd applies equality check predicate on the "refunded_paid_quota_usd" field. It's identical to RefundedPaidQuotaUsdEQ.
+func RefundedPaidQuotaUsd(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundedPaidQuotaUsd, v))
+}
+
+// QuotaAccountingStatus applies equality check predicate on the "quota_accounting_status" field. It's identical to QuotaAccountingStatusEQ.
+func QuotaAccountingStatus(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldQuotaAccountingStatus, v))
+}
+
+// OperatorUserID applies equality check predicate on the "operator_user_id" field. It's identical to OperatorUserIDEQ.
+func OperatorUserID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldOperatorUserID, v))
+}
+
+// OperatorNote applies equality check predicate on the "operator_note" field. It's identical to OperatorNoteEQ.
+func OperatorNote(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldOperatorNote, v))
+}
+
+// OperatorRechargedAt applies equality check predicate on the "operator_recharged_at" field. It's identical to OperatorRechargedAtEQ.
+func OperatorRechargedAt(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldOperatorRechargedAt, v))
 }
 
 // RechargeCode applies equality check predicate on the "recharge_code" field. It's identical to RechargeCodeEQ.
@@ -588,6 +629,406 @@ func FeeRateLT(v float64) predicate.PaymentOrder {
 // FeeRateLTE applies the LTE predicate on the "fee_rate" field.
 func FeeRateLTE(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldLTE(FieldFeeRate, v))
+}
+
+// PaidQuotaUsdEQ applies the EQ predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldPaidQuotaUsd, v))
+}
+
+// PaidQuotaUsdNEQ applies the NEQ predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdNEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldPaidQuotaUsd, v))
+}
+
+// PaidQuotaUsdIn applies the In predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldPaidQuotaUsd, vs...))
+}
+
+// PaidQuotaUsdNotIn applies the NotIn predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdNotIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldPaidQuotaUsd, vs...))
+}
+
+// PaidQuotaUsdGT applies the GT predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdGT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldPaidQuotaUsd, v))
+}
+
+// PaidQuotaUsdGTE applies the GTE predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdGTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldPaidQuotaUsd, v))
+}
+
+// PaidQuotaUsdLT applies the LT predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdLT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldPaidQuotaUsd, v))
+}
+
+// PaidQuotaUsdLTE applies the LTE predicate on the "paid_quota_usd" field.
+func PaidQuotaUsdLTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldPaidQuotaUsd, v))
+}
+
+// GiftQuotaUsdEQ applies the EQ predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldGiftQuotaUsd, v))
+}
+
+// GiftQuotaUsdNEQ applies the NEQ predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdNEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldGiftQuotaUsd, v))
+}
+
+// GiftQuotaUsdIn applies the In predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldGiftQuotaUsd, vs...))
+}
+
+// GiftQuotaUsdNotIn applies the NotIn predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdNotIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldGiftQuotaUsd, vs...))
+}
+
+// GiftQuotaUsdGT applies the GT predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdGT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldGiftQuotaUsd, v))
+}
+
+// GiftQuotaUsdGTE applies the GTE predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdGTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldGiftQuotaUsd, v))
+}
+
+// GiftQuotaUsdLT applies the LT predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdLT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldGiftQuotaUsd, v))
+}
+
+// GiftQuotaUsdLTE applies the LTE predicate on the "gift_quota_usd" field.
+func GiftQuotaUsdLTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldGiftQuotaUsd, v))
+}
+
+// TotalQuotaUsdEQ applies the EQ predicate on the "total_quota_usd" field.
+func TotalQuotaUsdEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldTotalQuotaUsd, v))
+}
+
+// TotalQuotaUsdNEQ applies the NEQ predicate on the "total_quota_usd" field.
+func TotalQuotaUsdNEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldTotalQuotaUsd, v))
+}
+
+// TotalQuotaUsdIn applies the In predicate on the "total_quota_usd" field.
+func TotalQuotaUsdIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldTotalQuotaUsd, vs...))
+}
+
+// TotalQuotaUsdNotIn applies the NotIn predicate on the "total_quota_usd" field.
+func TotalQuotaUsdNotIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldTotalQuotaUsd, vs...))
+}
+
+// TotalQuotaUsdGT applies the GT predicate on the "total_quota_usd" field.
+func TotalQuotaUsdGT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldTotalQuotaUsd, v))
+}
+
+// TotalQuotaUsdGTE applies the GTE predicate on the "total_quota_usd" field.
+func TotalQuotaUsdGTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldTotalQuotaUsd, v))
+}
+
+// TotalQuotaUsdLT applies the LT predicate on the "total_quota_usd" field.
+func TotalQuotaUsdLT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldTotalQuotaUsd, v))
+}
+
+// TotalQuotaUsdLTE applies the LTE predicate on the "total_quota_usd" field.
+func TotalQuotaUsdLTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldTotalQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsdEQ applies the EQ predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundedPaidQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsdNEQ applies the NEQ predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdNEQ(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldRefundedPaidQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsdIn applies the In predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldRefundedPaidQuotaUsd, vs...))
+}
+
+// RefundedPaidQuotaUsdNotIn applies the NotIn predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdNotIn(vs ...decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldRefundedPaidQuotaUsd, vs...))
+}
+
+// RefundedPaidQuotaUsdGT applies the GT predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdGT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldRefundedPaidQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsdGTE applies the GTE predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdGTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldRefundedPaidQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsdLT applies the LT predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdLT(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldRefundedPaidQuotaUsd, v))
+}
+
+// RefundedPaidQuotaUsdLTE applies the LTE predicate on the "refunded_paid_quota_usd" field.
+func RefundedPaidQuotaUsdLTE(v decimal.Decimal) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldRefundedPaidQuotaUsd, v))
+}
+
+// QuotaAccountingStatusEQ applies the EQ predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusNEQ applies the NEQ predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusIn applies the In predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldQuotaAccountingStatus, vs...))
+}
+
+// QuotaAccountingStatusNotIn applies the NotIn predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldQuotaAccountingStatus, vs...))
+}
+
+// QuotaAccountingStatusGT applies the GT predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusGTE applies the GTE predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusLT applies the LT predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusLTE applies the LTE predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusContains applies the Contains predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusHasPrefix applies the HasPrefix predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusHasSuffix applies the HasSuffix predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusEqualFold applies the EqualFold predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldQuotaAccountingStatus, v))
+}
+
+// QuotaAccountingStatusContainsFold applies the ContainsFold predicate on the "quota_accounting_status" field.
+func QuotaAccountingStatusContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldQuotaAccountingStatus, v))
+}
+
+// OperatorUserIDEQ applies the EQ predicate on the "operator_user_id" field.
+func OperatorUserIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldOperatorUserID, v))
+}
+
+// OperatorUserIDNEQ applies the NEQ predicate on the "operator_user_id" field.
+func OperatorUserIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldOperatorUserID, v))
+}
+
+// OperatorUserIDIn applies the In predicate on the "operator_user_id" field.
+func OperatorUserIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldOperatorUserID, vs...))
+}
+
+// OperatorUserIDNotIn applies the NotIn predicate on the "operator_user_id" field.
+func OperatorUserIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldOperatorUserID, vs...))
+}
+
+// OperatorUserIDGT applies the GT predicate on the "operator_user_id" field.
+func OperatorUserIDGT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldOperatorUserID, v))
+}
+
+// OperatorUserIDGTE applies the GTE predicate on the "operator_user_id" field.
+func OperatorUserIDGTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldOperatorUserID, v))
+}
+
+// OperatorUserIDLT applies the LT predicate on the "operator_user_id" field.
+func OperatorUserIDLT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldOperatorUserID, v))
+}
+
+// OperatorUserIDLTE applies the LTE predicate on the "operator_user_id" field.
+func OperatorUserIDLTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldOperatorUserID, v))
+}
+
+// OperatorUserIDIsNil applies the IsNil predicate on the "operator_user_id" field.
+func OperatorUserIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldOperatorUserID))
+}
+
+// OperatorUserIDNotNil applies the NotNil predicate on the "operator_user_id" field.
+func OperatorUserIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldOperatorUserID))
+}
+
+// OperatorNoteEQ applies the EQ predicate on the "operator_note" field.
+func OperatorNoteEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldOperatorNote, v))
+}
+
+// OperatorNoteNEQ applies the NEQ predicate on the "operator_note" field.
+func OperatorNoteNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldOperatorNote, v))
+}
+
+// OperatorNoteIn applies the In predicate on the "operator_note" field.
+func OperatorNoteIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldOperatorNote, vs...))
+}
+
+// OperatorNoteNotIn applies the NotIn predicate on the "operator_note" field.
+func OperatorNoteNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldOperatorNote, vs...))
+}
+
+// OperatorNoteGT applies the GT predicate on the "operator_note" field.
+func OperatorNoteGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldOperatorNote, v))
+}
+
+// OperatorNoteGTE applies the GTE predicate on the "operator_note" field.
+func OperatorNoteGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldOperatorNote, v))
+}
+
+// OperatorNoteLT applies the LT predicate on the "operator_note" field.
+func OperatorNoteLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldOperatorNote, v))
+}
+
+// OperatorNoteLTE applies the LTE predicate on the "operator_note" field.
+func OperatorNoteLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldOperatorNote, v))
+}
+
+// OperatorNoteContains applies the Contains predicate on the "operator_note" field.
+func OperatorNoteContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldOperatorNote, v))
+}
+
+// OperatorNoteHasPrefix applies the HasPrefix predicate on the "operator_note" field.
+func OperatorNoteHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldOperatorNote, v))
+}
+
+// OperatorNoteHasSuffix applies the HasSuffix predicate on the "operator_note" field.
+func OperatorNoteHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldOperatorNote, v))
+}
+
+// OperatorNoteIsNil applies the IsNil predicate on the "operator_note" field.
+func OperatorNoteIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldOperatorNote))
+}
+
+// OperatorNoteNotNil applies the NotNil predicate on the "operator_note" field.
+func OperatorNoteNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldOperatorNote))
+}
+
+// OperatorNoteEqualFold applies the EqualFold predicate on the "operator_note" field.
+func OperatorNoteEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldOperatorNote, v))
+}
+
+// OperatorNoteContainsFold applies the ContainsFold predicate on the "operator_note" field.
+func OperatorNoteContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldOperatorNote, v))
+}
+
+// OperatorRechargedAtEQ applies the EQ predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldOperatorRechargedAt, v))
+}
+
+// OperatorRechargedAtNEQ applies the NEQ predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtNEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldOperatorRechargedAt, v))
+}
+
+// OperatorRechargedAtIn applies the In predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldOperatorRechargedAt, vs...))
+}
+
+// OperatorRechargedAtNotIn applies the NotIn predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtNotIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldOperatorRechargedAt, vs...))
+}
+
+// OperatorRechargedAtGT applies the GT predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtGT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldOperatorRechargedAt, v))
+}
+
+// OperatorRechargedAtGTE applies the GTE predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtGTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldOperatorRechargedAt, v))
+}
+
+// OperatorRechargedAtLT applies the LT predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtLT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldOperatorRechargedAt, v))
+}
+
+// OperatorRechargedAtLTE applies the LTE predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtLTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldOperatorRechargedAt, v))
+}
+
+// OperatorRechargedAtIsNil applies the IsNil predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldOperatorRechargedAt))
+}
+
+// OperatorRechargedAtNotNil applies the NotNil predicate on the "operator_recharged_at" field.
+func OperatorRechargedAtNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldOperatorRechargedAt))
 }
 
 // RechargeCodeEQ applies the EQ predicate on the "recharge_code" field.
@@ -2455,6 +2896,52 @@ func HasUser() predicate.PaymentOrder {
 func HasUserWith(preds ...predicate.User) predicate.PaymentOrder {
 	return predicate.PaymentOrder(func(s *sql.Selector) {
 		step := newUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasQuotaGrants applies the HasEdge predicate on the "quota_grants" edge.
+func HasQuotaGrants() predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasQuotaGrantsWith applies the HasEdge predicate on the "quota_grants" edge with a given conditions (other predicates).
+func HasQuotaGrantsWith(preds ...predicate.UserQuotaGrant) predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := newQuotaGrantsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasQuotaAdjustments applies the HasEdge predicate on the "quota_adjustments" edge.
+func HasQuotaAdjustments() predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, QuotaAdjustmentsTable, QuotaAdjustmentsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasQuotaAdjustmentsWith applies the HasEdge predicate on the "quota_adjustments" edge with a given conditions (other predicates).
+func HasQuotaAdjustmentsWith(preds ...predicate.UserQuotaAdjustment) predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := newQuotaAdjustmentsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

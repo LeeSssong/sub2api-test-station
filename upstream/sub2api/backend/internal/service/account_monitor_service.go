@@ -2553,15 +2553,6 @@ func accountBalanceSnapshotHealthy(account *Account) bool {
 	return snapshot != nil && snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD >= 5
 }
 
-func isDeterministicBalanceTempReason(reason string) bool {
-	var payload struct {
-		Source       string `json:"source"`
-		FailureClass string `json:"failure_class"`
-	}
-	return json.Unmarshal([]byte(strings.TrimSpace(reason)), &payload) == nil &&
-		payload.Source == deterministicFailureSource && payload.FailureClass == deterministicBalanceClass
-}
-
 // SettleDueProbeBuckets is a lightweight watchdog pass used by the runner.
 // It does not execute account probes; it only closes any due group/bucket
 // terminal that a prior monitor run may have missed. The unique ledger key

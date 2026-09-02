@@ -289,11 +289,6 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// Team 联动熔断必须先于池模式/自定义错误码/临时不可调度的各类早退；
 	// 同请求内与 fastpath 调用点的重复触发由方法内去重吸收。
 	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)
-	// Explicit OpenAI balance exhaustion is an account fact, not a policy
-	// choice. Persist it before pool-mode and custom-error-code early returns.
-	if decision := classifyDeterministicUpstreamFailure(account, statusCode, responseBody, firstRequestedModel(requestedModel)); decision.Classified && decision.FailureClass == deterministicBalanceClass {
-		return s.handleDeterministicBalanceFailure(ctx, account, decision, responseBody)
-	}
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。

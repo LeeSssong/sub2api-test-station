@@ -435,14 +435,14 @@ WITH scopes AS (
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
     AND u.usage_completeness IS DISTINCT FROM 'unknown'
 ), unknown_usage_keys AS (
-  SELECT DISTINCT group_id, NULLIF(u.request_id, '') AS request_key
+  SELECT DISTINCT u.group_id, NULLIF(u.request_id, '') AS request_key
   FROM usage_logs u
   JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
     AND u.usage_completeness = 'unknown'
     AND NULLIF(u.request_id, '') IS NOT NULL
   UNION
-  SELECT DISTINCT group_id, NULLIF(u.logical_request_id, '') AS request_key
+  SELECT DISTINCT u.group_id, NULLIF(u.logical_request_id, '') AS request_key
   FROM usage_logs u
   JOIN groups g ON g.group_id = u.group_id
   WHERE u.created_at >= $1::timestamptz AND u.created_at < $2::timestamptz
@@ -623,6 +623,7 @@ WITH scopes AS (
 		bm.probe_missing
   FROM bucket_matrix bm
   WHERE bm.has_real IS NOT TRUE
+    AND bm.probe_missing IS NOT TRUE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events

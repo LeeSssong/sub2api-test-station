@@ -171,7 +171,6 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
-	paidQuota, quotaStatus, quotaSnapshot := paymentOrderQuotaSnapshot(req, sel, orderAmount, payAmount, feeRate)
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {
@@ -186,11 +185,6 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		SetAmount(orderAmount).
 		SetPayAmount(payAmount).
 		SetFeeRate(feeRate).
-		SetPaidQuotaUsd(paidQuota).
-		SetGiftQuotaUsd(decimal.Zero).
-		SetTotalQuotaUsd(paidQuota).
-		SetQuotaRuleSnapshot(quotaSnapshot).
-		SetQuotaAccountingStatus(quotaStatus).
 		SetRechargeCode("").
 		SetOutTradeNo(outTradeNo).
 		SetPaymentType(req.PaymentType).

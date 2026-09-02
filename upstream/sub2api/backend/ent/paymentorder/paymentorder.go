@@ -7,7 +7,6 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/shopspring/decimal"
 )
 
 const (
@@ -29,24 +28,6 @@ const (
 	FieldPayAmount = "pay_amount"
 	// FieldFeeRate holds the string denoting the fee_rate field in the database.
 	FieldFeeRate = "fee_rate"
-	// FieldPaidQuotaUsd holds the string denoting the paid_quota_usd field in the database.
-	FieldPaidQuotaUsd = "paid_quota_usd"
-	// FieldGiftQuotaUsd holds the string denoting the gift_quota_usd field in the database.
-	FieldGiftQuotaUsd = "gift_quota_usd"
-	// FieldTotalQuotaUsd holds the string denoting the total_quota_usd field in the database.
-	FieldTotalQuotaUsd = "total_quota_usd"
-	// FieldQuotaRuleSnapshot holds the string denoting the quota_rule_snapshot field in the database.
-	FieldQuotaRuleSnapshot = "quota_rule_snapshot"
-	// FieldRefundedPaidQuotaUsd holds the string denoting the refunded_paid_quota_usd field in the database.
-	FieldRefundedPaidQuotaUsd = "refunded_paid_quota_usd"
-	// FieldQuotaAccountingStatus holds the string denoting the quota_accounting_status field in the database.
-	FieldQuotaAccountingStatus = "quota_accounting_status"
-	// FieldOperatorUserID holds the string denoting the operator_user_id field in the database.
-	FieldOperatorUserID = "operator_user_id"
-	// FieldOperatorNote holds the string denoting the operator_note field in the database.
-	FieldOperatorNote = "operator_note"
-	// FieldOperatorRechargedAt holds the string denoting the operator_recharged_at field in the database.
-	FieldOperatorRechargedAt = "operator_recharged_at"
 	// FieldRechargeCode holds the string denoting the recharge_code field in the database.
 	FieldRechargeCode = "recharge_code"
 	// FieldOutTradeNo holds the string denoting the out_trade_no field in the database.
@@ -113,10 +94,6 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
-	// EdgeQuotaGrants holds the string denoting the quota_grants edge name in mutations.
-	EdgeQuotaGrants = "quota_grants"
-	// EdgeQuotaAdjustments holds the string denoting the quota_adjustments edge name in mutations.
-	EdgeQuotaAdjustments = "quota_adjustments"
 	// Table holds the table name of the paymentorder in the database.
 	Table = "payment_orders"
 	// UserTable is the table that holds the user relation/edge.
@@ -126,20 +103,6 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_id"
-	// QuotaGrantsTable is the table that holds the quota_grants relation/edge.
-	QuotaGrantsTable = "user_quota_grants"
-	// QuotaGrantsInverseTable is the table name for the UserQuotaGrant entity.
-	// It exists in this package in order to avoid circular dependency with the "userquotagrant" package.
-	QuotaGrantsInverseTable = "user_quota_grants"
-	// QuotaGrantsColumn is the table column denoting the quota_grants relation/edge.
-	QuotaGrantsColumn = "payment_order_id"
-	// QuotaAdjustmentsTable is the table that holds the quota_adjustments relation/edge.
-	QuotaAdjustmentsTable = "user_quota_adjustments"
-	// QuotaAdjustmentsInverseTable is the table name for the UserQuotaAdjustment entity.
-	// It exists in this package in order to avoid circular dependency with the "userquotaadjustment" package.
-	QuotaAdjustmentsInverseTable = "user_quota_adjustments"
-	// QuotaAdjustmentsColumn is the table column denoting the quota_adjustments relation/edge.
-	QuotaAdjustmentsColumn = "payment_order_id"
 )
 
 // Columns holds all SQL columns for paymentorder fields.
@@ -152,15 +115,6 @@ var Columns = []string{
 	FieldAmount,
 	FieldPayAmount,
 	FieldFeeRate,
-	FieldPaidQuotaUsd,
-	FieldGiftQuotaUsd,
-	FieldTotalQuotaUsd,
-	FieldQuotaRuleSnapshot,
-	FieldRefundedPaidQuotaUsd,
-	FieldQuotaAccountingStatus,
-	FieldOperatorUserID,
-	FieldOperatorNote,
-	FieldOperatorRechargedAt,
 	FieldRechargeCode,
 	FieldOutTradeNo,
 	FieldPaymentType,
@@ -212,18 +166,6 @@ var (
 	UserNameValidator func(string) error
 	// DefaultFeeRate holds the default value on creation for the "fee_rate" field.
 	DefaultFeeRate float64
-	// DefaultPaidQuotaUsd holds the default value on creation for the "paid_quota_usd" field.
-	DefaultPaidQuotaUsd decimal.Decimal
-	// DefaultGiftQuotaUsd holds the default value on creation for the "gift_quota_usd" field.
-	DefaultGiftQuotaUsd decimal.Decimal
-	// DefaultTotalQuotaUsd holds the default value on creation for the "total_quota_usd" field.
-	DefaultTotalQuotaUsd decimal.Decimal
-	// DefaultRefundedPaidQuotaUsd holds the default value on creation for the "refunded_paid_quota_usd" field.
-	DefaultRefundedPaidQuotaUsd decimal.Decimal
-	// DefaultQuotaAccountingStatus holds the default value on creation for the "quota_accounting_status" field.
-	DefaultQuotaAccountingStatus string
-	// QuotaAccountingStatusValidator is a validator for the "quota_accounting_status" field. It is called by the builders before save.
-	QuotaAccountingStatusValidator func(string) error
 	// RechargeCodeValidator is a validator for the "recharge_code" field. It is called by the builders before save.
 	RechargeCodeValidator func(string) error
 	// DefaultOutTradeNo holds the default value on creation for the "out_trade_no" field.
@@ -305,46 +247,6 @@ func ByPayAmount(opts ...sql.OrderTermOption) OrderOption {
 // ByFeeRate orders the results by the fee_rate field.
 func ByFeeRate(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFeeRate, opts...).ToFunc()
-}
-
-// ByPaidQuotaUsd orders the results by the paid_quota_usd field.
-func ByPaidQuotaUsd(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldPaidQuotaUsd, opts...).ToFunc()
-}
-
-// ByGiftQuotaUsd orders the results by the gift_quota_usd field.
-func ByGiftQuotaUsd(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldGiftQuotaUsd, opts...).ToFunc()
-}
-
-// ByTotalQuotaUsd orders the results by the total_quota_usd field.
-func ByTotalQuotaUsd(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldTotalQuotaUsd, opts...).ToFunc()
-}
-
-// ByRefundedPaidQuotaUsd orders the results by the refunded_paid_quota_usd field.
-func ByRefundedPaidQuotaUsd(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldRefundedPaidQuotaUsd, opts...).ToFunc()
-}
-
-// ByQuotaAccountingStatus orders the results by the quota_accounting_status field.
-func ByQuotaAccountingStatus(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldQuotaAccountingStatus, opts...).ToFunc()
-}
-
-// ByOperatorUserID orders the results by the operator_user_id field.
-func ByOperatorUserID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOperatorUserID, opts...).ToFunc()
-}
-
-// ByOperatorNote orders the results by the operator_note field.
-func ByOperatorNote(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOperatorNote, opts...).ToFunc()
-}
-
-// ByOperatorRechargedAt orders the results by the operator_recharged_at field.
-func ByOperatorRechargedAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOperatorRechargedAt, opts...).ToFunc()
 }
 
 // ByRechargeCode orders the results by the recharge_code field.
@@ -508,52 +410,10 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
-
-// ByQuotaGrantsCount orders the results by quota_grants count.
-func ByQuotaGrantsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newQuotaGrantsStep(), opts...)
-	}
-}
-
-// ByQuotaGrants orders the results by quota_grants terms.
-func ByQuotaGrants(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newQuotaGrantsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
-
-// ByQuotaAdjustmentsCount orders the results by quota_adjustments count.
-func ByQuotaAdjustmentsCount(opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborsCount(s, newQuotaAdjustmentsStep(), opts...)
-	}
-}
-
-// ByQuotaAdjustments orders the results by quota_adjustments terms.
-func ByQuotaAdjustments(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newQuotaAdjustmentsStep(), append([]sql.OrderTerm{term}, terms...)...)
-	}
-}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
-	)
-}
-func newQuotaGrantsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(QuotaGrantsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
-	)
-}
-func newQuotaAdjustmentsStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(QuotaAdjustmentsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, false, QuotaAdjustmentsTable, QuotaAdjustmentsColumn),
 	)
 }

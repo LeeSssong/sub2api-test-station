@@ -241,29 +241,6 @@ func HasUserWith(preds ...predicate.User) predicate.PromoCodeUsage {
 	})
 }
 
-// HasQuotaGrants applies the HasEdge predicate on the "quota_grants" edge.
-func HasQuotaGrants() predicate.PromoCodeUsage {
-	return predicate.PromoCodeUsage(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasQuotaGrantsWith applies the HasEdge predicate on the "quota_grants" edge with a given conditions (other predicates).
-func HasQuotaGrantsWith(preds ...predicate.UserQuotaGrant) predicate.PromoCodeUsage {
-	return predicate.PromoCodeUsage(func(s *sql.Selector) {
-		step := newQuotaGrantsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.PromoCodeUsage) predicate.PromoCodeUsage {
 	return predicate.PromoCodeUsage(sql.AndPredicates(predicates...))

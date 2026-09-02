@@ -249,7 +249,7 @@ func (r *AccountMonitorRunner) refreshSnapshotOnce() {
 	}
 	defer release()
 	if err := r.snapshotRefresher.RefreshMonitorV4Snapshots(ctx, time.Now().UTC()); err != nil {
-		slog.Warn("account_monitor_v4_snapshot: refresh failed", "phase", "refresh", "error_category", "refresh_failed")
+		slog.Warn("account_monitor_v4_snapshot: refresh failed", "phase", "refresh", "error_category", "refresh_failed", "error", err)
 	}
 }
 

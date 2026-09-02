@@ -2,12 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"syscall"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -86,4 +90,26 @@ func TestStreamObservationRootCauseRequiresSufficientEvidence(t *testing.T) {
 	require.Equal(t, StreamErrorClassUpstreamEOF, snapshot.ErrorClass)
 	require.Equal(t, StreamFailureStageUpstreamBodyRead, snapshot.FailureStage)
 	require.True(t, snapshot.CorrelationDegraded)
+}
+
+func TestAppendOpsUpstreamErrorEmbedsSanitizedStreamSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/responses", nil)
+	obs := BeginStreamObservation(c, "gpt-5.6-sol", "gpt-5.6-sol", PlatformOpenAI, &Account{ID: 7, Name: "account-7"})
+	obs.RecordEvent("response.output_text.delta", 1, 12)
+	obs.RecordFailure(StreamFailureStageUpstreamBodyRead, errors.New("Bearer secret-token: unexpected EOF"), false)
+
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{Kind: "stream_failure", Message: "stream failed"})
+	value, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := value.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.NotNil(t, events[0].StreamObservation)
+	raw, err := json.Marshal(events[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "secret-token")
+	require.NotContains(t, string(raw), "EventBody")
+	require.Contains(t, string(raw), "unexpected EOF")
 }

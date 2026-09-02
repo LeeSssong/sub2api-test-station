@@ -630,6 +630,11 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	requestBodyLen int,
 ) (*OpenAIForwardResult, error) {
 	requestID := openAIUpstreamRequestID(resp.Header)
+	streamObs := StreamObservationFromContext(c)
+	if streamObs == nil {
+		streamObs = BeginStreamObservation(c, originalModel, upstreamModel, string(account.Platform), account)
+	}
+	ObserveUpstreamHeaders(c, resp)
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
 
 	state := apicompat.NewResponsesEventToChatState()
@@ -650,6 +655,9 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	var streamFailoverErr *UpstreamFailoverError
 	var streamNonFailoverErr error
 	terminalEventType := ""
+	defer func() {
+		FinishStreamObservation(c, streamNonFailoverErr != nil || streamFailoverErr != nil || clientDisconnected)
+	}()
 	// Grok chat bridge reuses Responses SSE; count native search tools for surcharge.
 	searchCount := 0
 	streamSearchSeen := make(map[string]struct{})
@@ -700,6 +708,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	}
 
 	processDataLine := func(payload string) bool {
+		streamEventIndex := streamObs.Snapshot().EventIndex + 1
 		payload = string(restoreCodexToolNamesFromContext(c, []byte(payload)))
 		if firstChunk {
 			firstChunk = false
@@ -712,12 +721,14 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 		var event apicompat.ResponsesStreamEvent
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			ObserveReadFailure(c, StreamFailureStageSSEDecode, err)
 			logger.L().Warn("openai chat_completions stream: failed to parse event",
 				zap.Error(err),
 				zap.String("request_id", requestID),
 			)
 			return false
 		}
+		ObserveSSEEvent(c, event.Type, streamEventIndex, int64(len(payload)))
 		if actualResponseModel == "" {
 			actualResponseModel = ExtractOpenAIResponseModelSSEEvent(event.Type, []byte(payload))
 		}
@@ -738,6 +749,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			if event.Response != nil && event.Response.Usage != nil {
 				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
 			}
+			ObserveTerminal(c, event.Type, responseID, usage.InputTokens, usage.OutputTokens, usage.InputTokens+usage.OutputTokens, int64(len(payload)))
 		}
 		if strings.TrimSpace(event.Type) == "response.failed" || strings.TrimSpace(event.Type) == "error" {
 			payloadBytes := []byte(payload)
@@ -853,6 +865,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				}
 				if _, err := fmt.Fprint(c.Writer, sse); err != nil {
 					clientDisconnected = true
+					ObserveClientWriteFailure(c, err)
 					logger.L().Info("openai chat_completions stream: client disconnected, continuing to drain upstream for billing",
 						zap.String("request_id", requestID),
 					)
@@ -864,6 +877,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			c.Writer.Flush()
 		}
 		if semanticOutput && !clientDisconnected && clientOutputStarted {
+			ObserveVisibleOutput(c, int64(len(payload)))
 			notifyOpenAIFirstSemanticOutput(ctx)
 		}
 		return isTerminalEvent

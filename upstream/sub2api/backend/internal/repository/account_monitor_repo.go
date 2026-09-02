@@ -521,6 +521,7 @@ WITH scopes AS (
     ON request_match.group_id = o.group_id
    AND request_match.request_key = NULLIF(o.request_id, '')
   WHERE o.created_at >= $1::timestamptz AND o.created_at < $2::timestamptz
+    AND NOT (o.created_at >= TIMESTAMPTZ '2026-08-31 00:00:00+08' AND o.created_at < TIMESTAMPTZ '2026-09-02 00:00:00+08')
     AND COALESCE(o.is_count_tokens, FALSE) = FALSE
     AND COALESCE(o.status_code, 0) >= 400
     AND NOT (

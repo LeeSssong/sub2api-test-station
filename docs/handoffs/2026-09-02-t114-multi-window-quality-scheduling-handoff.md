@@ -5,7 +5,7 @@
 - Task: T114
 - Base main: `b15ccd267d6745166af4f36e75f31fbd2987ab13`
 - Candidate branch: `codex/t114-multi-window-quality-scheduling`
-- Candidate commit: pending final commit
+- Candidate commit: 
 - Worktree: `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t114-multi-window-quality-scheduling`
 
 ## Delivered

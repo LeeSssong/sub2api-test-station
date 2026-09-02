@@ -289,6 +289,11 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// Team 联动熔断必须先于池模式/自定义错误码/临时不可调度的各类早退；
 	// 同请求内与 fastpath 调用点的重复触发由方法内去重吸收。
 	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)
+	// Explicit OpenAI balance exhaustion is an account fact, not a policy
+	// choice. Persist it before pool-mode and custom-error-code early returns.
+	if decision := classifyDeterministicUpstreamFailure(account, statusCode, responseBody, firstRequestedModel(requestedModel)); decision.Classified && decision.FailureClass == deterministicBalanceClass {
+		return s.handleDeterministicBalanceFailure(ctx, account, decision, responseBody)
+	}
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
@@ -307,6 +312,10 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
 		return false
 	}
+	if handled, disable := s.handleDeterministicUpstreamFailure(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)); handled {
+		return disable
+	}
+
 	if statusCode == 529 {
 		if customErrorCodesEnabled {
 			s.handleCustomErrorCode(ctx, account, statusCode, extractUpstreamErrorMessage(responseBody))
@@ -522,6 +531,61 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	}
 
 	return shouldDisable
+}
+
+// handleDeterministicUpstreamFailure projects only confirmed, narrowly scoped
+// failures into the existing native account state. It runs before generic
+// 402/403/404 handling so a deterministic decision cannot be widened by a
+// legacy branch.
+func (s *RateLimitService) handleDeterministicUpstreamFailure(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel string) (bool, bool) {
+	decision := classifyDeterministicUpstreamFailure(account, statusCode, responseBody, requestedModel)
+	if !decision.Classified {
+		return false, false
+	}
+	if decision.FailureClass == deterministicCredentialClass && account.IsOAuth() && strings.TrimSpace(account.GetCredential("refresh_token")) != "" {
+		return false, false
+	}
+	reason := buildDeterministicFailureReason(decision, extractUpstreamErrorMessage(responseBody), time.Now().UTC())
+	switch decision.FailureClass {
+	case deterministicBalanceClass:
+		return true, s.handleDeterministicBalanceFailureWithReason(ctx, account, reason)
+	case deterministicCredentialClass:
+		if account.IsOAuth() {
+			if err := s.accountRepo.SetError(ctx, account.ID, reason); err != nil {
+				slog.Warn("deterministic_credential_set_error_failed", "account_id", account.ID, "error", err)
+			}
+			return true, true
+		}
+		// API-key 401 is recoverable through a fresh background probe. Keep the
+		// account active and isolate it temporarily instead of permanently
+		// converting a transient credential outage into status=error.
+		until := time.Now().UTC().Add(5 * time.Minute)
+		s.notifyAccountSchedulingBlocked(account, until, "api_key_401")
+		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+			slog.Warn("deterministic_credential_set_temp_unsched_failed", "account_id", account.ID, "error", err)
+		}
+		return true, true
+	case deterministicModelClass:
+		if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, decision.CanonicalModel, time.Now().Add(30*time.Minute), reason); err != nil {
+			slog.Warn("deterministic_model_set_rate_limit_failed", "account_id", account.ID, "model", decision.CanonicalModel, "error", err)
+		}
+		return true, true
+	default:
+		return false, false
+	}
+}
+
+func (s *RateLimitService) handleDeterministicBalanceFailure(ctx context.Context, account *Account, decision DeterministicFailureDecision, responseBody []byte) bool {
+	return s.handleDeterministicBalanceFailureWithReason(ctx, account, buildDeterministicFailureReason(decision, extractUpstreamErrorMessage(responseBody), time.Now().UTC()))
+}
+
+func (s *RateLimitService) handleDeterministicBalanceFailureWithReason(ctx context.Context, account *Account, reason string) bool {
+	until := time.Now().Add(deterministicBalanceIsolationDuration(s.cfg))
+	s.notifyAccountSchedulingBlocked(account, until, "deterministic_balance_exhausted")
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("deterministic_balance_set_temp_unsched_failed", "account_id", account.ID, "error", err)
+	}
+	return true
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.

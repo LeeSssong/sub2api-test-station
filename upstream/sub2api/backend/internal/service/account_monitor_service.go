@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -2529,8 +2530,36 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 			errs = append(errs, fmt.Errorf("refresh account %d upstream balance: %w", account.ID, err))
 			continue
 		}
+		if accountBalanceSnapshotHealthy(account) && isDeterministicBalanceTempReason(account.TempUnschedulableReason) {
+			if repo, ok := s.accountRepo.(accountMonitorBalanceRecoveryRepository); ok {
+				cleared, clearErr := repo.ClearBalanceExhaustedTempUnschedulable(ctx, account)
+				if clearErr != nil {
+					errs = append(errs, fmt.Errorf("restore account %d scheduling: %w", account.ID, clearErr))
+				} else if cleared && s.runtimeBlocker != nil {
+					s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
+				}
+			}
+		}
 	}
 	return errors.Join(errs...)
+}
+
+type accountMonitorBalanceRecoveryRepository interface {
+	ClearBalanceExhaustedTempUnschedulable(context.Context, *Account) (bool, error)
+}
+
+func accountBalanceSnapshotHealthy(account *Account) bool {
+	snapshot := decodeAccountMonitorBalance(account.Extra)
+	return snapshot != nil && snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD >= 5
+}
+
+func isDeterministicBalanceTempReason(reason string) bool {
+	var payload struct {
+		Source       string `json:"source"`
+		FailureClass string `json:"failure_class"`
+	}
+	return json.Unmarshal([]byte(strings.TrimSpace(reason)), &payload) == nil &&
+		payload.Source == deterministicFailureSource && payload.FailureClass == deterministicBalanceClass
 }
 
 // SettleDueProbeBuckets is a lightweight watchdog pass used by the runner.

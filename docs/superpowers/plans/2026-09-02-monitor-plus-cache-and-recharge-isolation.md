@@ -18,7 +18,7 @@
 
 - [x] Add failing frontend tests for exactly `1h`, `24h`, and `7d` options and query parsing.
 - [x] Remove `90m` and `30d` from the user monitor range type, options, parser, bootstrap copy, and polling comments.
-- [ ] Run focused frontend tests and typecheck.
+- [x] Run focused frontend tests and typecheck.
 
 ### Task 3: Plus and Cache Evidence
 
@@ -31,7 +31,7 @@
 
 - [x] Confirm completed non-recharge candidates and their exact commits.
 - [x] Selectively integrate T113 runtime/docs while excluding T91 files and migrations.
-- [ ] Run direct tests, build/typecheck, source guard, and diff checks on clean root `main`.
+- [x] Run direct tests, build/typecheck, source guard, and diff checks on clean root `main`.
 - [ ] Push `origin/main`.
 
 ### Task 5: Main-Site Release and Reconciliation

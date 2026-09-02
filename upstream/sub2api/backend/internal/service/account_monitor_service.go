@@ -2533,15 +2533,6 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 	return errors.Join(errs...)
 }
 
-type accountMonitorBalanceRecoveryRepository interface {
-	ClearBalanceExhaustedTempUnschedulable(context.Context, *Account) (bool, error)
-}
-
-func accountBalanceSnapshotHealthy(account *Account) bool {
-	snapshot := decodeAccountMonitorBalance(account.Extra)
-	return snapshot != nil && snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD >= 5
-}
-
 // SettleDueProbeBuckets is a lightweight watchdog pass used by the runner.
 // It does not execute account probes; it only closes any due group/bucket
 // terminal that a prior monitor run may have missed. The unique ledger key

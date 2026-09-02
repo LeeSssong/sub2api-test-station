@@ -98,6 +98,13 @@ from bb6ebff31f0ffe9be5ad204ba79ef896d98522ccdd7b3933843c94d6c9ad5951
 to   18c4ac1fc83294634c42c6d08c6511c01515406f296d40b54840f3dae726949f
 file 226_account_procurement_cost_versions.sql — expand-only versioned procurement ledger; no historical backfill, usage_logs mutation, or accounting rewrite.
 ```
+
+Current T111 transition:
+
+```text
+from d9a19c7ac0b6686acd8b281fa0310c8e6aaf6e747ea1733cf973583c4d937ca3
+to   209a4ba366557cb60f80fef340e4cd59bf0040ff49495b5c9e8fe077e823a6e4
+file 233_monitor_v4_windows_1h.sql — replace retired 30-day persisted monitor snapshots with the 1-hour window and retain 24-hour/7-day snapshots; no user, account, billing, or usage-log mutation.
 ```
 
 Current T70 transition:

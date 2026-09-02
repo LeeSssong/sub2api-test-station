@@ -203,6 +203,20 @@ func TestUpstreamBalanceNotificationServiceRunDueRefreshesZeroScopeBeforeProject
 	require.Empty(t, sender.inputs)
 }
 
+func TestUpstreamBalanceNotificationServiceRunDueRefreshesLowScopeBeforeProjection(t *testing.T) {
+	now := time.Date(2026, 9, 2, 1, 0, 0, 0, time.UTC)
+	low := upstreamBalanceEvaluationFixture("low account", UpstreamBalanceStateLow, 2, now.Add(-time.Minute))
+	reader := &upstreamBalanceRefreshingReaderStub{
+		upstreamBalanceEvaluationReaderStub: upstreamBalanceEvaluationReaderStub{results: [][]UpstreamBalanceEvaluation{{low}}},
+	}
+	repo := newUpstreamBalanceEventRepoStub(low, now)
+	svc := NewUpstreamBalanceNotificationService(repo, reader, &upstreamBalanceSenderStub{}, upstreamBalanceLoginLookupStub{}, nil)
+	svc.now = func() time.Time { return now }
+
+	require.NoError(t, svc.RunDue(context.Background()))
+	require.Equal(t, []string{"https://upstream.invalid"}, reader.refreshedScopes)
+}
+
 func TestUpstreamBalanceFailureDelay(t *testing.T) {
 	tests := []struct {
 		attempt int

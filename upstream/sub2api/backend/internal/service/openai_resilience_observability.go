@@ -176,6 +176,9 @@ func RecordOpenAIResilienceOutcome(event OpenAIResilienceEvent) {
 	if event.Name == "" {
 		return
 	}
+	// The durable decision-log pipeline consumes a defensive snapshot from an
+	// independent bounded queue. Its saturation must never slow scheduling.
+	defaultOpenAISchedulerLogSink.Enqueue(event)
 	openAIResilienceEventLedger.Lock()
 	defer openAIResilienceEventLedger.Unlock()
 	openAIResilienceEventLedger.events = append(openAIResilienceEventLedger.events, event)

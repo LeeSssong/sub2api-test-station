@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T114 账号监控排名对齐补丁（2026-09-02）：** 状态 `DONE`。候选已合入并推送，主站运行 `main@6fe774df5` / tree `bcf4fd8e2`；宿主记录 `20260902T152635Z-production-3515916.json` 为 `succeeded/promoted`、`rolled_back=false`、`downtime_required=false`，活动槽 `green`。API、worker、detector 及三项公网健康探针通过。按用户最新明确指令不同步验收站，验收站保持 `d8a306a16`；两个排除分支/worktree 保留不动。
+
 **T114 账号监控排名对齐补丁（2026-09-02）：** 状态 `INTEGRATING`。候选 `codex/account-monitor-t114-alignment@ba92de5fd` 已合入根 `main`；全站账号卡片按 T114 质量分排序，分组视图仍保持原生调度排名，lifetime 真实请求计数读取失败不再导致整页失败。无迁移、配置或业务数据写入。按用户快速主站授权执行直接回归、推送、主站发布及同 commit/tree 验收站同步；`quota-accounting-long-lived` 与 `codex/account-monitor-scheduler-real-first` 保留不动。
 
 **T113 流式请求全链路可观测与根因诊断（2026-09-02）：** 状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t113-stream-observability@ed66c30ca`，基线 `main@5bff30023`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t113-stream-observability`，交接 `docs/handoffs/2026-09-02-t113-stream-observability-handoff.md`。已完成现有 OpenAI SSE 主路径 lifecycle 观测、关联 ID、错误分类/脱敏、Ops 只读精确查询、管理员 Usage 详情和 Caddy/Compose environment/commit/slot 日志合同；无迁移、无业务数据写入、无真实上游流量、不改变调度/重试/计费/账号状态。直接相关测试与必要构建通过；宽泛 `go test ./cmd/server` 被既有 `wire_gen_test.go` 参数漂移阻断，已在交接记录。候选不得自行合并、推送、部署；等待根总控 `AUTHORIZE_MERGE_TO_MAIN`。

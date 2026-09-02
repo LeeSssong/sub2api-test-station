@@ -51,7 +51,7 @@ func (s *modelDetectionUsageStub) HasAccountUsageInWindow(context.Context, int64
 }
 
 func (s *modelDetectionUsageStub) HasGroupUsageInWindow(context.Context, int64, time.Time, time.Time) (bool, error) {
-	return false, nil
+	return s.accountUsed, s.err
 }
 
 func TestRunDueSlotsQueuesLowOnlyForActiveSchedulableEmptyBucketAccounts(t *testing.T) {

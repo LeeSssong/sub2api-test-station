@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**2026-09-02 部署窗口完成收口：** T111 分组性能指标修复已合入、维护发布主站并同步验收站；主站运行 non-recharge `e5dd95eda`，验收站随后运行 T91 充值体系 `f39a54bdf`，未将充值代码发布到主站。T111 worktree 已归档删除，当前仅保留进行中的 T112-v2 worktree；T111 恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-workspaces-2026-09-02/t111-monitor-window-data-cleanup-f6c002204.bundle`。根 `main@f39a54bdf` 已推送且干净；主站/验收站健康和版本核对通过。
+**2026-09-02 部署窗口完成收口：** T111 分组性能指标修复已合入、维护发布主站并同步验收站；首轮运行发现 Monitor V4 刷新 SQL 的 `group_id` 歧义，已修正后再次发布。主站运行 non-recharge `1e72ae29c`，`1h/24h/7d` 三个分组快照均已实际写入；验收站随后运行 T91 充值体系 `d8a306a16`，同样生成三窗口快照，未将充值代码发布到主站。T111 两个完成 worktree/分支已归档删除，当前仅保留进行中的 T112-v2 worktree；恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-workspaces-2026-09-02/`。根 `main@d8a306a16` 已推送且干净；主站/验收站健康和版本核对通过。
 
 **2026-09-02 部署窗口最终收口：** 非充值候选已从根 `main` 快速发布主站并同步验收站；随后 T91 充值体系合入根 `main`，仅部署验收站。主站保持 non-recharge `b3cc8b5febfd7d2cdd7b545c0abe8fb698b0075c`，验收站运行 recharge `197a693628e7c12de66e3b4e6b4f9e4dac576f34`；根 `main@2335f2e7349c949a800428821f25d9a9ccc5afb0` 已推送。已归档删除已合并且干净的非 `main`，仅保留进行中的 T111 与 T112-v2 worktree；T87 未提交锁文件以 stash 保全后删除。分组性能指标的 T110 未知流水过滤已发布，T111 时间窗/快照清理仍未提交，继续保留。
 

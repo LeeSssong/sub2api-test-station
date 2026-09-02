@@ -45,6 +45,21 @@ func (h *OpsHandler) GetErrorLogByID(c *gin.Context) {
 	response.Success(c, detail)
 }
 
+// GetStreamDiagnostic returns exact-ID correlated stream lifecycle evidence.
+// GET /api/v1/admin/ops/stream-diagnostics?request_id=...|logical_request_id=...
+func (h *OpsHandler) GetStreamDiagnostic(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	result, err := h.opsService.GetStreamDiagnostic(c.Request.Context(), c.Query("request_id"), c.Query("logical_request_id"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 const (
 	opsListViewErrors   = "errors"
 	opsListViewExcluded = "excluded"

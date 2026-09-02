@@ -685,6 +685,38 @@ func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLo
 	return AttachNativeErrorDiagnosis(detail), nil
 }
 
+func (s *OpsService) GetStreamDiagnostic(ctx context.Context, requestID, logicalRequestID string) (*StreamDiagnosticResponse, error) {
+	if err := s.RequireMonitoringEnabled(ctx); err != nil {
+		return nil, err
+	}
+	requestID = strings.TrimSpace(requestID)
+	logicalRequestID = strings.TrimSpace(logicalRequestID)
+	if requestID == "" && logicalRequestID == "" {
+		return nil, infraerrors.BadRequest("STREAM_DIAGNOSTIC_ID_REQUIRED", "request_id or logical_request_id is required")
+	}
+	if s.opsRepo == nil {
+		result := ProjectStreamDiagnostic(nil, requestID, logicalRequestID)
+		return &result, nil
+	}
+	filter := &OpsErrorLogFilter{RequestID: requestID, LogicalRequestID: logicalRequestID, View: "all", Page: 1, PageSize: 100, IncludeRecoveredUpstream: true}
+	list, err := s.opsRepo.ListErrorLogs(ctx, filter)
+	if err != nil {
+		return nil, infraerrors.InternalServer("STREAM_DIAGNOSTIC_LOAD_FAILED", "Failed to load stream diagnostic").WithCause(err)
+	}
+	details := make([]*OpsErrorLogDetail, 0, len(list.Errors))
+	for _, item := range list.Errors {
+		if item == nil {
+			continue
+		}
+		detail, loadErr := s.opsRepo.GetErrorLogByID(ctx, item.ID)
+		if loadErr == nil && detail != nil {
+			details = append(details, detail)
+		}
+	}
+	result := ProjectStreamDiagnostic(details, requestID, logicalRequestID)
+	return &result, nil
+}
+
 // GetUserErrorRequestDetail 返回某用户自己某条错误请求的脱敏详情。
 // 安全:强制按用户归属校验;非本人记录一律返回 NotFound(不泄露存在性)。
 func (s *OpsService) GetUserErrorRequestDetail(ctx context.Context, userID, id int64) (*UserErrorRequestDetail, error) {

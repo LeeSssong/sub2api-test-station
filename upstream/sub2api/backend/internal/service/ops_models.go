@@ -127,8 +127,9 @@ type OpsErrorLogFilter struct {
 	UserQuery        string // Search by user email
 
 	// Optional correlation keys for exact matching.
-	RequestID       string
-	ClientRequestID string
+	RequestID        string
+	ClientRequestID  string
+	LogicalRequestID string
 
 	// User-scoped filters (used by the user-facing error requests endpoint and
 	// by admin drill-down from the usage page).

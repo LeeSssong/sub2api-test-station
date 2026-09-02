@@ -2,7 +2,7 @@
 
 **核验日期：** 2026-09-01
 
-**核验基线：** 根目录 `/Users/gongtengxinwen/Documents/sub2api搭建`，分支 `main`，HEAD `e8046cde284ca8d0ca45361b674705e3ae5029ff`，工作区干净；`origin/main` 为 `01b58202e...`，当前根 `main` 领先远端 9 个提交。该基线只允许设计和只读核验，不得用于部署。
+**核验基线：** 当前任务 worktree `/Users/gongtengxinwen/.codex/worktrees/8dd6/sub2api搭建`，detached HEAD `fe9c0d8aa78feca5dedd958cce2cdd898f84e300`，工作区干净，`HEAD == origin/main`；根目录 `/Users/gongtengxinwen/Documents/sub2api搭建` 的 `main` 为另一条领先本地提交链。本任务仅在当前 worktree 做源码和验收站只读核验，不从本 worktree 构建或部署。
 
 **依据：**
 
@@ -34,6 +34,8 @@
 | 迁移注册/执行 | `upstream/sub2api/backend/migrations/migrations.go`、`internal/repository/migrations_runner.go:48-365` | SQL 嵌入、文件排序、checksum、PostgreSQL advisory lock、事务执行与幂等重跑机制已存在；已应用迁移不可修改。 |
 | 迁移测试范式 | `upstream/sub2api/backend/internal/repository/migrations_schema_integration_test.go`、`migrations/*_migration_test.go` | 已有 schema/index/constraint、重复执行和历史 checksum 测试模式。 |
 
+补充发现：当前代码中没有 `attempted_quota_usd` 字段或同名接口；现有 `billing_usage_entries.delta_usd` 为 `DECIMAL(20,10)`，而新基线要求的新额度拆分列为 `numeric(20,8)`。因此后续 schema 设计必须显式区分“尝试扣费”和“实际扣费”，不能把旧 `delta_usd` 直接重命名或默认解释为 attempted。
+
 ## 2. 关键基线与差异
 
 ### 2.1 余额不足
@@ -52,6 +54,33 @@
 
 当前存在多个历史非 `main` worktree，部分为设计、验证或保护状态；根 `main` 领先 `origin/main` 9 个提交。T91-A 不得从候选 worktree 或 detached HEAD 构建/部署，也不得修改其他任务的 worktree、队列或生产记录。
 
+### 2.5 余额不足矩阵与金额语义
+
+| 场景 | 原生 `QuotaWalletService` | 旧 `usage_billing_repo` | Task 0 结论 |
+|---|---|---|---|
+| paid 足够 | paid-first，扣费成功 | 从 `users.balance` 扣实际输入额 | 服务层合同可复用；全链路仍未统一 |
+| paid 不足、gift 足够 | paid 扣尽，余量扣 gift | 不区分 paid/gift，继续扣 `users.balance` | T91-C 必须以拆分账务替换旧路径 |
+| paid/gift 都不足 | 返回 `ErrQuotaInsufficient`，不产生新余额 | 第二次无条件扣减，允许负余额 | 现有单测明确预期 `5 - 10 = -5`，属于高风险冲突 |
+| opening 负值 | 新服务没有 opening 类型 | 旧 wallet 允许历史 paid 负值 | 只能由后续迁移 opening 快照承接，不能让新消费制造负值 |
+| 失败且未扣费 | 服务层不执行 mutation | `UsageCompletenessUnknown` 直接 `Applied=false` | 可作为“不写成功计费事实”的边界，但需 T91-C 端到端覆盖 |
+| 零费用 | `ConsumeUsage(0)` 返回 invalid amount | `BalanceCost <= 0` 时不扣余额 | 是否写 usage 行需保留现有路径语义，不能在 schema 阶段猜测 |
+
+`attempted_quota_usd` 在当前源码不存在；后续约定必须是请求应扣额度，`delta_usd`/paid-gift delta 必须是事务实际落账额度，未扣差额不能进入余额或欠款。
+
+### 2.6 幂等、退款终态与外部事件
+
+- 支付回调：`HandlePaymentNotification` 通过订单状态条件更新；重复通知进入 `alreadyProcessed`，已完成/已退款订单不重复履约。验收站无重复 `(provider_instance_id, payment_trade_no)`，无重复订单审计动作。
+- API 请求：`usage_billing_dedup(request_id, api_key_id)` 唯一；同键不同 fingerprint 返回冲突，同 fingerprint 只返回未应用。验收站当前 `usage_logs=0`、`billing_usage_entries=0`，因此未做真实请求回放。
+- 兑换：Redis code lock + `redeemRepo.Use` 的 `status='unused'` 乐观条件防并发重复核销；验收站 5 个 `used`、3 个 `unused`，无重复 code，且没有 `legacy_auto/auto` 样本。
+- 退款：当前同步 `ExecuteRefund` 会先把订单置为 `REFUNDING`，provider `pending` 进入 `REFUND_PENDING`，管理员 `QueryAndFinalizeRefund` 才能再次查询；provider 明确失败走失败终态。当前没有 `quota_refund.requested` 事件、退款 webhook 或自动 worker。后续 worker 必须保留 `pending/unknown/reconciling` 和 reservation，不能把 dead-letter 的不确定结果改为 `failed`。
+- outbox：通用 `externalization_outbox` 支持 append、claim、retry、dead；验收站当前 1029 条均为 `account.health_changed/pending`，没有退款事件或退款消费者证据。
+
+### 2.7 精度、外键和交易号边界
+
+- 旧 Ent 的 payment order、wallet、ledger 金额字段仍是 `field.Float` 映射 PostgreSQL decimal；服务层部分路径使用 `shopspring/decimal`，支付 DTO、退款计划和旧 repository 仍大量使用 `float64`。新账务域必须以十进制字符串/`decimal.Decimal` 为边界，旧 Ent float64 只能通过集中适配器进入新域。
+- `payment_orders.payment_trade_no` 当前没有看到按 provider instance 的新账务唯一合同；已有历史 `out_trade_no` 唯一迁移不能替代退款 provider reference 唯一键。后续应保留旧交易号并在新增调整表建立 provider/request key 作用域唯一约束。
+- 现有历史迁移对用户和 wallet 使用 `ON DELETE CASCADE`，`PaymentOrder` 也采用硬删除注释；这与新基线要求账务来源/操作者 `ON DELETE RESTRICT` 不一致，必须在 schema/迁移计划中作为兼容冲突处理，不得静默沿用 cascade。
+
 ## 3. T91-A 准入判断
 
 **源码核验：通过。** 已找到订单、钱包、计费、退款、provider、outbox、迁移和测试的真实文件与入口。
@@ -61,12 +90,29 @@
 1. 新版附件的 `attempted_quota_usd`/实际扣费语义与 T91-C 接口边界；
 2. 新账务 `decimal.Decimal` 与旧 Ent `float64` 的统一适配器及字段持久化方案。
 
-**acceptance migration：暂缓。** 当前根 `main` 未与 `origin/main` 同步，且 Task 0 报告尚未被根总控接受；不得执行 acceptance schema migration。
+**acceptance migration：暂缓。** 当前任务未执行任何 acceptance migration；验收站仅做健康、服务状态和只读 SQL。根发布链仍受根 `main` 来源门禁与总控授权约束。
 
-**生产/退款/cutover：禁止。** 本报告未执行生产查询、真实支付/退款调用、历史回填、双写或 cutover。
+**生产/退款/cutover：禁止。** 本报告未执行生产查询、真实支付/退款调用、历史回填、双写或 cutover；验收站也未造数、未调用支付 provider、未发送退款或通知。
 
-## 4. 后续交接
+## 4. 验收站只读基线（2026-09-01）
+
+目标固定为 `https://api.xingqiaolab.top/admin/lab/`，入口 `/admin/lab/health` 返回 HTTP 200 `{"status":"ok"}`，登录页返回 HTTP 200 且 HTML 使用 `/admin/lab/assets/`。验收宿主 `sub2api-prod` 上 `sub2api-acceptance` 的 API、worker、detector、PostgreSQL、Redis、Caddy 均为 healthy；数据库为独立 `sub2api_acceptance`。
+
+脱敏只读计数：`users=2`、`payment_orders=13`、`payment_audit_logs=28`、`usage_logs=0`、`billing_usage_entries=0`、`user_wallets=2`、`user_quota_ledger_entries=9`、`redeem_codes=8`、`externalization_outbox=1029`。未删除用户 `balance<0` 为 0，wallet paid/gift 负值均为 0；最小原生余额为 1，最小 wallet paid 为 0.7，最小 gift 为 0。
+
+订单状态为 `CANCELLED=4`、`EXPIRED=2`、`FAILED=4`、`PARTIALLY_REFUNDED=1`、`REFUNDED=2`；支付类型全部为 `alipay`（13）。审计动作无重复 `(order_id, action)`；兑换码无重复 code，状态为 `used=5`、`unused=3`，无旧自动码。以上只读检查不能证明不足矩阵或重复 API 请求的运行时行为，因为验收库无 usage 样本；按约束未通过写入造数补齐。
+
+## 5. 测试与命令证据
+
+- `go test -tags=unit ./internal/repository -run 'Test(DeductUsageBillingBalance|ApplyUsageBillingEffects|ProjectUsageBillingWallet|UsageBilling)' -count=1`：通过。
+- `go test -tags=unit ./internal/service -run 'TestQuotaWallet|Test.*Refund|Test.*Redeem' -count=1`：未通过编译；现有 `internal/service/gateway_forward_as_chat_completions_test.go` 第 156、193 行引用 `context` 但缺少 import，与本 Task 0 文档变更无关。
+- `go test -tags=unit ./internal/service -run 'TestParseLegacyPaymentOrderID|TestPayment.*Notification|TestQueryAndFinalizeRefund' -count=1`：同一既有缺失 import 阻塞。
+- `git diff --check`：通过；本 worktree 仅修改本报告和 acceptance baseline 记录。
+- 验收只读命令：公网 health/login、Compose `ps --format json`、容器内 PostgreSQL `SELECT` 计数/分组/重复性核对；无 `INSERT/UPDATE/DELETE`、无迁移命令。
+
+## 6. 后续交接
 
 - T91-A 下一步可在独立顶层任务中继续完成 schema/Ent 设计和 migration 测试计划。
 - T91-B～E 保持未启动。
 - 本报告不构成 schema/迁移写入授权，也不构成任何主站发布授权。
+- **建议：** 建议根总控接受 Task 0 报告后进入 T91-A schema/Ent/迁移实现，但必须先锁定统一十进制适配器、`attempted_quota_usd`/`delta_usd` 合同，以及旧计费负余额冲突的 T91-C 交接门禁；不要把当前验收站空 usage 数据误判为矩阵已验收。

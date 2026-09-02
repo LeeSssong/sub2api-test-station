@@ -1024,10 +1024,10 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 
 	for rows.Next() {
 		var (
-			inboundGrouped, upstreamGrouped                                      int
-			inboundEndpoint, upstreamEndpoint                                    sql.NullString
-			requests, inputTokens, outputTokens, cacheCreationTokens, cacheReads int64
-			cost, actualCost, accountCost, averageDurationMs                     float64
+			inboundGrouped, upstreamGrouped                                                   int
+			inboundEndpoint, upstreamEndpoint                                                 sql.NullString
+			requests, inputTokens, outputTokens, cacheTokens, cacheCreationTokens, cacheReads int64
+			cost, actualCost, accountCost, averageDurationMs                                  float64
 		)
 		if err := rows.Scan(
 			&inboundGrouped,
@@ -1037,6 +1037,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			&requests,
 			&inputTokens,
 			&outputTokens,
+			&cacheTokens,
 			&cacheCreationTokens,
 			&cacheReads,
 			&cost,
@@ -1047,7 +1048,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			return nil, err
 		}
 
-		totalTokens := inputTokens + outputTokens + cacheCreationTokens + cacheReads
+		totalTokens := inputTokens + outputTokens + cacheTokens
 		endpointActualCost := actualCost
 		if useAccountCostForEndpoint {
 			endpointActualCost = accountCost
@@ -1060,7 +1061,7 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 			stats.TotalOutputTokens = outputTokens
 			stats.TotalCacheCreationTokens = cacheCreationTokens
 			stats.TotalCacheReadTokens = cacheReads
-			stats.TotalCacheTokens = cacheCreationTokens + cacheReads
+			stats.TotalCacheTokens = cacheTokens
 			stats.TotalCost = cost
 			stats.TotalActualCost = actualCost
 			totalAccountCost = accountCost

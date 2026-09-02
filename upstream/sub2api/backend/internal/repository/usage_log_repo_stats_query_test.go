@@ -40,22 +40,23 @@ func TestUsageLogRepositoryGetStatsWithFiltersUsesSingleScopedAggregate(t *testi
 	end := start.Add(24 * time.Hour)
 	columns := []string{
 		"inbound_grouped", "upstream_grouped", "inbound_endpoint", "upstream_endpoint",
-		"requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens",
+		"requests", "input_tokens", "output_tokens", "cache_tokens", "cache_creation_tokens", "cache_read_tokens",
 		"cost", "actual_cost", "account_cost", "average_duration_ms",
 	}
 	mock.ExpectQuery("stats").
 		WithArgs(int64(23), start, end).
 		WillReturnRows(sqlmock.NewRows(columns).
-			AddRow(1, 1, nil, nil, 45, 100, 200, 30, 20, 8.586858, 1.030423, 0.75, 125.0).
-			AddRow(0, 1, "/v1/responses", nil, 45, 100, 200, 30, 20, 8.586858, 1.030423, 0.75, 125.0).
-			AddRow(1, 0, nil, "/v1/responses", 45, 100, 200, 30, 20, 8.586858, 1.030423, 0.75, 125.0).
-			AddRow(0, 0, "/v1/responses", "/v1/responses", 45, 100, 200, 30, 20, 8.586858, 1.030423, 0.75, 125.0))
+			AddRow(1, 1, nil, nil, 45, 100, 200, 50, 30, 20, 8.586858, 1.030423, 0.75, 125.0).
+			AddRow(0, 1, "/v1/responses", nil, 45, 100, 200, 50, 30, 20, 8.586858, 1.030423, 0.75, 125.0).
+			AddRow(1, 0, nil, "/v1/responses", 45, 100, 200, 50, 30, 20, 8.586858, 1.030423, 0.75, 125.0).
+			AddRow(0, 0, "/v1/responses", "/v1/responses", 45, 100, 200, 50, 30, 20, 8.586858, 1.030423, 0.75, 125.0))
 
 	stats, err := newUsageLogRepositoryWithSQL(nil, db).GetStatsWithFilters(context.Background(), UsageLogFilters{
 		UserID: 23, StartTime: &start, EndTime: &end,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(45), stats.TotalRequests)
+	require.Equal(t, int64(50), stats.TotalCacheTokens)
 	require.Equal(t, int64(350), stats.TotalTokens)
 	require.InDelta(t, 1.030423, stats.TotalActualCost, 0.0000001)
 	require.Len(t, stats.Endpoints, 1)

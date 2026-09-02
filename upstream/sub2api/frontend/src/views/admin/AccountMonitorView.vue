@@ -508,6 +508,11 @@ async function load(range: AccountMonitorRange, options: { notifyError?: boolean
 }
 
 function accountMonitorLoadError(reason: unknown): string {
+  const error = reason as { status?: number; transport?: string } | null
+  if (error?.transport === 'timeout') return '账号监控查询超时，当前数据量或服务负载较高，请重试'
+  if (error?.transport === 'canceled') return '账号监控请求被中断，请重试'
+  if (error?.status === 0) return '无法连接账号监控服务，请检查网络后重试'
+  if (error?.status != null && error.status >= 500) return '账号监控服务暂时不可用，请稍后重试'
   const message = extractApiErrorMessage(reason, t('admin.accountMonitor.loadError')).trim()
   if (!message || /^internal error$/i.test(message) || /internal server error/i.test(message)) {
     return '账号监控暂时无法加载，请稍后重试'
@@ -795,7 +800,7 @@ async function clearProcurementCost() {
 async function fetchNativeAccount(accountID: number): Promise<Account> {
   const pending = nativeAccountRequests.get(accountID)
   if (pending) return pending
-  const request = adminAPI.accounts.getById(accountID)
+  const request = adminAPI.accounts.getById(accountID, { includeSchedulerScore: true })
     .then((account) => account)
     .finally(() => {
       nativeAccountRequests.delete(accountID)

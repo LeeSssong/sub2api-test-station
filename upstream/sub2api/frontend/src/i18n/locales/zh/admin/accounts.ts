@@ -8,7 +8,7 @@ export default {
         historyEyebrow: 'MODEL EVIDENCE', historySummaryTitle: '账号级检测轨迹', historySummaryHint: '按时间查看每次检测的覆盖档位、证据样本与触发原因。', historyCountSuffix: ' 条记录', statusFilter: '结论', profileFilter: '覆盖档位', juiceFilter: 'Juice 结果', fingerprintFilter: '指纹结果', conclusionFilter: '综合结论', profileAndSamples: '档位与样本', fingerprintShort: '指纹', historyDetailsHint: '点击任意记录行可展开查看该次检测详情', time: '检测时间', statusLabel: '结论', evidenceUnavailable: '未取得证据', samplesUnavailable: '历史记录', historicalRecordHint: '历史记录：旧格式未保存档位与样本明细',
         profileNames: { low: '低档 · 快速初筛', medium: '中档 · 常规监测', high: '高档 · 深度复核', unknown: '历史记录' },
         modeNames: { monitor: '常规监测', manual: '手动复核', escalation: '异常升级', historical: '历史记录' },
-        reasonValue: { scheduled: '定时检测', manual: '手动触发', first_run: '首次基线', consecutive_abnormal: '连续异常', insufficient: '连续证据不足', model_conflict: '模型冲突' },
+        reasonValue: { scheduled: '定时检测', manual: '手动触发', first_run: '首次基线', consecutive_abnormal: '连续异常', insufficient: '连续证据不足', model_conflict: '模型冲突', suspicious: '检测到可疑结果' },
         verdict: { verified: '模型可信', suspected_mapping: '疑似模型映射', suspected_replacement: '疑似替换模型', high_risk_inconsistent: '高风险不一致', insufficient: '证据不足' },
         juiceStatus: { pass: '通过', mismatch: '与申报不一致', insufficient: '证据不足', non_gpt: '可能非 GPT', unavailable: '未取得证据' },
         fingerprintStatus: { strong_match: '强烈指向', unclear: '证据不明确', unavailable: '无已知指纹' },

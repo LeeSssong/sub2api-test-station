@@ -5,7 +5,7 @@
         <section class="monitor-card-identity" data-test="identity-column" aria-label="账号身份与状态">
           <div class="monitor-card-eyeline">
             <span class="monitor-card-status-dot" :class="statusDotClass" aria-hidden="true" />
-            <span>{{ statusLabel }} · 人工开关：{{ schedulableLabel }} · 有效调度：{{ effectiveSchedulableLabel }}<template v-if="effectiveUnschedulableReason">（{{ effectiveUnschedulableReason }}）</template> · {{ platformLabel }} · 目标组 {{ currentGroupLabel }}</span>
+            <span>{{ statusLabel }} · {{ platformLabel }} · 目标组 {{ currentGroupLabel }}</span>
           </div>
           <h2 data-test="account-identity">
             <a v-if="account.homepage_url" :href="account.homepage_url" target="_blank" rel="noopener noreferrer" data-test="account-homepage-link">{{ account.name }}</a>
@@ -46,18 +46,21 @@
         </div>
         <section class="monitor-card-chart" data-test="timeline-section" aria-label="真实性能">
           <div class="chart-head">
-            <h3>真实性能 · 真实请求</h3>
+            <h3>近期真实请求</h3>
             <button type="button" class="chart-action" data-test="refresh-account" title="刷新主动探测状态，不生成真实请求样本" aria-label="刷新主动探测状态，不生成真实请求样本" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新探测状态</button>
           </div>
           <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
-            <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" :title="bar.title" data-test="real-request-bar" />
+            <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
+              <span class="performance-bar" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" data-test="real-request-bar" />
+              <span v-if="hoveredBarIndex === index" class="performance-bar-tooltip" role="tooltip" data-test="real-request-tooltip">{{ bar.latencyLabel }}</span>
+            </span>
           </div>
         </section>
       </div>
       <footer class="monitor-card-footer" data-test="account-actions" aria-label="账号操作">
         <button class="footer-button primary" data-test="account-info" type="button" title="查看账号详情" aria-label="查看账号详情" @click="emit('accountInfo', account)"><Icon name="eye" size="xs" />账号详情</button>
+        <button class="footer-button" data-test="account-edit" type="button" title="编辑账号" aria-label="编辑账号" @click="emit('accountEdit', account)"><Icon name="edit" size="xs" />编辑账号</button>
         <button class="footer-button" data-test="account-more" type="button" title="账号操作" aria-label="账号操作" @click="emit('accountMore', account, $event)"><Icon name="more" size="xs" />账号操作</button>
-        <button class="sr-only" data-test="account-edit" type="button" @click="emit('accountEdit', account)">编辑</button>
         <button class="sr-only" data-test="account-delete" type="button" @click="emit('accountDelete', account)">删除</button>
       </footer>
       <AccountModelDetectionDialog :show="modelDetectionDialogOpen" :account="account" :models="modelDetectionModels" :saving="savingModelDetection" :detecting="detectingModelDetection" @close="modelDetectionDialogOpen = false" @save="emit('saveModelDetectionModels', account.account_id, $event)" @detect="emit('detectModelDetection', account.account_id)" />
@@ -162,7 +165,7 @@
 
       <section class="min-w-0 border-l border-gray-100 pl-4 dark:border-slate-800" data-test="timeline-section" aria-label="近期表现">
         <div class="flex min-w-0 items-center justify-between gap-2"><h3 class="text-xs font-semibold text-gray-800 dark:text-slate-100">近期表现</h3><button type="button" class="shrink-0 text-[11px] text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-300" data-test="edit-connection-probe-model" @click="openModelDetectionDialog">{{ t('admin.accounts.modelDetection.editConnectionProbeModel') }}</button></div>
-        <div class="mt-3 grid h-9 min-w-0 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="realTimelineAriaLabel"><span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="min-w-0 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" :title="bar.title" data-test="real-request-bar" /></div>
+        <div class="mt-3 grid h-9 min-w-0 grid-cols-[repeat(24,minmax(3px,1fr))] items-end gap-1" role="img" :aria-label="realTimelineAriaLabel"><span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="min-w-0 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" data-test="real-request-bar" /></div>
         <div v-if="false" class="mt-1 flex justify-between text-[10px] text-gray-400 dark:text-slate-500"><span>较早</span><span>最近</span></div>
       </section>
 
@@ -255,6 +258,7 @@ const priorityError = ref('')
 const priorityInput = ref<HTMLInputElement | null>(null)
 const callsExpanded = ref(false)
 const modelDetectionDialogOpen = ref(false)
+const hoveredBarIndex = ref<number | null>(null)
 function openModelDetectionDialog() {
   modelDetectionDialogOpen.value = true
   emit('editConnectionProbeModel', props.account)
@@ -270,16 +274,6 @@ function openModelDetectionEntry() {
 const platformLabel = computed(() => props.account.platform || '--')
 const currentGroupLabel = computed(() => props.account.group_names?.filter(Boolean).join('、') || '--')
 const schedulableLabel = computed(() => props.account.schedulable ? '可调度' : '不可调度')
-const effectiveSchedulableLabel = computed(() => props.account.effective_schedulable ? '可调度' : '不可调度')
-const effectiveUnschedulableReason = computed(() => ({
-  inactive: '账号未激活',
-  manual_disabled: '人工暂停',
-  expired: '已过期',
-  overload: '过载冷却',
-  rate_limited: '限流冷却',
-  temp_unschedulable: '临时不可调度',
-  quota_exceeded: '额度耗尽',
-})[props.account.effective_unschedulable_reason] ?? (props.account.effective_unschedulable_reason || ''))
 const recommendation = computed<AccountMonitorGroupRecommendation | null>(() => props.account.group_recommendation ?? null)
 const isTestGroup = computed(() => props.account.group_names?.some((name) => name.trim().toLowerCase().replace(/ /g, '') === 'gpt-测试分组') ?? false)
 const formalMigration = computed(() => recommendation.value?.action === 'migrate' && !isTestGroup.value)
@@ -445,15 +439,14 @@ const profitRateLabel = computed(() => {
 })
 const realRequestBars = computed(() => {
   const points = props.account.real_request_timeline ?? []
-  if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, title: '暂无真实请求' }))
+  if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, latencyLabel: 'TTFT P95 --' }))
   return points.map((point) => {
-    const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 5000
+    const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 10000
     const probeCount = point.probe_count ?? 0
     const source = point.source ?? (point.request_count > 0 ? 'real' : probeCount > 0 ? 'probe' : 'no_data')
     const requestCount = point.request_count + probeCount
     const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : source === 'probe' ? (point.probe_failure_count && point.probe_failure_count > 0 ? 'bg-red-500' : 'bg-amber-400') : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
-    const sourceLabel = source === 'probe' ? '主动探测兜底' : source === 'no_data' ? '无数据' : source === 'mixed' ? '含真实请求/探测兜底' : '真实请求'
-    return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), title: `${formatShortTime(point.start_at)} · ${sourceLabel} · 真实请求 ${point.request_count} · 探测 ${probeCount} · 成功 ${point.success_count + (point.probe_success_count ?? 0)} · 失败 ${point.failure_count + (point.probe_failure_count ?? 0)} · TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
+    return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: `TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
   })
 })
 const realTimelineAriaLabel = computed(() => `真实性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次真实请求`)
@@ -532,12 +525,6 @@ function formatDateTime(value?: string | null): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '--'
   return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
-}
-function formatShortTime(value?: string | null): string {
-	if (!value) return '--'
-	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) return '--'
-	return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(date)
 }
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(value) || 0))
@@ -1355,6 +1342,9 @@ const CostMetric = defineComponent({
   border-radius: 3px 3px 1px 1px;
   outline: none;
 }
+.performance-bar-wrap { position: relative; display: flex; flex: 1; min-width: 3px; height: 100%; align-items: flex-end; outline: none; }
+.performance-bar-wrap:focus-visible { outline: 2px solid #67e8f9; outline-offset: 2px; }
+.performance-bar-tooltip { position: absolute; left: 50%; bottom: calc(100% + 6px); z-index: 30; transform: translateX(-50%); white-space: nowrap; border: 1px solid #3b526b; border-radius: 4px; background: #0b1727; color: #e5eef8; padding: 4px 7px; font-size: 11px; pointer-events: none; }
 .monitor-card-chart::after { display: none !important; content: none !important; }
 
 .monitor-card-model {

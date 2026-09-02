@@ -105,11 +105,19 @@ function juiceTranslationStatus(status?: string) { return status === 'verified' 
 function juiceLabel(status?: string) { const translated = juiceTranslationStatus(status); return translated ? t(`admin.accounts.modelDetection.juiceStatus.${translated}`) : t('admin.accounts.modelDetection.evidenceUnavailable') }
 function juiceLabelFor(item: AccountModelDetectionSummary) { return isHistorical(item) ? t('admin.accounts.modelDetection.historical') : juiceLabel(item.juice_status) }
 function juiceClass(item: AccountModelDetectionSummary) { return item.juice_status === 'verified' || item.juice_status === 'pass' ? 'text-emerald-300' : item.juice_status === 'mismatch' ? 'text-rose-300' : item.juice_status === 'insufficient' ? 'text-amber-300' : 'text-slate-400' }
-function fingerprintLabel(status?: string) { return status ? t(`admin.accounts.modelDetection.fingerprintStatus.${status}`) : t('admin.accounts.modelDetection.evidenceUnavailable') }
+function fingerprintLabel(status?: string) {
+  if (!status) return t('admin.accounts.modelDetection.evidenceUnavailable')
+  const labels: Record<string, string> = { strong_match: '强烈指向', unclear: '证据不明确', unavailable: '无已知指纹', no_data: '未取得数据' }
+  return labels[status] ?? t('admin.accounts.modelDetection.evidenceUnavailable')
+}
 function fingerprintLabelFor(item: AccountModelDetectionSummary) { if (isHistorical(item)) return t('admin.accounts.modelDetection.historical'); const base = fingerprintLabel(item.fingerprint_status); return item.fingerprint_candidate ? `${base} ${item.fingerprint_candidate}` : base }
 function fingerprintClass(item: AccountModelDetectionSummary) { return item.fingerprint_status === 'strong_match' ? 'text-sky-300' : item.fingerprint_status === 'unclear' ? 'text-slate-300' : 'text-slate-400' }
 function profileLabel(item: AccountModelDetectionSummary) { return item.profile === 'low' ? t('admin.accounts.modelDetection.profileNames.low') : item.profile === 'medium' ? t('admin.accounts.modelDetection.profileNames.medium') : item.profile === 'high' ? t('admin.accounts.modelDetection.profileNames.high') : t('admin.accounts.modelDetection.profileNames.unknown') }
-function reasonLabel(item: AccountModelDetectionSummary) { return item.trigger_reason ? t(`admin.accounts.modelDetection.reasonValue.${item.trigger_reason}`) : t('admin.accounts.modelDetection.historical') }
+function reasonLabel(item: AccountModelDetectionSummary) {
+  if (!item.trigger_reason) return t('admin.accounts.modelDetection.historical')
+  const labels: Record<string, string> = { scheduled: '定时检测', manual: '手动触发', first_run: '首次基线', consecutive_abnormal: '连续异常', insufficient: '连续证据不足', model_conflict: '模型冲突', suspicious: '检测到可疑结果' }
+  return labels[item.trigger_reason] ?? '检测触发'
+}
 function samplesLabel(item: AccountModelDetectionSummary) { if (isHistorical(item)) return t('admin.accounts.modelDetection.samplesUnavailable'); if (item.valid_samples == null || item.valid_samples <= 0) return t('admin.accounts.modelDetection.evidenceUnavailable'); return `${item.valid_samples} / ${item.planned_requests ?? 0}` }
 function formatTime(value?: string) { if (!value) return '--'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date) }
 function safeSummary(value?: Record<string, unknown>) { if (!value) return ''; const allowed = Object.entries(value).filter(([key, raw]) => ['score', 'evidence_version', 'sample_count', 'status'].includes(key) && (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean')).slice(0, 6); return allowed.map(([key, raw]) => `${key}=${String(raw).slice(0, 80)}`).join(' · ') }

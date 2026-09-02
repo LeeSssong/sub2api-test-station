@@ -1753,52 +1753,6 @@ func HasOperatedQuotaLedgerEntriesWith(preds ...predicate.UserQuotaLedgerEntry) 
 	})
 }
 
-// HasQuotaGrants applies the HasEdge predicate on the "quota_grants" edge.
-func HasQuotaGrants() predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasQuotaGrantsWith applies the HasEdge predicate on the "quota_grants" edge with a given conditions (other predicates).
-func HasQuotaGrantsWith(preds ...predicate.UserQuotaGrant) predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		step := newQuotaGrantsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasQuotaAdjustments applies the HasEdge predicate on the "quota_adjustments" edge.
-func HasQuotaAdjustments() predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, false, QuotaAdjustmentsTable, QuotaAdjustmentsColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasQuotaAdjustmentsWith applies the HasEdge predicate on the "quota_adjustments" edge with a given conditions (other predicates).
-func HasQuotaAdjustmentsWith(preds ...predicate.UserQuotaAdjustment) predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		step := newQuotaAdjustmentsStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
 // HasQuotaIdempotencyRecords applies the HasEdge predicate on the "quota_idempotency_records" edge.
 func HasQuotaIdempotencyRecords() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

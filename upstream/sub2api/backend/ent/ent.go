@@ -55,8 +55,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
-	"github.com/Wei-Shaw/sub2api/ent/userquotaadjustment"
-	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/ent/userwallet"
@@ -163,8 +161,6 @@ func checkColumn(t, c string) error {
 			userattributedefinition.Table:       userattributedefinition.ValidColumn,
 			userattributevalue.Table:            userattributevalue.ValidColumn,
 			userplatformquota.Table:             userplatformquota.ValidColumn,
-			userquotaadjustment.Table:           userquotaadjustment.ValidColumn,
-			userquotagrant.Table:                userquotagrant.ValidColumn,
 			userquotaledgerentry.Table:          userquotaledgerentry.ValidColumn,
 			usersubscription.Table:              usersubscription.ValidColumn,
 			userwallet.Table:                    userwallet.ValidColumn,

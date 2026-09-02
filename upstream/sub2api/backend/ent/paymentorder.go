@@ -12,7 +12,6 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/user"
-	"github.com/shopspring/decimal"
 )
 
 // PaymentOrder is the model entity for the PaymentOrder schema.
@@ -34,24 +33,6 @@ type PaymentOrder struct {
 	PayAmount float64 `json:"pay_amount,omitempty"`
 	// FeeRate holds the value of the "fee_rate" field.
 	FeeRate float64 `json:"fee_rate,omitempty"`
-	// PaidQuotaUsd holds the value of the "paid_quota_usd" field.
-	PaidQuotaUsd decimal.Decimal `json:"paid_quota_usd,omitempty"`
-	// GiftQuotaUsd holds the value of the "gift_quota_usd" field.
-	GiftQuotaUsd decimal.Decimal `json:"gift_quota_usd,omitempty"`
-	// TotalQuotaUsd holds the value of the "total_quota_usd" field.
-	TotalQuotaUsd decimal.Decimal `json:"total_quota_usd,omitempty"`
-	// QuotaRuleSnapshot holds the value of the "quota_rule_snapshot" field.
-	QuotaRuleSnapshot map[string]interface{} `json:"quota_rule_snapshot,omitempty"`
-	// RefundedPaidQuotaUsd holds the value of the "refunded_paid_quota_usd" field.
-	RefundedPaidQuotaUsd decimal.Decimal `json:"refunded_paid_quota_usd,omitempty"`
-	// QuotaAccountingStatus holds the value of the "quota_accounting_status" field.
-	QuotaAccountingStatus string `json:"quota_accounting_status,omitempty"`
-	// OperatorUserID holds the value of the "operator_user_id" field.
-	OperatorUserID *int64 `json:"operator_user_id,omitempty"`
-	// OperatorNote holds the value of the "operator_note" field.
-	OperatorNote *string `json:"operator_note,omitempty"`
-	// OperatorRechargedAt holds the value of the "operator_recharged_at" field.
-	OperatorRechargedAt *time.Time `json:"operator_recharged_at,omitempty"`
 	// RechargeCode holds the value of the "recharge_code" field.
 	RechargeCode string `json:"recharge_code,omitempty"`
 	// OutTradeNo holds the value of the "out_trade_no" field.
@@ -126,13 +107,9 @@ type PaymentOrder struct {
 type PaymentOrderEdges struct {
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
-	// QuotaGrants holds the value of the quota_grants edge.
-	QuotaGrants []*UserQuotaGrant `json:"quota_grants,omitempty"`
-	// QuotaAdjustments holds the value of the quota_adjustments edge.
-	QuotaAdjustments []*UserQuotaAdjustment `json:"quota_adjustments,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [1]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -146,42 +123,22 @@ func (e PaymentOrderEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
-// QuotaGrantsOrErr returns the QuotaGrants value or an error if the edge
-// was not loaded in eager-loading.
-func (e PaymentOrderEdges) QuotaGrantsOrErr() ([]*UserQuotaGrant, error) {
-	if e.loadedTypes[1] {
-		return e.QuotaGrants, nil
-	}
-	return nil, &NotLoadedError{edge: "quota_grants"}
-}
-
-// QuotaAdjustmentsOrErr returns the QuotaAdjustments value or an error if the edge
-// was not loaded in eager-loading.
-func (e PaymentOrderEdges) QuotaAdjustmentsOrErr() ([]*UserQuotaAdjustment, error) {
-	if e.loadedTypes[2] {
-		return e.QuotaAdjustments, nil
-	}
-	return nil, &NotLoadedError{edge: "quota_adjustments"}
-}
-
 // scanValues returns the types for scanning values from sql.Rows.
 func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case paymentorder.FieldQuotaRuleSnapshot, paymentorder.FieldProviderSnapshot:
+		case paymentorder.FieldProviderSnapshot:
 			values[i] = new([]byte)
-		case paymentorder.FieldPaidQuotaUsd, paymentorder.FieldGiftQuotaUsd, paymentorder.FieldTotalQuotaUsd, paymentorder.FieldRefundedPaidQuotaUsd:
-			values[i] = new(decimal.Decimal)
 		case paymentorder.FieldForceRefund:
 			values[i] = new(sql.NullBool)
 		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
 			values[i] = new(sql.NullFloat64)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldOperatorUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldQuotaAccountingStatus, paymentorder.FieldOperatorNote, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
+		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
-		case paymentorder.FieldOperatorRechargedAt, paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
+		case paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -246,65 +203,6 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field fee_rate", values[i])
 			} else if value.Valid {
 				_m.FeeRate = value.Float64
-			}
-		case paymentorder.FieldPaidQuotaUsd:
-			if value, ok := values[i].(*decimal.Decimal); !ok {
-				return fmt.Errorf("unexpected type %T for field paid_quota_usd", values[i])
-			} else if value != nil {
-				_m.PaidQuotaUsd = *value
-			}
-		case paymentorder.FieldGiftQuotaUsd:
-			if value, ok := values[i].(*decimal.Decimal); !ok {
-				return fmt.Errorf("unexpected type %T for field gift_quota_usd", values[i])
-			} else if value != nil {
-				_m.GiftQuotaUsd = *value
-			}
-		case paymentorder.FieldTotalQuotaUsd:
-			if value, ok := values[i].(*decimal.Decimal); !ok {
-				return fmt.Errorf("unexpected type %T for field total_quota_usd", values[i])
-			} else if value != nil {
-				_m.TotalQuotaUsd = *value
-			}
-		case paymentorder.FieldQuotaRuleSnapshot:
-			if value, ok := values[i].(*[]byte); !ok {
-				return fmt.Errorf("unexpected type %T for field quota_rule_snapshot", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.QuotaRuleSnapshot); err != nil {
-					return fmt.Errorf("unmarshal field quota_rule_snapshot: %w", err)
-				}
-			}
-		case paymentorder.FieldRefundedPaidQuotaUsd:
-			if value, ok := values[i].(*decimal.Decimal); !ok {
-				return fmt.Errorf("unexpected type %T for field refunded_paid_quota_usd", values[i])
-			} else if value != nil {
-				_m.RefundedPaidQuotaUsd = *value
-			}
-		case paymentorder.FieldQuotaAccountingStatus:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field quota_accounting_status", values[i])
-			} else if value.Valid {
-				_m.QuotaAccountingStatus = value.String
-			}
-		case paymentorder.FieldOperatorUserID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field operator_user_id", values[i])
-			} else if value.Valid {
-				_m.OperatorUserID = new(int64)
-				*_m.OperatorUserID = value.Int64
-			}
-		case paymentorder.FieldOperatorNote:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field operator_note", values[i])
-			} else if value.Valid {
-				_m.OperatorNote = new(string)
-				*_m.OperatorNote = value.String
-			}
-		case paymentorder.FieldOperatorRechargedAt:
-			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field operator_recharged_at", values[i])
-			} else if value.Valid {
-				_m.OperatorRechargedAt = new(time.Time)
-				*_m.OperatorRechargedAt = value.Time
 			}
 		case paymentorder.FieldRechargeCode:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -536,16 +434,6 @@ func (_m *PaymentOrder) QueryUser() *UserQuery {
 	return NewPaymentOrderClient(_m.config).QueryUser(_m)
 }
 
-// QueryQuotaGrants queries the "quota_grants" edge of the PaymentOrder entity.
-func (_m *PaymentOrder) QueryQuotaGrants() *UserQuotaGrantQuery {
-	return NewPaymentOrderClient(_m.config).QueryQuotaGrants(_m)
-}
-
-// QueryQuotaAdjustments queries the "quota_adjustments" edge of the PaymentOrder entity.
-func (_m *PaymentOrder) QueryQuotaAdjustments() *UserQuotaAdjustmentQuery {
-	return NewPaymentOrderClient(_m.config).QueryQuotaAdjustments(_m)
-}
-
 // Update returns a builder for updating this PaymentOrder.
 // Note that you need to call PaymentOrder.Unwrap() before calling this method if this PaymentOrder
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -591,39 +479,6 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("fee_rate=")
 	builder.WriteString(fmt.Sprintf("%v", _m.FeeRate))
-	builder.WriteString(", ")
-	builder.WriteString("paid_quota_usd=")
-	builder.WriteString(fmt.Sprintf("%v", _m.PaidQuotaUsd))
-	builder.WriteString(", ")
-	builder.WriteString("gift_quota_usd=")
-	builder.WriteString(fmt.Sprintf("%v", _m.GiftQuotaUsd))
-	builder.WriteString(", ")
-	builder.WriteString("total_quota_usd=")
-	builder.WriteString(fmt.Sprintf("%v", _m.TotalQuotaUsd))
-	builder.WriteString(", ")
-	builder.WriteString("quota_rule_snapshot=")
-	builder.WriteString(fmt.Sprintf("%v", _m.QuotaRuleSnapshot))
-	builder.WriteString(", ")
-	builder.WriteString("refunded_paid_quota_usd=")
-	builder.WriteString(fmt.Sprintf("%v", _m.RefundedPaidQuotaUsd))
-	builder.WriteString(", ")
-	builder.WriteString("quota_accounting_status=")
-	builder.WriteString(_m.QuotaAccountingStatus)
-	builder.WriteString(", ")
-	if v := _m.OperatorUserID; v != nil {
-		builder.WriteString("operator_user_id=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
-	builder.WriteString(", ")
-	if v := _m.OperatorNote; v != nil {
-		builder.WriteString("operator_note=")
-		builder.WriteString(*v)
-	}
-	builder.WriteString(", ")
-	if v := _m.OperatorRechargedAt; v != nil {
-		builder.WriteString("operator_recharged_at=")
-		builder.WriteString(v.Format(time.ANSIC))
-	}
 	builder.WriteString(", ")
 	builder.WriteString("recharge_code=")
 	builder.WriteString(_m.RechargeCode)

@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**2026-09-02 部署窗口最终收口：** 非充值候选已从根 `main` 快速发布主站并同步验收站；随后 T91 充值体系合入根 `main`，仅部署验收站。主站保持 non-recharge `b3cc8b5febfd7d2cdd7b545c0abe8fb698b0075c`，验收站运行 recharge `197a693628e7c12de66e3b4e6b4f9e4dac576f34`；根 `main@2335f2e7349c949a800428821f25d9a9ccc5afb0` 已推送。已归档删除已合并且干净的非 `main`，仅保留进行中的 T111 与 T112-v2 worktree；T87 未提交锁文件以 stash 保全后删除。分组性能指标的 T110 未知流水过滤已发布，T111 时间窗/快照清理仍未提交，继续保留。
+
 **本轮发布收口（2026-09-01）：** T107、T7、T108 已完成根 `main` 推送、主站快速发布、同 commit/tree 验收站同步和健康核对，候选 worktree/分支已用恢复 bundle 保全后删除。T106 的用量汇总 SQL 修复已在当前主线中随发布树生效。T98-R2/R3、T109、T110、T91/充值体系和 P1 仍为活动或保护对象，未进入本轮清理。
 
 **2026-09-01 根总控快速部署与 T96 生产配置补做：** 状态 `DONE`（本轮不推送远端）。根 `main@41a36389a0229d537ef2a6c1f0f219ec6a77f513`、tree `75eef88041ea5928b8b65772885346f35e5162f2` 已完成主站快速部署，主站 green 槽和三项公网健康探针通过；验收站以同一 commit/tree 同步成功，六服务及 `/admin/lab/health` 通过。T96 账号归组和账号级 `priority=50` 已实际完成；此前缺失的组级 `extra_retry_count` 已补齐并回读：group 2=1、17=1、6=2、20=3。新增 294、295、296、298、299、300、301 因缺少同口径质量证据保持现状。非 `main` 仅清理已合并且干净候选，`p1-task4`、T87、T91-A、T96 活动证据/脏 worktree 及用户保护对象保留；恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/non-main-workspaces-2026-09-01/non-main-refs.bundle`。

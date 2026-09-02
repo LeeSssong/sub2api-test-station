@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -33,8 +34,11 @@ func CardErrorCode(err error) string {
 }
 
 type UpstreamBalanceCardRank struct {
-	GroupName string
-	Rank      *int
+	GroupName   string
+	Rank        *int
+	RankTotal   int
+	Eligible    bool
+	T114Enabled bool
 }
 
 type UpstreamBalanceCardAccount struct {
@@ -45,14 +49,16 @@ type UpstreamBalanceCardAccount struct {
 }
 
 type UpstreamBalanceCardInput struct {
-	State            string
-	ValueUSD         float64
-	BaseURL          string
-	LoginAccount     string
-	LoginPassword    string
-	RecipientOpenIDs []string
-	Accounts         []UpstreamBalanceCardAccount
-	SilenceToken     string
+	State             string
+	ValueUSD          float64
+	BaseURL           string
+	LoginAccount      string
+	LoginPassword     string
+	RecipientOpenIDs  []string
+	Accounts          []UpstreamBalanceCardAccount
+	SilenceToken      string
+	RankingSnapshotAt time.Time
+	RankingStale      bool
 }
 
 type interactiveCardText struct {
@@ -118,6 +124,13 @@ func RenderUpstreamBalanceCard(input UpstreamBalanceCardInput) ([]byte, error) {
 		"**上游登录密码**：" + cardValue(loginPassword),
 	}, "\n")
 	elements = append(elements, markdownElement(wallet))
+	if !input.RankingSnapshotAt.IsZero() {
+		label := "T114 调度排名 · " + input.RankingSnapshotAt.Local().Format("2006-01-02 15:04:05")
+		if input.RankingStale {
+			label = "排名快照延迟 · " + input.RankingSnapshotAt.Local().Format("2006-01-02 15:04:05")
+		}
+		elements = append(elements, markdownElement(label))
+	}
 	if strings.TrimSpace(input.SilenceToken) != "" {
 		elements = append(elements, actionElement([]interactiveCardAction{
 			cardAction("静默 1 小时", "default", "1h", input.SilenceToken),
@@ -156,8 +169,21 @@ func RenderUpstreamBalanceCard(input UpstreamBalanceCardInput) ([]byte, error) {
 		} else {
 			for _, rank := range ranks {
 				label := "未排名"
-				if rank.Rank != nil && *rank.Rank > 0 {
+				switch {
+				case !rank.T114Enabled && rank.RankTotal == 0 && rank.Rank != nil && *rank.Rank > 0:
+					// Preserve cards produced by older in-process callers that do not
+					// provide the additive T114 metadata yet.
 					label = fmt.Sprintf("第 %d 名", *rank.Rank)
+				case !rank.T114Enabled:
+					label = "未启用 T114 排名"
+				case !rank.Eligible:
+					label = "当前不可调度"
+				case rank.Rank != nil && *rank.Rank > 0 && rank.RankTotal > 0:
+					label = fmt.Sprintf("第 %d / %d 名", *rank.Rank, rank.RankTotal)
+				case rank.Rank != nil && *rank.Rank > 0:
+					label = fmt.Sprintf("第 %d 名", *rank.Rank)
+				case rank.T114Enabled:
+					label = "排名暂不可用"
 				}
 				groupName := strings.TrimSpace(rank.GroupName)
 				if groupName == "" {

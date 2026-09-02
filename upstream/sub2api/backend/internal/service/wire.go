@@ -1334,7 +1334,11 @@ func ProvideUpstreamBalanceNotificationService(
 	if secrets.CallbackToken != "" {
 		if silenceRepo, ok := repo.(UpstreamBalanceNotificationSilenceRepository); ok {
 			svc.ConfigureFeishuSilence(silenceRepo, secrets.CallbackToken)
+		} else {
+			logger.LegacyPrintf("service.upstream_balance_notification", "feishu_silence_actions=disabled code=silence_repository_unavailable")
 		}
+	} else {
+		logger.LegacyPrintf("service.upstream_balance_notification", "feishu_silence_actions=disabled code=callback_token_unconfigured")
 	}
 	svc.Start()
 	return svc

@@ -83,10 +83,13 @@ func buildUpstreamBalanceEvaluations(accounts []Account, page AccountMonitorPage
 		group := page.Groups[i]
 		for j := range group.Accounts {
 			row := group.Accounts[j]
-			ranks[row.AccountID] = append(ranks[row.AccountID], UpstreamBalanceAccountRank{
-				GroupName: group.Name,
-				Rank:      row.SchedulerRank,
-			})
+			rank := UpstreamBalanceAccountRank{GroupName: group.Name, Rank: row.SchedulerRank, RankTotal: row.SchedulerRankTotal}
+			if row.SchedulerExplanation != nil {
+				rank.RankTotal = row.SchedulerExplanation.RankTotal
+				rank.Eligible = row.SchedulerExplanation.Eligible
+				rank.T114Enabled = row.SchedulerExplanation.PolicyKey != ""
+			}
+			ranks[row.AccountID] = append(ranks[row.AccountID], rank)
 		}
 	}
 	projected := make([]UpstreamBalanceAccount, 0, len(accounts))
@@ -105,7 +108,11 @@ func buildUpstreamBalanceEvaluations(accounts []Account, page AccountMonitorPage
 			Ranks:                 append([]UpstreamBalanceAccountRank(nil), ranks[account.ID]...),
 		})
 	}
-	return EvaluateUpstreamBaseURLBalance(projected, page.ObservedAt)
+	evaluations, err := EvaluateUpstreamBaseURLBalance(projected, page.ObservedAt)
+	for i := range evaluations {
+		evaluations[i].RankingSnapshotAt = page.ObservedAt
+	}
+	return evaluations, err
 }
 
 func NewUpstreamBalanceNotificationService(
@@ -459,7 +466,7 @@ func upstreamBalanceCardInput(
 	for _, account := range evaluation.Accounts {
 		ranks := make([]upstreamnotify.UpstreamBalanceCardRank, 0, len(account.Ranks))
 		for _, rank := range account.Ranks {
-			ranks = append(ranks, upstreamnotify.UpstreamBalanceCardRank{GroupName: rank.GroupName, Rank: rank.Rank})
+			ranks = append(ranks, upstreamnotify.UpstreamBalanceCardRank{GroupName: rank.GroupName, Rank: rank.Rank, RankTotal: rank.RankTotal, Eligible: rank.Eligible, T114Enabled: rank.T114Enabled})
 		}
 		accounts = append(accounts, upstreamnotify.UpstreamBalanceCardAccount{ID: account.AccountID, Name: account.Name, BalanceUSD: balanceValue(account.Snapshot), Ranks: ranks})
 	}
@@ -467,6 +474,7 @@ func upstreamBalanceCardInput(
 		State: evaluation.State, ValueUSD: *evaluation.ValueUSD, BaseURL: evaluation.NormalizedBaseURL,
 		LoginAccount: loginAccount, LoginPassword: loginPassword,
 		RecipientOpenIDs: append([]string(nil), recipients...), Accounts: accounts,
+		RankingSnapshotAt: evaluation.RankingSnapshotAt, RankingStale: evaluation.RankingStale,
 	}
 }
 

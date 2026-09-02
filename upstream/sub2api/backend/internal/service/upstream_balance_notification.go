@@ -30,8 +30,11 @@ type UpstreamBalanceAccount struct {
 }
 
 type UpstreamBalanceAccountRank struct {
-	GroupName string
-	Rank      *int
+	GroupName   string
+	Rank        *int
+	RankTotal   int
+	Eligible    bool
+	T114Enabled bool
 }
 
 type UpstreamBalanceEvaluation struct {
@@ -40,6 +43,8 @@ type UpstreamBalanceEvaluation struct {
 	ObservedAt        time.Time
 	State             string
 	Accounts          []UpstreamBalanceAccount
+	RankingSnapshotAt time.Time
+	RankingStale      bool
 }
 
 // NormalizeNotificationBaseURL returns the stable aggregation key for an

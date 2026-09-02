@@ -150,6 +150,11 @@ type codexModelsManifestRequest struct {
 	useAPIKeyUpstream   bool
 }
 
+type codexModelsManifestCandidate struct {
+	accountID int64
+	manifest  *CodexModelsManifest
+}
+
 type codexModelsManifestCacheEntry struct {
 	manifest   *CodexModelsManifest
 	order      uint64
@@ -360,6 +365,124 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	}
 	setOpenAIChatGPTAccountHeaders(request.headers, credAccount)
 	return s.fetchCodexModelsManifestUpstream(ctx, request, ifNoneMatch)
+}
+
+// FetchCodexModelsManifestForGroup returns a stable Codex model directory for
+// all persistently eligible OpenAI accounts in a group. Each account is still
+// fetched through the single-account path so its authentication and upstream
+// compatibility behavior remain unchanged.
+func (s *OpenAIGatewayService) FetchCodexModelsManifestForGroup(ctx context.Context, groupID int64, clientVersion, ifNoneMatch string) (*CodexModelsManifest, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, infraerrors.New(http.StatusServiceUnavailable, "OPENAI_CODEX_MODELS_NO_ACCOUNTS", "No available OpenAI accounts")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	clientVersion = strings.TrimSpace(clientVersion)
+	if clientVersion == "" {
+		clientVersion = CodexCanonicalClientVersion()
+	}
+	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(ctx, &groupID, []string{PlatformOpenAI}, false)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusServiceUnavailable, "OPENAI_CODEX_MODELS_CANDIDATES_FAILED", "list Codex models accounts: %v", err)
+	}
+	if len(accounts) == 0 {
+		return nil, infraerrors.New(http.StatusServiceUnavailable, "OPENAI_CODEX_MODELS_NO_ACCOUNTS", "No available OpenAI accounts")
+	}
+	sort.SliceStable(accounts, func(i, j int) bool {
+		return accounts[i].ID < accounts[j].ID
+	})
+
+	cacheKey := buildCodexModelsGroupManifestCacheKey(groupID, clientVersion, accounts)
+	cached, state := s.codexModelsManifestCache.get(cacheKey, time.Now())
+	if state == codexModelsManifestCacheFresh {
+		return codexModelsManifestForClient(cached, ifNoneMatch), nil
+	}
+	refreshCtx := ctx
+	if state == codexModelsManifestCacheStale {
+		refreshCtx = context.Background()
+	}
+	resultCh := s.refreshCodexModelsManifestForGroup(cacheKey, accounts, clientVersion, refreshCtx)
+	if state == codexModelsManifestCacheStale {
+		return codexModelsManifestForClient(cached, ifNoneMatch), nil
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		manifest, ok := result.Val.(*CodexModelsManifest)
+		if !ok || manifest == nil {
+			return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_REQUEST_FAILED", "invalid shared Codex models manifest result")
+		}
+		return codexModelsManifestForClient(manifest, ifNoneMatch), nil
+	}
+}
+
+func (s *OpenAIGatewayService) refreshCodexModelsManifestForGroup(cacheKey string, accounts []Account, clientVersion string, fetchCtx context.Context) <-chan singleflight.Result {
+	return s.codexModelsManifestCache.refresh.DoChan(cacheKey, func() (any, error) {
+		manifest, err := s.fetchCodexModelsManifestForAccounts(fetchCtx, accounts, clientVersion)
+		if err != nil {
+			return nil, err
+		}
+		s.codexModelsManifestCache.set(cacheKey, manifest, time.Now())
+		return manifest, nil
+	})
+}
+
+func (s *OpenAIGatewayService) fetchCodexModelsManifestForAccounts(ctx context.Context, accounts []Account, clientVersion string) (*CodexModelsManifest, error) {
+	type result struct {
+		accountID int64
+		manifest  *CodexModelsManifest
+		err       error
+	}
+	results := make(chan result, len(accounts))
+	for i := range accounts {
+		account := accounts[i]
+		go func() {
+			manifest, err := s.FetchCodexModelsManifest(ctx, &account, clientVersion, "")
+			if err != nil {
+				s.PersistOpenAIOAuth429CooldownFromError(ctx, &account, err)
+			}
+			results <- result{accountID: account.ID, manifest: manifest, err: err}
+		}()
+	}
+
+	completion := make(chan struct{})
+	collected := make([]result, 0, len(accounts))
+	go func() {
+		defer close(completion)
+		for range accounts {
+			collected = append(collected, <-results)
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-completion:
+	}
+
+	sort.SliceStable(collected, func(i, j int) bool {
+		return collected[i].accountID < collected[j].accountID
+	})
+	successes := make([]codexModelsManifestCandidate, 0, len(collected))
+	var lastErr error
+	for _, item := range collected {
+		if item.err == nil && item.manifest != nil {
+			successes = append(successes, codexModelsManifestCandidate{accountID: item.accountID, manifest: item.manifest})
+			continue
+		}
+		lastErr = item.err
+	}
+	if len(successes) == 0 {
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return nil, infraerrors.New(http.StatusBadGateway, "OPENAI_CODEX_MODELS_UPSTREAM_FAILED", "all Codex models manifest accounts failed")
+	}
+	return aggregateCodexModelsManifests(successes)
 }
 
 func isAgentIdentityTaskInvalidCodexModelsError(err error) bool {
@@ -680,6 +803,78 @@ func convertOpenAIModelListToCodexManifest(body []byte) []byte {
 	return converted
 }
 
+func aggregateCodexModelsManifests(candidates []codexModelsManifestCandidate) (*CodexModelsManifest, error) {
+	if len(candidates) == 0 {
+		return nil, errors.New("no successful Codex models manifests")
+	}
+
+	ordered := append([]codexModelsManifestCandidate(nil), candidates...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].accountID < ordered[j].accountID
+	})
+
+	var base map[string]json.RawMessage
+	modelsBySlug := make(map[string]json.RawMessage)
+	for _, candidate := range ordered {
+		if candidate.manifest == nil {
+			continue
+		}
+		var envelope map[string]json.RawMessage
+		if err := json.Unmarshal(candidate.manifest.Body, &envelope); err != nil || envelope == nil {
+			continue
+		}
+		modelsRaw, ok := envelope["models"]
+		if !ok {
+			continue
+		}
+		var models []json.RawMessage
+		if err := json.Unmarshal(modelsRaw, &models); err != nil {
+			continue
+		}
+		if base == nil {
+			base = envelope
+		}
+		for _, modelRaw := range models {
+			var model struct {
+				Slug string `json:"slug"`
+			}
+			if err := json.Unmarshal(modelRaw, &model); err != nil {
+				continue
+			}
+			slug := strings.TrimSpace(model.Slug)
+			if slug == "" {
+				continue
+			}
+			if _, exists := modelsBySlug[slug]; !exists {
+				modelsBySlug[slug] = append([]byte(nil), modelRaw...)
+			}
+		}
+	}
+	if base == nil {
+		return nil, errors.New("no valid Codex models manifests")
+	}
+
+	slugs := make([]string, 0, len(modelsBySlug))
+	for slug := range modelsBySlug {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	models := make([]json.RawMessage, 0, len(slugs))
+	for _, slug := range slugs {
+		models = append(models, modelsBySlug[slug])
+	}
+	encodedModels, err := json.Marshal(models)
+	if err != nil {
+		return nil, fmt.Errorf("encode aggregated Codex models: %w", err)
+	}
+	base["models"] = encodedModels
+	body, err := json.Marshal(base)
+	if err != nil {
+		return nil, fmt.Errorf("encode aggregated Codex manifest: %w", err)
+	}
+	return &CodexModelsManifest{Body: body, ETag: codexModelsManifestBodyETag(body)}, nil
+}
+
 func validateCodexModelsManifestEnvelope(body []byte) error {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -718,6 +913,31 @@ func buildCodexModelsManifestCacheKey(request codexModelsManifestRequest) string
 		}
 	}
 	return fmt.Sprintf("%x", hasher.Sum(nil))
+}
+
+func buildCodexModelsGroupManifestCacheKey(groupID int64, clientVersion string, accounts []Account) string {
+	hasher := sha256.New()
+	_, _ = fmt.Fprintf(hasher, "group\n%d\n%s\n", groupID, clientVersion)
+	ordered := append([]Account(nil), accounts...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].ID < ordered[j].ID
+	})
+	for _, account := range ordered {
+		credentials, err := json.Marshal(account.Credentials)
+		if err != nil {
+			credentials = []byte(fmt.Sprintf("%v", account.Credentials))
+		}
+		_, _ = fmt.Fprintf(hasher, "%d\n%s\n%s\n%d\n", account.ID, account.Type, account.Platform, account.UpdatedAt.UnixNano())
+		_, _ = hasher.Write(credentials)
+		_, _ = hasher.Write([]byte{'\n'})
+		if account.ProxyID != nil {
+			_, _ = fmt.Fprintf(hasher, "proxy:%d\n", *account.ProxyID)
+		}
+		if account.ParentAccountID != nil {
+			_, _ = fmt.Fprintf(hasher, "parent:%d\n", *account.ParentAccountID)
+		}
+	}
+	return fmt.Sprintf("group:%x", hasher.Sum(nil))
 }
 
 func codexModelsManifestForClient(manifest *CodexModelsManifest, ifNoneMatch string) *CodexModelsManifest {

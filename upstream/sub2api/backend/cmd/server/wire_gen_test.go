@@ -59,6 +59,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		&service.OpsCleanupService{},
 		&service.OpsScheduledReportService{},
 		opsSystemLogSinkSvc,
+		nil, // openAISchedulerLogSink
 		nil, // opsService
 		nil, // opsIngressRejectAggregator
 		nil, // apiKeyService

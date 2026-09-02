@@ -242,7 +242,7 @@ func TestOpenAIUnifiedModeSkipsLegacyOAuth429GroupReset(t *testing.T) {
 
 func TestOpenAIUnifiedQualityDoesNotReplaceNativeRetryBudget(t *testing.T) {
 	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	native := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 4, MaxAccountSwitches: 4, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
+	native := newOpenAIRetryBudget(openAIRetryBudgetConfig{MaxAttempts: 5, MaxAccountSwitches: 4, MaxFailureDomains: 2, Total: 5 * time.Second}, func() time.Time { return now })
 	decision := service.OpenAIAccountScheduleDecision{UnifiedQuality: true}
 	got := adoptOpenAIUnifiedRetryBudget(native, decision, nil, context.Background(), nil)
 	require.Same(t, native, got)

@@ -2627,9 +2627,13 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			reader := s.activeProbeUsageReader()
 			if reader != nil {
 				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
-				allGroupsUsed := len(accountGroups[account.ID]) > 0
+				groupIDs := accountGroups[account.ID]
+				if len(groupIDs) == 0 {
+					groupIDs = append([]int64(nil), account.GroupIDs...)
+				}
+				allGroupsUsed := len(groupIDs) > 0
 				var usageErr error
-				for _, groupID := range accountGroups[account.ID] {
+				for _, groupID := range groupIDs {
 					used, err := reader.HasGroupUsageInWindow(gctx, groupID, bucketStart, bucketEnd)
 					if err != nil {
 						usageErr = err

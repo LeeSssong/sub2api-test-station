@@ -21,9 +21,9 @@ const messages: Record<string, string> = {
   'monitorV2.overall.operational': '全部服务正常',
   'monitorV2.overall.unavailable': '服务不可用',
   'monitorV2.overall.noData': '等待监控数据',
+  'monitorV2.window.1h': '1 小时',
   'monitorV2.window.24h': '24 小时',
   'monitorV2.window.7d': '7 天',
-  'monitorV2.window.30d': '30 天',
   'monitorV2.status.operational': '运行中',
   'monitorV2.status.unavailable': '服务不可用',
   'monitorV2.availability': '可用性：{value}%',
@@ -65,7 +65,7 @@ import MonitorV2View from '../MonitorV2View.vue'
 import type { MonitorV2Snapshot } from '../types'
 
 const snapshot: MonitorV2Snapshot = {
-  contract_version: '8',
+  contract_version: '9',
   window: '7d',
   refresh_interval_seconds: 60,
   generated_at: '2026-07-29T12:00:00Z',

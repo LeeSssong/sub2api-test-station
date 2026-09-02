@@ -14,7 +14,7 @@ const timeline = Array.from({ length: 28 }, (_, index) => ({
   has_result: true,
 }))
 const validPayload = {
-  contract_version: '8',
+  contract_version: '9',
   refresh_interval_seconds: 300,
   window: '7d',
   generated_at: '2026-07-29T12:00:00Z',
@@ -39,7 +39,7 @@ const validPayload = {
 describe('Monitor V2 API contract', () => {
   beforeEach(() => get.mockReset())
 
-  it('returns a validated version 8 snapshot with explicit probe-result evidence', async () => {
+  it('returns a validated version 9 snapshot with explicit probe-result evidence', async () => {
     get.mockResolvedValue({ data: validPayload })
 
     const snapshot = await getMonitorV2Snapshot('7d')
@@ -150,7 +150,7 @@ describe('Monitor V2 API contract', () => {
   })
 
   it('requires the fixed timeline length for each window', () => {
-    for (const [window, expectedLength] of [['24h', 24], ['7d', 28], ['30d', 30] ] as const) {
+    for (const [window, expectedLength] of [['1h', 12], ['24h', 24], ['7d', 28] ] as const) {
       const timeline = Array.from({ length: expectedLength - 1 }, (_, index) => ({
         ...validPayload.groups[0].timeline[0],
         bucket_start: new Date(Date.UTC(2026, 6, 1, index)).toISOString(),

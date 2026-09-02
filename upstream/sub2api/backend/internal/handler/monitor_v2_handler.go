@@ -94,10 +94,10 @@ func parseMonitorV2Window(raw string) (service.MonitorV2Window, bool) {
 	switch strings.TrimSpace(raw) {
 	case "", string(service.MonitorV2Window7D):
 		return service.MonitorV2Window7D, true
+	case string(service.MonitorV2Window1H):
+		return service.MonitorV2Window1H, true
 	case string(service.MonitorV2Window24H):
 		return service.MonitorV2Window24H, true
-	case string(service.MonitorV2Window30D):
-		return service.MonitorV2Window30D, true
 	default:
 		return "", false
 	}

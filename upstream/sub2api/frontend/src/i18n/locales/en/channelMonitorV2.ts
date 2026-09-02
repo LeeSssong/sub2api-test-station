@@ -12,7 +12,7 @@ export default {
     bootstrap: {
       title: 'Building historical monitor data',
       description:
-        'On first enable, passive aggregation silently fills the 90m, 24h, 7d, and 30d windows in the background. All ranges become complete once this finishes.',
+        'On first enable, passive aggregation silently fills the 1h, 24h, and 7d windows in the background. All ranges become complete once this finishes.',
       progress: '{percent}% complete',
       working: 'Aggregating in the background…',
     },
@@ -28,7 +28,7 @@ export default {
     currentUser: 'Current user',
     readiness: { noTraffic: 'Ready · no traffic', observing: 'Observing' },
     details: { title: 'Detailed analysis', description: 'Models, error categories, and user ranking', expand: 'Expand detailed analysis', collapse: 'Collapse detailed analysis' },
-    ranges: { '90m': '90m', '24h': '24h', '7d': '7d', '30d': '30d' },
+    ranges: { '1h': '1h', '24h': '24h', '7d': '7d' },
     filters: {
       platform: 'Platform', allPlatforms: 'All', group: 'Group', allGroups: 'All', model: 'Model', allModels: 'All',
       empty: 'No options', selectedCount: '{count}', labelValue: '{label}: {value}'

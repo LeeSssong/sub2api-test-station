@@ -56,10 +56,10 @@ func parseMonitorV4Window(raw string) (service.MonitorV4Window, bool) {
 	switch service.MonitorV4Window(raw) {
 	case "", service.MonitorV4Window7D:
 		return service.MonitorV4Window7D, true
+	case service.MonitorV4Window1H:
+		return service.MonitorV4Window1H, true
 	case service.MonitorV4Window24H:
 		return service.MonitorV4Window24H, true
-	case service.MonitorV4Window30D:
-		return service.MonitorV4Window30D, true
 	default:
 		return "", false
 	}

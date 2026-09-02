@@ -18,9 +18,9 @@ const (
 type MonitorV4Window string
 
 const (
+	MonitorV4Window1H  MonitorV4Window = "1h"
 	MonitorV4Window24H MonitorV4Window = "24h"
 	MonitorV4Window7D  MonitorV4Window = "7d"
-	MonitorV4Window30D MonitorV4Window = "30d"
 )
 
 type MonitorV4ProjectionReader interface {
@@ -197,7 +197,7 @@ func (s *MonitorV4Service) RefreshMonitorV4Snapshots(ctx context.Context, asOf t
 		groupIDs = append(groupIDs, group.ID)
 	}
 	snapshots := make([]MonitorV4StoredWindow, 0, 3)
-	for _, window := range []MonitorV4Window{MonitorV4Window24H, MonitorV4Window7D, MonitorV4Window30D} {
+	for _, window := range []MonitorV4Window{MonitorV4Window1H, MonitorV4Window24H, MonitorV4Window7D} {
 		start, err := monitorV4WindowStart(window, end)
 		if err != nil {
 			return err
@@ -254,12 +254,12 @@ func (s *MonitorV4Service) snapshotWithGroups(ctx context.Context, window Monito
 func monitorV4WindowStart(window MonitorV4Window, now time.Time) (time.Time, error) {
 	now = now.UTC()
 	switch window {
+	case MonitorV4Window1H:
+		return now.Add(-time.Hour), nil
 	case "", MonitorV4Window7D:
 		return now.Add(-7 * 24 * time.Hour), nil
 	case MonitorV4Window24H:
 		return now.Add(-24 * time.Hour), nil
-	case MonitorV4Window30D:
-		return now.Add(-30 * 24 * time.Hour), nil
 	default:
 		return time.Time{}, fmt.Errorf("unsupported monitor window %q", window)
 	}

@@ -22,9 +22,9 @@ vi.mock('vue-i18n', async () => {
         'channelMonitorV2.hybrid.empty': '暂无可见分组',
         'channelMonitorV2.hybrid.loadError': '该时间范围加载失败，请重试',
         'channelMonitorV2.hybrid.retry': '重试',
+        'monitorV2.window.1h': '1h',
         'monitorV2.window.24h': '24h',
         'monitorV2.window.7d': '7d',
-        'monitorV2.window.30d': '30d',
       }
       return messages[key] ?? key
     },
@@ -83,15 +83,15 @@ describe('HybridPerformanceView', () => {
     wrapper.unmount()
   })
 
-  it('requests the 30-day window when its tab is selected', async () => {
+  it('requests the 1-hour window when its tab is selected', async () => {
     getSnapshot.mockReset()
     getSnapshot.mockResolvedValue({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })
     const wrapper = mount(HybridPerformanceView, {
       global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
     })
     await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal)))
-    await wrapper.get('[data-test="hybrid-window-30d"]').trigger('click')
-    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('30d', expect.any(AbortSignal)))
+    await wrapper.get('[data-test="hybrid-window-1h"]').trigger('click')
+    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('1h', expect.any(AbortSignal)))
     wrapper.unmount()
   })
 })

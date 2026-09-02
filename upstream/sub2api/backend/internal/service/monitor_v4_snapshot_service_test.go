@@ -79,7 +79,7 @@ func TestMonitorV4RefreshUsesOneAsOfAndPublishesOnce(t *testing.T) {
 			t.Fatalf("group IDs = %v", call.groupIDs)
 		}
 	}
-	if !native.calls[0].start.Equal(time.Date(2026, 8, 30, 4, 12, 0, 0, time.UTC)) || !native.calls[1].start.Equal(time.Date(2026, 8, 24, 4, 12, 0, 0, time.UTC)) || !native.calls[2].start.Equal(time.Date(2026, 8, 1, 4, 12, 0, 0, time.UTC)) {
+	if !native.calls[0].start.Equal(time.Date(2026, 8, 31, 3, 12, 0, 0, time.UTC)) || !native.calls[1].start.Equal(time.Date(2026, 8, 30, 4, 12, 0, 0, time.UTC)) || !native.calls[2].start.Equal(time.Date(2026, 8, 24, 4, 12, 0, 0, time.UTC)) {
 		t.Fatalf("window starts = %#v", native.calls)
 	}
 	if len(store.replaced) != 3 || store.replaced[0].SnapshotID == "" || store.replaced[0].SnapshotID == "pending" || store.replaced[1].SnapshotID != store.replaced[0].SnapshotID || store.replaced[2].SnapshotID != store.replaced[0].SnapshotID {

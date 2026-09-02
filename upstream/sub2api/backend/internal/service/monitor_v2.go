@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	MonitorV2ContractVersion = "8"
+	MonitorV2ContractVersion = "9"
 
+	MonitorV2Window1H  MonitorV2Window = "1h"
 	MonitorV2Window24H MonitorV2Window = "24h"
 	MonitorV2Window7D  MonitorV2Window = "7d"
-	MonitorV2Window30D MonitorV2Window = "30d"
 
 	MonitorV2StatusOperational = "operational"
 	MonitorV2StatusUnavailable = "unavailable"
@@ -203,12 +203,12 @@ func (s *MonitorV2Service) snapshotWithGroups(ctx context.Context, window Monito
 func monitorV2WindowBounds(window MonitorV2Window, now time.Time) (time.Time, int, time.Duration, error) {
 	now = now.UTC()
 	switch window {
+	case MonitorV2Window1H:
+		return now.Add(-time.Hour).Truncate(time.Microsecond), 12, 5 * time.Minute, nil
 	case MonitorV2Window24H:
 		return now.Add(-24 * time.Hour).Truncate(time.Microsecond), 24, time.Hour, nil
 	case MonitorV2Window7D:
 		return now.Add(-7 * 24 * time.Hour).Truncate(time.Microsecond), 28, 6 * time.Hour, nil
-	case MonitorV2Window30D:
-		return now.Add(-30 * 24 * time.Hour).Truncate(time.Microsecond), 30, 24 * time.Hour, nil
 	default:
 		return time.Time{}, 0, 0, fmt.Errorf("unsupported monitor window %q", window)
 	}

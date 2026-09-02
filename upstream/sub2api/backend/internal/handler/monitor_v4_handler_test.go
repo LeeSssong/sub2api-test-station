@@ -36,7 +36,7 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	cacheHitRate := 0.4
 	stub := &monitorV4SnapshotterStub{snapshot: &service.MonitorV4Snapshot{
 		ContractVersion:        service.MonitorV4ContractVersion,
-		Window:                 service.MonitorV4Window30D,
+		Window:                 service.MonitorV4Window1H,
 		RefreshIntervalSeconds: 300,
 		GeneratedAt:            time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC),
 		Groups: []service.MonitorV4Group{
@@ -47,7 +47,7 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	handler := NewMonitorV4Handler(stub)
 	recorder := httptest.NewRecorder()
 	ginContext, _ := gin.CreateTestContext(recorder)
-	ginContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v4?window=30d", nil)
+	ginContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/monitor-v4?window=1h", nil)
 	ginContext.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
 
 	handler.Snapshot(ginContext)
@@ -55,7 +55,7 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 	require.Equal(t, int64(42), stub.userID)
-	require.Equal(t, service.MonitorV4Window30D, stub.window)
+	require.Equal(t, service.MonitorV4Window1H, stub.window)
 
 	var envelope struct {
 		Data map[string]any `json:"data"`
@@ -64,7 +64,7 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	require.Equal(t, "2026-08-31T12:00:00Z", envelope.Data["generated_at"])
 	require.Equal(t, map[string]any{
 		"contract_version":         "2",
-		"window":                   "30d",
+		"window":                   "1h",
 		"refresh_interval_seconds": float64(300),
 		"generated_at":             "2026-08-31T12:00:00Z",
 		"groups":                   envelope.Data["groups"],

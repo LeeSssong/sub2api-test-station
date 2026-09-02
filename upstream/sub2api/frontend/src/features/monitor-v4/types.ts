@@ -1,5 +1,5 @@
 export const MONITOR_V4_CONTRACT_VERSION = '2' as const
-export type MonitorV4Window = '24h' | '7d' | '30d'
+export type MonitorV4Window = '1h' | '24h' | '7d'
 export type MonitorV4RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
 export interface MonitorV4Group {

@@ -13,7 +13,7 @@ import (
 )
 
 func validateMonitorV4StoredWindow(snapshot service.MonitorV4StoredWindow, snapshotID string) error {
-	if snapshot.Window != service.MonitorV4Window24H && snapshot.Window != service.MonitorV4Window7D && snapshot.Window != service.MonitorV4Window30D {
+	if snapshot.Window != service.MonitorV4Window1H && snapshot.Window != service.MonitorV4Window24H && snapshot.Window != service.MonitorV4Window7D {
 		return fmt.Errorf("unsupported monitor v4 window %q", snapshot.Window)
 	}
 	if snapshot.SnapshotID != snapshotID || snapshotID == "" {
@@ -79,7 +79,7 @@ func (r *accountMonitorRepository) ReplaceMonitorV4Snapshots(ctx context.Context
 }
 
 func (r *accountMonitorRepository) LoadLatestMonitorV4Snapshot(ctx context.Context, window service.MonitorV4Window) (service.MonitorV4StoredWindow, error) {
-	if window != service.MonitorV4Window24H && window != service.MonitorV4Window7D && window != service.MonitorV4Window30D {
+	if window != service.MonitorV4Window1H && window != service.MonitorV4Window24H && window != service.MonitorV4Window7D {
 		return service.MonitorV4StoredWindow{}, fmt.Errorf("unsupported monitor v4 window %q", window)
 	}
 	rows, err := r.db.QueryContext(ctx, `SELECT "window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version, success_rate, request_count, success_count, real_request_count, real_success_count, probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count, ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational FROM account_monitor_v4_snapshots WHERE "window" = $1 ORDER BY generated_at DESC, group_id`, window)

@@ -32,19 +32,19 @@ func TestMonitorV4SnapshotReplaceIsAtomic(t *testing.T) {
 	window := monitorV4StoredWindowFixture()
 	window7 := window
 	window7.Window = service.MonitorV4Window7D
-	window30 := window
-	window30.Window = service.MonitorV4Window30D
+	window1h := window
+	window1h.Window = service.MonitorV4Window1H
 	window.Groups[8] = service.MonitorV4GroupProjection{RequestCount: 1, SuccessCount: 1, RealRequestCount: 1, RealSuccessCount: 1}
 	mock.ExpectBegin()
 	mock.ExpectExec(`DELETE FROM account_monitor_v4_snapshots`).WillReturnResult(sqlmock.NewResult(0, 1))
-	for _, snapshot := range []service.MonitorV4StoredWindow{window, window7, window30} {
+	for _, snapshot := range []service.MonitorV4StoredWindow{window1h, window, window7} {
 		for _, groupID := range []int64{7, 8} {
 			projection := snapshot.Groups[groupID]
 			mock.ExpectExec(`INSERT INTO account_monitor_v4_snapshots`).WithArgs(snapshot.Window, groupID, window.SnapshotID, snapshot.GeneratedAt, snapshot.WindowStart, snapshot.WindowEnd, snapshot.ContractVersion, projection.SuccessRate, projection.RequestCount, projection.SuccessCount, projection.RealRequestCount, projection.RealSuccessCount, projection.ProbeFallbackBucketCount, projection.ProbeFallbackRequestCount, projection.MissingProbeTerminalCount, projection.TTFTP95MS, projection.TTFTSampleCount, projection.LatencyP95MS, projection.LatencySampleCount, projection.CacheHitRate, projection.SourceUpdatedAt, projection.CurrentOperational).WillReturnResult(sqlmock.NewResult(0, 1))
 		}
 	}
 	mock.ExpectCommit()
-	if err := repo.ReplaceMonitorV4Snapshots(context.Background(), window.SnapshotID, []service.MonitorV4StoredWindow{window, window7, window30}); err != nil {
+	if err := repo.ReplaceMonitorV4Snapshots(context.Background(), window.SnapshotID, []service.MonitorV4StoredWindow{window1h, window, window7}); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

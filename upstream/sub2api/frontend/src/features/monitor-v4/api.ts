@@ -5,7 +5,7 @@ export class MonitorV4ContractError extends Error {
   constructor(message: string) { super(`Monitor V4 contract error: ${message}`); this.name = 'MonitorV4ContractError' }
 }
 
-const WINDOWS = new Set<MonitorV4Window>(['24h', '7d', '30d'])
+const WINDOWS = new Set<MonitorV4Window>(['1h', '24h', '7d'])
 const REFRESH = new Set<MonitorV4RefreshIntervalSeconds>([0, 30, 60, 300, 600])
 const MAX_GROUPS = 100
 

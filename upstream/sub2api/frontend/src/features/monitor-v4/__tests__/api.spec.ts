@@ -11,7 +11,7 @@ const group = {
 }
 
 describe('monitor v4 contract', () => {
-  it.each(['24h', '7d', '30d'] as const)('accepts the persisted %s window', (window) => {
+	it.each(['1h', '24h', '7d'] as const)('accepts the persisted %s window', (window) => {
     const snapshot = validateMonitorV4Snapshot({ contract_version: '2', window, refresh_interval_seconds: 300, generated_at: '2026-08-31T12:00:00Z', groups: [] })
     expect(snapshot.window).toBe(window)
   })

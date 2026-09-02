@@ -18,7 +18,7 @@ export class MonitorV2ContractError extends Error {
   }
 }
 
-const WINDOWS = new Set<MonitorV2Window>(['24h', '7d', '30d'])
+const WINDOWS = new Set<MonitorV2Window>(['1h', '24h', '7d'])
 const REFRESH_INTERVALS = new Set<MonitorV2RefreshIntervalSeconds>([0, 30, 60, 300, 600])
 const METRIC_STATES = new Set<MonitorV2MetricState>([
   'available',
@@ -33,9 +33,9 @@ const MAX_TIMELINE_POINTS = 64
 const MAX_TEXT_LENGTH = 256
 const PEAK_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 const WINDOW_TIMELINE_LENGTHS: Record<MonitorV2Window, number> = {
-  '24h': 24,
-  '7d': 28,
-  '30d': 30,
+	'1h': 12,
+	'24h': 24,
+	'7d': 28,
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {

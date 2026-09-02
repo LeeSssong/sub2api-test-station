@@ -50,9 +50,9 @@ vi.mock('vue-i18n', async () => {
           'monitorV2.description': '可见分组状态',
           'monitorV2.updatedAt': '更新于现在',
           'monitorV2.refresh': '刷新',
+          'monitorV2.window.1h': '1 小时',
           'monitorV2.window.24h': '24 小时',
           'monitorV2.window.7d': '7 天',
-          'monitorV2.window.30d': '30 天',
           'monitorV2.empty.title': '暂无可见分组',
           'monitorV2.empty.description': '管理员尚未开放可展示的服务分组。',
         })[key] ?? key,
@@ -63,7 +63,7 @@ vi.mock('vue-i18n', async () => {
 import MonitorV2RouteView from '../MonitorV2RouteView.vue'
 
 const emptySnapshot = {
-  contract_version: '8' as const,
+  contract_version: '9' as const,
   window: '7d' as const,
   refresh_interval_seconds: 60 as const,
   generated_at: '2026-07-29T12:00:00Z',

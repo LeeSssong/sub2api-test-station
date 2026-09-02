@@ -1,8 +1,8 @@
-export const MONITOR_V2_CONTRACT_VERSION = '8' as const
+export const MONITOR_V2_CONTRACT_VERSION = '9' as const
 
 export type MonitorV2RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 
-export type MonitorV2Window = '24h' | '7d' | '30d'
+export type MonitorV2Window = '1h' | '24h' | '7d'
 export type MonitorV2MetricState = 'available' | 'insufficient_data'
 export type MonitorV2GroupStatus =
   | 'operational'

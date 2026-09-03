@@ -66,6 +66,9 @@ function group(value: unknown, path: string): MonitorV4Group {
     ttft_p95_ms: ttftP95, ttft_sample_count: ttftSampleCount,
     latency_p95_ms: latencyP95, latency_sample_count: latencySampleCount,
     cache_hit_rate: cacheHitRate,
+    cache_read_tokens: source.cache_read_tokens == null ? 0 : number(source.cache_read_tokens, `${path}.cache_read_tokens`, true),
+    cache_creation_tokens: source.cache_creation_tokens == null ? 0 : number(source.cache_creation_tokens, `${path}.cache_creation_tokens`, true),
+    cache_hit_denominator: source.cache_hit_denominator == null ? 0 : number(source.cache_hit_denominator, `${path}.cache_hit_denominator`, true),
     source_updated_at: sourceUpdatedAt,
     current_operational: source.current_operational,
   }

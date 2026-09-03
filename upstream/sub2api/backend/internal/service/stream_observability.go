@@ -313,6 +313,9 @@ func (o *StreamObservation) RecordFailure(stage StreamFailureStage, err error, c
 	o.snapshot.ErrorType = errorType(err)
 	o.snapshot.ErrorChain = SanitizeStreamErrorChain(err)
 	o.snapshot.ClientDisconnected = clientDisconnected
+	if !o.snapshot.SawTerminalEvent && !clientDisconnected {
+		o.snapshot.Event = "openai.stream_incomplete"
+	}
 	if clientDisconnected {
 		o.snapshot.Stage = StreamLifecycleStageClientDisconnected
 	} else if stage == StreamFailureStageSSEDecode {

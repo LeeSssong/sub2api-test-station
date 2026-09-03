@@ -107,6 +107,14 @@ to   209a4ba366557cb60f80fef340e4cd59bf0040ff49495b5c9e8fe077e823a6e4
 file 233_monitor_v4_windows_1h.sql — replace retired 30-day persisted monitor snapshots with the 1-hour window and retain 24-hour/7-day snapshots; no user, account, billing, or usage-log mutation.
 ```
 
+Current T119 transition:
+
+```text
+from 209a4ba366557cb60f80fef340e4cd59bf0040ff49495b5c9e8fe077e823a6e4
+to   db6674e8502b84901bcacd74f0a0a9bac17e8fa95387fa53fc92000dc32e6c4b
+file 234_openai_scheduler_logs.sql (SHA-256 b7939d01b4fbf1695f27ecb00caa6413e8e0898e9720162c5faa349299d2f4904) — create-only scheduler decision log tables and indexes for bounded best-effort observability; no historical backfill, account/configuration mutation, billing rewrite, or usage-log mutation.
+```
+
 Current T70 transition:
 
 ```text

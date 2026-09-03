@@ -698,11 +698,11 @@ func TestAccountMonitorListWindowSeparatesGroupRequestsFromProbeEvidence(t *test
 		rows[row.AccountID] = row
 	}
 
-	if got := rows[101].Evidence.SampleCount; got != 3 {
-		t.Fatalf("overlapping request/probe evidence sample count = %d, want 3 distinct samples", got)
+	if got := rows[101].Evidence.SampleCount; got != 2 {
+		t.Fatalf("overlapping request/probe evidence sample count = %d, want selected window count", got)
 	}
-	if got := rows[101].Evidence.SuccessSampleCount; got != 3 {
-		t.Fatalf("overlapping request/probe evidence success count = %d, want 3 distinct samples", got)
+	if got := rows[101].Evidence.SuccessSampleCount; got != 2 {
+		t.Fatalf("overlapping request/probe evidence success count = %d, want selected window count", got)
 	}
 	if rows[101].QualityRank == nil {
 		t.Fatalf("account with one real probe and group requests should remain rankable: %#v", rows[101])
@@ -988,13 +988,13 @@ func TestAccountMonitorWindowScoreProjectionSeparatesCurrentStateFromScoreEligib
 		wantStatus string
 		want       bool
 	}{
-		{name: "schedulable unavailable retains selected-window score", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreEligible, want: true},
-		{name: "schedulable stale retains selected-window score", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreEligible, want: true},
-		{name: "pure failure stays unscored", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: AccountMonitorQualityEvidence{Source: "monitor_probe", SampleCount: 24}, wantSource: "monitor_probe", wantStatus: accountMonitorScoreIneligible},
+		{name: "schedulable unavailable retains selected-window score", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "unified", wantStatus: accountMonitorScoreEligible, want: true},
+		{name: "schedulable stale retains selected-window score", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "unified", wantStatus: accountMonitorScoreEligible, want: true},
+		{name: "pure failure stays unscored", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: AccountMonitorQualityEvidence{Source: "unified", SampleCount: 24}, wantSource: "unified", wantStatus: accountMonitorScoreIneligible},
 		{name: "no sample stays unscored", account: Account{Status: StatusActive, Schedulable: true}, status: accountMonitorScoreIneligible, evidence: AccountMonitorQualityEvidence{Source: "stale"}, wantSource: "stale", wantStatus: accountMonitorScoreIneligible},
 		{name: "future cooldown uses native schedulability", account: Account{Status: StatusActive, Schedulable: true, TempUnschedulableUntil: timePtr(now.Add(time.Hour))}, status: accountMonitorScoreIneligible, evidence: valid, wantSource: "stale", wantStatus: accountMonitorScoreIneligible},
-		{name: "t32 paused eligible remains eligible", account: Account{Status: StatusActive, Schedulable: false}, status: accountMonitorScoreEligible, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreEligible, want: true},
-		{name: "t32 abnormal cap remains capped", account: Account{Status: StatusActive, Schedulable: false}, status: accountMonitorScoreCapped, evidence: valid, wantSource: "monitor_probe", wantStatus: accountMonitorScoreCapped, want: true},
+		{name: "t32 paused eligible remains eligible", account: Account{Status: StatusActive, Schedulable: false}, status: accountMonitorScoreEligible, evidence: valid, wantSource: "unified", wantStatus: accountMonitorScoreEligible, want: true},
+		{name: "t32 abnormal cap remains capped", account: Account{Status: StatusActive, Schedulable: false}, status: accountMonitorScoreCapped, evidence: valid, wantSource: "unified", wantStatus: accountMonitorScoreCapped, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1035,8 +1035,8 @@ func TestAccountMonitorListWindowRetainsSchedulableUnavailableAndStaleNativeScor
 		t.Fatal(err)
 	}
 	global := accountMonitorRowsByID(page.Accounts)
-	if row := global[501]; row.AvailabilityStatus != accountMonitorAvailabilityUnavailable || row.QualityScore == nil || row.GroupRank == nil || !row.Eligible {
-		t.Fatalf("latest unavailable row = %#v, want unavailable with retained score/rank", row)
+	if row := global[501]; row.AvailabilityStatus != accountMonitorAvailabilityStale || row.QualityScore == nil || row.GroupRank == nil || !row.Eligible {
+		t.Fatalf("latest unavailable row = %#v, want stale selected-window state with retained score/rank", row)
 	}
 	if row := global[502]; row.AvailabilityStatus != accountMonitorAvailabilityStale || !row.Stale || row.QualityScore == nil || row.GroupRank == nil || !row.Eligible {
 		t.Fatalf("stale row = %#v, want stale with retained score/rank", row)
@@ -2784,8 +2784,8 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	probeFallback := accountMonitorWindowEvidence(
 		AccountMonitorWindowAggregate{RequestCount: 2, SuccessCount: 2, LastObservedAt: &now}, probe, latest, settings, now,
 	)
-	if probeFallback.TTFTSampleCount != probe.TTFTSampleCount || probeFallback.TTFTP50MS == nil || *probeFallback.TTFTP50MS != probeTTFT || probeFallback.LatencySampleCount != probe.LatencySampleCount || probeFallback.LatencyP95MS == nil || *probeFallback.LatencyP95MS != probeLatency {
-		t.Fatalf("probe latency metrics should fill missing real request metrics: %#v", probeFallback)
+	if probeFallback.TTFTSampleCount != 0 || probeFallback.TTFTP50MS != nil || probeFallback.LatencySampleCount != 0 || probeFallback.LatencyP95MS != nil {
+		t.Fatalf("probe metrics must not be re-added by service projection: %#v", probeFallback)
 	}
 	if probeFallback.OutputRateTokensPerSecond != nil || probeFallback.OutputRateSampleCount != 0 {
 		t.Fatalf("probe-only evidence must not invent an output rate: %#v", probeFallback)
@@ -3048,8 +3048,8 @@ func TestAccountMonitorWindowEvidenceWithoutProbesIsStale(t *testing.T) {
 	if evidence.Source != "unknown" || evidence.SuccessSampleCount != 0 {
 		t.Fatalf("missing probe aggregate evidence = %#v, want unknown", evidence)
 	}
-	if evidence.ObservedAt.IsZero() || !evidence.ObservedAt.Equal(latestCheckedAt) {
-		t.Fatalf("probe fallback observed_at = %s, want latest probe time %s", evidence.ObservedAt, latestCheckedAt)
+	if !evidence.ObservedAt.IsZero() {
+		t.Fatalf("missing selected window observed_at = %s, want zero", evidence.ObservedAt)
 	}
 }
 
@@ -3939,11 +3939,11 @@ func TestAccountMonitorWindowScoreBreakdownSumsToRoundedQualityScore(t *testing.
 		t.Fatal(err)
 	}
 	row := page.Accounts[0]
-	if row.EvidenceSource != "hybrid" {
-		t.Fatalf("evidence source = %q, want hybrid", row.EvidenceSource)
+	if row.EvidenceSource != "unified" {
+		t.Fatalf("evidence source = %q, want unified", row.EvidenceSource)
 	}
-	if row.RequestCount != 96 || row.SuccessRate != 104.0/105.0 {
-		t.Fatalf("request disclosure/quality = request_count %d success_rate %v, want 96 and hybrid rate", row.RequestCount, row.SuccessRate)
+	if row.RequestCount != 96 || row.SuccessRate != 1 {
+		t.Fatalf("request disclosure/quality = request_count %d success_rate %v, want 96 and selected-window rate", row.RequestCount, row.SuccessRate)
 	}
 	if row.QualityScore == nil {
 		t.Fatal("quality score is nil")

@@ -88,7 +88,7 @@ describe('AccountMonitorCard R2', () => {
     const wrapper = mountCard()
     const text = wrapper.text()
 
-    expect(text).toContain('12,846 次窗口请求')
+    expect(text).toContain('12,846 次有效观测')
     expect(text).toContain('累计 54,231 次')
     expect(text).not.toContain('质量评分')
     expect(text).not.toContain('全站质量排名')
@@ -196,7 +196,7 @@ describe('AccountMonitorCard R2', () => {
       },
     })
 
-    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('1 次窗口请求 · 累计 51 次')
+    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('1 次有效观测 · 累计 51 次')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
     expect(wrapper.get('[data-test="real-request-bar"]').classes()).toContain('bg-emerald-500')

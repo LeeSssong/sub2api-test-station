@@ -754,6 +754,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
+			TTFTP95MS: window.TTFTP95MS, LatencyP95MS: window.LatencyP95MS,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
 		row.LifetimeRealRequestCount = lifetimeCounts[account.ID]
@@ -878,7 +879,10 @@ func (s *AccountMonitorService) projectGroupRecommendations(
 		if !isTestGroup && accountMonitorAccountPaused(account, now) {
 			continue
 		}
-		evidence := accountMonitorWindowEvidence(AccountMonitorWindowAggregate{}, probes[account.ID], latest[account.ID], settings, now)
+		// Recommendations retain their existing seven-day probe evidence; this
+		// is separate from the current quality window, which is unified by the
+		// repository before projection.
+		evidence, _ := accountMonitorEvidence(probes[account.ID], probes[account.ID], true, latest[account.ID], settings, now)
 		recommendationAccount := account
 		if account.Type != AccountTypeAPIKey {
 			if row.Multiplier.Status == AccountMonitorMultiplierStatusOK && row.Multiplier.Value != nil {
@@ -1110,13 +1114,14 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.LatencySampleCount = evidence.LatencySampleCount
 		row.SuccessRate = evidence.SuccessRate
 		row.TTFTP50MS = evidence.TTFTP50MS
+		row.TTFTP95MS = windows[row.AccountID].TTFTP95MS
 		row.LatencyP95MS = evidence.LatencyP95MS
 		row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
 		row.OutputRateSampleCount = evidence.OutputRateSampleCount
 		row.CheckedAt = accountMonitorWindowCheckedAt(latest[row.AccountID], evidence)
 		row.ManagementState = accountMonitorManagementState(account, now)
 		projectAccountMonitorProbe(row, probe, latest[row.AccountID], row.Timeline, settings, now, row.ManagementState)
-		projectAccountMonitorWindowState(row, evidence)
+		projectAccountMonitorWindowState(row, evidence, latest[row.AccountID])
 		row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 		row.GroupEligibility = accountMonitorEligibilityNotApplicable
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -1281,7 +1286,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CheckedAt = accountMonitorWindowCheckedAt(latest[account.ID], evidence)
 			row.ManagementState = accountMonitorManagementState(account, now)
 			projectAccountMonitorProbe(&row.AccountMonitorAccount, probe, latest[account.ID], row.Timeline, settings, now, row.ManagementState)
-			projectAccountMonitorWindowState(&row.AccountMonitorAccount, evidence)
+			projectAccountMonitorWindowState(&row.AccountMonitorAccount, evidence, latest[account.ID])
 			row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 			row.GroupEligibility = accountMonitorEligibilityEligible
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -1881,6 +1886,7 @@ func projectAccountMonitorProbe(
 func projectAccountMonitorWindowState(
 	row *AccountMonitorAccount,
 	evidence AccountMonitorQualityEvidence,
+	latest AccountMonitorLatest,
 ) {
 	if row == nil {
 		return
@@ -1894,9 +1900,23 @@ func projectAccountMonitorWindowState(
 	row.LatencyP95MS = evidence.LatencyP95MS
 	row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
 	row.OutputRateSampleCount = evidence.OutputRateSampleCount
-	// Availability and service state remain probe-driven; this helper only
-	// replaces the quality fields with the hybrid window evidence. The probe
-	// aliases and current-state gate are preserved for compatibility.
+	row.CheckedAt = nil
+	if !evidence.ObservedAt.IsZero() {
+		checkedAt := evidence.ObservedAt.UTC()
+		row.CheckedAt = &checkedAt
+	}
+	row.Stale = !evidence.Known || evidence.Freshness != accountMonitorQualityFreshnessFresh || evidence.SampleCount == 0
+	if row.Stale {
+		row.AvailabilityStatus = accountMonitorAvailabilityStale
+	} else if accountMonitorFatalProbeError(latest) {
+		row.AvailabilityStatus = accountMonitorAvailabilityUnavailable
+	} else if evidence.SuccessSampleCount == evidence.SampleCount {
+		row.AvailabilityStatus = accountMonitorAvailabilityNormal
+	} else {
+		row.AvailabilityStatus = accountMonitorAvailabilityAbnormal
+	}
+	row.ScoreStatus = accountMonitorScoreStatus(row.AvailabilityStatus)
+	row.Eligible = row.ScoreStatus == accountMonitorScoreEligible || row.ScoreStatus == accountMonitorScoreCapped
 }
 
 func accountMonitorAvailabilityStatus(managementState string, stale bool, sampleCount, consecutiveFailed int, latest AccountMonitorLatest) string {
@@ -2407,19 +2427,7 @@ func accountMonitorWindowEvidence(
 	settings AccountMonitorSettings,
 	now time.Time,
 ) AccountMonitorQualityEvidence {
-	evidence := fuseAccountMonitorQualityEvidence(window, probe, latest, settings, now)
-	if window.RequestCount > 0 && probe.SampleCount == 0 && evidence.Known {
-		if accountMonitorWindowObservedAt(window).IsZero() {
-			evidence = accountMonitorUnknownQualityEvidence("missing")
-			evidence.ObservedAt = accountMonitorProbeObservedAt(probe, latest)
-			return evidence
-		}
-		return accountMonitorStaleQualityEvidenceAt(latestEvidenceTime(accountMonitorWindowObservedAt(window), accountMonitorProbeObservedAt(probe, latest)))
-	}
-	if !evidence.Known && evidence.Freshness == accountMonitorQualityFreshnessStale {
-		evidence.ObservedAt = latestEvidenceTime(accountMonitorWindowObservedAt(window), accountMonitorProbeObservedAt(probe, latest))
-	}
-	return evidence
+	return fuseAccountMonitorQualityEvidence(window, probe, latest, settings, now)
 }
 
 func accountMonitorStaleQualityEvidence() AccountMonitorQualityEvidence {
@@ -2458,7 +2466,7 @@ func accountMonitorWindowScoreProjection(
 	}
 	if currentScoreStatus == accountMonitorScoreEligible || currentScoreStatus == accountMonitorScoreCapped {
 		if evidence.Source == "stale" {
-			evidence.Source = accountMonitorQualitySourceProbe
+			evidence.Source = accountMonitorQualitySourceUnified
 		}
 		return evidence, currentScoreStatus, true
 	}
@@ -2466,7 +2474,7 @@ func accountMonitorWindowScoreProjection(
 		return evidence, accountMonitorScoreIneligible, false
 	}
 	if evidence.Source == "stale" {
-		evidence.Source = accountMonitorQualitySourceProbe
+		evidence.Source = accountMonitorQualitySourceUnified
 	}
 	return evidence, accountMonitorScoreEligible, true
 }

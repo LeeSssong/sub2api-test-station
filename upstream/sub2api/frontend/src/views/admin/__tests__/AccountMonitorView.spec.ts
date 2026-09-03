@@ -529,7 +529,7 @@ describe('admin account monitor view V3', () => {
     await selectRange(wrapper, '7d')
 
     expect(wrapper.find('[data-test="calls-disclosure"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('窗口请求')
+    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('有效观测')
   })
 
   it('orders the all-site list by the API-provided quality score while the R2 card omits quality ranking panels', async () => {

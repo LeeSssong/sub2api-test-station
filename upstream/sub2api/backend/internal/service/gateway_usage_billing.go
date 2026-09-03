@@ -364,6 +364,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	} else if p.Cost.ActualCost > 0 {
 		cmd.BalanceCost = p.Cost.ActualCost
 	}
+	cmd.AttemptedQuotaUSD = p.Cost.ActualCost
 
 	if p.shouldDeductAPIKeyQuota() {
 		cmd.APIKeyQuotaCost = p.Cost.ActualCost

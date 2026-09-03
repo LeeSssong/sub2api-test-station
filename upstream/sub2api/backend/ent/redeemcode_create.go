@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 )
 
 // RedeemCodeCreate is the builder for creating a RedeemCode entity.
@@ -192,6 +193,21 @@ func (_c *RedeemCodeCreate) SetUser(v *User) *RedeemCodeCreate {
 // SetGroup sets the "group" edge to the Group entity.
 func (_c *RedeemCodeCreate) SetGroup(v *Group) *RedeemCodeCreate {
 	return _c.SetGroupID(v.ID)
+}
+
+// AddQuotaGrantIDs adds the "quota_grants" edge to the UserQuotaGrant entity by IDs.
+func (_c *RedeemCodeCreate) AddQuotaGrantIDs(ids ...int64) *RedeemCodeCreate {
+	_c.mutation.AddQuotaGrantIDs(ids...)
+	return _c
+}
+
+// AddQuotaGrants adds the "quota_grants" edges to the UserQuotaGrant entity.
+func (_c *RedeemCodeCreate) AddQuotaGrants(v ...*UserQuotaGrant) *RedeemCodeCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddQuotaGrantIDs(ids...)
 }
 
 // Mutation returns the RedeemCodeMutation object of the builder.
@@ -381,6 +397,22 @@ func (_c *RedeemCodeCreate) createSpec() (*RedeemCode, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.GroupID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.QuotaGrantsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   redeemcode.QuotaGrantsTable,
+			Columns: []string{redeemcode.QuotaGrantsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(userquotagrant.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec

@@ -52,6 +52,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
+	"github.com/Wei-Shaw/sub2api/ent/userquotaadjustment"
+	"github.com/Wei-Shaw/sub2api/ent/userquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/userquotaledgerentry"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/ent/userwallet"
@@ -1274,6 +1276,60 @@ func (f TraverseUserPlatformQuota) Traverse(ctx context.Context, q ent.Query) er
 	return fmt.Errorf("unexpected query type %T. expect *ent.UserPlatformQuotaQuery", q)
 }
 
+// The UserQuotaAdjustmentFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UserQuotaAdjustmentFunc func(context.Context, *ent.UserQuotaAdjustmentQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UserQuotaAdjustmentFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UserQuotaAdjustmentQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserQuotaAdjustmentQuery", q)
+}
+
+// The TraverseUserQuotaAdjustment type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUserQuotaAdjustment func(context.Context, *ent.UserQuotaAdjustmentQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUserQuotaAdjustment) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUserQuotaAdjustment) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UserQuotaAdjustmentQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UserQuotaAdjustmentQuery", q)
+}
+
+// The UserQuotaGrantFunc type is an adapter to allow the use of ordinary function as a Querier.
+type UserQuotaGrantFunc func(context.Context, *ent.UserQuotaGrantQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f UserQuotaGrantFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.UserQuotaGrantQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.UserQuotaGrantQuery", q)
+}
+
+// The TraverseUserQuotaGrant type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseUserQuotaGrant func(context.Context, *ent.UserQuotaGrantQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseUserQuotaGrant) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseUserQuotaGrant) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.UserQuotaGrantQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.UserQuotaGrantQuery", q)
+}
+
 // The UserQuotaLedgerEntryFunc type is an adapter to allow the use of ordinary function as a Querier.
 type UserQuotaLedgerEntryFunc func(context.Context, *ent.UserQuotaLedgerEntryQuery) (ent.Value, error)
 
@@ -1444,6 +1500,10 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.UserAttributeValueQuery, predicate.UserAttributeValue, userattributevalue.OrderOption]{typ: ent.TypeUserAttributeValue, tq: q}, nil
 	case *ent.UserPlatformQuotaQuery:
 		return &query[*ent.UserPlatformQuotaQuery, predicate.UserPlatformQuota, userplatformquota.OrderOption]{typ: ent.TypeUserPlatformQuota, tq: q}, nil
+	case *ent.UserQuotaAdjustmentQuery:
+		return &query[*ent.UserQuotaAdjustmentQuery, predicate.UserQuotaAdjustment, userquotaadjustment.OrderOption]{typ: ent.TypeUserQuotaAdjustment, tq: q}, nil
+	case *ent.UserQuotaGrantQuery:
+		return &query[*ent.UserQuotaGrantQuery, predicate.UserQuotaGrant, userquotagrant.OrderOption]{typ: ent.TypeUserQuotaGrant, tq: q}, nil
 	case *ent.UserQuotaLedgerEntryQuery:
 		return &query[*ent.UserQuotaLedgerEntryQuery, predicate.UserQuotaLedgerEntry, userquotaledgerentry.OrderOption]{typ: ent.TypeUserQuotaLedgerEntry, tq: q}, nil
 	case *ent.UserSubscriptionQuery:

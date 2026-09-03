@@ -88,10 +88,6 @@ export interface AccountMonitorRealRequestTimelinePoint {
   success_count: number
   failure_count: number
   ttft_p95_ms?: number | null
-  probe_count?: number
-  probe_success_count?: number
-  probe_failure_count?: number
-  source?: 'real' | 'probe' | 'mixed' | 'no_data' | string
 }
 
 export interface AccountMonitorBalance {

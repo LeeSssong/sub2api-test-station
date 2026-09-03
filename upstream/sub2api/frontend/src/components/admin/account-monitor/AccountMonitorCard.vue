@@ -14,7 +14,7 @@
             <span class="account-id">#{{ account.account_id }}</span>
           </h2>
           <div class="monitor-card-meta" data-test="account-metadata">
-            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次窗口真实请求 · 累计 {{ formatNumber(account.lifetime_real_request_count ?? 0) }} 次</span>
+            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次窗口请求 · 累计 {{ formatNumber(account.lifetime_real_request_count ?? 0) }} 次</span>
             <template v-if="recommendation">
               <span aria-hidden="true">·</span>
               <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
@@ -44,10 +44,10 @@
             <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
           </section>
         </div>
-        <section class="monitor-card-chart" data-test="timeline-section" aria-label="真实性能">
+        <section class="monitor-card-chart" data-test="timeline-section" aria-label="近期性能">
           <div class="chart-head">
-            <h3>近期真实请求</h3>
-            <button type="button" class="chart-action" data-test="refresh-account" title="刷新主动探测状态，不生成真实请求样本" aria-label="刷新主动探测状态，不生成真实请求样本" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新探测状态</button>
+            <h3>近期请求</h3>
+            <button type="button" class="chart-action" data-test="refresh-account" title="刷新账号状态" aria-label="刷新账号状态" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新账号状态</button>
           </div>
           <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
             <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
@@ -442,14 +442,12 @@ const realRequestBars = computed(() => {
   if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, latencyLabel: 'TTFT P95 --' }))
   return points.map((point) => {
     const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 10000
-    const probeCount = point.probe_count ?? 0
-    const source = point.source ?? (point.request_count > 0 ? 'real' : probeCount > 0 ? 'probe' : 'no_data')
-    const requestCount = point.request_count + probeCount
-    const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : source === 'probe' ? (point.probe_failure_count && point.probe_failure_count > 0 ? 'bg-red-500' : 'bg-amber-400') : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
+    const requestCount = point.request_count
+    const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
     return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: `TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
   })
 })
-const realTimelineAriaLabel = computed(() => `真实性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次真实请求`)
+const realTimelineAriaLabel = computed(() => `近期性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次窗口请求`)
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
@@ -1085,7 +1083,6 @@ const CostMetric = defineComponent({
 
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"]::before { display: none; content: none; }
 
-.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-edit"],
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-delete"],
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="refresh-account"] {
   display: none;

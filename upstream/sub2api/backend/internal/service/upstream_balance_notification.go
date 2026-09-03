@@ -81,8 +81,12 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.
 		sort.SliceStable(members, func(i, j int) bool { return members[i].AccountID < members[j].AccountID })
 		var latest *AccountMonitorBalance
 		conflict := false
+		probeFailure := false
 		for i := range members {
 			snapshot := members[i].Snapshot
+			if snapshot != nil && snapshot.Status != AccountMonitorBalanceStatusOK {
+				probeFailure = true
+			}
 			if !validNotificationSnapshotForAccount(snapshot, members[i], now) {
 				continue
 			}
@@ -95,7 +99,7 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.
 				break
 			}
 		}
-		if conflict || latest == nil {
+		if conflict || probeFailure || latest == nil {
 			continue
 		}
 		value := *latest.ValueUSD

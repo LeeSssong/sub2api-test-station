@@ -72,6 +72,9 @@ func TestChannelMonitorCurrentStateQueriesHonorHistoryBoundary(t *testing.T) {
 			require.NoError(t, mock.ExpectationsWereMet())
 			require.Contains(t, captured, "JOIN channel_monitors cm ON cm.id = h.monitor_id")
 			require.Contains(t, captured, "h.checked_at >= cm.history_started_at")
+			if tt.name == "latest batch" {
+				require.Contains(t, captured, "h.quota")
+			}
 		})
 	}
 }

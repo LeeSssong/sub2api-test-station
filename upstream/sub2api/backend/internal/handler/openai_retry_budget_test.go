@@ -254,6 +254,19 @@ func TestOpenAIUnifiedQualityDoesNotReplaceNativeRetryBudget(t *testing.T) {
 	require.False(t, got.ConsumeAttempt(16))
 }
 
+func TestAnnotateOpenAIUnifiedDecisionReportsNativeRuntimeBudget(t *testing.T) {
+	budget := newOpenAIRetryBudget(openAIRetryBudgetConfig{
+		MaxAttempts: 5, MaxAccountSwitches: 4, MaxFailureDomains: 2, Total: 5 * time.Second,
+	}, time.Now)
+	decision := service.OpenAIAccountScheduleDecision{}
+
+	annotateOpenAIUnifiedDecision(&decision, budget, false, 2)
+
+	require.Equal(t, 4, decision.RuntimeRetryBudget)
+	require.Equal(t, 2, decision.SwitchCount)
+	require.Zero(t, decision.ExtraRetryCount)
+}
+
 type recordingOpenAIUnifiedOAuth429Gateway struct {
 	persistCalls       int
 	lastAccountID      int64

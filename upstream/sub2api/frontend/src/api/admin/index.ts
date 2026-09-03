@@ -42,6 +42,7 @@ import accountProfitabilityAPI from './accountProfitability'
 import accountFinancialAPI from './accountFinancial'
 import selfPurchasedProfitabilityAPI from './selfPurchasedProfitability'
 import businessOverviewAPI from './businessOverview'
+import schedulerLogsAPI from './schedulerLogs'
 
 /**
  * Unified admin API object for convenient access
@@ -85,7 +86,8 @@ export const adminAPI = {
   accountProfitability: accountProfitabilityAPI,
   accountFinancial: accountFinancialAPI,
   selfPurchasedProfitability: selfPurchasedProfitabilityAPI,
-  businessOverview: businessOverviewAPI
+  businessOverview: businessOverviewAPI,
+  schedulerLogs: schedulerLogsAPI
 }
 
 export {
@@ -126,7 +128,8 @@ export {
   reconciliationAPI,
   accountProfitabilityAPI,
   accountFinancialAPI,
-  businessOverviewAPI
+  businessOverviewAPI,
+  schedulerLogsAPI
 }
 
 export default adminAPI

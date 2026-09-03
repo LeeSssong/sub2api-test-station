@@ -23,6 +23,7 @@ grep -q 'sub2api-test-station-network' "$compose_file" || fail 'compose network 
 docker_bin=${DOCKER_BIN:-docker}; command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker is required'
 release_dir="$deploy_root/releases/$source_commit"; mkdir -p "$release_dir"
 cp "$compose_file" "$release_dir/compose.yaml"; cp "$caddy_file" "$release_dir/Caddyfile"; cp "$env_file" "$release_dir/.env"; chmod 600 "$release_dir/.env"
+printf 'CLONE_SOURCE_COMMIT=%s\nCLONE_APP_IMAGE=sub2api-test-station-runtime:%s\n' "$source_commit" "$source_commit" >>"$release_dir/.env"
 "$docker_bin" load --input "$image_archive" >/dev/null
 compose=("$docker_bin" compose --project-name sub2api-test-station --env-file "$release_dir/.env" -f "$release_dir/compose.yaml")
 "${compose[@]}" config --quiet >/dev/null || fail 'Compose preflight failed'

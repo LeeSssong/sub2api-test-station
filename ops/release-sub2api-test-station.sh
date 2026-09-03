@@ -15,8 +15,8 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-test-station-release.XXXXXX"); trap 'rm
 image="sub2api-test-station-runtime:$source_commit"; docker buildx build --platform linux/amd64 --load -t "$image" "$build_context" >/dev/null
 docker save -o "$tmp/image.tar" "$image"; digest=$(sha256sum "$tmp/image.tar" | awk '{print $1}')
 cp "$worktree/infra/independent-test-station/compose.yaml" "$tmp/compose.yaml"; cp "$worktree/infra/independent-test-station/Caddyfile" "$tmp/Caddyfile"; printf '%s\n' "$digest" >"$tmp/image.sha256"
-remote=$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" 'sudo -n mktemp -d /var/tmp/sub2api-test-station-release.XXXXXX') || fail 'remote staging failed'
-cleanup_remote(){ ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "sudo -n rm -rf -- '$remote'" >/dev/null 2>&1 || true; }
+remote=$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" 'mktemp -d /var/tmp/sub2api-test-station-release.XXXXXX') || fail 'remote staging failed'
+cleanup_remote(){ ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "rm -rf -- '$remote'" >/dev/null 2>&1 || true; }
 trap 'cleanup_remote; rm -rf -- "$tmp"' EXIT
 scp -q "$tmp/image.tar" "$tmp/image.sha256" "$tmp/compose.yaml" "$tmp/Caddyfile" "$target:$remote/" || fail 'bundle transfer failed'
 ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "sudo -n bash -s -- --staging-root '$remote' --image-archive '$remote/image.tar' --image-sha256 '$digest' --compose '$remote/compose.yaml' --caddy '$remote/Caddyfile' --source-commit '$source_commit' --source-tree '$source_tree' --deploy-root '$deploy_root'" <"$worktree/ops/deploy-sub2api-test-station-host.sh" || fail 'remote executor failed'

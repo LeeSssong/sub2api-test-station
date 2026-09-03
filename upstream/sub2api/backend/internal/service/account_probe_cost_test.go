@@ -47,6 +47,7 @@ type probeRecorderStub struct {
 
 type probeModelHTTPStub struct {
 	requests []*http.Request
+	body     string
 }
 
 func (s *probeModelHTTPStub) Do(*http.Request, string, int64, int) (*http.Response, error) {
@@ -58,7 +59,12 @@ func (s *probeModelHTTPStub) DoWithTLS(req *http.Request, _ string, _ int64, _ i
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
-		Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: [DONE]\n\n")),
+		Body: io.NopCloser(strings.NewReader(func() string {
+			if s.body != "" {
+				return s.body
+			}
+			return "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: [DONE]\n\n"
+		}())),
 	}, nil
 }
 
@@ -117,6 +123,20 @@ func TestAccountProbeRecordsMappedUpstreamModel(t *testing.T) {
 	require.Equal(t, "gpt-5-upstream", recorder.inputs[0].Model)
 }
 
+func TestAccountMonitorProbeCarriesObservedUsageIntoResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	account := &Account{ID: 17, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "key"}, Extra: map[string]any{"openai_responses_supported": false}}
+	upstream := &probeModelHTTPStub{body: "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":5,\"cache_read_tokens\":7,\"cache_creation_tokens\":2}}\n\ndata: [DONE]\n\n"}
+	svc := newProbeModelTestService(account, upstream, &probeRecorderStub{})
+
+	result, err := svc.ProbeAccountConnection(context.Background(), 17, "gpt-5", "", AccountTestModeDefault)
+	require.NoError(t, err)
+	require.Equal(t, 13, result.InputTokens)
+	require.Equal(t, 2, result.CacheCreationTokens)
+	require.Equal(t, 7, result.CacheReadTokens)
+	require.Equal(t, ProbeUsageComplete, result.UsageCompleteness)
+}
+
 func (r *probeRecorderStub) Record(_ context.Context, input ProbeRecordInput) error {
 	r.inputs = append(r.inputs, input)
 	return r.err
@@ -138,6 +158,24 @@ func TestAccountProbeObservationRecordsNestedResponsesUsage(t *testing.T) {
 	got := observer.observation("gpt-5", ProbeOutcomeSuccess, "")
 	require.Equal(t, ProbeUsageComplete, got.Completeness)
 	require.Equal(t, UsageTokens{InputTokens: 13, OutputTokens: 5, CacheReadTokens: 2}, got.Tokens)
+}
+
+func TestAccountProbeObservationRecordsNativeCacheUsageFields(t *testing.T) {
+	observer := &accountProbeUsageObserver{}
+	observer.observeJSON([]byte(`{"usage":{"input_tokens":13,"output_tokens":5,"cache_read_tokens":7,"cache_creation_tokens":2}}`))
+
+	got := observer.observation("gpt-5", ProbeOutcomeSuccess, "")
+	require.Equal(t, ProbeUsageComplete, got.Completeness)
+	require.Equal(t, UsageTokens{InputTokens: 13, OutputTokens: 5, CacheCreationTokens: 2, CacheReadTokens: 7}, got.Tokens)
+}
+
+func TestAccountProbeObservationRecordsNestedNativeCacheDetails(t *testing.T) {
+	observer := &accountProbeUsageObserver{}
+	observer.observeJSON([]byte(`{"response":{"usage":{"input_tokens":13,"output_tokens":5,"input_tokens_details":{"cached_tokens":7},"prompt_tokens_details":{"cache_creation_tokens":2}}}}`))
+
+	got := observer.observation("gpt-5", ProbeOutcomeSuccess, "")
+	require.Equal(t, ProbeUsageComplete, got.Completeness)
+	require.Equal(t, UsageTokens{InputTokens: 13, OutputTokens: 5, CacheCreationTokens: 2, CacheReadTokens: 7}, got.Tokens)
 }
 
 func TestAccountProbeCostServicePersistsUnknownCostAsNull(t *testing.T) {

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestAccountMonitorProbeResultRejectsSuccessfulEmptyStream(t *testing.T) {
@@ -31,6 +33,20 @@ func TestAccountMonitorProbeResultUsesFirstNonEmptyContentForTTFT(t *testing.T) 
 	if result.LatencyMS == nil || *result.LatencyMS != 200 {
 		t.Fatalf("latency = %#v", result.LatencyMS)
 	}
+}
+
+func TestBuildAccountMonitorProbeResultPreservesProbeUsage(t *testing.T) {
+	startedAt := time.Date(2026, 9, 4, 1, 0, 0, 0, time.UTC)
+	observer := &accountMonitorProbeObserver{firstContentAt: startedAt.Add(100 * time.Millisecond)}
+	result := buildAccountMonitorProbeResult(7, "gpt-5", startedAt, startedAt.Add(time.Second), observer, nil)
+	result.InputTokens = 13
+	result.CacheCreationTokens = 2
+	result.CacheReadTokens = 7
+	result.UsageCompleteness = ProbeUsageComplete
+	require.Equal(t, 13, result.InputTokens)
+	require.Equal(t, 2, result.CacheCreationTokens)
+	require.Equal(t, 7, result.CacheReadTokens)
+	require.Equal(t, ProbeUsageComplete, result.UsageCompleteness)
 }
 
 func TestAccountMonitorProbeResultClassifiesFatalErrorsWithHTTPStatus(t *testing.T) {

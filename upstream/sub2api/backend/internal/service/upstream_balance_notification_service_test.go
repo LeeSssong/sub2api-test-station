@@ -217,6 +217,23 @@ func TestUpstreamBalanceNotificationServiceRunDueRefreshesLowScopeBeforeProjecti
 	require.Equal(t, []string{"https://upstream.invalid"}, reader.refreshedScopes)
 }
 
+func TestUpstreamBalanceNotificationServiceRunDueIsolatesRefreshFailureByScope(t *testing.T) {
+	now := time.Date(2026, 9, 2, 1, 0, 0, 0, time.UTC)
+	a := upstreamBalanceEvaluationFixture("scope-a", UpstreamBalanceStateLow, 2, now.Add(-time.Minute))
+	b := upstreamBalanceEvaluationFixture("scope-b", UpstreamBalanceStateLow, 3, now.Add(-time.Minute))
+	b.NormalizedBaseURL, b.Accounts[0].BaseURL = "https://other.invalid", "https://other.invalid"
+	reader := &upstreamBalanceRefreshingReaderStub{upstreamBalanceEvaluationReaderStub: upstreamBalanceEvaluationReaderStub{fallback: []UpstreamBalanceEvaluation{a, b}}, refreshErrors: map[string]error{"https://upstream.invalid": errors.New("scope unavailable")}}
+	repo := newUpstreamBalanceEventRepoStub(a, now)
+	repo.activeEvents = []UpstreamBalanceEvent{{ScopeType: UpstreamBalanceScopeTypeBaseURL, ScopeKey: a.NormalizedBaseURL, Status: OpsAlertStatusFiring}, {ScopeType: UpstreamBalanceScopeTypeBaseURL, ScopeKey: b.NormalizedBaseURL, Status: OpsAlertStatusFiring}}
+	svc := NewUpstreamBalanceNotificationService(repo, reader, &upstreamBalanceSenderStub{}, upstreamBalanceLoginLookupStub{}, nil)
+	svc.now = func() time.Time { return now }
+
+	require.NoError(t, svc.RunDue(context.Background()))
+	require.Equal(t, []string{"https://other.invalid", "https://upstream.invalid"}, reader.refreshedScopes)
+	require.Len(t, repo.claims, 1)
+	require.Equal(t, "https://other.invalid", repo.claims[0].ScopeKey)
+}
+
 func TestUpstreamBalanceFailureDelay(t *testing.T) {
 	tests := []struct {
 		attempt int
@@ -378,6 +395,7 @@ type upstreamBalanceEvaluationReaderStub struct {
 type upstreamBalanceRefreshingReaderStub struct {
 	upstreamBalanceEvaluationReaderStub
 	refreshedScopes []string
+	refreshErrors   map[string]error
 }
 
 func (s *upstreamBalanceRefreshingReaderStub) RefreshUpstreamBalanceScopes(_ context.Context, scopes map[string]struct{}) error {
@@ -385,6 +403,14 @@ func (s *upstreamBalanceRefreshingReaderStub) RefreshUpstreamBalanceScopes(_ con
 		s.refreshedScopes = append(s.refreshedScopes, scope)
 	}
 	return nil
+}
+
+func (s *upstreamBalanceRefreshingReaderStub) RefreshUpstreamBalanceScope(_ context.Context, scope string) UpstreamBalanceScopeRefreshResult {
+	s.refreshedScopes = append(s.refreshedScopes, scope)
+	if err := s.refreshErrors[scope]; err != nil {
+		return UpstreamBalanceScopeRefreshResult{ScopeKey: scope, ErrorCode: "scope_unavailable"}
+	}
+	return UpstreamBalanceScopeRefreshResult{ScopeKey: scope, RefreshedAccounts: 1, FreshValidSnapshots: 1}
 }
 
 func (s *upstreamBalanceEvaluationReaderStub) ReadUpstreamBalanceEvaluations(context.Context) ([]UpstreamBalanceEvaluation, error) {
@@ -430,15 +456,16 @@ func (upstreamBalanceLoginLookupStub) Lookup(string) (string, string, bool) {
 }
 
 type upstreamBalanceEventRepoStub struct {
-	mu        sync.Mutex
-	ruleID    int64
-	claimed   bool
-	lease     UpstreamBalanceDeliveryLease
-	current   *UpstreamBalanceEvent
-	claims    []UpstreamBalanceClaimInput
-	confirmed []UpstreamBalanceDeliveryResult
-	failed    []UpstreamBalanceDeliveryFailure
-	resolved  []string
+	mu           sync.Mutex
+	ruleID       int64
+	claimed      bool
+	lease        UpstreamBalanceDeliveryLease
+	current      *UpstreamBalanceEvent
+	activeEvents []UpstreamBalanceEvent
+	claims       []UpstreamBalanceClaimInput
+	confirmed    []UpstreamBalanceDeliveryResult
+	failed       []UpstreamBalanceDeliveryFailure
+	resolved     []string
 }
 
 func newUpstreamBalanceEventRepoStub(evaluation UpstreamBalanceEvaluation, now time.Time) *upstreamBalanceEventRepoStub {
@@ -507,6 +534,9 @@ func (s *upstreamBalanceEventRepoStub) Resolve(_ context.Context, _ int64, scope
 func (s *upstreamBalanceEventRepoStub) ListActive(context.Context, int) ([]UpstreamBalanceEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(s.activeEvents) > 0 {
+		return append([]UpstreamBalanceEvent(nil), s.activeEvents...), nil
+	}
 	if s.current == nil {
 		return nil, nil
 	}

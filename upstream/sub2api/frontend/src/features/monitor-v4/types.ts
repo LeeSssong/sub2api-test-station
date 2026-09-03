@@ -19,6 +19,9 @@ export interface MonitorV4Group {
   latency_p95_ms: number | null
   latency_sample_count: number
   cache_hit_rate: number | null
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  cache_hit_denominator: number
   source_updated_at: string | null
   current_operational: boolean
 }

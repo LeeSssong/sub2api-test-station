@@ -135,6 +135,26 @@ func (t *OpenAIFirstOutputSlowTracker) View(groupID, accountID int64) OpenAIFirs
 	return view
 }
 
+func (t *OpenAIFirstOutputSlowTracker) viewAccount(accountID int64) OpenAIFirstOutputSlowView {
+	if t == nil {
+		return OpenAIFirstOutputSlowView{}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.cleanupLocked(t.now())
+	view := OpenAIFirstOutputSlowView{}
+	for key, entry := range t.entries {
+		if key.accountID != accountID {
+			continue
+		}
+		view.SlowCount++
+		view.TTFTLowerBoundsMS = append(view.TTFTLowerBoundsMS, entry.ttftMS)
+		view.Replaced = view.Replaced || entry.replaced
+	}
+	sort.Float64s(view.TTFTLowerBoundsMS)
+	return view
+}
+
 func (t *OpenAIFirstOutputSlowTracker) cleanupLocked(now time.Time) {
 	for key, entry := range t.entries {
 		if now.Sub(entry.observedAt) >= time.Hour {

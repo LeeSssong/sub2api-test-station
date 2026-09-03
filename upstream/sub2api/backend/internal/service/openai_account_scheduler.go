@@ -196,6 +196,7 @@ type OpenAIAccountScheduleDecision struct {
 	SlowEvidenceReplaced bool
 	QualityScoreGap      float64
 	QualitySnapshotStale bool
+	RuntimeRetryBudget   int
 	ExtraRetryCount      int
 	ExtraUsed            int
 	SwitchCount          int
@@ -257,6 +258,7 @@ type openAIAccountLoadPlan struct {
 	effectiveTopK             int
 	minimumScoreThreshold     float64
 	qualityFallback           bool
+	adaptivePolicy            *openAIAdaptivePolicy
 }
 
 type openAIAccountLoadSelectionAttempt struct {
@@ -1124,6 +1126,87 @@ type openAIAccountCandidateScore struct {
 	hasTTFT     bool
 }
 
+type openAIAdaptivePolicy struct {
+	mode            string
+	topK            int
+	explorationRate int
+	reason          string
+}
+
+// chooseOpenAIAdaptivePolicy adapts only selection breadth. Quality scores and
+// hard eligibility filters remain unchanged. The one-step movement limits
+// dampen request-to-request oscillation while the configured cap remains the
+// absolute safety boundary.
+func chooseOpenAIAdaptivePolicy(candidates []openAIAccountCandidateScore, configuredTopK, maxTopK, baseExploration int, baseMode string) openAIAdaptivePolicy {
+	if configuredTopK <= 0 {
+		configuredTopK = 1
+	}
+	if maxTopK <= 0 || maxTopK > 32 {
+		maxTopK = 32
+	}
+	if configuredTopK > maxTopK {
+		configuredTopK = maxTopK
+	}
+	p := openAIAdaptivePolicy{mode: baseMode, topK: configuredTopK, explorationRate: clampInt(baseExploration, 0, 100), reason: "baseline"}
+	if len(candidates) == 0 {
+		return p
+	}
+	ranked := append([]openAIAccountCandidateScore(nil), candidates...)
+	sort.Slice(ranked, func(i, j int) bool { return isOpenAIAccountCandidateBetter(ranked[i], ranked[j]) })
+	finite := make([]openAIAccountCandidateScore, 0, len(ranked))
+	for _, c := range ranked {
+		if !math.IsNaN(c.score) && !math.IsInf(c.score, 0) {
+			finite = append(finite, c)
+		}
+	}
+	if len(finite) >= 2 {
+		gap := finite[0].score - finite[1].score
+		if gap < 0.15 && p.topK < maxTopK {
+			p.topK++
+			p.reason = "scores_close"
+		}
+		if gap > 1.0 && p.topK > 1 {
+			p.topK--
+			p.reason = "score_gap"
+		}
+	}
+	if len(candidates) <= 2 && p.mode != OpenAISchedulerCandidatePoolModeAllEligible {
+		p.mode = OpenAISchedulerCandidatePoolModeAllEligible
+		p.topK = len(candidates)
+		p.reason = "candidate_scarcity"
+	}
+	if len(candidates) >= 8 {
+		failures := 0
+		for _, c := range candidates {
+			if c.errorRate >= 0.25 {
+				failures++
+			}
+		}
+		if failures*2 >= len(candidates) {
+			p.mode = OpenAISchedulerCandidatePoolModeHybrid
+			p.explorationRate = clampInt(p.explorationRate+10, 0, 100)
+			p.reason = "failure_rate_pressure"
+		}
+	}
+	if p.topK > len(candidates) {
+		p.topK = len(candidates)
+	}
+	if p.topK < 1 {
+		p.topK = 1
+	}
+	return p
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
 
 func (h openAIAccountCandidateHeap) Len() int {
@@ -1396,7 +1479,7 @@ func applyOpenAISchedulerGroupPolicy(
 	weights.UpstreamCost = values.UpstreamCost
 	weights.Previous = values.PreviousResponse
 	weights.SessionSticky = values.SessionSticky
-	if policy.Priority == (OpenAISchedulerBusinessPriority{}) && policy.Mode != OpenAISchedulerGroupPolicyModeFair && policy.Mode != OpenAISchedulerGroupPolicyModePreset {
+	if policy.Priority == (OpenAISchedulerBusinessPriority{}) && policy.Mode != OpenAISchedulerGroupPolicyModeFair && policy.Mode != OpenAISchedulerGroupPolicyModePreset && !policy.LegacyWeightOverrideIgnored {
 		return weights, OpenAISchedulerFairnessSettings{CandidatePoolMode: OpenAISchedulerCandidatePoolModeTopK}
 	}
 	return weights, OpenAISchedulerFairnessSettings{
@@ -1628,14 +1711,25 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlanAtWithPolicy(
 	}
 	adaptiveEnabled := s.service != nil && s.service.cfg != nil && s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled && fairness.CandidatePoolMode != OpenAISchedulerCandidatePoolModeAllEligible
 	if adaptiveEnabled {
+		policy := chooseOpenAIAdaptivePolicy(candidates, configuredTopK, s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax, fairness.ExplorationRatio, fairness.CandidatePoolMode)
+		if req.StickyWeighted && policy.mode == OpenAISchedulerCandidatePoolModeAllEligible {
+			policy.mode = fairness.CandidatePoolMode
+			policy.reason = "sticky_quality_floor"
+		}
+		configuredTopK = policy.topK
+		fairness.CandidatePoolMode = policy.mode
+		fairness.ExplorationRatio = policy.explorationRate
+		plan.adaptivePolicy = &policy
 		eligibleCandidates := candidates
 		stickyWasEligible := req.StickyWeighted && openAIAccountCandidatesContainAnyID(candidates, req.StickyPreviousAccountID, req.StickyAccountID)
-		candidates, plan.minimumScoreThreshold, plan.qualityFallback = applyOpenAIAdaptiveTopK(
-			candidates,
-			configuredTopK,
-			s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax,
-			s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap,
-		)
+		if policy.mode != OpenAISchedulerCandidatePoolModeAllEligible {
+			candidates, plan.minimumScoreThreshold, plan.qualityFallback = applyOpenAIAdaptiveTopK(
+				candidates,
+				configuredTopK,
+				s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax,
+				s.service.cfg.Gateway.OpenAIScheduler.AdaptiveTopKScoreGap,
+			)
+		}
 		if req.decisionDetails != nil {
 			req.decisionDetails.selectionLayer = openAIAccountScheduleLayerAdaptiveTopK
 			if stickyWasEligible && !openAIAccountCandidatesContainAnyID(candidates, req.StickyPreviousAccountID, req.StickyAccountID) {
@@ -1788,6 +1882,10 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 			if policy, ok := runtime.groupPolicies[schedulerGroupID(req.GroupID)]; ok {
 				_, fairness = applyOpenAISchedulerGroupPolicy(s.service.openAIWSSchedulerWeightsForRequest(ctx), fairness, policy, true)
 			}
+		}
+		if plan.adaptivePolicy != nil {
+			fairness.CandidatePoolMode = plan.adaptivePolicy.mode
+			fairness.ExplorationRatio = plan.adaptivePolicy.explorationRate
 		}
 		if fairness.CandidatePoolMode != OpenAISchedulerCandidatePoolModeTopK && !req.StickyWeighted {
 			now := time.Now()

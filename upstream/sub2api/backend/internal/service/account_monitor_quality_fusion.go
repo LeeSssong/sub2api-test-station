@@ -6,28 +6,18 @@ const (
 	accountMonitorQualityFreshnessFresh   = "fresh"
 	accountMonitorQualityFreshnessStale   = "stale"
 	accountMonitorQualityFreshnessUnknown = "unknown"
-	accountMonitorQualitySourceReal       = "real_request"
-	accountMonitorQualitySourceProbe      = "monitor_probe"
-	accountMonitorQualitySourceHybrid     = "hybrid"
+	accountMonitorQualitySourceUnified    = "unified"
 	accountMonitorQualitySourceUnknown    = "unknown"
 )
 
-// fuseAccountMonitorQualityEvidence keeps persisted request aggregates and
-// active probes separate, then applies one confidence rule to their shared
-// quality projection. Real requests are authoritative once the group has the
-// minimum sample count; probes only supplement sparse traffic.
-func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe AccountMonitorAggregate, latest AccountMonitorLatest, settings AccountMonitorSettings, now time.Time) AccountMonitorQualityEvidence {
+// fuseAccountMonitorQualityEvidence projects the repository-selected request
+// stream. Repository selection already applies the five-minute real/probe
+// fallback, so service code must not add probe aggregates a second time.
+func fuseAccountMonitorQualityEvidence(window AccountMonitorWindowAggregate, _ AccountMonitorAggregate, _ AccountMonitorLatest, settings AccountMonitorSettings, now time.Time) AccountMonitorQualityEvidence {
 	now = now.UTC()
-	realSamples := clampNonNegativeInt64(real.RequestCount)
-	probeSamples := clampNonNegativeInt(probe.SampleCount)
-	realSuccesses := clampCount(real.SuccessCount, realSamples)
-	probeSuccessCount := probe.SuccessSampleCount
-	if probeSuccessCount == 0 && probe.SuccessCount > 0 {
-		probeSuccessCount = probe.SuccessCount
-	}
-	probeSuccesses := clampCount(int64(probeSuccessCount), int64(probeSamples))
-	realAt := accountMonitorWindowObservedAt(real)
-	probeAt := accountMonitorProbeObservedAt(probe, latest)
+	samples := clampNonNegativeInt64(window.RequestCount)
+	successes := clampCount(window.SuccessCount, samples)
+	observedAt := accountMonitorWindowObservedAt(window)
 	ttl := time.Duration(settings.IntervalSeconds*2) * time.Second
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
@@ -35,58 +25,29 @@ func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe
 	// Legacy window aggregate adapters do not always carry MAX(created_at).
 	// Their rows are still scoped to the requested current window, but the
 	// absence of a timestamp must not be exposed as an invented observation.
-	realFresh := realSamples > 0 && (realAt.IsZero() || isAccountMonitorEvidenceFresh(realAt, now, ttl))
-	probeFresh := probeSamples > 0 && isAccountMonitorEvidenceFresh(probeAt, now, ttl)
-	if !realFresh && !probeFresh {
-		reason := "missing"
-		if realSamples > 0 || probeSamples > 0 {
-			reason = "stale"
-		}
-		return accountMonitorUnknownQualityEvidenceWithFreshness(reason, reason == "stale")
+	if samples == 0 {
+		return accountMonitorUnknownQualityEvidenceWithFreshness("missing", false)
 	}
-
-	evidence := AccountMonitorQualityEvidence{Known: true, Freshness: accountMonitorQualityFreshnessFresh, ObservedAt: latestEvidenceTime(realAt, probeAt)}
-	if realFresh {
-		evidence.RealRequestSamples = int(realSamples)
-		evidence.SampleCount += int(realSamples)
-		evidence.SuccessSampleCount += int(realSuccesses)
+	if observedAt.IsZero() || !isAccountMonitorEvidenceFresh(observedAt, now, ttl) {
+		return accountMonitorUnknownQualityEvidenceWithFreshness("stale", true)
 	}
-	if probeFresh {
-		evidence.ProbeSamples = probeSamples
-		evidence.SampleCount += probeSamples
-		evidence.SuccessSampleCount += int(probeSuccesses)
+	evidence := AccountMonitorQualityEvidence{
+		Source: accountMonitorQualitySourceUnified, Known: true,
+		Freshness: accountMonitorQualityFreshnessFresh, ObservedAt: observedAt,
+		SampleCount: int(samples), SuccessSampleCount: int(successes),
+		SuccessRate: float64(successes) / float64(samples),
 	}
-	switch {
-	case realFresh && probeFresh:
-		evidence.Source = accountMonitorQualitySourceHybrid
-	case realFresh:
-		evidence.Source = accountMonitorQualitySourceReal
-	case probeFresh:
-		evidence.Source = accountMonitorQualitySourceProbe
+	if window.TTFTSampleCount > 0 && window.TTFTP50MS != nil {
+		evidence.TTFTSampleCount = window.TTFTSampleCount
+		evidence.TTFTP50MS = window.TTFTP50MS
 	}
-	if evidence.SampleCount > 0 {
-		evidence.RealRequestWeight = float64(evidence.RealRequestSamples) / float64(evidence.SampleCount)
-		evidence.ProbeWeight = float64(evidence.ProbeSamples) / float64(evidence.SampleCount)
-		evidence.SuccessRate = float64(evidence.SuccessSampleCount) / float64(evidence.SampleCount)
+	if window.LatencySampleCount > 0 && window.LatencyP95MS != nil {
+		evidence.LatencySampleCount = window.LatencySampleCount
+		evidence.LatencyP95MS = window.LatencyP95MS
 	}
-	if realFresh && real.TTFTSampleCount > 0 && real.TTFTP50MS != nil {
-		evidence.TTFTSampleCount = real.TTFTSampleCount
-		evidence.TTFTP50MS = real.TTFTP50MS
-	} else if probeFresh {
-		evidence.TTFTSampleCount = probe.TTFTSampleCount
-		evidence.TTFTP50MS = probe.TTFTP50MS
-	}
-	if realFresh && real.LatencySampleCount > 0 && real.LatencyP95MS != nil {
-		evidence.LatencySampleCount = real.LatencySampleCount
-		evidence.LatencyP95MS = real.LatencyP95MS
-	} else if probeFresh {
-		evidence.LatencySampleCount = probe.LatencySampleCount
-		evidence.LatencyP95MS = probe.LatencyP95MS
-	}
-	// Probes have no output-token stream, so generation rate remains real-only.
-	if realFresh && real.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(real.OutputRateTokensPerSecond) {
-		evidence.OutputRateTokensPerSecond = real.OutputRateTokensPerSecond
-		evidence.OutputRateSampleCount = real.OutputRateSampleCount
+	if window.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(window.OutputRateTokensPerSecond) {
+		evidence.OutputRateTokensPerSecond = window.OutputRateTokensPerSecond
+		evidence.OutputRateSampleCount = window.OutputRateSampleCount
 	}
 	return evidence
 }

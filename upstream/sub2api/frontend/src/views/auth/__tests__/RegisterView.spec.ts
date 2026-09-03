@@ -17,7 +17,7 @@ const publicSettings = {
   turnstile_enabled: true,
   turnstile_site_key: 'site-key',
   site_name: 'Sub2API',
-  registration_email_suffix_whitelist: [],
+  registration_email_suffix_whitelist: ['@qq.com'],
   linuxdo_oauth_enabled: false,
   wechat_oauth_enabled: false,
   oidc_oauth_enabled: false,
@@ -37,10 +37,18 @@ vi.mock('vue-i18n', () => ({
     }
   }),
   useI18n: () => ({
-    t: (key: string) =>
-      key === 'auth.emailDomainRegistrationLimit'
-        ? '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
-        : key,
+    t: (key: string, params?: Record<string, unknown>) => {
+      if (key === 'auth.emailDomainRegistrationLimit') {
+        return '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
+      }
+      if (key === 'auth.emailPlaceholderWithAllowed') {
+        return `请输入邮箱，可用后缀：${params?.suffixes ?? ''}`
+      }
+      if (key === 'auth.emailSuffixAllowedMore') {
+        return `等 ${params?.count ?? ''} 项`
+      }
+      return key
+    },
     locale: { value: 'en' }
   })
 }))
@@ -103,6 +111,13 @@ describe('RegisterView invitation layout', () => {
       invitationField.element.compareDocumentPosition(turnstile.element) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
+  })
+
+  it('shows the configured email suffix in the email placeholder', async () => {
+    const wrapper = mountRegister()
+    await flushPromises()
+
+    expect(wrapper.get('#email').attributes('placeholder')).toContain('@qq.com')
   })
 
   it('uses the mandatory invitation field without duplicating the affiliate field', async () => {

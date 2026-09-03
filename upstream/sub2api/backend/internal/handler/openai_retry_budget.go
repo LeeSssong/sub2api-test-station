@@ -187,12 +187,16 @@ func annotateOpenAIUnifiedDecision(decision *service.OpenAIAccountScheduleDecisi
 		return
 	}
 	decision.ImageIntent = imageIntent
-	if budget == nil || !budget.unified {
+	if budget == nil {
+		return
+	}
+	decision.RuntimeRetryBudget = budget.cfg.MaxAttempts - 1
+	decision.SwitchCount = switchCount
+	if !budget.unified {
 		return
 	}
 	decision.ExtraRetryCount = budget.cfg.MaxAttempts - 1
 	decision.ExtraUsed = budget.ExtraUsed()
-	decision.SwitchCount = switchCount
 }
 
 // handleOpenAIUnifiedOAuth429 preserves T105's native account cooldown and

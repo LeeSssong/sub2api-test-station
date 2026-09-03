@@ -415,7 +415,7 @@ gateway:
     # 错误率 EWMA 超过该阈值时跳过 sticky，默认 0.5，仅在明显降级时触发
     sticky_escape_error_rate: 0.5
     # 是否按质量分数差动态收窄候选池；浅账号池默认关闭，设为 true 才启用质量门槛与动态 Top-K
-    adaptive_top_k_enabled: false
+    adaptive_top_k_enabled: true
     # 动态候选池的绝对上限（仅 adaptive_top_k_enabled=true 时生效）
     adaptive_top_k_max: 7
     # 最佳分数与候选最低分数的最大差值（仅 adaptive_top_k_enabled=true 时生效）

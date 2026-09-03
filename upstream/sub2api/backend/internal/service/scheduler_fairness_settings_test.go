@@ -22,8 +22,10 @@ func TestNormalizeOpenAISchedulerGroupPoliciesExpandsPresetsAndInheritsGlobal(t 
 	require.Equal(t, 10, pro.Values.TopK)
 	require.Equal(t, 40, pro.Values.ExplorationRatio)
 	require.Equal(t, 5.0, pro.Values.FairnessWeight)
-	require.Equal(t, 2.0, policies[20].Values.Priority)
+	require.Equal(t, global.Priority, policies[20].Values.Priority)
 	require.Equal(t, global.Load, policies[20].Values.Load)
+	require.True(t, policies[20].LegacyWeightOverrideIgnored)
+	require.Equal(t, []string{"priority"}, policies[20].IgnoredWeightOverrideKeys)
 }
 
 func TestOpenAISchedulerAvailablePresetsIncludeImmutableBuiltInsAndCustomPresets(t *testing.T) {
@@ -177,7 +179,9 @@ func TestNormalizeOpenAISchedulerGroupPoliciesConvertsLegacyModesAndPersistsSnap
 	}, global, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, OpenAISchedulerGroupPolicyModeCustom, policies[10].Mode)
-	require.Equal(t, 2.0, policies[10].Values.Priority)
+	require.Equal(t, global.Priority, policies[10].Values.Priority)
+	require.True(t, policies[10].LegacyWeightOverrideIgnored)
+	require.Equal(t, []string{"priority"}, policies[10].IgnoredWeightOverrideKeys)
 	require.Equal(t, OpenAISchedulerGroupPolicyModePreset, policies[20].Mode)
 	require.Equal(t, "builtin:pro", policies[20].PresetID)
 	require.Equal(t, openAISchedulerPresetValues(OpenAISchedulerPresetPro), policies[20].Values)
@@ -221,10 +225,11 @@ func TestNormalizeOpenAISchedulerGroupPoliciesRejectsInvalidPayload(t *testing.T
 		1: {Mode: OpenAISchedulerGroupPolicyModeFair, Preset: "unknown"},
 	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{1: {}})
 	require.Error(t, err)
-	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+	policies, err := normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
 		2: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": 0}},
 	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{2: {}})
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.True(t, policies[2].LegacyWeightOverrideIgnored)
 	tooLarge := 11.0
 	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
 		3: {Mode: OpenAISchedulerGroupPolicyModeWeightedOverride, WeightOverrides: map[string]float64{"priority": tooLarge}},

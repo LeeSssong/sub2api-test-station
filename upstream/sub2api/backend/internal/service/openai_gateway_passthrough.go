@@ -1693,6 +1693,11 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		classificationHeaders = nil
 	}
 	failoverErr := s.newOpenAIAccountFailoverErrorWithClassificationHeaders(account, statusCode, headers, classificationHeaders, payload, message, shouldDisable, retryableOnSameAccount)
+	if account != nil && account.Platform == PlatformOpenAI {
+		failoverErr.ResponseFailedOnly = gjson.GetBytes(payload, "type").String() == "response.failed" || gjson.GetBytes(payload, "response.type").String() == "response.failed"
+		failoverErr.UsageKnown = gjson.GetBytes(payload, "response.usage.input_tokens").Exists() || gjson.GetBytes(payload, "response.usage.output_tokens").Exists()
+		failoverErr.UnsafeToReplay = failoverErr.UsageKnown || gjson.GetBytes(payload, "response.unsafe_to_replay").Bool() || gjson.GetBytes(payload, "unsafe_to_replay").Bool()
+	}
 	if failoverErr.IsCredentialFailure() || failoverErr.RequestScopedTransient {
 		return failoverErr
 	}

@@ -277,7 +277,7 @@ async function mountSubscriptionPlanList(planCount: number) {
   return wrapper
 }
 
-describe('PaymentView subscription plan grid', () => {
+describe.skip('PaymentView subscription plan grid (removed from user page)', () => {
   it.each([3, 4, 6])('keeps %i plans on the existing mobile/tablet/desktop grid', async (planCount) => {
     const wrapper = await mountSubscriptionPlanList(planCount)
     const cards = wrapper.findAllComponents(SubscriptionPlanCard)
@@ -292,7 +292,7 @@ describe('PaymentView subscription plan grid', () => {
   })
 })
 
-describe('PaymentView subscription confirmation amounts', () => {
+describe.skip('PaymentView subscription confirmation amounts (removed from user page)', () => {
   it('shows converted CNY pay amount using the subscription rate, not the balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {
@@ -379,6 +379,17 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).toContain(fee)
     expect(text).toContain(total)
     expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)
+  })
+})
+
+describe('PaymentView recharge-only experience', () => {
+  it('ignores legacy subscription navigation and keeps only 20, 50, and 100 quick amounts', async () => {
+    const wrapper = await mountSubscriptionPlanList(3)
+
+    expect(wrapper.text()).not.toContain('payment.tabSubscribe')
+    expect(wrapper.text()).not.toContain('payment.noPlans')
+    const amountInput = wrapper.findComponent({ name: 'AmountInput' })
+    expect(amountInput.props('amounts')).toEqual([20, 50, 100])
   })
 })
 

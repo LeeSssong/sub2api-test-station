@@ -577,6 +577,7 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestedModelSource(t *testing.T)
 			"requests",
 			"input_tokens",
 			"output_tokens",
+			"cache_tokens",
 			"cache_creation_tokens",
 			"cache_read_tokens",
 			"cost",
@@ -584,10 +585,10 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestedModelSource(t *testing.T)
 			"account_cost",
 			"avg_duration_ms",
 		}).
-			AddRow(1, 1, nil, nil, 1, 1, 2, 0, 0, 1.2, 1.0, 1.2, 20.0).
-			AddRow(0, 1, "/v1/responses", nil, 1, 1, 2, 0, 0, 1.2, 1.0, 1.2, 20.0).
-			AddRow(1, 0, nil, "/v1/responses", 1, 1, 2, 0, 0, 1.2, 1.0, 1.2, 20.0).
-			AddRow(0, 0, "/v1/responses", "/v1/responses", 1, 1, 2, 0, 0, 1.2, 1.0, 1.2, 20.0))
+			AddRow(1, 1, nil, nil, 1, 1, 2, 0, 0, 0, 1.2, 1.0, 1.2, 20.0).
+			AddRow(0, 1, "/v1/responses", nil, 1, 1, 2, 0, 0, 0, 1.2, 1.0, 1.2, 20.0).
+			AddRow(1, 0, nil, "/v1/responses", 1, 1, 2, 0, 0, 0, 1.2, 1.0, 1.2, 20.0).
+			AddRow(0, 0, "/v1/responses", "/v1/responses", 1, 1, 2, 0, 0, 0, 1.2, 1.0, 1.2, 20.0))
 
 	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
 	require.NoError(t, err)
@@ -618,6 +619,7 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestTypePriority(t *testing.T) 
 			"requests",
 			"input_tokens",
 			"output_tokens",
+			"cache_tokens",
 			"cache_creation_tokens",
 			"cache_read_tokens",
 			"cost",
@@ -625,10 +627,10 @@ func TestUsageLogRepositoryGetStatsWithFiltersRequestTypePriority(t *testing.T) 
 			"account_cost",
 			"avg_duration_ms",
 		}).
-			AddRow(1, 1, nil, nil, 1, 1, 3, 0, 0, 1.2, 1.0, 1.2, 20.0).
-			AddRow(0, 1, "/v1/responses", nil, 1, 1, 3, 0, 0, 1.2, 1.0, 1.2, 20.0).
-			AddRow(1, 0, nil, "/v1/responses", 1, 1, 3, 0, 0, 1.2, 1.0, 1.2, 20.0).
-			AddRow(0, 0, "/v1/responses", "/v1/responses", 1, 1, 3, 0, 0, 1.2, 1.0, 1.2, 20.0))
+			AddRow(1, 1, nil, nil, 1, 1, 3, 0, 0, 0, 1.2, 1.0, 1.2, 20.0).
+			AddRow(0, 1, "/v1/responses", nil, 1, 1, 3, 0, 0, 0, 1.2, 1.0, 1.2, 20.0).
+			AddRow(1, 0, nil, "/v1/responses", 1, 1, 3, 0, 0, 0, 1.2, 1.0, 1.2, 20.0).
+			AddRow(0, 0, "/v1/responses", "/v1/responses", 1, 1, 3, 0, 0, 0, 1.2, 1.0, 1.2, 20.0))
 
 	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
 	require.NoError(t, err)
@@ -753,11 +755,12 @@ func TestUsageLogRepositoryGetStatsWithFiltersAlwaysReturnsAccountCost(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{
 			"inbound_grouped", "upstream_grouped", "inbound_endpoint", "upstream_endpoint",
 			"total_requests", "total_input_tokens", "total_output_tokens",
+			"total_cache_tokens",
 			"total_cache_creation_tokens", "total_cache_read_tokens",
 			"total_cost", "total_actual_cost",
 			"total_account_cost", "avg_duration_ms",
 		}).
-			AddRow(1, 1, nil, nil, 50, 1000, 2000, 100, 60, 15.0, 12.5, 11.0, 100.0))
+			AddRow(1, 1, nil, nil, 50, 1000, 2000, 160, 100, 60, 15.0, 12.5, 11.0, 100.0))
 
 	stats, err := repo.GetStatsWithFilters(context.Background(), filters)
 	require.NoError(t, err)

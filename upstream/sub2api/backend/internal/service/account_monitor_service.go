@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	accountMonitorDetectionWorkers             = 8
 	accountMonitorMultiplierRefreshTimeout     = 2 * time.Minute
 	accountMonitorProbeTimeout                 = 60 * time.Second
 	accountMonitorManagementEnabled            = "enabled"
@@ -47,6 +48,47 @@ const (
 	accountMonitorScoreIneligible              = "ineligible"
 	accountMonitorAbnormalScoreCap             = 70.0
 )
+
+func (s *AccountMonitorService) projectModelDetections(ctx context.Context, accounts []Account) map[int64]AccountModelDetectionProjection {
+	results := make(map[int64]AccountModelDetectionProjection, len(accounts))
+	if s == nil || s.modelDetection == nil || len(accounts) == 0 {
+		return results
+	}
+	tasks := make(chan Account)
+	var mu sync.Mutex
+	var workers sync.WaitGroup
+	workerCount := min(accountMonitorDetectionWorkers, len(accounts))
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for account := range tasks {
+				if ctx.Err() != nil {
+					return
+				}
+				detection, err := s.modelDetection.ProjectionForAccount(ctx, &account)
+				if err != nil {
+					slog.WarnContext(ctx, "account monitor model detection projection unavailable", "account_id", account.ID, "error", err)
+					continue
+				}
+				mu.Lock()
+				results[account.ID] = detection
+				mu.Unlock()
+			}
+		}()
+	}
+sendLoop:
+	for _, account := range accounts {
+		select {
+		case tasks <- account:
+		case <-ctx.Done():
+			break sendLoop
+		}
+	}
+	close(tasks)
+	workers.Wait()
+	return results
+}
 
 var ErrAccountMonitorInvalidScoreWeights = errors.New("invalid account monitor score weights")
 
@@ -249,6 +291,7 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 	for i := range groups {
 		groups[i].ScoreWeights = normalizeAccountMonitorScoreWeights(groups[i].ScoreWeights)
 	}
+	modelDetections := s.projectModelDetections(ctx, accounts)
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		effectiveSchedulable, effectiveUnschedulableReason := projectEffectiveSchedulability(&account, observedAt)
@@ -293,10 +336,8 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 		}
 		projectAccountMonitorEffectiveCost(&row, &account)
 		row.UpstreamMultiplier = &row.Multiplier
-		if s.modelDetection != nil {
-			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
-				row.ModelDetection = &detection
-			}
+		if detection, ok := modelDetections[account.ID]; ok {
+			row.ModelDetection = &detection
 		}
 		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		if stats := today[account.ID]; stats != nil {
@@ -688,6 +729,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		}
 	}
 
+	modelDetections := s.projectModelDetections(ctx, accounts)
 	rows := make([]AccountMonitorAccount, 0, len(accounts))
 	for _, account := range accounts {
 		effectiveSchedulable, effectiveUnschedulableReason := projectEffectiveSchedulability(&account, observedAt)
@@ -712,6 +754,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
 			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
+			TTFTP95MS: window.TTFTP95MS, LatencyP95MS: window.LatencyP95MS,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
 		row.LifetimeRealRequestCount = lifetimeCounts[account.ID]
@@ -719,10 +762,8 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		if realTimelines != nil {
 			row.RealRequestTimeline = realTimelines[account.ID]
 		}
-		if s.modelDetection != nil {
-			if detection, detectionErr := s.modelDetection.ProjectionForAccount(ctx, &account); detectionErr == nil {
-				row.ModelDetection = &detection
-			}
+		if detection, ok := modelDetections[account.ID]; ok {
+			row.ModelDetection = &detection
 		}
 		row.EquivalentSiteMultiplier = accountMonitorEquivalentSiteMultiplier(account, row.ModelID, s.costPricing)
 		cost := accountMonitorProjectedEffectiveCost(account, resolvedMultiplier, since, observedAt, window.BaseCost)
@@ -838,7 +879,10 @@ func (s *AccountMonitorService) projectGroupRecommendations(
 		if !isTestGroup && accountMonitorAccountPaused(account, now) {
 			continue
 		}
-		evidence := accountMonitorWindowEvidence(AccountMonitorWindowAggregate{}, probes[account.ID], latest[account.ID], settings, now)
+		// Recommendations retain their existing seven-day probe evidence; this
+		// is separate from the current quality window, which is unified by the
+		// repository before projection.
+		evidence, _ := accountMonitorEvidence(probes[account.ID], probes[account.ID], true, latest[account.ID], settings, now)
 		recommendationAccount := account
 		if account.Type != AccountTypeAPIKey {
 			if row.Multiplier.Status == AccountMonitorMultiplierStatusOK && row.Multiplier.Value != nil {
@@ -1070,13 +1114,14 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 		row.LatencySampleCount = evidence.LatencySampleCount
 		row.SuccessRate = evidence.SuccessRate
 		row.TTFTP50MS = evidence.TTFTP50MS
+		row.TTFTP95MS = windows[row.AccountID].TTFTP95MS
 		row.LatencyP95MS = evidence.LatencyP95MS
 		row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
 		row.OutputRateSampleCount = evidence.OutputRateSampleCount
 		row.CheckedAt = accountMonitorWindowCheckedAt(latest[row.AccountID], evidence)
 		row.ManagementState = accountMonitorManagementState(account, now)
 		projectAccountMonitorProbe(row, probe, latest[row.AccountID], row.Timeline, settings, now, row.ManagementState)
-		projectAccountMonitorWindowState(row, evidence)
+		projectAccountMonitorWindowState(row, evidence, latest[row.AccountID])
 		row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 		row.GroupEligibility = accountMonitorEligibilityNotApplicable
 		row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -1241,7 +1286,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CheckedAt = accountMonitorWindowCheckedAt(latest[account.ID], evidence)
 			row.ManagementState = accountMonitorManagementState(account, now)
 			projectAccountMonitorProbe(&row.AccountMonitorAccount, probe, latest[account.ID], row.Timeline, settings, now, row.ManagementState)
-			projectAccountMonitorWindowState(&row.AccountMonitorAccount, evidence)
+			projectAccountMonitorWindowState(&row.AccountMonitorAccount, evidence, latest[account.ID])
 			row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 			row.GroupEligibility = accountMonitorEligibilityEligible
 			row.MonitorBucket = accountMonitorBucket(row.ManagementState, row.ServiceState, row.GroupEligibility)
@@ -1841,6 +1886,7 @@ func projectAccountMonitorProbe(
 func projectAccountMonitorWindowState(
 	row *AccountMonitorAccount,
 	evidence AccountMonitorQualityEvidence,
+	latest AccountMonitorLatest,
 ) {
 	if row == nil {
 		return
@@ -1854,9 +1900,23 @@ func projectAccountMonitorWindowState(
 	row.LatencyP95MS = evidence.LatencyP95MS
 	row.OutputRateTokensPerSecond = evidence.OutputRateTokensPerSecond
 	row.OutputRateSampleCount = evidence.OutputRateSampleCount
-	// Availability and service state remain probe-driven; this helper only
-	// replaces the quality fields with the hybrid window evidence. The probe
-	// aliases and current-state gate are preserved for compatibility.
+	row.CheckedAt = nil
+	if !evidence.ObservedAt.IsZero() {
+		checkedAt := evidence.ObservedAt.UTC()
+		row.CheckedAt = &checkedAt
+	}
+	row.Stale = !evidence.Known || evidence.Freshness != accountMonitorQualityFreshnessFresh || evidence.SampleCount == 0
+	if row.Stale {
+		row.AvailabilityStatus = accountMonitorAvailabilityStale
+	} else if accountMonitorFatalProbeError(latest) {
+		row.AvailabilityStatus = accountMonitorAvailabilityUnavailable
+	} else if evidence.SuccessSampleCount == evidence.SampleCount {
+		row.AvailabilityStatus = accountMonitorAvailabilityNormal
+	} else {
+		row.AvailabilityStatus = accountMonitorAvailabilityAbnormal
+	}
+	row.ScoreStatus = accountMonitorScoreStatus(row.AvailabilityStatus)
+	row.Eligible = row.ScoreStatus == accountMonitorScoreEligible || row.ScoreStatus == accountMonitorScoreCapped
 }
 
 func accountMonitorAvailabilityStatus(managementState string, stale bool, sampleCount, consecutiveFailed int, latest AccountMonitorLatest) string {
@@ -2367,19 +2427,7 @@ func accountMonitorWindowEvidence(
 	settings AccountMonitorSettings,
 	now time.Time,
 ) AccountMonitorQualityEvidence {
-	evidence := fuseAccountMonitorQualityEvidence(window, probe, latest, settings, now)
-	if window.RequestCount > 0 && probe.SampleCount == 0 && evidence.Known {
-		if accountMonitorWindowObservedAt(window).IsZero() {
-			evidence = accountMonitorUnknownQualityEvidence("missing")
-			evidence.ObservedAt = accountMonitorProbeObservedAt(probe, latest)
-			return evidence
-		}
-		return accountMonitorStaleQualityEvidenceAt(latestEvidenceTime(accountMonitorWindowObservedAt(window), accountMonitorProbeObservedAt(probe, latest)))
-	}
-	if !evidence.Known && evidence.Freshness == accountMonitorQualityFreshnessStale {
-		evidence.ObservedAt = latestEvidenceTime(accountMonitorWindowObservedAt(window), accountMonitorProbeObservedAt(probe, latest))
-	}
-	return evidence
+	return fuseAccountMonitorQualityEvidence(window, probe, latest, settings, now)
 }
 
 func accountMonitorStaleQualityEvidence() AccountMonitorQualityEvidence {
@@ -2418,7 +2466,7 @@ func accountMonitorWindowScoreProjection(
 	}
 	if currentScoreStatus == accountMonitorScoreEligible || currentScoreStatus == accountMonitorScoreCapped {
 		if evidence.Source == "stale" {
-			evidence.Source = accountMonitorQualitySourceProbe
+			evidence.Source = accountMonitorQualitySourceUnified
 		}
 		return evidence, currentScoreStatus, true
 	}
@@ -2426,7 +2474,7 @@ func accountMonitorWindowScoreProjection(
 		return evidence, accountMonitorScoreIneligible, false
 	}
 	if evidence.Source == "stale" {
-		evidence.Source = accountMonitorQualitySourceProbe
+		evidence.Source = accountMonitorQualitySourceUnified
 	}
 	return evidence, accountMonitorScoreEligible, true
 }
@@ -2499,11 +2547,27 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 	if s == nil || s.multiplier == nil || len(scopes) == 0 {
 		return nil
 	}
+	var errs []error
+	for scope := range scopes {
+		result := s.RefreshUpstreamBalanceScope(ctx, scope)
+		if result.ErrorCode != "" {
+			errs = append(errs, fmt.Errorf("refresh scope %s: %s", scope, result.ErrorCode))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s *AccountMonitorService) RefreshUpstreamBalanceScope(ctx context.Context, scope string) UpstreamBalanceScopeRefreshResult {
+	result := UpstreamBalanceScopeRefreshResult{ScopeKey: scope, ObservedAt: time.Now().UTC()}
+	if s == nil || s.multiplier == nil || strings.TrimSpace(scope) == "" {
+		result.ErrorCode = "refresher_unavailable"
+		return result
+	}
 	accounts, err := s.listMonitorAccounts(ctx)
 	if err != nil {
-		return err
+		result.ErrorCode = "list_accounts_failed"
+		return result
 	}
-	var errs []error
 	for i := range accounts {
 		account := &accounts[i]
 		if account.Status != StatusActive || !isAccountMonitorBalanceEligible(account) {
@@ -2513,28 +2577,42 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 		if err != nil {
 			continue
 		}
-		if _, ok := scopes[baseURL]; !ok {
+		if baseURL != scope {
 			continue
 		}
 		refreshCtx, cancel := context.WithTimeout(ctx, accountMonitorMultiplierRefreshTimeout)
 		err = s.multiplier.Refresh(refreshCtx, account, AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true})
 		cancel()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("refresh account %d upstream balance: %w", account.ID, err))
+			result.FailedAccounts++
 			continue
+		}
+		result.RefreshedAccounts++
+		snapshot := decodeAccountMonitorBalance(account.Extra)
+		if snapshot == nil || snapshot.ObservedAt == nil || result.ObservedAt.Sub(snapshot.ObservedAt.UTC()) > AccountMonitorBalanceMaxAge {
+			result.StaleSnapshots++
+		} else if snapshot.CredentialFingerprint != accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey()) {
+			result.CredentialConflicts++
+		} else if validNotificationSnapshot(snapshot) {
+			result.FreshValidSnapshots++
 		}
 		if accountBalanceSnapshotHealthy(account) && isDeterministicBalanceTempReason(account.TempUnschedulableReason) {
 			if repo, ok := s.accountRepo.(accountMonitorBalanceRecoveryRepository); ok {
 				cleared, clearErr := repo.ClearBalanceExhaustedTempUnschedulable(ctx, account)
 				if clearErr != nil {
-					errs = append(errs, fmt.Errorf("restore account %d scheduling: %w", account.ID, clearErr))
+					result.FailedAccounts++
 				} else if cleared && s.runtimeBlocker != nil {
 					s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
 				}
 			}
 		}
 	}
-	return errors.Join(errs...)
+	if result.FailedAccounts > 0 && result.FreshValidSnapshots == 0 {
+		result.ErrorCode = "all_accounts_failed"
+	} else if result.RefreshedAccounts == 0 {
+		result.ErrorCode = "no_eligible_accounts"
+	}
+	return result
 }
 
 type accountMonitorBalanceRecoveryRepository interface {

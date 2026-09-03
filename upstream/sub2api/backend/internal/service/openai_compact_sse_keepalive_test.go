@@ -312,6 +312,11 @@ func TestOpenAIStreamClientOutputStarted_IgnoresCompactKeepaliveBytes(t *testing
 	require.True(t, openAIStreamClientOutputStarted(c, false))
 }
 
+func TestOpenAIStreamClientOutputStarted_RequiresSemanticBytes(t *testing.T) {
+	c, _ := newCompactBridgeTestContext(t, false)
+	require.False(t, openAIStreamClientOutputStarted(c, false))
+}
+
 // fast policy block 在心跳未提交时保持 403 JSON 原语义。
 func TestWriteOpenAIFastPolicyBlockedResponse_BeforeKeepaliveCommit(t *testing.T) {
 	c, rec := newCompactBridgeTestContext(t, true)

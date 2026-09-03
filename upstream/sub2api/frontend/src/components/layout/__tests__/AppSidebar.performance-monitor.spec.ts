@@ -15,7 +15,7 @@ describe('performance monitor navigation contract', () => {
   })
 
   it('places the administrator scheduler settings entry before system settings', () => {
-    const schedulerEntry = "path: '/admin/scheduler-settings', label: t('nav.schedulerSettings'), icon: CogIcon"
+    const schedulerEntry = "path: '/admin/scheduler-logs', label: t('nav.schedulerLogs'), icon: OrderListIcon"
     const settingsEntry = "path: '/admin/settings', label: t('nav.settings'), icon: CogIcon"
 
     expect(source).toContain(schedulerEntry)

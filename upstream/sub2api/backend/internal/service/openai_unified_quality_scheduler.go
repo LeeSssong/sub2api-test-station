@@ -249,11 +249,7 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 			loadMap = loads
 		}
 	}
-	groupID := int64(0)
-	if req.GroupID != nil {
-		groupID = *req.GroupID
-	}
-	breakdowns := buildOpenAIQualityBreakdowns(candidateAccounts, snapshot.Accounts, loadMap, s.service.openaiFirstOutputSlow, groupID)
+	breakdowns := buildOpenAIQualityBreakdowns(candidateAccounts, snapshot.Accounts, loadMap, s.service.openaiFirstOutputSlow)
 	for i := range qualityCandidates {
 		qualityCandidates[i].quality = breakdowns[qualityCandidates[i].account.ID]
 	}

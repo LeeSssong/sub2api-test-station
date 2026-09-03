@@ -1,7 +1,7 @@
 # Project collaboration constraints
 
 - 本轮原生 Sub 小步发布计划的所有根线程、派生线程和审查线程，开始任何工作前必须完整阅读 `docs/project/native-sub-incremental-delivery-constraints.md` 与 `docs/project/native-sub-task-package-queue.md`；两份文件是本轮任务边界、线程交接、串行合并和部署停机门禁的共同事实源。
-- 所有线程在涉及验收站登录、日志、运维、发布或主站部署前，必须完整阅读 `docs/project/acceptance-station-global-constraints.md`。该文件是验收站固定入口/宿主身份、敏感凭据读取方式、验收站发布命令，以及主站仅允许“测试站验收通过，部署主站”或“快速部署到主站”两种明确授权路径、主站成功后同 commit 立即同步验收站的共同事实源。密码、token、私钥和支付/上游/通知凭据只能从本机 0600 受保护文件读取，不得写入仓库或聊天。
+- 所有线程在涉及验收站登录、日志、运维、发布或主站部署前，必须完整阅读 `docs/project/acceptance-station-global-constraints.md`。该文件是验收站固定入口/宿主身份、敏感凭据读取方式、验收站发布命令，以及主站仅允许“测试站验收通过，部署主站”“快速部署到主站”或用户明确授权“快速部署主站，不同步验收站”三种路径的共同事实源；不同步路径必须记录版本差异，不得声称主站与验收站一致。密码、token、私钥和支付/上游/通知凭据只能从本机 0600 受保护文件读取，不得写入仓库或聊天。
 - 所有环境的部署（包括验收站、主站、预演、relay-ops、旧 admin lab 和官方更新）只允许从根目录干净的 `main` 发起，且 `HEAD` commit/tree 必须与已推送的 `origin/main` 完全一致。禁止从功能 worktree、候选分支、临时 checkout 或 detached HEAD 构建或发布任何部署制品。发布链内部自动回滚到上一已验证槽位是失败保护，不是从非 `main` 发起新部署；人工重新发布旧版本必须先在 `main` 上形成明确的 revert 或前向修复提交并推送。
 
 - 自 2026-08-16 用户最新指令起，计划内任务以“功能实现完成 + 直接相关功能测试通过”为完成门槛；不再强制逐任务独立复审、scoped re-review 或全分支终审，也不为形式扩大验证。仍可用 fresh implementer 隔离写入；只有发现真实功能失败、范围冲突或高风险问题时才追加针对性复核。

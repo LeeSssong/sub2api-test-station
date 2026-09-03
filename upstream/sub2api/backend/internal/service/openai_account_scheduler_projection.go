@@ -351,7 +351,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 		qualityBreakdowns := map[int64]OpenAIQualityBreakdown{}
 		if unifiedQuality {
 			snapshot := s.service.OpenAIAccountQualitySnapshot(ctx)
-			qualityBreakdowns = buildOpenAIQualityBreakdowns(eligible, snapshot.Accounts, req.LoadMap, s.service.openaiFirstOutputSlow, groupID)
+			qualityBreakdowns = buildOpenAIQualityBreakdowns(eligible, snapshot.Accounts, req.LoadMap, s.service.openaiFirstOutputSlow)
 		}
 		rankPool := func(pool []*Account) []openAIAccountCandidateScore {
 			if unifiedQuality {

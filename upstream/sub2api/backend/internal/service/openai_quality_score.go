@@ -5,6 +5,18 @@ import (
 	"sort"
 )
 
+const OpenAIUnifiedQualityScoreVersion = "t122-v1"
+
+const (
+	openAIUnifiedQualitySuccessWeight    = 0.40
+	openAIUnifiedQualityP50TTFTWeight    = 0.24
+	openAIUnifiedQualityP90TTFTWeight    = 0.16
+	openAIUnifiedQualityOutputRateWeight = 0.10
+	openAIUnifiedQualityLiveLoadWeight   = 0.10
+	openAIUnifiedOutputRateP20           = 10.0
+	openAIUnifiedOutputRateP80           = 50.0
+)
+
 type OpenAIQualityWindowEvidence struct {
 	SampleCount     int64
 	Confidence      float64
@@ -23,16 +35,26 @@ type openAIBlendedScore struct {
 	Windows       map[OpenAIQualityWindow]OpenAIQualityWindowEvidence
 }
 
+type openAIOutputRateEvidence struct {
+	Value      float64
+	Confidence float64
+}
+
 type OpenAIQualityBreakdown struct {
+	QualityScoreVersion  string
 	QualityScore         float64
 	SuccessScore         float64
+	P50TTFTScore         float64
+	P90TTFTScore         float64
 	FirstOutputScore     float64
 	OutputRateScore      float64
 	LiveLoadScore        float64
+	Confidence           float64
 	P50TTFTMS            *float64
 	P90TTFTMS            *float64
 	OutputRate           *float64
 	Windows              map[OpenAIQualityWindow]OpenAIQualityWindowEvidence
+	WindowProvenance     map[OpenAIQualityWindow]OpenAIQualityWindowEvidence
 	FirstOutputSlowCount int
 	SlowEvidenceReplaced bool
 }
@@ -139,75 +161,151 @@ func clampOpenAIScore(value float64) float64 {
 	return value
 }
 
-func buildOpenAIQualityBreakdowns(accounts []*Account, qualities map[int64]OpenAIAccountQuality, loads map[int64]*AccountLoadInfo, slow *OpenAIFirstOutputSlowTracker, groupID int64) map[int64]OpenAIQualityBreakdown {
+func calculateOpenAIUnifiedQualityScore(quality OpenAIAccountQuality, load *AccountLoadInfo, slow *OpenAIFirstOutputSlowTracker, accountID int64) OpenAIQualityBreakdown {
+	breakdown := OpenAIQualityBreakdown{
+		QualityScoreVersion: OpenAIUnifiedQualityScoreVersion,
+		SuccessScore:        50,
+		P50TTFTScore:        50,
+		P90TTFTScore:        50,
+		OutputRateScore:     50,
+		LiveLoadScore:       scoreOpenAIUnifiedLiveLoad(load),
+		Windows:             make(map[OpenAIQualityWindow]OpenAIQualityWindowEvidence),
+	}
+	breakdown.WindowProvenance = breakdown.Windows
+
+	metricScore := func(metric func(OpenAIQualityWindowMetrics) (float64, bool), sampleCount func(OpenAIQualityWindowMetrics) int64, score func(float64) float64) (float64, float64) {
+		inputs := make(map[OpenAIQualityWindow]openAIWindowScoreInput, len(quality.Windows))
+		for window, metrics := range quality.Windows {
+			value, ok := metric(metrics)
+			if !ok {
+				continue
+			}
+			inputs[window] = openAIWindowScoreInput{Score: score(value), SampleCount: sampleCount(metrics), Target: openAIQualityWindowTarget(window)}
+		}
+		blended := blendOpenAIWindowScores(inputs, 50)
+		return blended.Score, blended.NeutralWeight
+	}
+
+	// Attempt counts represent success evidence; metric-specific sample counts
+	// keep missing TTFT/output-rate evidence from borrowing request confidence.
+	successInputs := make(map[OpenAIQualityWindow]openAIWindowScoreInput, len(quality.Windows))
+	for window, metrics := range quality.Windows {
+		if finiteQualityValue(metrics.SuccessRate) {
+			successInputs[window] = openAIWindowScoreInput{Score: scoreOpenAISuccessRate(*metrics.SuccessRate), SampleCount: metrics.AttemptCount, Target: openAIQualityWindowTarget(window)}
+		}
+	}
+	successBlended := blendOpenAIWindowScores(successInputs, 50)
+	breakdown.SuccessScore = successBlended.Score
+	breakdown.Confidence = 1 - successBlended.NeutralWeight
+	breakdown.Windows = successBlended.Windows
+	breakdown.WindowProvenance = breakdown.Windows
+
+	breakdown.P50TTFTScore, _ = metricScore(func(metrics OpenAIQualityWindowMetrics) (float64, bool) {
+		if !finiteQualityValue(metrics.TTFTP50MS) {
+			return 0, false
+		}
+		return *metrics.TTFTP50MS, true
+	}, func(metrics OpenAIQualityWindowMetrics) int64 { return metrics.TTFTSampleCount }, scoreOpenAITTFT)
+	breakdown.P90TTFTScore, _ = metricScore(func(metrics OpenAIQualityWindowMetrics) (float64, bool) {
+		if !finiteQualityValue(metrics.TTFTP90MS) {
+			return 0, false
+		}
+		return *metrics.TTFTP90MS, true
+	}, func(metrics OpenAIQualityWindowMetrics) int64 { return metrics.TTFTSampleCount }, scoreOpenAITTFT)
+	outputEvidence := blendOpenAIOutputRateEvidence(quality)
+	if outputEvidence.Confidence > 0 {
+		observed := scoreOpenAIOutputRate(outputEvidence.Value, openAIUnifiedOutputRateP20, openAIUnifiedOutputRateP80)
+		breakdown.OutputRateScore = observed*outputEvidence.Confidence + 50*(1-outputEvidence.Confidence)
+	}
+	if slow != nil {
+		view := slow.viewAccount(accountID)
+		breakdown.FirstOutputSlowCount = view.SlowCount
+		breakdown.SlowEvidenceReplaced = view.Replaced
+		applyOpenAISlowTTFTEvidence(&breakdown, view)
+	}
+	breakdown.FirstOutputScore = .6*breakdown.P50TTFTScore + .4*breakdown.P90TTFTScore
+	breakdown.LiveLoadScore = scoreOpenAIUnifiedLiveLoad(load)
+	refreshOpenAIUnifiedQualityScore(&breakdown)
+
+	for _, window := range []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D} {
+		metrics := quality.Windows[window]
+		if breakdown.P50TTFTMS == nil && finiteQualityValue(metrics.TTFTP50MS) {
+			breakdown.P50TTFTMS = floatPointer(*metrics.TTFTP50MS)
+		}
+		if breakdown.P90TTFTMS == nil && finiteQualityValue(metrics.TTFTP90MS) {
+			breakdown.P90TTFTMS = floatPointer(*metrics.TTFTP90MS)
+		}
+		if breakdown.OutputRate == nil && finiteQualityValue(metrics.OutputRateTokensPerSecond) {
+			breakdown.OutputRate = floatPointer(*metrics.OutputRateTokensPerSecond)
+		}
+	}
+	return breakdown
+}
+
+func applyOpenAISlowTTFTEvidence(breakdown *OpenAIQualityBreakdown, view OpenAIFirstOutputSlowView) {
+	if breakdown == nil || len(view.TTFTLowerBoundsMS) == 0 {
+		return
+	}
+	// Each 60-second observation acts as one bounded W1 sample. It adjusts
+	// later rank only and cannot make an account ineligible.
+	weight := math.Min(.20, float64(len(view.TTFTLowerBoundsMS))/float64(openAIQualityWindowTarget(OpenAIQualityWindow1H)))
+	p50 := scoreOpenAITTFT(openAIQualityPercentile(view.TTFTLowerBoundsMS, .50))
+	p90 := scoreOpenAITTFT(openAIQualityPercentile(view.TTFTLowerBoundsMS, .90))
+	breakdown.P50TTFTScore = (1-weight)*breakdown.P50TTFTScore + weight*p50
+	breakdown.P90TTFTScore = (1-weight)*breakdown.P90TTFTScore + weight*p90
+}
+
+func refreshOpenAIUnifiedQualityScore(breakdown *OpenAIQualityBreakdown) {
+	if breakdown == nil {
+		return
+	}
+	breakdown.FirstOutputScore = .6*breakdown.P50TTFTScore + .4*breakdown.P90TTFTScore
+	breakdown.QualityScore = openAIUnifiedQualitySuccessWeight*breakdown.SuccessScore +
+		openAIUnifiedQualityP50TTFTWeight*breakdown.P50TTFTScore +
+		openAIUnifiedQualityP90TTFTWeight*breakdown.P90TTFTScore +
+		openAIUnifiedQualityOutputRateWeight*breakdown.OutputRateScore +
+		openAIUnifiedQualityLiveLoadWeight*breakdown.LiveLoadScore
+}
+
+func blendOpenAIOutputRateEvidence(quality OpenAIAccountQuality) openAIOutputRateEvidence {
+	base := map[OpenAIQualityWindow]float64{OpenAIQualityWindow1H: .5, OpenAIQualityWindow24H: .3, OpenAIQualityWindow7D: .2}
+	ordered := []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D}
+	carry, weightedValue, confidence := 0.0, 0.0, 0.0
+	for _, window := range ordered {
+		metrics := quality.Windows[window]
+		available := base[window] + carry
+		weight := 0.0
+		if finiteQualityValue(metrics.OutputRateTokensPerSecond) && metrics.OutputRateSampleCount > 0 {
+			weight = available * math.Min(1, float64(metrics.OutputRateSampleCount)/float64(openAIQualityWindowTarget(window)))
+			weightedValue += *metrics.OutputRateTokensPerSecond * weight
+		}
+		confidence += weight
+		carry = available - weight
+	}
+	if confidence == 0 {
+		return openAIOutputRateEvidence{}
+	}
+	return openAIOutputRateEvidence{Value: weightedValue / confidence, Confidence: confidence}
+}
+
+func scoreOpenAIUnifiedLiveLoad(load *AccountLoadInfo) float64 {
+	if load == nil {
+		return 50
+	}
+	if load.LoadRate >= 0 {
+		return clampOpenAIScore(100 - float64(load.LoadRate))
+	}
+	return 50
+}
+
+func buildOpenAIQualityBreakdowns(accounts []*Account, qualities map[int64]OpenAIAccountQuality, loads map[int64]*AccountLoadInfo, slow *OpenAIFirstOutputSlowTracker) map[int64]OpenAIQualityBreakdown {
 	result := make(map[int64]OpenAIQualityBreakdown, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
 			continue
 		}
-		quality := qualities[account.ID]
-		var success, p50, p90, rate float64
-		var successWeight, p50Weight, p90Weight, rateWeight float64
-		for window, metrics := range quality.Windows {
-			target := float64(openAIQualityWindowTarget(window))
-			weight := map[OpenAIQualityWindow]float64{OpenAIQualityWindow1H: .5, OpenAIQualityWindow24H: .3, OpenAIQualityWindow7D: .2}[window]
-			confidence := 0.0
-			if target > 0 {
-				confidence = math.Min(1, float64(metrics.AttemptCount)/target)
-			}
-			weight *= confidence
-			if finiteQualityValue(metrics.SuccessRate) {
-				success += scoreOpenAISuccessRate(*metrics.SuccessRate) * weight
-				successWeight += weight
-			}
-			if finiteQualityValue(metrics.TTFTP50MS) {
-				p50 += scoreOpenAITTFT(*metrics.TTFTP50MS) * weight
-				p50Weight += weight
-			}
-			if finiteQualityValue(metrics.TTFTP90MS) {
-				p90 += scoreOpenAITTFT(*metrics.TTFTP90MS) * weight
-				p90Weight += weight
-			}
-			if finiteQualityValue(metrics.OutputRateTokensPerSecond) {
-				rate += *metrics.OutputRateTokensPerSecond * weight
-				rateWeight += weight
-			}
-		}
-		if successWeight == 0 {
-			success = 50
-		} else {
-			success /= successWeight
-		}
-		if p50Weight == 0 {
-			p50 = 50
-		} else {
-			p50 /= p50Weight
-		}
-		if p90Weight == 0 {
-			p90 = 50
-		} else {
-			p90 /= p90Weight
-		}
-		if rateWeight == 0 {
-			rate = 50
-		} else {
-			rate /= rateWeight
-		}
-		loadScore := scoreOpenAILiveLoad(loads[account.ID], account.Concurrency, 0, 0)
-		breakdown := OpenAIQualityBreakdown{QualityScore: .4*success + .4*(.6*p50+.4*p90) + .1*50 + .1*loadScore, SuccessScore: success, FirstOutputScore: .6*p50 + .4*p90, OutputRateScore: 50, LiveLoadScore: loadScore}
-		for _, window := range []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D} {
-			metrics := quality.Windows[window]
-			if breakdown.P50TTFTMS == nil && finiteQualityValue(metrics.TTFTP50MS) {
-				breakdown.P50TTFTMS = floatPointer(*metrics.TTFTP50MS)
-			}
-			if breakdown.P90TTFTMS == nil && finiteQualityValue(metrics.TTFTP90MS) {
-				breakdown.P90TTFTMS = floatPointer(*metrics.TTFTP90MS)
-			}
-			if breakdown.OutputRate == nil && finiteQualityValue(metrics.OutputRateTokensPerSecond) {
-				breakdown.OutputRate = floatPointer(*metrics.OutputRateTokensPerSecond)
-			}
-		}
-		result[account.ID] = breakdown
+		load := loads[account.ID]
+		result[account.ID] = calculateOpenAIUnifiedQualityScore(qualities[account.ID], load, slow, account.ID)
 	}
 	return result
 }

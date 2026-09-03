@@ -209,20 +209,22 @@ type OpenAISchedulerCustomPreset struct {
 }
 
 type OpenAISchedulerGroupPolicy struct {
-	Mode             OpenAISchedulerGroupPolicyMode      `json:"mode,omitempty"`
-	Preset           OpenAISchedulerPreset               `json:"preset,omitempty"`
-	PresetID         string                              `json:"preset_id,omitempty"`
-	ExtraRetryCount  *int                                `json:"extra_retry_count,omitempty"`
-	Priority         OpenAISchedulerBusinessPriority     `json:"priority,omitempty"`
-	Operations       OpenAISchedulerOperations           `json:"operations,omitempty"`
-	CompiledSnapshot OpenAISchedulerPolicyValues         `json:"compiled_snapshot,omitempty"`
-	TopK             *int                                `json:"top_k,omitempty"`
-	WeightOverrides  map[string]float64                  `json:"weight_overrides,omitempty"`
-	Fairness         *OpenAISchedulerFairnessOverride    `json:"fairness,omitempty"`
-	QualityGate      *OpenAISchedulerQualityGatePolicy   `json:"quality_gate,omitempty"`
-	SessionEscape    *OpenAISchedulerSessionEscapePolicy `json:"session_escape,omitempty"`
-	Values           OpenAISchedulerPolicyValues         `json:"-"`
-	LegacyFairness   OpenAISchedulerFairnessOverride     `json:"-"`
+	Mode                        OpenAISchedulerGroupPolicyMode      `json:"mode,omitempty"`
+	Preset                      OpenAISchedulerPreset               `json:"preset,omitempty"`
+	PresetID                    string                              `json:"preset_id,omitempty"`
+	ExtraRetryCount             *int                                `json:"extra_retry_count,omitempty"`
+	Priority                    OpenAISchedulerBusinessPriority     `json:"priority,omitempty"`
+	Operations                  OpenAISchedulerOperations           `json:"operations,omitempty"`
+	CompiledSnapshot            OpenAISchedulerPolicyValues         `json:"compiled_snapshot,omitempty"`
+	TopK                        *int                                `json:"top_k,omitempty"`
+	WeightOverrides             map[string]float64                  `json:"weight_overrides,omitempty"`
+	LegacyWeightOverrideIgnored bool                                `json:"legacy_weight_override_ignored,omitempty"`
+	IgnoredWeightOverrideKeys   []string                            `json:"ignored_weight_override_keys,omitempty"`
+	Fairness                    *OpenAISchedulerFairnessOverride    `json:"fairness,omitempty"`
+	QualityGate                 *OpenAISchedulerQualityGatePolicy   `json:"quality_gate,omitempty"`
+	SessionEscape               *OpenAISchedulerSessionEscapePolicy `json:"session_escape,omitempty"`
+	Values                      OpenAISchedulerPolicyValues         `json:"-"`
+	LegacyFairness              OpenAISchedulerFairnessOverride     `json:"-"`
 }
 
 func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {
@@ -244,7 +246,9 @@ func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {
 	}
 	if p.Values.TopK > 0 {
 		m["top_k"] = p.Values.TopK
-		m["weight_overrides"] = map[string]float64{"priority": p.Values.Priority, "load": p.Values.Load, "queue": p.Values.Queue, "error_rate": p.Values.ErrorRate, "ttft": p.Values.TTFT, "reset": p.Values.Reset, "quota_headroom": p.Values.QuotaHeadroom, "upstream_cost": p.Values.UpstreamCost, "previous_response": p.Values.PreviousResponse, "session_sticky": p.Values.SessionSticky}
+		if len(p.WeightOverrides) == 0 {
+			m["weight_overrides"] = map[string]float64{"priority": p.Values.Priority, "load": p.Values.Load, "queue": p.Values.Queue, "error_rate": p.Values.ErrorRate, "ttft": p.Values.TTFT, "reset": p.Values.Reset, "quota_headroom": p.Values.QuotaHeadroom, "upstream_cost": p.Values.UpstreamCost, "previous_response": p.Values.PreviousResponse, "session_sticky": p.Values.SessionSticky}
+		}
 		m["fairness"] = map[string]any{"candidate_pool_mode": p.Values.CandidatePoolMode, "exploration_ratio": p.Values.ExplorationRatio, "starvation_threshold_seconds": p.Values.StarvationThresholdSeconds, "fairness_weight": p.Values.FairnessWeight}
 	}
 	if p.Priority != (OpenAISchedulerBusinessPriority{}) {

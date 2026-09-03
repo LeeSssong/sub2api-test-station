@@ -1725,6 +1725,7 @@ func normalizeOpenAISchedulerGroupPoliciesWithPresets(policies map[int64]OpenAIS
 		if policy.SessionEscape != nil && !validateOpenAISchedulerSessionEscapePolicy(*policy.SessionEscape) {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy session escape is invalid")
 		}
+		markOpenAISchedulerLegacyWeightOverridesIgnored(&policy)
 		if policy.Priority != (OpenAISchedulerBusinessPriority{}) {
 			business, err := parseOpenAISchedulerBusinessPolicy(policy)
 			if err != nil {
@@ -1790,30 +1791,6 @@ func applyOpenAISchedulerGroupPolicySnapshot(values OpenAISchedulerPolicyValues,
 	if policy.TopK != nil {
 		values.TopK = *policy.TopK
 	}
-	for key, value := range policy.WeightOverrides {
-		switch key {
-		case "priority":
-			values.Priority = value
-		case "load":
-			values.Load = value
-		case "queue":
-			values.Queue = value
-		case "error_rate":
-			values.ErrorRate = value
-		case "ttft":
-			values.TTFT = value
-		case "reset":
-			values.Reset = value
-		case "quota_headroom":
-			values.QuotaHeadroom = value
-		case "upstream_cost":
-			values.UpstreamCost = value
-		case "previous_response":
-			values.PreviousResponse = value
-		case "session_sticky":
-			values.SessionSticky = value
-		}
-	}
 	if fairness := policy.Fairness; fairness != nil {
 		if fairness.CandidatePoolMode != nil {
 			values.CandidatePoolMode = *fairness.CandidatePoolMode
@@ -1829,6 +1806,21 @@ func applyOpenAISchedulerGroupPolicySnapshot(values OpenAISchedulerPolicyValues,
 		}
 	}
 	return values
+}
+
+func markOpenAISchedulerLegacyWeightOverridesIgnored(policy *OpenAISchedulerGroupPolicy) {
+	if len(policy.WeightOverrides) == 0 {
+		policy.LegacyWeightOverrideIgnored = false
+		policy.IgnoredWeightOverrideKeys = nil
+		return
+	}
+	keys := make([]string, 0, len(policy.WeightOverrides))
+	for key := range policy.WeightOverrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	policy.LegacyWeightOverrideIgnored = true
+	policy.IgnoredWeightOverrideKeys = keys
 }
 
 func schedulerPresetValuesByID(id string, custom map[string]OpenAISchedulerCustomPreset) (OpenAISchedulerPolicyValues, bool) {
@@ -1866,6 +1858,7 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 		if policy.SessionEscape != nil && !validateOpenAISchedulerSessionEscapePolicy(*policy.SessionEscape) {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy session escape is invalid")
 		}
+		markOpenAISchedulerLegacyWeightOverridesIgnored(&policy)
 		if policy.Mode == "" {
 			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
 		}
@@ -1883,22 +1876,22 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "fair group policy preset is invalid")
 			}
 			values = openAISchedulerPresetValues(policy.Preset)
-			if policy.Fairness != nil {
-				if policy.Fairness.CandidatePoolMode != nil {
-					values.CandidatePoolMode = *policy.Fairness.CandidatePoolMode
-				}
-				if policy.Fairness.ExplorationRatio != nil {
-					values.ExplorationRatio = *policy.Fairness.ExplorationRatio
-				}
-				if policy.Fairness.StarvationThresholdSeconds != nil {
-					values.StarvationThresholdSeconds = *policy.Fairness.StarvationThresholdSeconds
-				}
-				if policy.Fairness.FairnessWeight != nil {
-					values.FairnessWeight = *policy.Fairness.FairnessWeight
-				}
-			}
 		} else if policy.Preset != "" {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "weighted group policy cannot set a preset")
+		}
+		if policy.Fairness != nil {
+			if policy.Fairness.CandidatePoolMode != nil {
+				values.CandidatePoolMode = *policy.Fairness.CandidatePoolMode
+			}
+			if policy.Fairness.ExplorationRatio != nil {
+				values.ExplorationRatio = *policy.Fairness.ExplorationRatio
+			}
+			if policy.Fairness.StarvationThresholdSeconds != nil {
+				values.StarvationThresholdSeconds = *policy.Fairness.StarvationThresholdSeconds
+			}
+			if policy.Fairness.FairnessWeight != nil {
+				values.FairnessWeight = *policy.Fairness.FairnessWeight
+			}
 		}
 		if policy.TopK != nil {
 			if *policy.TopK < 1 || *policy.TopK > 32 {
@@ -1909,28 +1902,6 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 		for key, value := range policy.WeightOverrides {
 			if !openAISchedulerPolicyWeightKeys[key] || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 10 {
 				return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy weight is invalid")
-			}
-			switch key {
-			case "priority":
-				values.Priority = value
-			case "load":
-				values.Load = value
-			case "queue":
-				values.Queue = value
-			case "error_rate":
-				values.ErrorRate = value
-			case "ttft":
-				values.TTFT = value
-			case "reset":
-				values.Reset = value
-			case "quota_headroom":
-				values.QuotaHeadroom = value
-			case "upstream_cost":
-				values.UpstreamCost = value
-			case "previous_response":
-				values.PreviousResponse = value
-			case "session_sticky":
-				values.SessionSticky = value
 			}
 		}
 		if values.TopK <= 0 || values.TopK > 32 || values.Priority+values.Load+values.Queue+values.ErrorRate+values.TTFT+values.Reset+values.QuotaHeadroom+values.UpstreamCost <= 0 {

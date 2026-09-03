@@ -290,16 +290,12 @@ type AccountMonitorGroupProfitability struct {
 }
 
 type AccountMonitorRealRequestTimelinePoint struct {
-	StartAt           time.Time `json:"start_at"`
-	EndAt             time.Time `json:"end_at"`
-	RequestCount      int64     `json:"request_count"`
-	SuccessCount      int64     `json:"success_count"`
-	FailureCount      int64     `json:"failure_count"`
-	TTFTP95MS         *float64  `json:"ttft_p95_ms,omitempty"`
-	ProbeCount        int64     `json:"probe_count,omitempty"`
-	ProbeSuccessCount int64     `json:"probe_success_count,omitempty"`
-	ProbeFailureCount int64     `json:"probe_failure_count,omitempty"`
-	Source            string    `json:"source,omitempty"`
+	StartAt      time.Time `json:"start_at"`
+	EndAt        time.Time `json:"end_at"`
+	RequestCount int64     `json:"request_count"`
+	SuccessCount int64     `json:"success_count"`
+	FailureCount int64     `json:"failure_count"`
+	TTFTP95MS    *float64  `json:"ttft_p95_ms,omitempty"`
 }
 
 type AccountMonitorUsageWindow struct {

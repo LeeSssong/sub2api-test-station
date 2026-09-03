@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -245,7 +246,59 @@ func (h *AccountMonitorHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	response.Success(c, page)
+	publicPage, err := publicAccountMonitorPage(page)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_MONITOR_RESPONSE_UNAVAILABLE", "account monitor response is unavailable"))
+		return
+	}
+	response.Success(c, publicPage)
+}
+
+var accountMonitorPublicSourceSplitFields = map[string]struct{}{
+	"source":                    {},
+	"evidence_source":           {},
+	"probe_count":               {},
+	"probe_success_count":       {},
+	"probe_failure_count":       {},
+	"probe_sample_count":        {},
+	"probe_success_rate":        {},
+	"probe_ttft_p50_ms":         {},
+	"probe_latency_p95_ms":      {},
+	"real_request_sample_count": {},
+	"real_request_weight":       {},
+	"probe_weight":              {},
+}
+
+// publicAccountMonitorPage keeps service compatibility fields internal while
+// the monitor API exposes one source-agnostic request contract.
+func publicAccountMonitorPage(page service.AccountMonitorPage) (any, error) {
+	payload, err := json.Marshal(page)
+	if err != nil {
+		return nil, err
+	}
+	var publicPage any
+	if err := json.Unmarshal(payload, &publicPage); err != nil {
+		return nil, err
+	}
+	stripAccountMonitorSourceSplitFields(publicPage)
+	return publicPage, nil
+}
+
+func stripAccountMonitorSourceSplitFields(value any) {
+	switch value := value.(type) {
+	case map[string]any:
+		for key, child := range value {
+			if _, omit := accountMonitorPublicSourceSplitFields[key]; omit {
+				delete(value, key)
+				continue
+			}
+			stripAccountMonitorSourceSplitFields(child)
+		}
+	case []any:
+		for _, child := range value {
+			stripAccountMonitorSourceSplitFields(child)
+		}
+	}
 }
 
 func (h *AccountMonitorHandler) ListAccountModelRuntime(c *gin.Context) {

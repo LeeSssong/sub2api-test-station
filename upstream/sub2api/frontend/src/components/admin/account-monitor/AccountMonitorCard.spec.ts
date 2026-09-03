@@ -88,7 +88,7 @@ describe('AccountMonitorCard R2', () => {
     const wrapper = mountCard()
     const text = wrapper.text()
 
-    expect(text).toContain('12,846 次窗口真实请求')
+    expect(text).toContain('12,846 次有效观测')
     expect(text).toContain('累计 54,231 次')
     expect(text).not.toContain('质量评分')
     expect(text).not.toContain('全站质量排名')
@@ -171,30 +171,35 @@ describe('AccountMonitorCard R2', () => {
     expect(mountCard({ rankingScope: 'group' }).get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')
   })
 
-  it('renders 24 empty real-request buckets and labels probe refresh separately', () => {
+  it('renders 24 empty request buckets without exposing a source label', () => {
     const wrapper = mountCard({ account: { ...account, real_request_timeline: [] } })
 
     expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(24)
-    expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('近期真实请求')
-    expect(wrapper.get('[data-test="refresh-account"]').text()).toContain('刷新探测状态')
-    expect(wrapper.get('[data-test="refresh-account"]').attributes('title')).toContain('不生成真实请求样本')
+    expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('近期请求')
+    expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
+    expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
+    expect(wrapper.get('[data-test="refresh-account"]').text()).toContain('刷新账号状态')
+    expect(wrapper.get('[data-test="refresh-account"]').attributes('title')).toBe('刷新账号状态')
   })
 
-  it('shows an immediate latency-only tooltip without adding probes to real-request counts', async () => {
+  it('renders a probe-only selected bucket as one ordinary request', async () => {
     const wrapper = mountCard({
       account: {
         ...account,
-        request_count: 0,
+        request_count: 1,
         lifetime_real_request_count: 51,
         real_request_timeline: [{
           start_at: '2026-08-30T00:00:00Z', end_at: '2026-08-30T01:00:00Z',
-          request_count: 0, success_count: 0, failure_count: 0,
-          probe_count: 1, probe_success_count: 1, probe_failure_count: 0, source: 'probe', ttft_p95_ms: 900,
+          request_count: 1, success_count: 1, failure_count: 0,
+          ttft_p95_ms: 900,
         }],
       },
     })
 
-    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('0 次窗口真实请求 · 累计 51 次')
+    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('1 次有效观测 · 累计 51 次')
+    expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
+    expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
+    expect(wrapper.get('[data-test="real-request-bar"]').classes()).toContain('bg-emerald-500')
     expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toBeUndefined()
     await wrapper.get('.performance-bar-wrap').trigger('mouseenter')
     expect(wrapper.get('[data-test="real-request-tooltip"]').text()).toBe('TTFT P95 900 ms')
@@ -253,6 +258,6 @@ describe('AccountMonitorCard R2', () => {
     const wrapper = mountCard()
     expect(wrapper.get('[data-test="monitor-card"]').classes()).toContain('monitor-card-shell')
     expect(wrapper.get('[data-test="monitor-card-header"]').classes()).toContain('monitor-card-layout')
-    expect(wrapper.get('[data-test="timeline-section"]').attributes('aria-label')).toBe('真实性能')
+    expect(wrapper.get('[data-test="timeline-section"]').attributes('aria-label')).toBe('近期性能')
   })
 })

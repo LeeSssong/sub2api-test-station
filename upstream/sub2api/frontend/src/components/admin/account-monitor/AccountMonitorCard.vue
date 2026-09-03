@@ -14,7 +14,7 @@
             <span class="account-id">#{{ account.account_id }}</span>
           </h2>
           <div class="monitor-card-meta" data-test="account-metadata">
-            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次窗口真实请求 · 累计 {{ formatNumber(account.lifetime_real_request_count ?? 0) }} 次</span>
+            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(account.request_count ?? 0) }} 次有效观测 · 累计 {{ formatNumber(account.lifetime_real_request_count ?? 0) }} 次</span>
             <template v-if="recommendation">
               <span aria-hidden="true">·</span>
               <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
@@ -30,8 +30,8 @@
       <div class="monitor-card-body">
         <div class="monitor-card-main">
           <section class="monitor-card-metrics" data-test="key-metrics" aria-label="关键服务指标">
-            <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="realSuccessRate" />
-            <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="realTTFTP95" />
+            <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="successRate" />
+            <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="formatMs(account.ttft_p95_ms)" />
             <MetricCell data-test="profit-rate-metric" tone="profit" label="利润率" :value="profitRateLabel" />
             <MetricCell data-test="native-priority-metric" tone="native-priority" label="Sub 原生优先级" :value="String(account.priority ?? '--')" />
             <div class="service-metric multiplier-metric" data-test="upstream-multiplier-metric">
@@ -44,10 +44,10 @@
             <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
           </section>
         </div>
-        <section class="monitor-card-chart" data-test="timeline-section" aria-label="真实性能">
+        <section class="monitor-card-chart" data-test="timeline-section" aria-label="近期性能">
           <div class="chart-head">
-            <h3>近期真实请求</h3>
-            <button type="button" class="chart-action" data-test="refresh-account" title="刷新主动探测状态，不生成真实请求样本" aria-label="刷新主动探测状态，不生成真实请求样本" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新探测状态</button>
+            <h3>近期请求</h3>
+            <button type="button" class="chart-action" data-test="refresh-account" title="刷新账号状态" aria-label="刷新账号状态" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新账号状态</button>
           </div>
           <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
             <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
@@ -87,7 +87,7 @@
               <span class="font-mono text-xs font-normal text-gray-500 dark:text-slate-400"> #{{ account.account_id }}</span>
             </h2>
             <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] leading-4 text-gray-500 dark:text-slate-400" data-test="account-metadata">
-              <span>当前分组：{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>基于 {{ formatNumber(realEvidence?.request_count ?? account.request_count ?? 0) }} 次已持久化真实请求</span><span aria-hidden="true">·</span><span>数据累计至当前</span>
+              <span>当前分组：{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>基于 {{ formatNumber(account.request_count ?? 0) }} 次有效观测</span><span aria-hidden="true">·</span><span>数据累计至当前</span>
               <template v-if="recommendation">
                 <span aria-hidden="true">·</span>
                 <HelpTooltip v-if="formalMigration" class="!ml-0" width-class="w-80" data-test="recommendation-tooltip-trigger">
@@ -146,9 +146,9 @@
       </section>
 
       <section class="grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-xs sm:grid-cols-3 lg:grid-cols-2" data-test="key-metrics" aria-label="关键服务指标">
-        <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="realSuccessRate" detail="真实请求" />
-        <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="`${realTTFTP95} · P50 ${formatMs(probeTTFTP50MS)}`" detail="真实成功请求" />
-        <MetricCell data-test="latency-metric" tone="latency" label="完整响应 P95" :value="formatMs(probeLatencyP95MS)" detail="成功响应" />
+        <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="successRate" detail="有效观测" />
+        <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="formatMs(account.ttft_p95_ms)" detail="有效成功观测" />
+        <MetricCell data-test="latency-metric" tone="latency" label="完整响应 P95" :value="formatMs(account.latency_p95_ms)" detail="有效成功观测" />
         <div data-test="profit-rate-metric" class="metric-extra rounded-lg border border-violet-200 bg-violet-50 p-3 dark:border-violet-900/50 dark:bg-violet-950/20"><div class="text-[11px] text-gray-500 dark:text-slate-400">利润率</div><div class="mt-1 font-mono text-lg font-semibold">{{ profitRateLabel }}</div><p class="mt-1 text-[10px]">当前分组</p></div>
         <div data-test="native-priority-metric" class="metric-extra rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50"><div class="text-[11px] text-gray-500 dark:text-slate-400">Sub 原生优先级</div><div class="mt-1 font-mono text-lg font-semibold">{{ account.priority ?? '--' }}</div></div>
         <div data-test="upstream-multiplier-metric" class="metric-extra rounded-lg border border-cyan-200 bg-cyan-50 p-3 dark:border-cyan-900/50 dark:bg-cyan-950/20"><div class="text-[11px] text-gray-500 dark:text-slate-400">上游声明倍率</div><div class="mt-1 font-mono text-lg font-semibold">{{ formatMultiplier(account.upstream_multiplier?.value ?? account.multiplier?.value) }}</div><p class="mt-1 text-[10px]">可编辑</p></div>
@@ -422,15 +422,10 @@ const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
 const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
 const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
-const probeTTFTP50MS = computed(() => props.account.probe_ttft_p50_ms ?? props.account.ttft_p50_ms ?? null)
-const probeLatencyP95MS = computed(() => props.account.probe_latency_p95_ms ?? props.account.latency_p95_ms ?? null)
-const realEvidence = computed(() => props.account.real_request_evidence)
-const realSuccessRate = computed(() => {
-  if (realEvidence.value && realEvidence.value.request_count > 0) return formatPercent(realEvidence.value.success_rate)
-  if (props.account.success_rate != null) return formatPercent(props.account.success_rate)
+const successRate = computed(() => {
+  if (props.account.success_rate != null && (props.account.sample_count > 0 || props.account.request_count > 0)) return formatPercent(props.account.success_rate)
   return '--'
 })
-const realTTFTP95 = computed(() => formatMs(realEvidence.value?.ttft_p95_ms ?? props.account.ttft_p95_ms))
 const profitRateLabel = computed(() => {
   if (props.rankingScope === 'global') return '按分组查看'
   const profit = props.account.group_profitability
@@ -442,14 +437,12 @@ const realRequestBars = computed(() => {
   if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, latencyLabel: 'TTFT P95 --' }))
   return points.map((point) => {
     const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 10000
-    const probeCount = point.probe_count ?? 0
-    const source = point.source ?? (point.request_count > 0 ? 'real' : probeCount > 0 ? 'probe' : 'no_data')
-    const requestCount = point.request_count + probeCount
-    const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : source === 'probe' ? (point.probe_failure_count && point.probe_failure_count > 0 ? 'bg-red-500' : 'bg-amber-400') : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
+    const requestCount = point.request_count
+    const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
     return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: `TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
   })
 })
-const realTimelineAriaLabel = computed(() => `真实性能，${realEvidence.value?.request_count ?? props.account.request_count ?? 0} 次真实请求`)
+const realTimelineAriaLabel = computed(() => `近期性能，${props.account.request_count ?? 0} 次有效观测`)
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
@@ -1085,7 +1078,6 @@ const CostMetric = defineComponent({
 
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"]::before { display: none; content: none; }
 
-.monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-edit"],
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="account-delete"],
 .monitor-card-shell > .monitor-card-layout > [data-test="account-actions"] [data-test="refresh-account"] {
   display: none;

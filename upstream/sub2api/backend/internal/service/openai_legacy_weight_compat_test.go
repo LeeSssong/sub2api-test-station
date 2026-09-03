@@ -59,3 +59,28 @@ func TestOpenAILegacyWeightOverridesRemainIntactWhenPolicyIsMarshaled(t *testing
 	require.True(t, raw["legacy_weight_override_ignored"].(bool))
 	require.Equal(t, []any{"ttft", "upstream_cost"}, raw["ignored_weight_override_keys"])
 }
+
+func TestOpenAILegacyWeightOverridesKeepCandidatePoolFairnessAtSelection(t *testing.T) {
+	policies := normalizeOpenAISchedulerRuntimeGroupPolicies(
+		4,
+		map[string]float64{},
+		OpenAISchedulerFairnessSettings{
+			CandidatePoolMode:          OpenAISchedulerCandidatePoolModeHybrid,
+			ExplorationRatio:           20,
+			StarvationThresholdSeconds: 21600,
+			FairnessWeight:             2,
+		},
+		`{"11":{"mode":"weighted_override","weight_overrides":{"upstream_cost":9,"ttft":8},"fairness":{"candidate_pool_mode":"all_eligible","exploration_ratio":25,"starvation_threshold_seconds":600,"fairness_weight":4}}}`,
+	)
+	policy := policies[11]
+	weights := GatewayOpenAIWSSchedulerScoreWeightsView{Priority: policy.Values.Priority, Load: policy.Values.Load, Queue: policy.Values.Queue, ErrorRate: policy.Values.ErrorRate, TTFT: policy.Values.TTFT, Reset: policy.Values.Reset, QuotaHeadroom: policy.Values.QuotaHeadroom, UpstreamCost: policy.Values.UpstreamCost, Previous: policy.Values.PreviousResponse, SessionSticky: policy.Values.SessionSticky}
+
+	gotWeights, gotFairness := applyOpenAISchedulerGroupPolicy(weights, defaultOpenAISchedulerFairnessSettings(), policy, true)
+
+	require.Equal(t, OpenAISchedulerCandidatePoolModeAllEligible, gotFairness.CandidatePoolMode)
+	require.Equal(t, 25, gotFairness.ExplorationRatio)
+	require.Equal(t, 600, gotFairness.StarvationThresholdSeconds)
+	require.Equal(t, 4.0, gotFairness.FairnessWeight)
+	require.Equal(t, policy.Values.TTFT, gotWeights.TTFT)
+	require.Equal(t, policy.Values.UpstreamCost, gotWeights.UpstreamCost)
+}

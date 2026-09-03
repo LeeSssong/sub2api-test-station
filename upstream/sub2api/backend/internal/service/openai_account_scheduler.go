@@ -1397,7 +1397,7 @@ func applyOpenAISchedulerGroupPolicy(
 	weights.UpstreamCost = values.UpstreamCost
 	weights.Previous = values.PreviousResponse
 	weights.SessionSticky = values.SessionSticky
-	if policy.Priority == (OpenAISchedulerBusinessPriority{}) && policy.Mode != OpenAISchedulerGroupPolicyModeFair && policy.Mode != OpenAISchedulerGroupPolicyModePreset {
+	if policy.Priority == (OpenAISchedulerBusinessPriority{}) && policy.Mode != OpenAISchedulerGroupPolicyModeFair && policy.Mode != OpenAISchedulerGroupPolicyModePreset && !policy.LegacyWeightOverrideIgnored {
 		return weights, OpenAISchedulerFairnessSettings{CandidatePoolMode: OpenAISchedulerCandidatePoolModeTopK}
 	}
 	return weights, OpenAISchedulerFairnessSettings{

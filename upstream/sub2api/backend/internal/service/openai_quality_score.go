@@ -13,6 +13,8 @@ const (
 	openAIUnifiedQualityP90TTFTWeight    = 0.16
 	openAIUnifiedQualityOutputRateWeight = 0.10
 	openAIUnifiedQualityLiveLoadWeight   = 0.10
+	openAIUnifiedOutputRateP20           = 10.0
+	openAIUnifiedOutputRateP80           = 50.0
 )
 
 type OpenAIQualityWindowEvidence struct {
@@ -210,6 +212,11 @@ func calculateOpenAIUnifiedQualityScore(quality OpenAIAccountQuality, load *Acco
 		}
 		return *metrics.TTFTP90MS, true
 	}, func(metrics OpenAIQualityWindowMetrics) int64 { return metrics.TTFTSampleCount }, scoreOpenAITTFT)
+	outputEvidence := blendOpenAIOutputRateEvidence(quality)
+	if outputEvidence.Confidence > 0 {
+		observed := scoreOpenAIOutputRate(outputEvidence.Value, openAIUnifiedOutputRateP20, openAIUnifiedOutputRateP80)
+		breakdown.OutputRateScore = observed*outputEvidence.Confidence + 50*(1-outputEvidence.Confidence)
+	}
 	if slow != nil {
 		view := slow.viewAccount(accountID)
 		breakdown.FirstOutputSlowCount = view.SlowCount
@@ -293,31 +300,12 @@ func scoreOpenAIUnifiedLiveLoad(load *AccountLoadInfo) float64 {
 
 func buildOpenAIQualityBreakdowns(accounts []*Account, qualities map[int64]OpenAIAccountQuality, loads map[int64]*AccountLoadInfo, slow *OpenAIFirstOutputSlowTracker) map[int64]OpenAIQualityBreakdown {
 	result := make(map[int64]OpenAIQualityBreakdown, len(accounts))
-	outputEvidence := make(map[int64]openAIOutputRateEvidence, len(accounts))
-	outputValues := make([]float64, 0, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
 			continue
 		}
 		load := loads[account.ID]
-		quality := qualities[account.ID]
-		result[account.ID] = calculateOpenAIUnifiedQualityScore(quality, load, slow, account.ID)
-		evidence := blendOpenAIOutputRateEvidence(quality)
-		outputEvidence[account.ID] = evidence
-		if evidence.Confidence > 0 {
-			outputValues = append(outputValues, evidence.Value)
-		}
-	}
-	p20 := openAIQualityPercentile(outputValues, .20)
-	p80 := openAIQualityPercentile(outputValues, .80)
-	for accountID, breakdown := range result {
-		evidence := outputEvidence[accountID]
-		if evidence.Confidence > 0 {
-			observed := scoreOpenAIOutputRate(evidence.Value, p20, p80)
-			breakdown.OutputRateScore = observed*evidence.Confidence + 50*(1-evidence.Confidence)
-			refreshOpenAIUnifiedQualityScore(&breakdown)
-			result[accountID] = breakdown
-		}
+		result[account.ID] = calculateOpenAIUnifiedQualityScore(qualities[account.ID], load, slow, account.ID)
 	}
 	return result
 }

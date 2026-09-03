@@ -34,10 +34,10 @@ func TestOpenAIUnifiedQualityScoreUsesVersionedFixedComponents(t *testing.T) {
 	require.InDelta(t, 100, got.SuccessScore, .001)
 	require.InDelta(t, 100, got.P50TTFTScore, .001)
 	require.InDelta(t, 80, got.P90TTFTScore, .001)
-	require.InDelta(t, 50, got.OutputRateScore, .001)
+	require.InDelta(t, 55, got.OutputRateScore, .001)
 	require.InDelta(t, 83, got.LiveLoadScore, .001)
-	// 100*.40 + 100*.24 + 80*.16 + 50*.10 + 83*.10.
-	require.InDelta(t, 90.1, got.QualityScore, .001)
+	// 100*.40 + 100*.24 + 80*.16 + 55*.10 + 83*.10.
+	require.InDelta(t, 90.6, got.QualityScore, .001)
 	require.InDelta(t, 1, got.Confidence, .001)
 	require.InDelta(t, 1, got.Windows[OpenAIQualityWindow1H].Confidence, .001)
 }
@@ -117,6 +117,42 @@ func TestOpenAIUnifiedQualityScoreRanksConfidenceWeightedOutputRate(t *testing.T
 		{account: accounts[1], quality: breakdowns[2]},
 	})
 	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
+}
+
+// Production break caught: candidate-pool-relative output normalization makes
+// the same account score differently when only its eligible peers change.
+func TestOpenAIUnifiedQualityScoreOutputRateIsInvariantAcrossCandidatePools(t *testing.T) {
+	quality := func(accountID int64, outputRate float64) OpenAIAccountQuality {
+		return OpenAIAccountQuality{AccountID: accountID, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow1H: {
+				AttemptCount: 20, SuccessCount: 19, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 20, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+				OutputRateSampleCount: 20, OutputRateTokensPerSecond: floatPtr(outputRate),
+			},
+			OpenAIQualityWindow24H: {
+				AttemptCount: 100, SuccessCount: 95, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 100, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+				OutputRateSampleCount: 100, OutputRateTokensPerSecond: floatPtr(outputRate),
+			},
+			OpenAIQualityWindow7D: {
+				AttemptCount: 300, SuccessCount: 285, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 300, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+				OutputRateSampleCount: 300, OutputRateTokensPerSecond: floatPtr(outputRate),
+			},
+		}}
+	}
+	target := quality(19, 30)
+	poolWithSlowerPeer := buildOpenAIQualityBreakdowns([]*Account{{ID: 19}, {ID: 20}}, map[int64]OpenAIAccountQuality{
+		19: target,
+		20: quality(20, 10),
+	}, nil, nil)[19]
+	poolWithFasterPeer := buildOpenAIQualityBreakdowns([]*Account{{ID: 19}, {ID: 21}}, map[int64]OpenAIAccountQuality{
+		19: target,
+		21: quality(21, 50),
+	}, nil, nil)[19]
+
+	require.InDelta(t, poolWithSlowerPeer.OutputRateScore, poolWithFasterPeer.OutputRateScore, .001)
+	require.InDelta(t, poolWithSlowerPeer.QualityScore, poolWithFasterPeer.QualityScore, .001)
 }
 
 // Production break caught: recording the 60-second observation only for

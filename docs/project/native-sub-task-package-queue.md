@@ -1,5 +1,9 @@
 # 原生 Sub 小步发布任务包队列
 
+**T119 OpenAI 调度决策日志（2026-09-03）：** 状态 `REFRESH_REQUIRED`。候选 `codex/t119-openai-scheduler-decision-log@0a160dc1b`，worktree `.worktrees/t119-openai-scheduler-decision-log`，基线 `main@bced1a52b`。已实现 OpenAI/Codex 普通 HTTP 文本请求的尽力异步调度决策日志、管理员查询 API 与“调度日志”页面，并移除已失效的“启用统一质量调度”和“额外恢复次数”控件。日志队列满时允许少量丢失并暴露不完整告警，不阻塞请求。候选落后当前 `main@0600011dc`，必须先整合最新 `main`、核对真实算法版本/运行时重试预算/切号次数契约、完成直接回归和发布预检后才能合并发布。本次用户明确要求合并、推送并直接发布主站，且显式要求不同步测试站；该例外将如实记录。
+
+**独立测试服务器主站制品克隆（2026-09-03）：** 状态 `DONE`。直接复制主站当前活动 Sub2API 与 homepage/Caddy 不可变镜像到独立服务器，未修改业务代码、未复制主站数据或凭据。测试站运行 `sub2api-test-station` 专用 Compose project，根首页与主站 HTML 指纹一致，应用镜像 source commit/tree 与主站活动镜像一致；独立测试数据与网络/卷保持隔离。IPv4、登录、健康和主站不变性验收通过；IPv6 80 端口因宿主 Docker 层冲突记录为未启用。交付手册见 `docs/operations/independent-test-station-handoff.md`。
+
 **T118 Responses 流水请求元数据恢复（2026-09-03）：** 状态 `DONE`。已合并为根 `main@e00c37e0e5ac076aaddc043fccf82af6bc5a1d1b` 并推送；按用户明确“快速部署到主站，不同步验收站”完成主站发布，宿主结果 `succeeded`、`downtime_required=false`、活动槽 `green`，公网健康和 API/worker/model-detector 健康均通过。生产只读核对确认新 Responses 流水已记录 `/v1/responses` 和客户端 IP；历史空值保持不变。候选 worktree/分支已在发布后归档删除，恢复 bundle 位于 `/Users/gongtengxinwen/Documents/sub2api-archives/2026-09-03-t118/t118-responses-usage-metadata.bundle`，SHA-256 `6d8fe33f36fc9a26b209c9593360bff2eab1bf61e80fcb08fd3df34fbb79865d`。无迁移、配置或生产数据写入。
 
 **T118 Responses 流水请求元数据恢复（2026-09-03）：** 状态 `READY_FOR_ROOT_REVIEW`。候选 `codex/t118-responses-usage-metadata@fd9b0bd2c`，worktree `/Users/gongtengxinwen/Documents/sub2api搭建/.worktrees/t118-responses-usage-metadata`，基线 `main@f9d606ea3`。已恢复 Responses 成功记账路径的 Sub 原生请求元数据快照，补充 Responses 调用点顺序合同和独立请求哈希断言；直接 handler 测试、`go build ./cmd/server`、gofmt、diff-check 通过。改动仅两个 handler 文件，无迁移、配置、账务、调度、生产数据或历史回填；未合并、推送或部署。等待根总控 `AUTHORIZE_MERGE_TO_MAIN`。

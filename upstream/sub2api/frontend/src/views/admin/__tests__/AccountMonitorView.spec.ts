@@ -1020,7 +1020,7 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
 
     expect(getAccountById).toHaveBeenCalledTimes(1)
-    expect(getAccountById).toHaveBeenCalledWith(10)
+    expect(getAccountById).toHaveBeenCalledWith(10, { includeSchedulerScore: true })
     expect(wrapper.get('[data-test="native-dialog"]').text()).toContain('10')
   })
 

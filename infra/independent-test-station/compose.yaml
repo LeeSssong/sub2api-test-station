@@ -1,0 +1,101 @@
+name: sub2api-test-station
+
+x-app-env: &app-env
+  AUTO_SETUP: "true"
+  SERVER_HOST: 0.0.0.0
+  SERVER_PORT: "8080"
+  SERVER_MODE: release
+  RUN_MODE: standard
+  DATABASE_HOST: test-station-postgres
+  DATABASE_PORT: "5432"
+  DATABASE_USER: ${ADMIN_LAB_DB_USER:?required}
+  DATABASE_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?required}
+  DATABASE_DBNAME: ${ADMIN_LAB_DB_NAME:?required}
+  DATABASE_SSLMODE: disable
+  REDIS_HOST: test-station-redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: ${ADMIN_LAB_REDIS_PASSWORD:?required}
+  REDIS_DB: "0"
+  ADMIN_EMAIL: ${ADMIN_LAB_ADMIN_EMAIL:?required}
+  ADMIN_PASSWORD: ${ADMIN_LAB_ADMIN_PASSWORD:?required}
+  JWT_SECRET: ${ADMIN_LAB_JWT_SECRET:?required}
+  TOTP_ENCRYPTION_KEY: ${ADMIN_LAB_TOTP_ENCRYPTION_KEY:?required}
+  AUTH_COOKIE_NAME: test_station_session
+  SUB2API_ENVIRONMENT: test-station
+  SUB2API_DEPLOYMENT_COMMIT: ${CLONE_SOURCE_COMMIT:?required}
+  SUB2API_MODEL_DETECTOR_URL: http://test-station-detector:8090
+  SUB2API_MODEL_DETECTOR_TOKEN: ${ADMIN_LAB_DETECTOR_TOKEN:?required}
+  SECURITY_URL_ALLOWLIST_ENABLED: "true"
+  SECURITY_URL_ALLOWLIST_ALLOW_PRIVATE_HOSTS: "true"
+  SECURITY_URL_ALLOWLIST_UPSTREAM_HOSTS: test-station-mock-upstream,test-station-mock-payment
+  PAYMENT_PROVIDER: ${ADMIN_LAB_PAYMENT_PROVIDER:-mock}
+  UPSTREAM_PROVIDER: ${ADMIN_LAB_UPSTREAM_PROVIDER:-mock-upstream}
+  NOTIFICATION_TRANSPORT: ${ADMIN_LAB_NOTIFICATION_TRANSPORT:-lab-outbox}
+
+services:
+  test-station-api:
+    image: ${CLONE_APP_IMAGE:?required}
+    environment:
+      <<: *app-env
+      SERVER_PROCESS_ROLE: api
+    volumes: [test-station-app-data:/app/data]
+    networks: [test-station]
+    depends_on:
+      test-station-postgres: {condition: service_healthy}
+      test-station-redis: {condition: service_healthy}
+      test-station-detector: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"], interval: 10s, timeout: 5s, retries: 12}
+  test-station-worker:
+    image: ${CLONE_APP_IMAGE:?required}
+    environment:
+      <<: *app-env
+      SERVER_PROCESS_ROLE: worker
+    command: ["/app/sub2api"]
+    volumes: [test-station-app-data:/app/data]
+    networks: [test-station]
+    depends_on:
+      test-station-postgres: {condition: service_healthy}
+      test-station-redis: {condition: service_healthy}
+      test-station-detector: {condition: service_healthy}
+    healthcheck: {test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"], interval: 10s, timeout: 5s, retries: 12}
+  test-station-detector:
+    image: ${CLONE_APP_IMAGE:?required}
+    command: ["/app/model-detector"]
+    environment:
+      MODEL_DETECTOR_LISTEN_ADDRESS: ":8090"
+      MODEL_DETECTOR_MODELS: gpt-5.6-terra,gpt-5.6-sol,gpt-5.4,gpt-5.6,gpt-5.6-codex,claude-3-7-sonnet
+      MODEL_DETECTOR_VERSION: 4.1.1
+      SUB2API_MODEL_DETECTOR_TOKEN: ${ADMIN_LAB_DETECTOR_TOKEN:?required}
+    networks: [test-station]
+    healthcheck: {test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8090/healthz"], interval: 10s, timeout: 5s, retries: 30, start_period: 30s}
+  test-station-postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${ADMIN_LAB_DB_NAME:?required}
+      POSTGRES_USER: ${ADMIN_LAB_DB_USER:?required}
+      POSTGRES_PASSWORD: ${ADMIN_LAB_DB_PASSWORD:?required}
+    volumes: [test-station-postgres-data:/var/lib/postgresql]
+    networks: [test-station]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"], interval: 5s, timeout: 5s, retries: 20}
+  test-station-redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--requirepass", "${ADMIN_LAB_REDIS_PASSWORD:?required}"]
+    volumes: [test-station-redis-data:/data]
+    networks: [test-station]
+    healthcheck: {test: ["CMD", "redis-cli", "-a", "${ADMIN_LAB_REDIS_PASSWORD}", "PING"], interval: 5s, timeout: 5s, retries: 20}
+  test-station-caddy:
+    image: ${CLONE_CADDY_IMAGE:?required}
+    ports: ["0.0.0.0:80:80"]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro]
+    networks: [test-station]
+    depends_on:
+      test-station-api: {condition: service_healthy}
+
+networks:
+  test-station:
+    name: sub2api-test-station-network
+
+volumes:
+  test-station-app-data: {name: sub2api-test-station-app-data}
+  test-station-postgres-data: {name: sub2api-test-station-postgres-data}
+  test-station-redis-data: {name: sub2api-test-station-redis-data}

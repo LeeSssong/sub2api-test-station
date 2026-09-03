@@ -158,10 +158,9 @@ func (s *AccountModelDetectionService) ProjectionForAccount(ctx context.Context,
 	if account.Type != AccountTypeAPIKey {
 		status = AccountModelDetectionStatusUnsupported
 	}
+	// modelsForAccount already resolved persisted settings. Reuse that result so
+	// the account-monitor list does not issue a second settings query per account.
 	settings := AccountModelDetectionSettings{AccountID: account.ID, ConnectionProbeModel: models.ConnectionProbeModel, ModelDetectionModel: models.ModelDetectionModel}
-	if loaded, loadErr := s.LoadSettings(ctx, account.ID); loadErr == nil {
-		settings = loaded
-	}
 	if account.Type == AccountTypeAPIKey {
 		if models.DetectorState == AccountModelDetectorStateUnconfigured {
 			status = AccountModelDetectionStatusServiceUnconfigured

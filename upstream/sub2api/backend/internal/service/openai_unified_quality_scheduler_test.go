@@ -71,7 +71,7 @@ func TestOpenAIUnifiedQualityCompositePrefersFasterNearPerfectAccount(t *testing
 	fastNearPerfect := OpenAIAccountQuality{AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
 		OpenAIQualityWindow1H: {AttemptCount: 2000, SuccessCount: 1993, SuccessRate: floatPtr(.9965), TTFTSampleCount: 20, TTFTP50MS: floatPtr(4700), TTFTP90MS: floatPtr(4700)},
 	}}
-	breakdowns := buildOpenAIQualityBreakdowns([]*Account{{ID: 1, Concurrency: 1}, {ID: 2, Concurrency: 1}}, map[int64]OpenAIAccountQuality{1: slowPerfect, 2: fastNearPerfect}, nil, nil, 0)
+	breakdowns := buildOpenAIQualityBreakdowns([]*Account{{ID: 1, Concurrency: 1}, {ID: 2, Concurrency: 1}}, map[int64]OpenAIAccountQuality{1: slowPerfect, 2: fastNearPerfect}, nil, nil)
 	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{
 		{account: &Account{ID: 1}, quality: breakdowns[1]},
 		{account: &Account{ID: 2}, quality: breakdowns[2]},

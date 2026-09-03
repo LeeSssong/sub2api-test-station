@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**T119 OpenAI 调度决策日志（2026-09-03）：** 状态 `REFRESH_REQUIRED`。候选 `codex/t119-openai-scheduler-decision-log@0a160dc1b`，worktree `.worktrees/t119-openai-scheduler-decision-log`，基线 `main@bced1a52b`。已实现 OpenAI/Codex 普通 HTTP 文本请求的尽力异步调度决策日志、管理员查询 API 与“调度日志”页面，并移除已失效的“启用统一质量调度”和“额外恢复次数”控件。日志队列满时允许少量丢失并暴露不完整告警，不阻塞请求。候选落后当前 `main@0600011dc`，必须先整合最新 `main`、核对真实算法版本/运行时重试预算/切号次数契约、完成直接回归和发布预检后才能合并发布。本次用户明确要求合并、推送并直接发布主站，且显式要求不同步测试站；该例外将如实记录。
+**T119 OpenAI 调度决策日志（2026-09-03）：** 状态 `INTEGRATING`。候选 `codex/t119-openai-scheduler-decision-log@63706322b` 已刷新至最新根并无冲突合入 `main@8fb53c61e`。管理员列表现按逻辑请求聚合/分页，详情显示服务端算法版本、原生运行时重试预算、真实切号次数、候选/排除/评分/冷却/失败链；前端不回退到已失效 `extra_retry_count`。有界尽力异步写入不阻塞请求，队列满/写入失败有不完整计数。合并态 service/handler/repository/migration 直接测试、server build、前端 6 项测试、typecheck、production build 和 diff-check 通过。含 expand-only migration `234_openai_scheduler_logs.sql`，无历史回填或配置变更；待推送后从干净根 `main` 执行生产发布预检。用户明确要求直接发布主站且不同步测试站，该例外如实记录。
 
 **独立测试服务器主站制品克隆（2026-09-03）：** 状态 `DONE`。直接复制主站当前活动 Sub2API 与 homepage/Caddy 不可变镜像到独立服务器，未修改业务代码、未复制主站数据或凭据。测试站运行 `sub2api-test-station` 专用 Compose project，根首页与主站 HTML 指纹一致，应用镜像 source commit/tree 与主站活动镜像一致；独立测试数据与网络/卷保持隔离。IPv4、登录、健康和主站不变性验收通过；IPv6 80 端口因宿主 Docker 层冲突记录为未启用。交付手册见 `docs/operations/independent-test-station-handoff.md`。
 

@@ -919,3 +919,155 @@ func TestAccountMonitorRepositoryGroupWindowAggregatesIncludeRequestedGroupID(t 
 		t.Fatal(err)
 	}
 }
+
+func TestAccountMonitorRepositoryRealRequestAggregatesSelectUnifiedBucketRequests(t *testing.T) {
+	tests := []struct {
+		name         string
+		rows         *sqlmock.Rows
+		requestCount int64
+		successCount int64
+		errorCount   int64
+		ttftSamples  int
+		ttftP95      *float64
+		lastObserved time.Time
+	}{
+		{
+			name: "real traffic owns bucket and ignores probe",
+			rows: sqlmock.NewRows([]string{
+				"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+			}).AddRow(7, 2, 1, 1, 0.2, 0.1, true, 0.5, 1, 120.0, 800.0, time.Date(2026, 9, 1, 0, 4, 0, 0, time.UTC)),
+			requestCount: 2, successCount: 1, errorCount: 1, ttftSamples: 1, ttftP95: float64Ptr(120), lastObserved: time.Date(2026, 9, 1, 0, 4, 0, 0, time.UTC),
+		},
+		{
+			name: "probe fills bucket without real traffic",
+			rows: sqlmock.NewRows([]string{
+				"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+			}).AddRow(7, 1, 1, 0, 0.0, 0.0, false, 1.0, 1, 240.0, 900.0, time.Date(2026, 9, 1, 0, 9, 0, 0, time.UTC)),
+			requestCount: 1, successCount: 1, errorCount: 0, ttftSamples: 1, ttftP95: float64Ptr(240), lastObserved: time.Date(2026, 9, 1, 0, 9, 0, 0, time.UTC),
+		},
+		{
+			name: "empty bucket is absent from denominator",
+			rows: sqlmock.NewRows([]string{
+				"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+			}).AddRow(7, 1, 1, 0, 0.0, 0.0, false, 1.0, 0, nil, nil, time.Date(2026, 9, 1, 0, 9, 0, 0, time.UTC)),
+			requestCount: 1, successCount: 1, errorCount: 0, ttftSamples: 0, lastObserved: time.Date(2026, 9, 1, 0, 9, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close()
+			repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorRealRequestRepository)
+			require.True(t, ok)
+			since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+			until := since.Add(15 * time.Minute)
+
+			mock.ExpectQuery(`(?s)WITH real_candidates AS.*probe_candidates AS.*real_buckets AS.*latest_probe.*selected_requests AS.*has_real.*GROUP BY account_id`).
+				WithArgs(sqlmock.AnyArg(), since, until).
+				WillReturnRows(tt.rows)
+
+			got, err := repo.ListRealRequestAggregates(context.Background(), []int64{7}, since, until)
+			require.NoError(t, err)
+			aggregate := got[7]
+			require.Equal(t, tt.requestCount, aggregate.RequestCount)
+			require.Equal(t, tt.successCount, aggregate.SuccessCount)
+			require.Equal(t, tt.errorCount, aggregate.ErrorCount)
+			require.Equal(t, tt.ttftSamples, aggregate.TTFTSampleCount)
+			if tt.ttftP95 == nil {
+				require.Nil(t, aggregate.TTFTP95MS)
+			} else {
+				require.NotNil(t, aggregate.TTFTP95MS)
+				require.Equal(t, *tt.ttftP95, *aggregate.TTFTP95MS)
+			}
+			require.NotNil(t, aggregate.LastObservedAt)
+			require.Equal(t, tt.lastObserved, *aggregate.LastObservedAt)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestAccountMonitorRepositoryGroupRealRequestAggregatesIncludeProbeFallback(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorGroupRealRequestRepository)
+	require.True(t, ok)
+	since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	until := since.Add(10 * time.Minute)
+	observedAt := since.Add(9 * time.Minute)
+
+	mock.ExpectQuery(`(?s)WITH real_candidates AS.*probe_candidates AS.*real_buckets AS.*latest_probe.*selected_requests AS.*has_real.*GROUP BY group_id, account_id`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), since, until).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"group_id", "account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+		}).AddRow(7, 11, 1, 1, 0, 0.0, 0.0, false, 1.0, 1, 180.0, 700.0, observedAt))
+
+	got, err := repo.ListGroupRealRequestAggregates(context.Background(), []int64{7}, []int64{11}, since, until)
+	require.NoError(t, err)
+	aggregate, exists := got[7][11]
+	require.True(t, exists)
+	require.Equal(t, int64(1), aggregate.RequestCount)
+	require.Equal(t, int64(1), aggregate.SuccessCount)
+	require.Zero(t, aggregate.ErrorCount)
+	require.Equal(t, 1, aggregate.TTFTSampleCount)
+	require.NotNil(t, aggregate.TTFTP95MS)
+	require.Equal(t, 180.0, *aggregate.TTFTP95MS)
+	require.NotNil(t, aggregate.LastObservedAt)
+	require.Equal(t, observedAt, *aggregate.LastObservedAt)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorRealRequestTimelineRepository)
+	require.True(t, ok)
+	since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	until := since.Add(10 * time.Minute)
+
+	mock.ExpectQuery(`(?s)WITH real_candidates AS.*probe_candidates AS.*real_buckets AS.*latest_probe.*selected_requests AS.*has_real.*SELECT account_id, bucket_index, request_count, success_count, failure_count, ttft_p95_ms`).
+		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 2, 2).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
+			AddRow(7, 0, 1, 1, 0, 240.0).
+			AddRow(7, 1, 2, 1, 1, nil))
+
+	timelines, err := repo.ListRealRequestTimelines(context.Background(), []int64{7}, since, until, 2)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), timelines[7][0].RequestCount)
+	require.Equal(t, int64(1), timelines[7][0].SuccessCount)
+	require.Zero(t, timelines[7][0].FailureCount)
+	require.NotNil(t, timelines[7][0].TTFTP95MS)
+	require.Equal(t, 240.0, *timelines[7][0].TTFTP95MS)
+	require.Equal(t, int64(2), timelines[7][1].RequestCount)
+	require.Equal(t, int64(1), timelines[7][1].FailureCount)
+	require.Nil(t, timelines[7][1].TTFTP95MS)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAccountMonitorRepositoryLifetimeCountsIncludeSelectedProbeFallbacks(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorLifetimeRealRequestRepository)
+	require.True(t, ok)
+
+	mock.ExpectQuery(`(?s)WITH real_candidates AS.*probe_candidates AS.*real_buckets AS.*latest_probe.*selected_requests AS.*COUNT\(\*\)::bigint.*GROUP BY account_id`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count"}).
+			AddRow(7, int64(12847)).
+			AddRow(8, int64(43)))
+
+	counts, err := repo.ListLifetimeRealRequestCounts(context.Background(), []int64{7, 8, 9})
+	require.NoError(t, err)
+	require.Equal(t, int64(12847), counts[7])
+	require.Equal(t, int64(43), counts[8])
+	require.Zero(t, counts[9])
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func float64Ptr(value float64) *float64 {
+	return &value
+}

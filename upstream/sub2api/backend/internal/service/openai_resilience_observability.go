@@ -93,6 +93,7 @@ type OpenAIResilienceEvent struct {
 	ProfitMode           string
 	ProfitBypass         bool
 	ProfitBypassReason   string
+	RuntimeRetryBudget   int
 	ExtraRetryCount      int
 	ExtraUsed            int
 	SwitchCount          int
@@ -203,7 +204,8 @@ func RecordOpenAISchedulerSelection(ctx context.Context, platform string, groupI
 		OutputRateScore: decision.OutputRateScore, LiveLoadScore: decision.LiveLoadScore, FirstOutputSlowCount: decision.FirstOutputSlowCount,
 		SlowEvidenceReplaced: decision.SlowEvidenceReplaced, QualityScoreGap: decision.QualityScoreGap,
 		ProfitMode: decision.ProfitMode, ProfitBypass: decision.ProfitBypass, ProfitBypassReason: decision.ProfitBypassReason,
-		ExtraRetryCount: decision.ExtraRetryCount, ExtraUsed: decision.ExtraUsed, SwitchCount: decision.SwitchCount,
+		RuntimeRetryBudget: decision.RuntimeRetryBudget, ExtraRetryCount: decision.ExtraRetryCount,
+		ExtraUsed: decision.ExtraUsed, SwitchCount: decision.SwitchCount,
 		SafeToReplay: decision.SafeToReplay, SwitchAllowed: decision.SwitchAllowed,
 		SwitchBlockReason: decision.SwitchBlockReason, StopReason: decision.StopReason,
 		NativeSlotWaitMs: decision.NativeSlotWaitMs, RoutingMs: decision.RoutingMs,

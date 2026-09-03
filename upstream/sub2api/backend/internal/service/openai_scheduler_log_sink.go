@@ -235,10 +235,16 @@ func (s *OpenAISchedulerLogSink) Flush(ctx context.Context) error {
 				"candidate_count":       event.CandidateCount, "eligible_count": event.EligibleCount,
 				"effective_top_k": event.EffectiveTopK, "selected_rank": event.SelectedRank,
 				"quality_score": event.QualityScore, "quality_score_gap": event.QualityScoreGap,
-				"retry_budget_exhausted": event.RetryBudgetExhausted, "extra_used": event.ExtraUsed,
+				"success_score": event.SuccessScore, "first_output_score": event.FirstOutputScore,
+				"output_rate_score": event.OutputRateScore, "live_load_score": event.LiveLoadScore,
+				"quality_snapshot_stale": event.QualitySnapshotStale,
+				"retry_budget_exhausted": event.RetryBudgetExhausted,
+				"runtime_retry_budget":   event.RuntimeRetryBudget, "extra_used": event.ExtraUsed,
 				"switch_count": event.SwitchCount, "safe_to_replay": event.SafeToReplay,
 				"switch_reason": event.SwitchReason, "switch_block_reason": event.SwitchBlockReason,
 				"stop_reason": event.StopReason, "status_code": event.StatusCode,
+				"health_state": event.HealthState, "cooldown_seconds": event.CooldownSeconds,
+				"retry_after_seconds": event.RetryAfterSeconds, "cooldown_until": event.CooldownUntil,
 			})
 			if err != nil {
 				continue

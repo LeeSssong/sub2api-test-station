@@ -31,6 +31,18 @@ type OpenAISchedulerLog struct {
 	Decision         map[string]any `json:"decision,omitempty"`
 }
 
+type OpenAISchedulerLogSummary struct {
+	LogicalRequestID   string    `json:"logical_request_id"`
+	StartedAt          time.Time `json:"started_at"`
+	CanonicalModel     string    `json:"canonical_model,omitempty"`
+	GroupID            *int64    `json:"group_id,omitempty"`
+	SelectedAccountID  *int64    `json:"selected_account_id,omitempty"`
+	AlgorithmVersion   string    `json:"algorithm_version"`
+	RuntimeRetryBudget int       `json:"runtime_retry_budget"`
+	SwitchCount        int       `json:"switch_count"`
+	FinalOutcome       string    `json:"final_outcome"`
+}
+
 type OpenAISchedulerLogCursor struct {
 	EventAt time.Time
 	ID      int64
@@ -54,8 +66,12 @@ type OpenAISchedulerLogList struct {
 }
 
 type OpenAISchedulerLogTimeline struct {
-	LogicalRequestID string               `json:"logical_request_id"`
-	Attempts         []OpenAISchedulerLog `json:"attempts"`
+	LogicalRequestID   string               `json:"logical_request_id"`
+	AlgorithmVersion   string               `json:"algorithm_version"`
+	RuntimeRetryBudget int                  `json:"runtime_retry_budget"`
+	SwitchCount        int                  `json:"switch_count"`
+	FinalOutcome       string               `json:"final_outcome"`
+	Attempts           []OpenAISchedulerLog `json:"attempts"`
 }
 
 // OpenAISchedulerLogRepository is isolated from usage and scheduler state.

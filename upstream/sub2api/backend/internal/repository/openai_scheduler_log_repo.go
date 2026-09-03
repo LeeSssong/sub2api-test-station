@@ -144,28 +144,68 @@ func (r *openAISchedulerLogRepository) ListOpenAISchedulerLogs(ctx context.Conte
 	if value := strings.TrimSpace(filter.Query); value != "" {
 		add(fmt.Sprintf("(logical_request_id ILIKE $%d OR canonical_model ILIKE $%d)", len(args)+1, len(args)+2), "%"+value+"%", "%"+value+"%")
 	}
+	cursorClause := ""
 	if filter.Cursor != nil {
-		add(fmt.Sprintf("(event_at, id) < ($%d, $%d)", len(args)+1, len(args)+2), filter.Cursor.EventAt.UTC(), filter.Cursor.ID)
+		cursorClause = fmt.Sprintf("WHERE (cursor_event_at, cursor_id) < ($%d, $%d)", len(args)+1, len(args)+2)
+		args = append(args, filter.Cursor.EventAt.UTC(), filter.Cursor.ID)
 	}
 	args = append(args, limit+1)
-	query := `SELECT id, event_at, platform, group_id, logical_request_id, attempt_id, attempt_number, event_name,
-		account_id, canonical_model, outcome, final_outcome, selection_layer, algorithm_version, decision
-		FROM openai_scheduler_logs WHERE ` + strings.Join(clauses, " AND ") +
-		fmt.Sprintf(" ORDER BY event_at DESC, id DESC LIMIT $%d", len(args))
+	query := `WITH matching_requests AS (
+		SELECT logical_request_id, MAX(event_at) AS cursor_event_at, MAX(id) AS cursor_id
+		FROM openai_scheduler_logs WHERE ` + strings.Join(clauses, " AND ") + `
+		GROUP BY logical_request_id
+	)
+	SELECT logical_request_id, cursor_event_at, cursor_id
+	FROM matching_requests ` + cursorClause +
+		fmt.Sprintf(" ORDER BY cursor_event_at DESC, cursor_id DESC LIMIT $%d", len(args))
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	logs, err := scanOpenAISchedulerLogs(rows)
+	type requestPageEntry struct {
+		id      string
+		eventAt time.Time
+		rowID   int64
+	}
+	page := make([]requestPageEntry, 0, limit+1)
+	for rows.Next() {
+		var entry requestPageEntry
+		if err := rows.Scan(&entry.id, &entry.eventAt, &entry.rowID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		page = append(page, entry)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if len(page) == 0 {
+		return &service.OpenAISchedulerLogList{Logs: []service.OpenAISchedulerLog{}}, nil
+	}
+	result := &service.OpenAISchedulerLogList{}
+	if len(page) > limit {
+		page = page[:limit]
+		last := page[len(page)-1]
+		result.NextCursor = encodeOpenAISchedulerLogCursor(service.OpenAISchedulerLogCursor{EventAt: last.eventAt, ID: last.rowID})
+	}
+	requestArgs := make([]any, 0, len(page))
+	placeholders := make([]string, 0, len(page))
+	for index, entry := range page {
+		requestArgs = append(requestArgs, entry.id)
+		placeholders = append(placeholders, fmt.Sprintf("$%d", index+1))
+	}
+	eventQuery := `SELECT id, event_at, platform, group_id, logical_request_id, attempt_id, attempt_number, event_name,
+		account_id, canonical_model, outcome, final_outcome, selection_layer, algorithm_version, decision
+		FROM openai_scheduler_logs WHERE logical_request_id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY event_at DESC, id DESC`
+	eventRows, err := r.db.QueryContext(ctx, eventQuery, requestArgs...)
 	if err != nil {
 		return nil, err
 	}
-	result := &service.OpenAISchedulerLogList{Logs: logs}
-	if len(result.Logs) > limit {
-		last := result.Logs[limit-1]
-		result.Logs = result.Logs[:limit]
-		result.NextCursor = encodeOpenAISchedulerLogCursor(service.OpenAISchedulerLogCursor{EventAt: last.EventAt, ID: last.ID})
+	defer func() { _ = eventRows.Close() }()
+	result.Logs, err = scanOpenAISchedulerLogs(eventRows)
+	if err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -189,7 +229,35 @@ func (r *openAISchedulerLogRepository) GetOpenAISchedulerLogTimeline(ctx context
 	if err != nil {
 		return nil, err
 	}
-	return &service.OpenAISchedulerLogTimeline{LogicalRequestID: logicalRequestID, Attempts: logs}, nil
+	timeline := &service.OpenAISchedulerLogTimeline{LogicalRequestID: logicalRequestID, Attempts: logs, FinalOutcome: "unknown"}
+	for _, event := range logs {
+		if event.AlgorithmVersion != "" {
+			timeline.AlgorithmVersion = event.AlgorithmVersion
+		}
+		if budget := schedulerLogDecisionInt(event.Decision, "runtime_retry_budget"); budget > timeline.RuntimeRetryBudget {
+			timeline.RuntimeRetryBudget = budget
+		}
+		if switches := schedulerLogDecisionInt(event.Decision, "switch_count"); switches > timeline.SwitchCount {
+			timeline.SwitchCount = switches
+		}
+		if event.FinalOutcome != "" {
+			timeline.FinalOutcome = event.FinalOutcome
+		}
+	}
+	return timeline, nil
+}
+
+func schedulerLogDecisionInt(decision map[string]any, key string) int {
+	switch value := decision[key].(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case int64:
+		return int(value)
+	default:
+		return 0
+	}
 }
 
 func scanOpenAISchedulerLogs(rows *sql.Rows) ([]service.OpenAISchedulerLog, error) {

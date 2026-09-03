@@ -31,6 +31,7 @@ export interface SchedulerLogListResponse {
   next_cursor?: string | null
   incomplete: boolean
   dropped_count: number
+  write_failed_count: number
 }
 
 export interface SchedulerLogDetail {
@@ -59,7 +60,7 @@ export async function list(params: SchedulerLogListParams): Promise<SchedulerLog
   const raw = data as Omit<SchedulerLogListResponse, 'items'> & { items?: RawSummary[] }
   const items: SchedulerLogSummary[] = (raw.items ?? []).map((item) => {
     const decision = item.decision ?? {}
-    return { logical_request_id: item.logical_request_id || '', algorithm_version: item.algorithm_version || 'unknown', ...item, started_at: item.started_at || item.event_at || '', selected_account_id: item.selected_account_id ?? item.account_id ?? (Number(decision.selected_account_id) || null), runtime_retry_budget: item.runtime_retry_budget ?? (Number(decision.extra_retry_count) || 0), switch_count: item.switch_count ?? (Number(decision.switch_count) || 0), final_outcome: item.final_outcome || item.outcome || 'unknown' }
+    return { logical_request_id: item.logical_request_id || '', algorithm_version: item.algorithm_version || 'unknown', ...item, started_at: item.started_at || item.event_at || '', selected_account_id: item.selected_account_id ?? item.account_id ?? (Number(decision.selected_account_id) || null), runtime_retry_budget: item.runtime_retry_budget ?? (Number(decision.runtime_retry_budget) || 0), switch_count: item.switch_count ?? (Number(decision.switch_count) || 0), final_outcome: item.final_outcome || item.outcome || 'unknown' }
   })
   return { ...raw, items }
 }

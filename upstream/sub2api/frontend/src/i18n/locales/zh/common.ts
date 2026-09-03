@@ -191,7 +191,7 @@ export default {
     accountProfitability: '账号盈利',
     businessOverview: '经营总览',
     promoCodes: '优惠码',
-    schedulerSettings: '调度设置',
+    schedulerLogs: '调度日志',
     settings: '系统设置',
     myAccount: '我的账户',
     lightMode: '浅色模式',

@@ -196,6 +196,7 @@ type OpenAIAccountScheduleDecision struct {
 	SlowEvidenceReplaced bool
 	QualityScoreGap      float64
 	QualitySnapshotStale bool
+	RuntimeRetryBudget   int
 	ExtraRetryCount      int
 	ExtraUsed            int
 	SwitchCount          int

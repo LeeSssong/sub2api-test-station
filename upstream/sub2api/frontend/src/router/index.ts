@@ -621,15 +621,15 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/scheduler-settings',
-    name: 'AdminSchedulerSettings',
-    component: () => import('@/views/admin/SchedulerSettingsView.vue'),
+    path: '/admin/scheduler-logs',
+    name: 'AdminSchedulerLogs',
+    component: () => import('@/views/admin/SchedulerLogsView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Scheduler Settings',
-      titleKey: 'admin.schedulerSettings.title',
-      descriptionKey: 'admin.schedulerSettings.description'
+      title: 'Scheduler Logs',
+      titleKey: 'admin.schedulerLogs.title',
+      descriptionKey: 'admin.schedulerLogs.description'
     }
   },
   {

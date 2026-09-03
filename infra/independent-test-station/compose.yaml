@@ -44,6 +44,7 @@ services:
       test-station-postgres: {condition: service_healthy}
       test-station-redis: {condition: service_healthy}
       test-station-detector: {condition: service_healthy}
+      test-station-worker: {condition: service_healthy}
     healthcheck: {test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8080/health"], interval: 10s, timeout: 5s, retries: 12}
   test-station-worker:
     image: ${CLONE_APP_IMAGE:?required}

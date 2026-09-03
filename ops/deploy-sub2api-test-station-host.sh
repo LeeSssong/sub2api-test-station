@@ -13,7 +13,7 @@ while (($#)); do
 done
 [[ "$staging_root" == /* && -d "$staging_root" && ! -L "$staging_root" ]] || fail 'staging root is invalid'
 for path in "$image_archive" "$compose_file" "$caddy_file"; do [[ "$path" == "$staging_root"/* && -f "$path" && ! -L "$path" ]] || fail 'bundle file is invalid'; done
-if [[ -n "$env_file" ]]; then [[ "$env_file" == "$staging_root"/* && -f "$env_file" && ! -L "$env_file" ]] || fail 'env file is invalid'; else env_file="$deploy_root/.env"; fi
+if [[ -n "$env_file" ]]; then [[ "$env_file" == "$staging_root"/* && -f "$env_file" && ! -L "$env_file" ]] || fail 'env file is invalid'; fi
 [[ "$image_sha256" =~ ^[a-f0-9]{64}$ && "$(sha256_file "$image_archive")" == "$image_sha256" ]] || fail 'image archive checksum mismatch'
 [[ "$source_commit" =~ ^[a-f0-9]{40}$ && "$source_tree" =~ ^[a-f0-9]{40}$ ]] || fail 'source identity is invalid'
 if [[ "${TEST_STATION_TEST_MODE:-false}" != true ]]; then [[ "$deploy_root" == /opt/sub2api-test-station || "$deploy_root" == /opt/sub2api-test-station/* ]] || fail 'deploy root is not the independent test station'; fi
@@ -21,6 +21,8 @@ if [[ "${TEST_STATION_TEST_MODE:-false}" != true ]]; then [[ "$deploy_root" == /
 grep -Eq '^name:[[:space:]]*sub2api-test-station[[:space:]]*$' "$compose_file" || fail 'compose project identity mismatch'
 grep -q 'sub2api-test-station-network' "$compose_file" || fail 'compose network identity mismatch'
 docker_bin=${DOCKER_BIN:-docker}; command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker is required'
+if [[ -z "$env_file" ]]; then config=$($docker_bin ps --filter label=com.docker.compose.project=sub2api-test-station --format '{{.Label "com.docker.compose.project.config_files"}}' | head -n 1); [[ "$config" == /opt/sub2api-test-station/*/infra/independent-test-station/compose.yaml ]] || fail 'active test station compose is missing'; env_file="${config%/infra/independent-test-station/compose.yaml}/.env"; fi
+[[ -f "$env_file" && ! -L "$env_file" ]] || fail 'env file is invalid'
 release_dir="$deploy_root/releases/$source_commit"; mkdir -p "$release_dir"
 cp "$compose_file" "$release_dir/compose.yaml"; cp "$caddy_file" "$release_dir/Caddyfile"; cp "$env_file" "$release_dir/.env"; chmod 600 "$release_dir/.env"
 printf 'CLONE_SOURCE_COMMIT=%s\nCLONE_APP_IMAGE=sub2api-test-station-runtime:%s\n' "$source_commit" "$source_commit" >>"$release_dir/.env"

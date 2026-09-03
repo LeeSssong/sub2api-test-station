@@ -1,5 +1,7 @@
 # Sub2API 独立准生产验收站运行手册
 
+> **历史文档，已废止旧指向（2026-09-03）：** 本手册原先描述的主站 `/admin/lab/`、`sub2api-acceptance` 和 `/opt/sub2api/acceptance-live` 不再是当前验收站。当前验收目标是独立服务器 `sub2api-test-station`（`ubuntu@49.51.203.200`），入口为 `http://49.51.203.200/`。执行任何验收或发布前必须先阅读并以 [`docs/project/acceptance-station-global-constraints.md`](../project/acceptance-station-global-constraints.md) 和 [`docs/operations/independent-test-station-handoff.md`](../operations/independent-test-station-handoff.md) 为准；本手册中的旧命令不得执行。
+
 > 本手册受 [`docs/project/acceptance-station-global-constraints.md`](../project/acceptance-station-global-constraints.md)、`AGENTS.md` 与原生小步发布全局约束共同约束；若入口、操作或授权语义不一致，以全局约束为准。
 
 本验收站是一个长期存在、可真实商用的独立 Sub2API 实例。它对公网提供登录入口，但仅允许独立管理员登录；站点、数据、凭据和运行资源均与主站隔离。对外入口复用主站域名下的 https://api.xingqiaolab.top/admin/lab/ 路径，由生产 Caddy 仅转发到同宿主的专用 acceptance edge 端口；/admin/accounts 继续由主站原生页面处理。部署成功只表示服务已启动，不表示功能验收通过，也不会自动部署主站。

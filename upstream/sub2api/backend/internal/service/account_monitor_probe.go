@@ -57,7 +57,15 @@ func (s *AccountTestService) ProbeAccountConnection(
 
 	testErr := s.TestAccountConnectionWithProbeKind(ginCtx, accountID, modelID, prompt, mode, ProbeKindMonitor)
 	finishedAt := time.Now()
-	return buildAccountMonitorProbeResult(accountID, modelID, startedAt, finishedAt, observer, testErr), nil
+	result := buildAccountMonitorProbeResult(accountID, modelID, startedAt, finishedAt, observer, testErr)
+	if usageObserver, ok := ginCtx.Request.Context().Value(accountProbeUsageObserverKey{}).(*accountProbeUsageObserver); ok {
+		observation := usageObserver.observation(modelID, ProbeOutcomeSuccess, "")
+		result.InputTokens = observation.Tokens.InputTokens
+		result.CacheCreationTokens = observation.Tokens.CacheCreationTokens
+		result.CacheReadTokens = observation.Tokens.CacheReadTokens
+		result.UsageCompleteness = observation.Completeness
+	}
+	return result, nil
 }
 
 func buildAccountMonitorProbeResult(

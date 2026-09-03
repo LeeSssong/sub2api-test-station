@@ -194,14 +194,18 @@ type AccountMonitorSettings struct {
 }
 
 type AccountMonitorProbeResult struct {
-	AccountID  int64
-	ModelID    string
-	Status     string
-	ErrorCode  string
-	HTTPStatus *int
-	TTFTMS     *float64
-	LatencyMS  *float64
-	CheckedAt  time.Time
+	AccountID           int64
+	ModelID             string
+	Status              string
+	ErrorCode           string
+	HTTPStatus          *int
+	TTFTMS              *float64
+	LatencyMS           *float64
+	InputTokens         int
+	CacheCreationTokens int
+	CacheReadTokens     int
+	UsageCompleteness   ProbeUsageCompleteness
+	CheckedAt           time.Time
 }
 
 type AccountMonitorAggregate struct {

@@ -1,8 +1,10 @@
 # 验收站与主站发布全局约束
 
-> 生效日期：2026-08-27
+> 生效日期：2026-09-03
 >
 > 适用范围：根线程、所有功能线程、审查线程、运维线程和发布线程。
+
+> **重要纠偏：** 本文件中的“验收站”现在专指新建的独立测试站，不是主站上的历史 `/admin/lab` 路径。旧 `/admin/lab`、`sub2api-acceptance`、`/opt/sub2api/acceptance-live` 和旧验收 env 只保留为历史证据，不得再作为本轮验收入口、宿主或发布目标。
 
 ## 1. 验收站固定身份
 
@@ -10,18 +12,20 @@
 
 固定入口与运行身份：
 
-- 公网入口：`https://api.xingqiaolab.top/admin/lab/`
-- 根路径：`/admin/lab`，必须 308 重定向到 `/admin/lab/`
-- 验收 API 前缀：`/admin/lab/api/v1`
-- 验收站管理员登录页：`https://api.xingqiaolab.top/admin/lab/login`
+- 公网入口：`http://49.51.203.200/`（当前只保证 IPv4；IPv6 80 端口因宿主 Docker 绑定冲突暂未启用）
+- 健康入口：`http://49.51.203.200/health`；就绪入口：`http://49.51.203.200/readyz`
+- 根路径：独立站根路径 `/`，不经过主站域名、主站 Caddy 或 `/admin/lab` 路径
+- 验收 API/登录入口：由独立站自身根路径提供，必须以该站页面和 API 实际响应为准；不得拼接旧 `/admin/lab/api/v1` 前缀
 - 主站管理员页面：`https://api.xingqiaolab.top/admin/accounts`；该路径继续走主站，不属于验收站
-- 宿主：生产 SSH 目标 `sub2api-prod`（地址、端口和身份从本机 SSH config/known_hosts 读取）
-- 验收宿主目录：`/opt/sub2api/acceptance-live`
-- Compose project：`sub2api-acceptance`
-- Compose network：`sub2api-acceptance-network`
-- 验收边缘：`172.18.0.1:8181`
-- 验收服务：`acceptance-api`、`acceptance-worker`、`acceptance-detector`、`acceptance-postgres`、`acceptance-redis`、`acceptance-caddy`
-- 网络入口：生产 Caddy 仅按 `/admin/lab` 路径反代到独立验收边缘，不做 Cloudflare/IP 白名单；访问控制由验收应用自身的管理员登录与 TOTP 承担
+- 宿主 SSH alias：`sub2api-test-station`（`ubuntu@49.51.203.200:22`）
+- 验收宿主目录：`/opt/sub2api-test-station/`
+- 当前活动 release：由宿主 `/opt/sub2api-test-station/release-state.json` 的 `source_commit/source_tree` 与运行容器 Compose 标签解析；已核对 source commit 为 `3f7d59df5aa6f511c64a8663a8f74b8c2b50b3ed`、tree 为 `e049847dc3aba0296ea4e84a66f5caeda5df9da1`，不得在全局规则中固定旧 release SHA
+- Compose 文件：`<active-release>/infra/independent-test-station/compose.yaml`
+- Compose project：`sub2api-test-station`
+- Compose network：`sub2api-test-station-network`
+- 独立 named volumes：`sub2api-test-station-app-data`、`sub2api-test-station-postgres-data`、`sub2api-test-station-redis-data`
+- 验收服务：`test-station-api`、`test-station-worker`、`test-station-detector`、`test-station-postgres`、`test-station-redis`、`test-station-caddy`
+- 运行 env：服务器 `/opt/sub2api-test-station/.env`；Compose 发布/核对使用 active release 内的 `.env`
 
 注册默认关闭。验收站只允许独立管理员登录；“测试站可商用”不等于向公网开放注册。
 
@@ -29,9 +33,10 @@
 
 任何线程需要登录、查看日志、执行验收发布或宿主运维时，使用以下受保护文件；不得把其中的密码、token、私钥、API key、支付密钥、上游 key 或 webhook 写入 Git、规格书、聊天消息、发布证据或普通日志：
 
-- 验收站 env：`/Users/gongtengxinwen/.config/sub2api/acceptance-20260827.env`，权限必须为 `0600`
-- SSH known_hosts：`/Users/gongtengxinwen/.config/sub2api/known_hosts`，权限必须为 `0600`
-- 生产 SSH 私钥：`/Users/gongtengxinwen/.ssh/tencent_lighthouse_seoul_sub2api`，权限必须为 `0600`
+- 测试站 SSH 私钥：`/Users/gongtengxinwen/Downloads/test_service.pem`，权限必须为 `0600`
+- 测试站 SSH known_hosts：使用当前 SSH alias 配置的 `/Users/gongtengxinwen/.ssh/known_hosts`；若另设专用文件，必须先确认包含 `49.51.203.200` 的可信 host key
+- 测试站运行 env：服务器 `/opt/sub2api-test-station/.env`，权限必须为 `0600`
+- 旧验收 env：`/Users/gongtengxinwen/.config/sub2api/acceptance-20260827.env`，仅历史兼容，不得用于新独立测试站
 
 线程可以读取非敏感配置名和值（站点、目录、project、network、端口、provider 类型），但不得用 `cat`、`env`、`docker inspect` 或日志命令打印完整 env。需要展示时只展示变量名、是否已设置、文件权限和脱敏摘要。
 
@@ -42,39 +47,40 @@
 所有线程先确认当前工作区和目标 commit，再执行只读检查。常用命令如下（命令中的 env 文件只能作为 `--env-file` 传给 Compose，不要把内容打印出来）：
 
 ```bash
-acceptance_ssh='ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes \
-  -o UserKnownHostsFile=/Users/gongtengxinwen/.config/sub2api/known_hosts sub2api-prod'
+acceptance_ssh='ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes sub2api-test-station'
 
 # 服务状态
-$acceptance_ssh 'sudo -n docker compose --project-name sub2api-acceptance \
-  --env-file /opt/sub2api/acceptance-live/.env \
-  -f /opt/sub2api/acceptance-live/compose.acceptance.yaml ps'
+$acceptance_ssh 'sudo -n sh -c '\''config=$(docker ps --filter label=com.docker.compose.project=sub2api-test-station \
+  --format "{{.Label \\"com.docker.compose.project.config_files\\"}}" | head -n 1); \
+  release=${config%/infra/independent-test-station/compose.yaml}; \
+  docker compose --project-name sub2api-test-station \
+  --env-file "$release/.env" -f "$config" ps'\''
 
 # 查看单个服务日志（只保留必要窗口，先脱敏再归档）
-$acceptance_ssh 'sudo -n docker compose --project-name sub2api-acceptance \
-  --env-file /opt/sub2api/acceptance-live/.env \
-  -f /opt/sub2api/acceptance-live/compose.acceptance.yaml logs --tail=200 acceptance-api'
+$acceptance_ssh 'sudo -n sh -c '\''config=$(docker ps --filter label=com.docker.compose.project=sub2api-test-station \
+  --format "{{.Label \\"com.docker.compose.project.config_files\\"}}" | head -n 1); \
+  release=${config%/infra/independent-test-station/compose.yaml}; \
+  docker compose --project-name sub2api-test-station \
+  --env-file "$release/.env" -f "$config" logs --tail=200 test-station-api'\''
 
 # 验收入口与健康检查
-curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/health
-curl --fail --silent --show-error https://api.xingqiaolab.top/admin/lab/login
+curl --fail --silent --show-error http://49.51.203.200/health
+curl --fail --silent --show-error http://49.51.203.200/readyz
 ```
 
-允许查看验收站容器、Caddy、PostgreSQL、Redis 的运行状态和日志；涉及数据库时只做只读查询。禁止执行 `docker compose down -v`、删除 `sub2api-acceptance-*` volume、复制主站数据或用主站 env 覆盖验收 env。
+允许查看独立测试站容器、Caddy、PostgreSQL、Redis 的运行状态和日志；涉及数据库时只做只读查询。禁止执行 `docker compose down -v`、删除 `sub2api-test-station-*` volume、复制主站数据或用主站 env/旧验收 env 覆盖测试站 env。
 
-## 4. 唯一验收站发布入口
+## 4. 独立测试站发布入口
 
-验收站发布与主站共用同一来源底线：候选先合入并推送根目录 `main`，然后只能从该根目录干净的 `main` 执行发布。发布时必须同时满足：当前分支为 `main`、非 detached HEAD、工作树干净、`HEAD` commit/tree 与本地 `origin/main` 完全一致。之后使用仓库提供的控制器：
+独立测试站发布与主站共用同一来源底线：候选先合入并推送根目录 `main`，然后只能从该根目录干净的 `main` 执行发布。发布时必须同时满足：当前分支为 `main`、非 detached HEAD、工作树干净、`HEAD` commit/tree 与本地 `origin/main` 完全一致。
 
-```bash
-ACCEPTANCE_ENV_FILE=/Users/gongtengxinwen/.config/sub2api/acceptance-20260827.env \
-RELEASE_WORKTREE="$PWD" \
-ops/release-sub2api-acceptance.sh
-```
+当前仓库的 `ops/release-sub2api-acceptance.sh`、`ops/deploy-sub2api-acceptance-host.sh` 和 `infra/compose.acceptance.yaml` 仍是旧 `/admin/lab` 拓扑的历史发布链，不能发布到 `sub2api-test-station`。在独立测试站发布控制器完成适配并经直接相关测试前，禁止用旧脚本发布新站；本轮只允许对新站做只读核对。适配后的控制器必须 fail-closed 校验 `main == origin/main`，使用 `<active-release>`/新站 Compose 文件，仅操作 `sub2api-test-station` project，并不得调用主站蓝绿链。
 
-控制器在构建或联系宿主前必须 fail-closed 执行上述 `main == origin/main` commit/tree 来源检查，然后构建该 commit 的 Linux/amd64 镜像、通过受控 SSH/SCP 传输，并调用验收宿主执行器。不得从候选 worktree、功能分支、临时 checkout 或 detached HEAD 部署验收站；不得调用主站蓝绿发布链代替验收站发布，不得将主站数据库或数据卷带入验收站。
+新站当前已部署的镜像/数据属于独立服务器上的既有运行态，不构成当前代码发布控制器已适配的证据。不得把旧 `/admin/lab` 健康结果、主站 Caddy 路由或旧验收脚本输出写成新独立站发布成功。
 
-验收站发布成功只表示服务部署和基础健康检查完成，不代表真实充值、消费、支付、上游、通知或目标功能已经验收通过。真实功能必须由管理员在验收站独立数据和独立凭据上人工验证。
+独立测试站发布成功只表示服务部署和基础健康检查完成，不代表真实充值、消费、支付、上游、通知或目标功能已经验收通过。真实功能必须由管理员在独立数据和独立凭据上人工验证。
+
+旧 `/admin/lab` 历史入口不得作为新站别名；任何仍依赖它的任务必须先改写为新站根入口并重新记录目标 commit/tree。
 
 ## 5. 主站发布的两条唯一授权路径
 

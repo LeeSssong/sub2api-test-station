@@ -64,14 +64,17 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 	if result.Status == "" {
 		result.Status = "unknown"
 	}
+	if result.UsageCompleteness == "" {
+		result.UsageCompleteness = service.ProbeUsageUnknown
+	}
 	if r.outbox == nil {
 		_, err := r.db.ExecContext(ctx, `
 		INSERT INTO account_monitor_results (
 			run_id, account_id, model_id, status, error_code, http_status,
-			ttft_ms, latency_ms, checked_at
-		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
+			ttft_ms, latency_ms, input_tokens, cache_creation_tokens, cache_read_tokens, usage_completeness, checked_at
+		) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode,
-			result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.CheckedAt.UTC())
+			result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.InputTokens, result.CacheCreationTokens, result.CacheReadTokens, result.UsageCompleteness, result.CheckedAt.UTC())
 		return err
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -85,9 +88,9 @@ func (r *accountMonitorRepository) InsertResult(ctx context.Context, result serv
 		return queryErr
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO account_monitor_results (run_id, account_id, model_id, status, error_code, http_status, ttft_ms, latency_ms, checked_at)
-		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode, result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.CheckedAt.UTC()); err != nil {
+		INSERT INTO account_monitor_results (run_id, account_id, model_id, status, error_code, http_status, ttft_ms, latency_ms, input_tokens, cache_creation_tokens, cache_read_tokens, usage_completeness, checked_at)
+		VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+	`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode, result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.InputTokens, result.CacheCreationTokens, result.CacheReadTokens, result.UsageCompleteness, result.CheckedAt.UTC()); err != nil {
 		return err
 	}
 	if previousStatus != result.Status {
@@ -122,12 +125,16 @@ func (r *accountMonitorRepository) EnsureProbeBucketTerminal(
 	}
 	_, err := r.db.ExecContext(ctx, `
 INSERT INTO account_monitor_bucket_terminals (
-		group_id, bucket_start, run_id, status, ttft_ms, latency_ms, checked_at
+		group_id, bucket_start, run_id, status, ttft_ms, latency_ms, input_tokens, cache_creation_tokens, cache_read_tokens, usage_completeness, checked_at
 	)
 	SELECT $1, $2, $3::uuid,
 		CASE WHEN COALESCE(BOOL_OR(r.status = 'success'), FALSE) THEN 'success' ELSE 'failed' END,
 		MIN(r.ttft_ms) FILTER (WHERE r.status = 'success' AND r.ttft_ms IS NOT NULL),
 		MIN(r.latency_ms) FILTER (WHERE r.status = 'success' AND r.latency_ms IS NOT NULL),
+		COALESCE((ARRAY_AGG(r.input_tokens ORDER BY r.checked_at DESC) FILTER (WHERE r.status = 'success' AND r.usage_completeness = 'complete'))[1], 0),
+		COALESCE((ARRAY_AGG(r.cache_creation_tokens ORDER BY r.checked_at DESC) FILTER (WHERE r.status = 'success' AND r.usage_completeness = 'complete'))[1], 0),
+		COALESCE((ARRAY_AGG(r.cache_read_tokens ORDER BY r.checked_at DESC) FILTER (WHERE r.status = 'success' AND r.usage_completeness = 'complete'))[1], 0),
+		CASE WHEN COUNT(*) FILTER (WHERE r.status = 'success' AND r.usage_completeness = 'complete') > 0 THEN 'complete' ELSE 'unknown' END,
 		COALESCE(MAX(r.checked_at), $2)
 	FROM account_monitor_results r
 	WHERE r.account_id = ANY($4::bigint[])
@@ -138,6 +145,10 @@ INSERT INTO account_monitor_bucket_terminals (
 	SET status = EXCLUDED.status,
 	    ttft_ms = EXCLUDED.ttft_ms,
 	    latency_ms = EXCLUDED.latency_ms,
+	    input_tokens = EXCLUDED.input_tokens,
+	    cache_creation_tokens = EXCLUDED.cache_creation_tokens,
+	    cache_read_tokens = EXCLUDED.cache_read_tokens,
+	    usage_completeness = EXCLUDED.usage_completeness,
 	    checked_at = EXCLUDED.checked_at
 	WHERE account_monitor_bucket_terminals.status = 'failed'
 	  AND EXCLUDED.status = 'success'
@@ -564,7 +575,10 @@ WITH scopes AS (
          date_bin($3::interval, r.checked_at, TIMESTAMPTZ '2001-01-01 00:00:00+00') AS bucket_start,
          (r.status = 'success') AS successful,
          r.ttft_ms,
-         r.latency_ms
+         r.latency_ms,
+         CASE WHEN r.status = 'success' AND r.usage_completeness = 'complete' THEN r.input_tokens ELSE 0 END::double precision AS input_tokens,
+         CASE WHEN r.status = 'success' AND r.usage_completeness = 'complete' THEN r.cache_creation_tokens ELSE 0 END::double precision AS cache_creation_tokens,
+         CASE WHEN r.status = 'success' AND r.usage_completeness = 'complete' THEN r.cache_read_tokens ELSE 0 END::double precision AS cache_read_tokens
   FROM scopes s
   JOIN account_monitor_results r ON r.account_id = s.account_id
   WHERE r.checked_at >= $1::timestamptz AND r.checked_at < $2::timestamptz
@@ -579,7 +593,10 @@ WITH scopes AS (
   SELECT t.group_id, t.run_id, t.checked_at AS observed_at, t.bucket_start,
          (t.status = 'success') AS successful,
          t.ttft_ms,
-         t.latency_ms
+         t.latency_ms,
+         CASE WHEN t.status = 'success' AND t.usage_completeness = 'complete' THEN t.input_tokens ELSE 0 END::double precision,
+         CASE WHEN t.status = 'success' AND t.usage_completeness = 'complete' THEN t.cache_creation_tokens ELSE 0 END::double precision,
+         CASE WHEN t.status = 'success' AND t.usage_completeness = 'complete' THEN t.cache_read_tokens ELSE 0 END::double precision
   FROM account_monitor_bucket_terminals t
   WHERE t.checked_at >= $1::timestamptz AND t.checked_at < $2::timestamptz
 ), probe_runs AS (
@@ -587,6 +604,9 @@ WITH scopes AS (
          BOOL_OR(successful) AS successful,
          MIN(ttft_ms) FILTER (WHERE successful AND ttft_ms IS NOT NULL) AS first_token_ms,
          MIN(latency_ms) FILTER (WHERE successful AND latency_ms IS NOT NULL) AS duration_ms,
+         SUM(input_tokens) FILTER (WHERE successful) AS input_tokens,
+         SUM(cache_creation_tokens) FILTER (WHERE successful) AS cache_creation_tokens,
+         SUM(cache_read_tokens) FILTER (WHERE successful) AS cache_read_tokens,
          MAX(observed_at) AS observed_at
   FROM probe_rows
   GROUP BY group_id, bucket_start, run_id
@@ -595,6 +615,9 @@ WITH scopes AS (
          BOOL_OR(successful) AS successful,
          MIN(first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS first_token_ms,
          MIN(duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL) AS duration_ms,
+         SUM(input_tokens) FILTER (WHERE successful) AS input_tokens,
+         SUM(cache_creation_tokens) FILTER (WHERE successful) AS cache_creation_tokens,
+         SUM(cache_read_tokens) FILTER (WHERE successful) AS cache_read_tokens,
          MAX(observed_at) AS observed_at
   FROM probe_runs
   GROUP BY group_id, bucket_start
@@ -604,6 +627,9 @@ WITH scopes AS (
          p.successful AS probe_successful,
 		p.first_token_ms AS probe_first_token_ms,
 		p.duration_ms AS probe_duration_ms,
+		p.input_tokens AS probe_input_tokens,
+		p.cache_creation_tokens AS probe_cache_creation_tokens,
+		p.cache_read_tokens AS probe_cache_read_tokens,
 		p.observed_at AS probe_observed_at,
 		(p.group_id IS NULL) AS probe_missing
   FROM groups g
@@ -620,14 +646,13 @@ WITH scopes AS (
          COALESCE(bm.probe_successful, FALSE),
          CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN bm.probe_first_token_ms END,
 		CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN bm.probe_duration_ms END,
-		NULL::double precision,
-		NULL::double precision,
-		NULL::double precision,
+		CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN COALESCE(bm.probe_input_tokens, 0) ELSE 0 END,
+		CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN COALESCE(bm.probe_cache_creation_tokens, 0) ELSE 0 END,
+		CASE WHEN COALESCE(bm.probe_successful, FALSE) THEN COALESCE(bm.probe_cache_read_tokens, 0) ELSE 0 END,
 		'probe'::text AS source,
 		bm.probe_missing
-  FROM bucket_matrix bm
-  WHERE bm.has_real IS NOT TRUE
-    AND bm.probe_missing IS NOT TRUE
+	FROM bucket_matrix bm
+	WHERE bm.probe_missing IS NOT TRUE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events
@@ -674,11 +699,11 @@ WITH scopes AS (
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
          MAX(ms.latency_trimmed_mean) AS latency_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL)::int AS latency_sample_count,
-         COALESCE(SUM(s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0)::bigint AS cache_read_tokens,
-         COALESCE(SUM(s.cache_creation_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0)::bigint AS cache_creation_tokens,
-         COALESCE(SUM(s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0)::bigint AS cache_hit_denominator,
-         SUM(s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real')
-           / NULLIF(SUM(s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0) AS cache_hit_rate,
+         COALESCE(SUM(s.cache_read_tokens) FILTER (WHERE s.successful), 0)::bigint AS cache_read_tokens,
+         COALESCE(SUM(s.cache_creation_tokens) FILTER (WHERE s.successful), 0)::bigint AS cache_creation_tokens,
+         COALESCE(SUM(s.input_tokens + s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful), 0)::bigint AS cache_hit_denominator,
+         SUM(s.cache_read_tokens) FILTER (WHERE s.successful)
+           / NULLIF(SUM(s.input_tokens + s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful), 0) AS cache_hit_rate,
          MAX(s.observed_at) AS source_updated_at,
          COALESCE(BOOL_OR(ls.successful), FALSE) AS current_operational
   FROM groups g
@@ -1678,7 +1703,7 @@ func (r *accountMonitorRepository) ListHistory(
 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT account_id, model_id, status, error_code, http_status,
-			ttft_ms, latency_ms, checked_at
+			ttft_ms, latency_ms, input_tokens, cache_creation_tokens, cache_read_tokens, usage_completeness, checked_at
 		FROM account_monitor_results
 		WHERE account_id = $1
 		ORDER BY checked_at DESC, id DESC
@@ -1700,6 +1725,10 @@ func (r *accountMonitorRepository) ListHistory(
 			&result.HTTPStatus,
 			&result.TTFTMS,
 			&result.LatencyMS,
+			&result.InputTokens,
+			&result.CacheCreationTokens,
+			&result.CacheReadTokens,
+			&result.UsageCompleteness,
 			&result.CheckedAt,
 		); err != nil {
 			return nil, err

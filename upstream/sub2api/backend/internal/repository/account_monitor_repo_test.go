@@ -86,7 +86,7 @@ func TestAccountMonitorRepositoryEnsuresProbeBucketTerminalIdempotently(t *testi
 	defer db.Close()
 	repo := NewAccountMonitorRepository(db)
 	bucket := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
-	mock.ExpectExec(`(?s)INSERT INTO account_monitor_bucket_terminals.*BOOL_OR\(r\.status = 'success'\).*HAVING COUNT\(r\.account_id\) > 0.*ON CONFLICT \(group_id, bucket_start\) DO UPDATE.*EXCLUDED\.status = 'success'`).
+	mock.ExpectExec(`(?s)INSERT INTO account_monitor_bucket_terminals.*BOOL_OR\(r\.status = 'success'\).*ARRAY_AGG\(r\.input_tokens.*HAVING COUNT\(r\.account_id\) > 0.*ON CONFLICT \(group_id, bucket_start\) DO UPDATE.*EXCLUDED\.status = 'success'`).
 		WithArgs(int64(7), bucket, "7d4b56d2-8223-4f77-8d22-f6a93d818980", sqlmock.AnyArg(), "5m0s").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	if err := repo.EnsureProbeBucketTerminal(context.Background(), 7, []int64{11, 12}, bucket, "7d4b56d2-8223-4f77-8d22-f6a93d818980"); err != nil {
@@ -111,7 +111,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 	updatedAt := end.Add(-time.Minute)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*raw_usage_candidates AS.*unknown_usage_keys AS.*SELECT DISTINCT u\.group_id, NULLIF\(u\.request_id, ''\).*SELECT DISTINCT u\.group_id, NULLIF\(u\.logical_request_id, ''\).*error_candidates AS.*NOT EXISTS.*unknown_usage_keys.*real_events AS.*PARTITION BY rc\.group_id, rc\.request_key.*selected_events AS.*missing_probe_counts AS.*has_real IS NOT TRUE AND probe_missing.*cache_hit_rate.*request_count`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*raw_usage_candidates AS.*unknown_usage_keys AS.*SELECT DISTINCT u\.group_id, NULLIF\(u\.request_id, ''\).*SELECT DISTINCT u\.group_id, NULLIF\(u\.logical_request_id, ''\).*error_candidates AS.*NOT EXISTS.*unknown_usage_keys.*real_events AS.*PARTITION BY rc\.group_id, rc\.request_key.*selected_events AS.*missing_probe_counts AS.*has_real IS NOT TRUE AND probe_missing.*SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,.*ttft_p95_ms, ttft_sample_count,.*latency_p95_ms, latency_sample_count, cache_read_tokens, cache_creation_tokens,.*cache_hit_denominator, cache_hit_rate, source_updated_at, current_operational`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
@@ -160,7 +160,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4ReportsMissingProbeWithoutServi
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(10*time.Minute + 30*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.has_real IS NOT TRUE\s+AND bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.probe_missing IS NOT TRUE\s*\), latest_selected AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
@@ -419,11 +419,11 @@ func TestAccountMonitorRepositoryPersistsSanitizedProbeResult(t *testing.T) {
 
 	mock.ExpectExec("INSERT INTO account_monitor_results").WithArgs(
 		"7d4b56d2-8223-4f77-8d22-f6a93d818980", int64(7), "gpt-4o-mini", "success", "",
-		&statusCode, &ttft, &latency, checkedAt,
+		&statusCode, &ttft, &latency, 0, 0, 0, service.ProbeUsageUnknown, checkedAt,
 	).WillReturnResult(sqlmock.NewResult(1, 1))
 	err = repo.InsertResult(context.Background(), service.AccountMonitorProbeResult{
 		AccountID: 7, ModelID: "gpt-4o-mini", Status: "success", HTTPStatus: &statusCode,
-		TTFTMS: &ttft, LatencyMS: &latency, CheckedAt: checkedAt,
+		TTFTMS: &ttft, LatencyMS: &latency, UsageCompleteness: service.ProbeUsageUnknown, CheckedAt: checkedAt,
 	}, "7d4b56d2-8223-4f77-8d22-f6a93d818980")
 	if err != nil {
 		t.Fatal(err)

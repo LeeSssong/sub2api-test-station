@@ -56,14 +56,24 @@ func (o *accountProbeUsageObserver) observeJSON(raw []byte) {
 		return
 	}
 	type usagePayload struct {
-		InputTokens      int `json:"input_tokens"`
-		OutputTokens     int `json:"output_tokens"`
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		CachedTokens     int `json:"cached_tokens"`
-		PromptDetails    struct {
-			CachedTokens int `json:"cached_tokens"`
+		InputTokens         int `json:"input_tokens"`
+		OutputTokens        int `json:"output_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		CachedTokens        int `json:"cached_tokens"`
+		CacheReadTokens     int `json:"cache_read_tokens"`
+		CacheCreationTokens int `json:"cache_creation_tokens"`
+		CacheWriteTokens    int `json:"cache_write_tokens"`
+		PromptDetails       struct {
+			CachedTokens        int `json:"cached_tokens"`
+			CacheCreationTokens int `json:"cache_creation_tokens"`
+			CacheWriteTokens    int `json:"cache_write_tokens"`
 		} `json:"prompt_tokens_details"`
+		InputDetails struct {
+			CachedTokens        int `json:"cached_tokens"`
+			CacheCreationTokens int `json:"cache_creation_tokens"`
+			CacheWriteTokens    int `json:"cache_write_tokens"`
+		} `json:"input_tokens_details"`
 	}
 	var payload struct {
 		Usage    *usagePayload `json:"usage"`
@@ -93,10 +103,33 @@ func (o *accountProbeUsageObserver) observeJSON(raw []byte) {
 	if cached == 0 {
 		cached = usage.PromptDetails.CachedTokens
 	}
-	if input < 0 || output < 0 || cached < 0 {
+	if cached == 0 {
+		cached = usage.InputDetails.CachedTokens
+	}
+	cacheCreation := usage.CacheCreationTokens
+	if cacheCreation == 0 {
+		cacheCreation = usage.CacheWriteTokens
+	}
+	if cacheCreation == 0 {
+		cacheCreation = usage.PromptDetails.CacheCreationTokens
+	}
+	if cacheCreation == 0 {
+		cacheCreation = usage.PromptDetails.CacheWriteTokens
+	}
+	if cacheCreation == 0 {
+		cacheCreation = usage.InputDetails.CacheCreationTokens
+	}
+	if cacheCreation == 0 {
+		cacheCreation = usage.InputDetails.CacheWriteTokens
+	}
+	cacheRead := usage.CacheReadTokens
+	if cacheRead == 0 {
+		cacheRead = cached
+	}
+	if input < 0 || output < 0 || cacheCreation < 0 || cacheRead < 0 {
 		return
 	}
-	o.tokens = UsageTokens{InputTokens: input, OutputTokens: output, CacheReadTokens: cached}
+	o.tokens = UsageTokens{InputTokens: input, OutputTokens: output, CacheCreationTokens: cacheCreation, CacheReadTokens: cacheRead}
 	o.seen = true
 }
 

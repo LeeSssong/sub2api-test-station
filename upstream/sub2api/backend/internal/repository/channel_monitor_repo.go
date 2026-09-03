@@ -432,7 +432,7 @@ func (r *channelMonitorRepository) ListLatestForMonitorIDs(ctx context.Context, 
 	}
 	const q = `
 		SELECT DISTINCT ON (monitor_id, model)
-		    monitor_id, model, status, latency_ms, ping_latency_ms, checked_at
+		    monitor_id, model, status, latency_ms, ping_latency_ms, checked_at, h.quota
 		FROM channel_monitor_histories h
 		JOIN channel_monitors cm ON cm.id = h.monitor_id
 		    AND h.checked_at >= cm.history_started_at

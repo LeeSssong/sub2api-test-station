@@ -48,6 +48,23 @@ func adaptiveCandidate(id int64, score float64) openAIAccountCandidateScore {
 	}
 }
 
+func TestChooseOpenAIAdaptivePolicyExpandsSparsePool(t *testing.T) {
+	p := chooseOpenAIAdaptivePolicy([]openAIAccountCandidateScore{adaptiveCandidate(1, 4)}, 4, 8, 20, OpenAISchedulerCandidatePoolModeHybrid)
+	require.Equal(t, OpenAISchedulerCandidatePoolModeAllEligible, p.mode)
+	require.Equal(t, 1, p.topK)
+}
+
+func TestChooseOpenAIAdaptivePolicyMovesOneStepAndBounds(t *testing.T) {
+	candidates := []openAIAccountCandidateScore{adaptiveCandidate(1, 4), adaptiveCandidate(2, 3.95), adaptiveCandidate(3, 3.9)}
+	p := chooseOpenAIAdaptivePolicy(candidates, 2, 3, 99, OpenAISchedulerCandidatePoolModeHybrid)
+	require.Equal(t, 3, p.topK)
+	require.Equal(t, 99, p.explorationRate)
+	candidates[1].score = 1
+	candidates[2].score = 0.5
+	p = chooseOpenAIAdaptivePolicy(candidates, 2, 3, 0, OpenAISchedulerCandidatePoolModeHybrid)
+	require.Equal(t, 1, p.topK)
+}
+
 func TestApplyOpenAIAdaptiveTopKFiltersByScoreGap(t *testing.T) {
 	candidates := []openAIAccountCandidateScore{
 		adaptiveCandidate(1, 4.0),

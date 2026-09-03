@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -78,4 +79,80 @@ func TestOpenAIUnifiedQualityScoreIgnoresGroupAndCommercialFields(t *testing.T) 
 	group20 := buildOpenAIQualityBreakdowns([]*Account{expensive}, qualities, loads, nil)[19]
 
 	require.Equal(t, group2, group20)
+}
+
+// Production break caught: leaving output rate neutral causes materially
+// faster visible output to have no influence on quality score or rank.
+func TestOpenAIUnifiedQualityScoreRanksConfidenceWeightedOutputRate(t *testing.T) {
+	quality := func(accountID int64, outputRate float64) OpenAIAccountQuality {
+		return OpenAIAccountQuality{AccountID: accountID, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow1H: {
+				AttemptCount: 20, SuccessCount: 19, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 20, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+				OutputRateSampleCount: 20, OutputRateTokensPerSecond: floatPtr(outputRate),
+			},
+			OpenAIQualityWindow24H: {
+				AttemptCount: 100, SuccessCount: 95, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 100, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+				OutputRateSampleCount: 100, OutputRateTokensPerSecond: floatPtr(outputRate),
+			},
+			OpenAIQualityWindow7D: {
+				AttemptCount: 300, SuccessCount: 285, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 300, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+				OutputRateSampleCount: 300, OutputRateTokensPerSecond: floatPtr(outputRate),
+			},
+		}}
+	}
+	accounts := []*Account{{ID: 1}, {ID: 2}}
+	breakdowns := buildOpenAIQualityBreakdowns(accounts, map[int64]OpenAIAccountQuality{
+		1: quality(1, 10),
+		2: quality(2, 50),
+	}, nil, nil)
+
+	require.InDelta(t, 0, breakdowns[1].OutputRateScore, .001)
+	require.InDelta(t, 100, breakdowns[2].OutputRateScore, .001)
+	require.Less(t, breakdowns[1].QualityScore, breakdowns[2].QualityScore)
+	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{
+		{account: accounts[0], quality: breakdowns[1]},
+		{account: accounts[1], quality: breakdowns[2]},
+	})
+	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
+}
+
+// Production break caught: recording the 60-second observation only for
+// diagnostics leaves a repeatedly slow account indistinguishable in rank.
+func TestOpenAIUnifiedQualityScoreUsesSlowEvidenceForLaterRanking(t *testing.T) {
+	now := time.Date(2026, 9, 3, 3, 0, 0, 0, time.UTC)
+	var timers []*manualSlowTimer
+	tracker := newOpenAIFirstOutputSlowTracker(func() time.Time { return now }, func(_ time.Duration, fn func()) openAISlowTimer {
+		timer := &manualSlowTimer{fn: fn}
+		timers = append(timers, timer)
+		return timer
+	})
+	observation := tracker.Start(2, 1, "slow-attempt", now)
+	require.NotNil(t, observation)
+	require.Len(t, timers, 1)
+	timers[0].Fire()
+
+	quality := func(accountID int64) OpenAIAccountQuality {
+		return OpenAIAccountQuality{AccountID: accountID, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow1H: {
+				AttemptCount: 20, SuccessCount: 19, SuccessRate: floatPtr(.95),
+				TTFTSampleCount: 20, TTFTP50MS: floatPtr(3000), TTFTP90MS: floatPtr(5000),
+			},
+		}}
+	}
+	accounts := []*Account{{ID: 1}, {ID: 2}}
+	breakdowns := buildOpenAIQualityBreakdowns(accounts, map[int64]OpenAIAccountQuality{
+		1: quality(1),
+		2: quality(2),
+	}, nil, tracker)
+
+	require.Equal(t, 1, breakdowns[1].FirstOutputSlowCount)
+	require.Less(t, breakdowns[1].QualityScore, breakdowns[2].QualityScore)
+	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{
+		{account: accounts[0], quality: breakdowns[1]},
+		{account: accounts[1], quality: breakdowns[2]},
+	})
+	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
 }

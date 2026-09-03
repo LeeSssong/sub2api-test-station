@@ -33,6 +33,11 @@ type openAIBlendedScore struct {
 	Windows       map[OpenAIQualityWindow]OpenAIQualityWindowEvidence
 }
 
+type openAIOutputRateEvidence struct {
+	Value      float64
+	Confidence float64
+}
+
 type OpenAIQualityBreakdown struct {
 	QualityScoreVersion  string
 	QualityScore         float64
@@ -205,15 +210,15 @@ func calculateOpenAIUnifiedQualityScore(quality OpenAIAccountQuality, load *Acco
 		}
 		return *metrics.TTFTP90MS, true
 	}, func(metrics OpenAIQualityWindowMetrics) int64 { return metrics.TTFTSampleCount }, scoreOpenAITTFT)
-	// Output-rate normalization is candidate-relative and therefore remains
-	// neutral for this single-account calculator.
+	if slow != nil {
+		view := slow.viewAccount(accountID)
+		breakdown.FirstOutputSlowCount = view.SlowCount
+		breakdown.SlowEvidenceReplaced = view.Replaced
+		applyOpenAISlowTTFTEvidence(&breakdown, view)
+	}
 	breakdown.FirstOutputScore = .6*breakdown.P50TTFTScore + .4*breakdown.P90TTFTScore
 	breakdown.LiveLoadScore = scoreOpenAIUnifiedLiveLoad(load)
-	breakdown.QualityScore = openAIUnifiedQualitySuccessWeight*breakdown.SuccessScore +
-		openAIUnifiedQualityP50TTFTWeight*breakdown.P50TTFTScore +
-		openAIUnifiedQualityP90TTFTWeight*breakdown.P90TTFTScore +
-		openAIUnifiedQualityOutputRateWeight*breakdown.OutputRateScore +
-		openAIUnifiedQualityLiveLoadWeight*breakdown.LiveLoadScore
+	refreshOpenAIUnifiedQualityScore(&breakdown)
 
 	for _, window := range []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D} {
 		metrics := quality.Windows[window]
@@ -227,12 +232,53 @@ func calculateOpenAIUnifiedQualityScore(quality OpenAIAccountQuality, load *Acco
 			breakdown.OutputRate = floatPointer(*metrics.OutputRateTokensPerSecond)
 		}
 	}
-	if slow != nil {
-		view := slow.viewAccount(accountID)
-		breakdown.FirstOutputSlowCount = view.SlowCount
-		breakdown.SlowEvidenceReplaced = view.Replaced
-	}
 	return breakdown
+}
+
+func applyOpenAISlowTTFTEvidence(breakdown *OpenAIQualityBreakdown, view OpenAIFirstOutputSlowView) {
+	if breakdown == nil || len(view.TTFTLowerBoundsMS) == 0 {
+		return
+	}
+	// Each 60-second observation acts as one bounded W1 sample. It adjusts
+	// later rank only and cannot make an account ineligible.
+	weight := math.Min(.20, float64(len(view.TTFTLowerBoundsMS))/float64(openAIQualityWindowTarget(OpenAIQualityWindow1H)))
+	p50 := scoreOpenAITTFT(openAIQualityPercentile(view.TTFTLowerBoundsMS, .50))
+	p90 := scoreOpenAITTFT(openAIQualityPercentile(view.TTFTLowerBoundsMS, .90))
+	breakdown.P50TTFTScore = (1-weight)*breakdown.P50TTFTScore + weight*p50
+	breakdown.P90TTFTScore = (1-weight)*breakdown.P90TTFTScore + weight*p90
+}
+
+func refreshOpenAIUnifiedQualityScore(breakdown *OpenAIQualityBreakdown) {
+	if breakdown == nil {
+		return
+	}
+	breakdown.FirstOutputScore = .6*breakdown.P50TTFTScore + .4*breakdown.P90TTFTScore
+	breakdown.QualityScore = openAIUnifiedQualitySuccessWeight*breakdown.SuccessScore +
+		openAIUnifiedQualityP50TTFTWeight*breakdown.P50TTFTScore +
+		openAIUnifiedQualityP90TTFTWeight*breakdown.P90TTFTScore +
+		openAIUnifiedQualityOutputRateWeight*breakdown.OutputRateScore +
+		openAIUnifiedQualityLiveLoadWeight*breakdown.LiveLoadScore
+}
+
+func blendOpenAIOutputRateEvidence(quality OpenAIAccountQuality) openAIOutputRateEvidence {
+	base := map[OpenAIQualityWindow]float64{OpenAIQualityWindow1H: .5, OpenAIQualityWindow24H: .3, OpenAIQualityWindow7D: .2}
+	ordered := []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D}
+	carry, weightedValue, confidence := 0.0, 0.0, 0.0
+	for _, window := range ordered {
+		metrics := quality.Windows[window]
+		available := base[window] + carry
+		weight := 0.0
+		if finiteQualityValue(metrics.OutputRateTokensPerSecond) && metrics.OutputRateSampleCount > 0 {
+			weight = available * math.Min(1, float64(metrics.OutputRateSampleCount)/float64(openAIQualityWindowTarget(window)))
+			weightedValue += *metrics.OutputRateTokensPerSecond * weight
+		}
+		confidence += weight
+		carry = available - weight
+	}
+	if confidence == 0 {
+		return openAIOutputRateEvidence{}
+	}
+	return openAIOutputRateEvidence{Value: weightedValue / confidence, Confidence: confidence}
 }
 
 func scoreOpenAIUnifiedLiveLoad(load *AccountLoadInfo) float64 {
@@ -247,12 +293,31 @@ func scoreOpenAIUnifiedLiveLoad(load *AccountLoadInfo) float64 {
 
 func buildOpenAIQualityBreakdowns(accounts []*Account, qualities map[int64]OpenAIAccountQuality, loads map[int64]*AccountLoadInfo, slow *OpenAIFirstOutputSlowTracker) map[int64]OpenAIQualityBreakdown {
 	result := make(map[int64]OpenAIQualityBreakdown, len(accounts))
+	outputEvidence := make(map[int64]openAIOutputRateEvidence, len(accounts))
+	outputValues := make([]float64, 0, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
 			continue
 		}
 		load := loads[account.ID]
-		result[account.ID] = calculateOpenAIUnifiedQualityScore(qualities[account.ID], load, slow, account.ID)
+		quality := qualities[account.ID]
+		result[account.ID] = calculateOpenAIUnifiedQualityScore(quality, load, slow, account.ID)
+		evidence := blendOpenAIOutputRateEvidence(quality)
+		outputEvidence[account.ID] = evidence
+		if evidence.Confidence > 0 {
+			outputValues = append(outputValues, evidence.Value)
+		}
+	}
+	p20 := openAIQualityPercentile(outputValues, .20)
+	p80 := openAIQualityPercentile(outputValues, .80)
+	for accountID, breakdown := range result {
+		evidence := outputEvidence[accountID]
+		if evidence.Confidence > 0 {
+			observed := scoreOpenAIOutputRate(evidence.Value, p20, p80)
+			breakdown.OutputRateScore = observed*evidence.Confidence + 50*(1-evidence.Confidence)
+			refreshOpenAIUnifiedQualityScore(&breakdown)
+			result[accountID] = breakdown
+		}
 	}
 	return result
 }

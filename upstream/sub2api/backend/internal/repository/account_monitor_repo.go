@@ -674,8 +674,11 @@ WITH scopes AS (
          COUNT(*) FILTER (WHERE s.successful AND s.first_token_ms IS NOT NULL)::int AS ttft_sample_count,
          MAX(ms.latency_trimmed_mean) AS latency_p95_ms,
          COUNT(*) FILTER (WHERE s.successful AND s.duration_ms IS NOT NULL)::int AS latency_sample_count,
+         COALESCE(SUM(s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0)::bigint AS cache_read_tokens,
+         COALESCE(SUM(s.cache_creation_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0)::bigint AS cache_creation_tokens,
+         COALESCE(SUM(s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0)::bigint AS cache_hit_denominator,
          SUM(s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real')
-           / NULLIF(SUM(s.input_tokens + s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0) AS cache_hit_rate,
+           / NULLIF(SUM(s.cache_creation_tokens + s.cache_read_tokens) FILTER (WHERE s.successful AND s.source = 'real'), 0) AS cache_hit_rate,
          MAX(s.observed_at) AS source_updated_at,
          COALESCE(BOOL_OR(ls.successful), FALSE) AS current_operational
   FROM groups g
@@ -702,10 +705,11 @@ ORDER BY group_id
 			probeFallbackBuckets, probeFallbackRequests, missingProbeTerminals      int
 			ttftSampleCount, latencySampleCount                                     int
 			successRate, ttftP95, latencyP95, cacheHitRate                          sql.NullFloat64
+			cacheReadTokens, cacheCreationTokens, cacheHitDenominator               int64
 			currentOperational                                                      bool
 			sourceUpdatedAt                                                         sql.NullTime
 		)
-		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &missingProbeTerminals, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &cacheHitRate, &sourceUpdatedAt, &currentOperational); err != nil {
+		if err := rows.Scan(&groupID, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeFallbackBuckets, &probeFallbackRequests, &missingProbeTerminals, &ttftP95, &ttftSampleCount, &latencyP95, &latencySampleCount, &cacheReadTokens, &cacheCreationTokens, &cacheHitDenominator, &cacheHitRate, &sourceUpdatedAt, &currentOperational); err != nil {
 			return nil, fmt.Errorf("scan hybrid monitor v4 groups: %w", err)
 		}
 		var successRatePtr, ttftP95Ptr, latencyP95Ptr, cacheHitRatePtr *float64
@@ -739,8 +743,9 @@ ORDER BY group_id
 			LatencyP95MS:              latencyP95Ptr,
 			LatencySampleCount:        latencySampleCount,
 			CacheHitRate:              cacheHitRatePtr,
-			SourceUpdatedAt:           accountMonitorNullableTime(sourceUpdatedAt),
-			CurrentOperational:        currentOperational,
+			CacheReadTokens:           cacheReadTokens, CacheCreationTokens: cacheCreationTokens, CacheHitDenominator: cacheHitDenominator,
+			SourceUpdatedAt:    accountMonitorNullableTime(sourceUpdatedAt),
+			CurrentOperational: currentOperational,
 		}
 	}
 	if err := rows.Err(); err != nil {

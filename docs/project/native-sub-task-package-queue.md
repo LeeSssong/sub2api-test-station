@@ -1,5 +1,7 @@
 # 原生 Sub 小步发布任务包队列
 
+**T125 账号监控统一请求口径与原生编辑入口恢复（2026-09-03）：** 状态 `DESIGNING`。用户确认账号监控不再区分真实调用与主动探测：当前 5 分钟自然桶无真实调用时只执行一次主动探测，探测终态按普通请求等价进入请求数、成功率、TTFT P95、时间线、当前/历史质量和质量调度；同桶存在真实调用时不再叠加探测，空桶不进入分母。页面不展示来源分类或差异样式；利润、收入和业务成本继续只认原生业务账务流水。当前调度排名必须直接复用实际调度器投影。另恢复已上线但被遗留 CSS 隐藏的原生“编辑账号”入口，不改卡片布局。全量 worktree 盘点确认三个现存非 `main` worktree 均干净且无领先 `main` 的独有提交；T123/T124 因 GHCR 发布阻塞继续保留。本任务仅进入设计车道，不合并、不推送、不部署。
+
 **T123/T124 Responses 语义切号与飞书余额范围隔离（2026-09-03）：** 状态 `BLOCKED`。候选 `codex/t123-t124-pro-spec-and-pro-metric-audit@9272917df` 已合入根 `main@b4125db80` 并推送。直接相关测试、server build、diff-check 通过；无迁移、配置或生产数据写入。按用户“快速部署主站，不部署验收站”执行发布链时，本地构建成功，但 GHCR 镜像推送返回 `403 Forbidden`，未联系宿主、未停机、未切换、未迁移、未重启，生产未变更。失败证据绑定 `main@b4125db80` / tree `3faa9371`，候选 worktree/分支保留，待恢复 registry 授权后在同一候选重试；验收站未部署。
 
 **T121/T122 生产合并与快速发布（2026-09-03）：** 状态 `DONE`。T121 usage stats aggregate scan 与 T122 unified quality scheduling 已合入并推送根 `main@d2ab6d6e461471b8925e5339be871f75d3b4bbe5`。按用户明确“快速部署主站，不同步验收站”执行预加载蓝绿发布，结果 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。验收站按授权未同步，已记录版本差异。测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-03-main-d2ab6d6e-t121-t122-production-only-fast.json`；恢复 bundle 已归档至 `/Users/gongtengxinwen/Documents/sub2api-archives/2026-09-03-t121-t122-production-only-fast/` 并验证，两个 worktree/本地分支已删除。

@@ -1871,6 +1871,27 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 		return payload, false
 	}
 	updated := payload
+	errorPath := "error"
+	if isFailedEvent && gjson.GetBytes(updated, "response.error").Exists() {
+		errorPath = "response.error"
+	}
+	// Client errors use a small stable whitelist.  The upstream message is
+	// retained only in the admin diagnostic context and is never serialized
+	// into the Responses stream.
+	clientCode := strings.TrimSpace(gjson.GetBytes(payload, errorPath+".code").String())
+	clientMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(gjson.GetBytes(payload, errorPath+".message").String()))
+	lowerMessage := strings.ToLower(clientMessage)
+	sensitiveMessage := clientMessage == "" || strings.Contains(lowerMessage, "request id") || strings.Contains(lowerMessage, "ray id") || strings.Contains(lowerMessage, "http://") || strings.Contains(lowerMessage, "https://")
+	if sensitiveMessage {
+		clientCode = "upstream_unavailable"
+		clientMessage = "Upstream response failed"
+	}
+	if next, err := sjson.SetBytes(updated, errorPath+".code", clientCode); err == nil {
+		updated = next
+	}
+	if next, err := sjson.SetBytes(updated, errorPath+".message", clientMessage); err == nil {
+		updated = next
+	}
 	// 容量降载码对 Codex CLI 是致命错误；事件既然要写给客户端（failover 已不可用），
 	// 就改写为客户端可重试的错误码。error 帧与 response.failed 都要改：上游降载
 	// 总是先推 error 帧再收 failed，两帧携带同一个错误。
@@ -1881,13 +1902,6 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 		return updated, !bytes.Equal(updated, payload)
 	}
 	if clientOutputStarted && isOpenAIContextWindowError(extractOpenAISSEErrorMessage(payload), payload) {
-		errorPath := ""
-		switch {
-		case gjson.GetBytes(updated, "response.error").Exists():
-			errorPath = "response.error"
-		case gjson.GetBytes(updated, "error").Exists():
-			errorPath = "error"
-		}
 		if errorPath != "" {
 			next, err := sjson.SetBytes(updated, errorPath+".type", "invalid_request_error")
 			if err != nil {

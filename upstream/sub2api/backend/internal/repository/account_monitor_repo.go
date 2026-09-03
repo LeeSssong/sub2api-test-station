@@ -931,9 +931,9 @@ func (r *accountMonitorRepository) ListWindowAggregates(
 	return result, nil
 }
 
-// ListRealRequestAggregates uses the persisted usage/error stream as the
-// account-monitor quality source. It deliberately keeps active-probe rows out
-// of this projection.
+// ListRealRequestAggregates projects real requests and terminal probes into a
+// single request stream. A probe is selected only for an otherwise empty
+// five-minute bucket and never contributes accounting fields.
 func (r *accountMonitorRepository) ListRealRequestAggregates(
 	ctx context.Context,
 	accountIDs []int64,
@@ -944,60 +944,51 @@ func (r *accountMonitorRepository) ListRealRequestAggregates(
 		return result, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		WITH usage_events AS (
-			SELECT u.account_id, u.id::bigint AS source_id, u.created_at,
-				u.first_token_ms::double precision AS first_token_ms,
-				u.duration_ms::double precision AS duration_ms,
-				u.actual_cost::double precision AS revenue,
-				COALESCE(u.account_cost, COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1))::double precision AS account_cost,
-				(u.account_cost IS NOT NULL OR u.account_stats_cost IS NOT NULL OR u.total_cost IS NOT NULL) AS cost_complete,
-				(u.actual_cost > 0) AS successful,
-				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key,
-				1 AS source_priority
-			FROM usage_logs u
-			WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3
-				AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
-		), unknown_usage_keys AS (
-			SELECT DISTINCT u.account_id, NULLIF(u.request_id, '') AS request_key
-			FROM usage_logs u
-			WHERE u.created_at >= $2 AND u.created_at < $3
-			  AND u.usage_completeness = 'unknown' AND NULLIF(u.request_id, '') IS NOT NULL
-			UNION
-			SELECT DISTINCT u.account_id, NULLIF(u.logical_request_id, '') AS request_key
-			FROM usage_logs u
-			WHERE u.created_at >= $2 AND u.created_at < $3
-			  AND u.usage_completeness = 'unknown' AND NULLIF(u.logical_request_id, '') IS NOT NULL
-		), error_events AS (
-			SELECT e.account_id, e.id::bigint AS source_id, e.created_at,
-				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
-				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
-				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key,
-				0 AS source_priority
-				FROM ops_error_logs e
-				WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3
-				  AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
-				  AND NOT EXISTS (
-					  SELECT 1 FROM unknown_usage_keys unknown_usage
-					  WHERE unknown_usage.account_id = e.account_id
-						AND unknown_usage.request_key IN (NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''))
-				  )
-		), events AS (
-			SELECT * FROM usage_events UNION ALL SELECT * FROM error_events
-		), dedup AS (
+		WITH real_candidates (account_id, source_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, request_key, source_priority, rn) AS (
 			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn
-			FROM events e
+			FROM (
+				SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms,
+					u.duration_ms::double precision AS duration_ms, u.actual_cost::double precision AS revenue,
+					COALESCE(u.account_cost, COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1))::double precision AS account_cost,
+					(u.account_cost IS NOT NULL OR u.account_stats_cost IS NOT NULL OR u.total_cost IS NOT NULL) AS cost_complete,
+					(u.actual_cost > 0) AS successful, COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
+				FROM usage_logs u WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+				UNION ALL
+				SELECT e.account_id, e.id::bigint, e.created_at, NULL::double precision, NULL::double precision, 0::double precision, NULL::double precision, FALSE, FALSE,
+					COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text), 0
+				FROM ops_error_logs e
+				WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+					AND NOT EXISTS (SELECT 1 FROM usage_logs u WHERE u.account_id = e.account_id AND u.created_at >= $2 AND u.created_at < $3 AND u.usage_completeness = 'unknown'
+						AND ((NULLIF(e.request_id, '') IS NOT NULL AND NULLIF(e.request_id, '') IN (NULLIF(u.request_id, ''), NULLIF(u.logical_request_id, '')))
+							OR (NULLIF(e.client_request_id, '') IS NOT NULL AND NULLIF(e.client_request_id, '') IN (NULLIF(u.request_id, ''), NULLIF(u.logical_request_id, '')))))
+			) e
+		), real_buckets (account_id, bucket_start) AS (
+			SELECT account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz) AS bucket_start
+			FROM real_candidates WHERE rn = 1 GROUP BY account_id, bucket_start
+		), probe_ranked (account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start, rn) AS (
+			SELECT account_id, checked_at, ttft_ms::double precision AS first_token_ms, latency_ms::double precision AS duration_ms,
+				(status = 'success') AS successful, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) AS bucket_start,
+				ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) ORDER BY checked_at DESC, id DESC) AS rn
+			FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status IN ('success', 'failed')
+		), latest_probe (account_id, created_at, first_token_ms, duration_ms, successful, bucket_start) AS (
+			SELECT account_id, checked_at AS created_at, first_token_ms, duration_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1
+		), selected_requests (account_id, source_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, request_key, is_probe) AS (
+			SELECT account_id, source_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, request_key, FALSE FROM real_candidates WHERE rn = 1
+			UNION ALL
+			SELECT p.account_id, 0::bigint, p.created_at, p.first_token_ms, p.duration_ms, 0::double precision, 0::double precision, FALSE, p.successful, 'probe:' || p.created_at::text, TRUE
+			FROM latest_probe p WHERE NOT EXISTS (SELECT 1 FROM real_buckets r WHERE r.account_id = p.account_id AND r.bucket_start = p.bucket_start)
 		)
 		SELECT account_id, COUNT(*)::bigint, COUNT(*) FILTER (WHERE successful)::bigint,
 			COUNT(*) FILTER (WHERE NOT successful)::bigint,
 			COALESCE(SUM(revenue), 0)::double precision,
 			COALESCE(SUM(account_cost) FILTER (WHERE cost_complete), 0)::double precision,
-			BOOL_AND(cost_complete OR successful = FALSE),
+			BOOL_AND(NOT is_probe AND (cost_complete OR successful = FALSE)),
 			COALESCE(COUNT(*) FILTER (WHERE successful)::double precision / NULLIF(COUNT(*), 0), 0),
 			COUNT(first_token_ms) FILTER (WHERE successful)::int,
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL),
 			MAX(created_at)
-		FROM dedup WHERE rn = 1 GROUP BY account_id
+		FROM selected_requests GROUP BY account_id
 	`, pq.Array(accountIDs), since.UTC(), until.UTC())
 	if err != nil {
 		return nil, err
@@ -1023,19 +1014,28 @@ func (r *accountMonitorRepository) ListLifetimeRealRequestCounts(ctx context.Con
 		return result, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		WITH usage_events AS (
-			SELECT u.account_id, u.id::bigint AS source_id, u.created_at,
-				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
-			FROM usage_logs u WHERE u.account_id = ANY($1) AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
-		), error_events AS (
-			SELECT e.account_id, e.id::bigint AS source_id, e.created_at,
-				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
-			FROM ops_error_logs e WHERE e.account_id = ANY($1) AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
-		), dedup AS (
-			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn
-			FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
+		WITH real_candidates (account_id, source_id, created_at, request_key, source_priority, rn) AS (
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn FROM (
+				SELECT u.account_id, u.id::bigint AS source_id, u.created_at, COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
+				FROM usage_logs u WHERE u.account_id = ANY($1) AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+				UNION ALL
+				SELECT e.account_id, e.id::bigint, e.created_at, COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text), 0
+				FROM ops_error_logs e WHERE e.account_id = ANY($1) AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+			) e
+		), real_buckets (account_id, bucket_start) AS (
+			SELECT account_id, date_bin('5 minutes'::interval, created_at, TIMESTAMPTZ 'epoch') AS bucket_start FROM real_candidates WHERE rn = 1 GROUP BY account_id, bucket_start
+		), probe_ranked (account_id, checked_at, bucket_start, rn) AS (
+			SELECT account_id, checked_at, date_bin('5 minutes'::interval, checked_at, TIMESTAMPTZ 'epoch') AS bucket_start,
+				ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, TIMESTAMPTZ 'epoch') ORDER BY checked_at DESC, id DESC) AS rn
+			FROM account_monitor_results WHERE account_id = ANY($1) AND status IN ('success', 'failed')
+		), latest_probe (account_id, created_at, bucket_start) AS (
+			SELECT account_id, checked_at AS created_at, bucket_start FROM probe_ranked WHERE rn = 1
+		), selected_requests (account_id, created_at, is_probe) AS (
+			SELECT account_id, created_at, FALSE FROM real_candidates WHERE rn = 1
+			UNION ALL
+			SELECT p.account_id, p.created_at, TRUE FROM latest_probe p WHERE NOT EXISTS (SELECT 1 FROM real_buckets r WHERE r.account_id = p.account_id AND r.bucket_start = p.bucket_start)
 		)
-		SELECT account_id, COUNT(*)::bigint FROM dedup WHERE rn = 1 GROUP BY account_id ORDER BY account_id
+		SELECT account_id, COUNT(*)::bigint FROM selected_requests GROUP BY account_id ORDER BY account_id
 	`, pq.Array(accountIDs))
 	if err != nil {
 		return nil, err
@@ -1070,53 +1070,21 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		}
 		result[id] = points
 	}
-	rows, err := r.db.QueryContext(ctx, `
-		WITH usage_events AS (
-			SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms,
-				(u.actual_cost > 0) AS successful,
-				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
-			FROM usage_logs u WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
-		), error_events AS (
-			SELECT e.account_id, e.id::bigint AS source_id, e.created_at, NULL::double precision AS first_token_ms, FALSE AS successful,
-				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
-			FROM ops_error_logs e WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
-		), dedup AS (
-			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
-		), real_buckets AS (
-			SELECT account_id, FLOOR(EXTRACT(EPOCH FROM (created_at - $2)) / $4)::int AS source_bucket_index,
-				COUNT(*)::bigint AS request_count, COUNT(*) FILTER (WHERE successful)::bigint AS success_count,
-				COUNT(*) FILTER (WHERE NOT successful)::bigint AS failure_count,
-				PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_p95_ms
-			FROM dedup WHERE rn = 1 GROUP BY account_id, source_bucket_index
-		), probe_ranked AS (
-			SELECT account_id, FLOOR(EXTRACT(EPOCH FROM (checked_at - $2)) / $4)::int AS source_bucket_index, status, ttft_ms, checked_at,
-				ROW_NUMBER() OVER (PARTITION BY account_id, FLOOR(EXTRACT(EPOCH FROM (checked_at - $2)) / $4)::int ORDER BY checked_at DESC, id DESC) AS rn
-			FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status IN ('success', 'failed')
-		), probe_buckets AS (
-			SELECT account_id, source_bucket_index, 1::bigint AS probe_count,
-				CASE WHEN status = 'success' THEN 1 ELSE 0 END::bigint AS probe_success_count,
-				CASE WHEN status = 'failed' THEN 1 ELSE 0 END::bigint AS probe_failure_count, ttft_ms AS probe_ttft_p95_ms
-			FROM probe_ranked WHERE rn = 1
-		), selected_source_buckets AS (
-			SELECT COALESCE(r.account_id, p.account_id) AS account_id, COALESCE(r.source_bucket_index, p.source_bucket_index) AS source_bucket_index,
-				COALESCE(r.request_count, 0)::bigint AS request_count, COALESCE(r.success_count, 0)::bigint AS success_count, COALESCE(r.failure_count, 0)::bigint AS failure_count,
-				CASE WHEN r.account_id IS NOT NULL THEN r.ttft_p95_ms ELSE p.probe_ttft_p95_ms END AS ttft_p95_ms,
-				CASE WHEN r.account_id IS NULL THEN COALESCE(p.probe_count, 0) ELSE 0 END::bigint AS probe_count,
-				CASE WHEN r.account_id IS NULL THEN COALESCE(p.probe_success_count, 0) ELSE 0 END::bigint AS probe_success_count,
-				CASE WHEN r.account_id IS NULL THEN COALESCE(p.probe_failure_count, 0) ELSE 0 END::bigint AS probe_failure_count,
-				CASE WHEN r.account_id IS NOT NULL THEN 'real' WHEN p.account_id IS NOT NULL THEN 'probe' ELSE 'no_data' END AS source
-			FROM real_buckets r FULL OUTER JOIN probe_buckets p USING (account_id, source_bucket_index)
-		), buckets AS (
-			SELECT account_id, FLOOR(source_bucket_index::double precision * $5 / $6)::int AS bucket_index,
-				SUM(request_count)::bigint AS request_count, SUM(success_count)::bigint AS success_count, SUM(failure_count)::bigint AS failure_count,
-				CASE WHEN BOOL_OR(source = 'real') THEN PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttft_p95_ms) FILTER (WHERE source = 'real' AND ttft_p95_ms IS NOT NULL)
-				     ELSE PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttft_p95_ms) FILTER (WHERE source = 'probe' AND ttft_p95_ms IS NOT NULL) END AS ttft_p95_ms,
-				SUM(probe_count)::bigint AS probe_count, SUM(probe_success_count)::bigint AS probe_success_count, SUM(probe_failure_count)::bigint AS probe_failure_count,
-				CASE WHEN BOOL_OR(source = 'real') AND BOOL_OR(source = 'probe') THEN 'mixed' WHEN BOOL_OR(source = 'real') THEN 'real' WHEN BOOL_OR(source = 'probe') THEN 'probe' ELSE 'no_data' END AS source
-			FROM selected_source_buckets GROUP BY account_id, bucket_index
-		)
-		SELECT account_id, bucket_index, request_count, success_count, failure_count, ttft_p95_ms, probe_count, probe_success_count, probe_failure_count, source FROM buckets ORDER BY account_id, bucket_index
-	`, pq.Array(accountIDs), since.UTC(), until.UTC(), sourceBucketSeconds, bucketCount, sourceBucketCount)
+	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(`
+		WITH real_candidates (account_id, source_id, created_at, first_token_ms, successful, request_key, source_priority, rn) AS (
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.account_id, e.request_key ORDER BY e.source_priority ASC, e.created_at DESC, e.source_id DESC) AS rn FROM (
+				SELECT u.account_id, u.id::bigint AS source_id, u.created_at, u.first_token_ms::double precision AS first_token_ms, (u.actual_cost > 0) AS successful, COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority FROM usage_logs u WHERE u.account_id = ANY($1) AND u.created_at >= $2 AND u.created_at < $3 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
+				UNION ALL SELECT e.account_id, e.id::bigint, e.created_at, NULL::double precision, FALSE, COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text), 0 FROM ops_error_logs e WHERE e.account_id = ANY($1) AND e.created_at >= $2 AND e.created_at < $3 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+			) e
+		), real_buckets (account_id, bucket_start) AS ( SELECT account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz) FROM real_candidates WHERE rn = 1 GROUP BY account_id, bucket_start ), probe_ranked (
+			account_id, checked_at, first_token_ms, successful, bucket_start, rn
+		) AS (
+			SELECT account_id, checked_at, ttft_ms::double precision AS first_token_ms, (status = 'success') AS successful, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) AS bucket_start, ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) ORDER BY checked_at DESC, id DESC) AS rn FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status IN ('success', 'failed')
+		), latest_probe (account_id, created_at, first_token_ms, successful, bucket_start) AS ( SELECT account_id, checked_at, first_token_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1 ), selected_requests (account_id, created_at, first_token_ms, successful) AS (
+			SELECT account_id, created_at, first_token_ms, successful FROM real_candidates WHERE rn = 1 UNION ALL SELECT p.account_id, p.created_at, p.first_token_ms, p.successful FROM latest_probe p WHERE NOT EXISTS (SELECT 1 FROM real_buckets r WHERE r.account_id = p.account_id AND r.bucket_start = p.bucket_start)
+		), buckets AS ( SELECT account_id, FLOOR(EXTRACT(EPOCH FROM (date_bin('5 minutes'::interval, created_at, $2::timestamptz) - $2)) / %v)::int AS source_bucket_index, COUNT(*)::bigint AS request_count, COUNT(*) FILTER (WHERE successful)::bigint AS success_count, COUNT(*) FILTER (WHERE NOT successful)::bigint AS failure_count, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_p95_ms FROM selected_requests GROUP BY account_id, source_bucket_index )
+		SELECT account_id, FLOOR(source_bucket_index::double precision * $5 / $6)::int AS bucket_index, request_count, success_count, failure_count, ttft_p95_ms FROM buckets ORDER BY account_id, bucket_index
+	`, sourceBucketSeconds), pq.Array(accountIDs), since.UTC(), until.UTC(), sourceBucketSeconds, bucketCount, sourceBucketCount)
 	if err != nil {
 		return nil, err
 	}
@@ -1125,7 +1093,7 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		var id int64
 		var index int
 		var p service.AccountMonitorRealRequestTimelinePoint
-		if err := rows.Scan(&id, &index, &p.RequestCount, &p.SuccessCount, &p.FailureCount, &p.TTFTP95MS, &p.ProbeCount, &p.ProbeSuccessCount, &p.ProbeFailureCount, &p.Source); err != nil {
+		if err := rows.Scan(&id, &index, &p.RequestCount, &p.SuccessCount, &p.FailureCount, &p.TTFTP95MS); err != nil {
 			return nil, err
 		}
 		points, exists := result[id]
@@ -1145,7 +1113,8 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 		return result, nil
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		WITH usage_events AS (
+		WITH real_candidates (group_id, account_id, source_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, request_key, source_priority, rn) AS (
+			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.group_id, e.request_key ORDER BY e.created_at DESC, e.successful DESC, e.source_id DESC) AS rn FROM (
 			SELECT u.group_id, u.account_id, u.id::bigint AS source_id, u.created_at,
 				u.first_token_ms::double precision AS first_token_ms, u.duration_ms::double precision AS duration_ms,
 				u.actual_cost::double precision AS revenue,
@@ -1154,49 +1123,38 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 				(u.actual_cost > 0) AS successful,
 				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS request_key, 1 AS source_priority
 			FROM usage_logs u WHERE u.group_id = ANY($1) AND u.account_id = ANY($2) AND u.created_at >= $3 AND u.created_at < $4 AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
-		), unknown_usage_keys AS (
-			SELECT DISTINCT u.group_id, NULLIF(u.request_id, '') AS request_key
-			FROM usage_logs u
-			WHERE u.group_id = ANY($1) AND u.created_at >= $3 AND u.created_at < $4
-			  AND u.usage_completeness = 'unknown' AND NULLIF(u.request_id, '') IS NOT NULL
-			UNION
-			SELECT DISTINCT u.group_id, NULLIF(u.logical_request_id, '') AS request_key
-			FROM usage_logs u
-			WHERE u.group_id = ANY($1) AND u.created_at >= $3 AND u.created_at < $4
-			  AND u.usage_completeness = 'unknown' AND NULLIF(u.logical_request_id, '') IS NOT NULL
-		), usage_request_keys AS (
-			SELECT DISTINCT u.group_id, NULLIF(u.request_id, '') AS request_key,
-				COALESCE(NULLIF(u.logical_request_id, ''), NULLIF(u.request_id, ''), 'usage:' || u.id::text) AS canonical_request_key
-			FROM usage_logs u
-			WHERE u.group_id = ANY($1) AND u.account_id = ANY($2)
-			  AND u.created_at >= $3 AND u.created_at < $4
-			  AND COALESCE(u.usage_completeness, 'complete') <> 'unknown'
-			  AND NULLIF(u.request_id, '') IS NOT NULL
-		), error_events AS (
-			SELECT e.group_id, e.account_id, e.id::bigint AS source_id, e.created_at,
-				NULL::double precision AS first_token_ms, NULL::double precision AS duration_ms, 0::double precision AS revenue,
-				NULL::double precision AS account_cost, FALSE AS cost_complete, FALSE AS successful,
-				COALESCE(ur.canonical_request_key, NULLIF(e.request_id, ''), 'error:' || e.id::text) AS request_key, 0 AS source_priority
-			FROM ops_error_logs e
-			LEFT JOIN usage_request_keys ur ON ur.group_id = e.group_id AND ur.request_key = NULLIF(e.request_id, '')
-				WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
-				  AND NOT EXISTS (
-					  SELECT 1 FROM unknown_usage_keys unknown_usage
-					  WHERE unknown_usage.group_id = e.group_id
-						AND unknown_usage.request_key IN (NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''))
-				  )
-		), dedup AS (
-			-- A logical request may fail on account A and complete on account B.
-			-- Select one terminal event per group/request, then attribute the
-			-- result to the account that produced that terminal event.
-			SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.group_id, e.request_key ORDER BY e.created_at DESC, e.successful DESC, e.source_id DESC) AS rn FROM (SELECT * FROM usage_events UNION ALL SELECT * FROM error_events) e
+			UNION ALL
+			SELECT e.group_id, e.account_id, e.id::bigint, e.created_at, NULL::double precision, NULL::double precision, 0::double precision, NULL::double precision, FALSE, FALSE,
+				COALESCE(NULLIF(e.request_id, ''), NULLIF(e.client_request_id, ''), 'error:' || e.id::text), 0
+			FROM ops_error_logs e WHERE e.group_id = ANY($1) AND e.account_id = ANY($2) AND e.created_at >= $3 AND e.created_at < $4 AND COALESCE(e.is_count_tokens, FALSE) = FALSE AND COALESCE(e.status_code, 0) >= 400
+				AND NOT EXISTS (
+					SELECT 1 FROM usage_logs u
+					WHERE u.group_id = e.group_id AND u.created_at >= $3 AND u.created_at < $4
+						AND u.usage_completeness = 'unknown'
+						AND ((NULLIF(e.request_id, '') IS NOT NULL AND NULLIF(e.request_id, '') IN (NULLIF(u.request_id, ''), NULLIF(u.logical_request_id, '')))
+							OR (NULLIF(e.client_request_id, '') IS NOT NULL AND NULLIF(e.client_request_id, '') IN (NULLIF(u.request_id, ''), NULLIF(u.logical_request_id, ''))))
+				)
+			) e
+		), real_buckets (group_id, account_id, bucket_start) AS (
+			SELECT group_id, account_id, date_bin('5 minutes'::interval, created_at, $3::timestamptz) AS bucket_start
+			FROM real_candidates WHERE rn = 1 GROUP BY group_id, account_id, bucket_start
+		), probe_ranked (group_id, account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start, rn) AS (
+			SELECT ag.group_id, r.account_id, r.checked_at, r.ttft_ms::double precision AS first_token_ms, r.latency_ms::double precision AS duration_ms,
+				(r.status = 'success') AS successful, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) AS bucket_start,
+				ROW_NUMBER() OVER (PARTITION BY r.account_id, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) ORDER BY r.checked_at DESC, r.id DESC) AS rn
+			FROM account_monitor_results r JOIN account_groups ag ON ag.account_id = r.account_id AND ag.group_id = ANY($1)
+			WHERE r.account_id = ANY($2) AND r.checked_at >= $3 AND r.checked_at < $4 AND r.status IN ('success', 'failed')
+		), latest_probe (group_id, account_id, created_at, first_token_ms, duration_ms, successful, bucket_start) AS ( SELECT group_id, account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1 ), selected_requests (group_id, account_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, is_probe) AS (
+			SELECT group_id, account_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, FALSE FROM real_candidates WHERE rn = 1
+			UNION ALL SELECT group_id, account_id, created_at, first_token_ms, duration_ms, 0::double precision, 0::double precision, FALSE, successful, TRUE FROM latest_probe p
+			WHERE NOT EXISTS (SELECT 1 FROM real_buckets b WHERE b.group_id = p.group_id AND b.account_id = p.account_id AND b.bucket_start = p.bucket_start)
 		)
 		SELECT group_id, account_id, COUNT(*)::bigint, COUNT(*) FILTER (WHERE successful)::bigint, COUNT(*) FILTER (WHERE NOT successful)::bigint,
 			COALESCE(SUM(revenue), 0)::double precision, COALESCE(SUM(account_cost) FILTER (WHERE cost_complete), 0)::double precision,
-			BOOL_AND(cost_complete OR successful = FALSE), COALESCE(COUNT(*) FILTER (WHERE successful)::double precision / NULLIF(COUNT(*), 0), 0),
+			BOOL_AND(NOT is_probe AND (cost_complete OR successful = FALSE)), COALESCE(COUNT(*) FILTER (WHERE successful)::double precision / NULLIF(COUNT(*), 0), 0),
 			COUNT(first_token_ms) FILTER (WHERE successful)::int, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL),
 			PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) FILTER (WHERE successful AND duration_ms IS NOT NULL), MAX(created_at)
-		FROM dedup WHERE rn = 1 GROUP BY group_id, account_id ORDER BY group_id, account_id
+		FROM selected_requests GROUP BY group_id, account_id ORDER BY group_id, account_id
 	`, pq.Array(groupIDs), pq.Array(accountIDs), since.UTC(), until.UTC())
 	if err != nil {
 		return nil, err

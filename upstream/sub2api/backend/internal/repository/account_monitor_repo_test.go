@@ -22,7 +22,7 @@ func TestAccountMonitorRepositoryGroupRealRequestProjectionDeduplicatesAcrossAcc
 	require.True(t, ok)
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*unknown_usage_keys AS.*usage_request_keys AS.*FROM usage_logs u.*error_events AS.*NOT EXISTS.*unknown_usage_keys.*PARTITION BY e\.group_id, e\.request_key ORDER BY e\.created_at DESC, e\.successful DESC`).
+	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$3::timestamptz", true)+`.*GROUP BY group_id, account_id`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
@@ -45,7 +45,7 @@ func TestAccountMonitorRepositoryRealRequestProjectionExcludesUnknownUsageFromDe
 	require.True(t, ok)
 	since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	until := since.Add(24 * time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*unknown_usage_keys AS.*error_events AS.*NOT EXISTS.*unknown_usage_keys.*PARTITION BY e\.account_id, e\.request_key`).
+	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*GROUP BY account_id`).
 		WithArgs(sqlmock.AnyArg(), since, until).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
@@ -830,7 +830,7 @@ func TestAccountMonitorRepositoryListsLifetimeRealRequestCounts(t *testing.T) {
 	if !ok {
 		t.Fatal("account monitor repository must implement lifetime real request counts")
 	}
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*usage_completeness.*error_events AS.*ROW_NUMBER\(\) OVER.*PARTITION BY e\.account_id, e\.request_key.*COUNT\(\*\)::bigint.*GROUP BY account_id`).
+	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("TIMESTAMPTZ 'epoch'", false) + `.*COUNT\(\*\)::bigint.*GROUP BY account_id`).
 		WithArgs(sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "request_count"}).
 			AddRow(7, int64(12846)).
@@ -860,12 +860,12 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
 	until := since.Add(24 * time.Hour)
-	mock.ExpectQuery(`(?s)WITH usage_events AS.*source_bucket_index.*probe_buckets AS.*selected_source_buckets AS.*FLOOR\(source_bucket_index.*CASE WHEN BOOL_OR.*ORDER BY account_id, bucket_index`).
+	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*SELECT account_id,.*bucket_index,\s*request_count, success_count, failure_count, ttft_p95_ms`).
 		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 24, 288).
-		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms", "probe_count", "probe_success_count", "probe_failure_count", "source"}).
-			AddRow(7, 3, 5, 4, 1, 6200.0, 0, 0, 0, "real").
-			AddRow(7, 22, 2, 2, 0, 900.0, 0, 0, 0, "real").
-			AddRow(8, 1, 0, 0, 0, nil, 1, 1, 0, "probe"))
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
+			AddRow(7, 3, 5, 4, 1, 6200.0).
+			AddRow(7, 22, 2, 2, 0, 900.0).
+			AddRow(8, 1, 1, 1, 0, 900.0))
 
 	timelines, err := timelineRepo.ListRealRequestTimelines(context.Background(), []int64{7, 8}, since, until, 24)
 	if err != nil {
@@ -874,7 +874,7 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	if len(timelines[7]) != 24 || len(timelines[8]) != 24 {
 		t.Fatalf("timeline lengths = %d/%d, want 24/24", len(timelines[7]), len(timelines[8]))
 	}
-	if timelines[8][1].ProbeCount != 1 || timelines[8][1].Source != "probe" || timelines[8][1].ProbeSuccessCount != 1 {
+	if timelines[8][1].RequestCount != 1 || timelines[8][1].SuccessCount != 1 || timelines[8][1].FailureCount != 0 {
 		t.Fatalf("probe fallback bucket = %#v", timelines[8][1])
 	}
 	if timelines[7][0].RequestCount != 0 || timelines[7][0].TTFTP95MS != nil {
@@ -1028,7 +1028,7 @@ func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *
 	since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	until := since.Add(10 * time.Minute)
 
-	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*SELECT account_id, bucket_index, request_count, success_count, failure_count, ttft_p95_ms`).
+	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*SELECT account_id,.*bucket_index,\s*request_count, success_count, failure_count, ttft_p95_ms`).
 		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 2, 2).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
 			AddRow(7, 0, 1, 1, 0, 240.0).
@@ -1078,10 +1078,10 @@ func float64Ptr(value float64) *float64 {
 // only two sources of selected rows: every real request, or one latest
 // terminal probe from a bucket without a real request.
 func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool) string {
-	groupColumn := ""
-	if groupScoped {
-		groupColumn = `group_id,\s*`
-	}
 	origin := regexp.QuoteMeta(bucketOrigin)
-	return `(?s)WITH\s+real_candidates\s+AS.*?real_buckets\s+AS\s+\(\s*SELECT.*?date_bin\(\s*'5 minutes'::interval,\s*created_at,\s*` + origin + `\s*\).*?GROUP BY\s+` + groupColumn + `account_id,\s*bucket_start.*?probe_ranked\s+AS\s+\(\s*SELECT.*?FROM\s+account_monitor_results.*?status\s+IN\s+\('success',\s*'failed'\).*?ROW_NUMBER\(\)\s+OVER\s+\(\s*PARTITION BY\s+account_id,\s*date_bin\(\s*'5 minutes'::interval,\s*checked_at,\s*` + origin + `\s*\)\s+ORDER BY\s+checked_at\s+DESC,\s*id\s+DESC\s*\)\s+AS\s+rn.*?latest_probe\s+AS\s+\(\s*SELECT.*?FROM\s+probe_ranked\s+WHERE\s+rn\s*=\s*1\s*\).*?selected_requests\s+AS\s+\(\s*SELECT.*?FROM\s+real_candidates.*?UNION ALL\s+SELECT.*?FROM\s+latest_probe\s+WHERE\s+NOT EXISTS\s+\(\s*SELECT\s+1\s+FROM\s+real_buckets.*?account_id\s*=\s*.*?account_id.*?bucket_start\s*=\s*.*?bucket_start.*?\)\s*\)`
+	groupMarker := ``
+	if groupScoped {
+		groupMarker = `.*?group_id`
+	}
+	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s+\('success',\s*'failed'\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
 }

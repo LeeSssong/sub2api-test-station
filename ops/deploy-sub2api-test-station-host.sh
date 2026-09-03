@@ -21,7 +21,7 @@ if [[ "${TEST_STATION_TEST_MODE:-false}" != true ]]; then [[ "$deploy_root" == /
 grep -Eq '^name:[[:space:]]*sub2api-test-station[[:space:]]*$' "$compose_file" || fail 'compose project identity mismatch'
 grep -q 'sub2api-test-station-network' "$compose_file" || fail 'compose network identity mismatch'
 docker_bin=${DOCKER_BIN:-docker}; command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker is required'
-if [[ -z "$env_file" ]]; then config=$($docker_bin ps --filter label=com.docker.compose.project=sub2api-test-station --format '{{.Label "com.docker.compose.project.config_files"}}' | head -n 1); [[ "$config" == /opt/sub2api-test-station/*/infra/independent-test-station/compose.yaml ]] || fail 'active test station compose is missing'; env_file="${config%/infra/independent-test-station/compose.yaml}/.env"; fi
+if [[ -z "$env_file" ]]; then config=$($docker_bin ps --filter label=com.docker.compose.project=sub2api-test-station --format '{{.Label "com.docker.compose.project.config_files"}}' | head -n 1); [[ "$config" == /opt/sub2api-test-station/*/infra/independent-test-station/compose.yaml || "$config" == /opt/sub2api-test-station/releases/*/compose.yaml ]] || fail 'active test station compose is missing'; if [[ "$config" == */infra/independent-test-station/compose.yaml ]]; then env_file="${config%/infra/independent-test-station/compose.yaml}/.env"; else env_file="${config%/compose.yaml}/.env"; fi; fi
 [[ -f "$env_file" && ! -L "$env_file" ]] || fail 'env file is invalid'
 release_dir="$deploy_root/releases/$source_commit"; mkdir -p "$release_dir"
 cp "$compose_file" "$release_dir/compose.yaml"; cp "$caddy_file" "$release_dir/Caddyfile"; cp "$env_file" "$release_dir/.env"; chmod 600 "$release_dir/.env"

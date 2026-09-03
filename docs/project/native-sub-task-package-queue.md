@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**T123/T124 Responses 语义切号与飞书余额范围隔离（2026-09-03）：** 状态 `INTEGRATING`。候选 `codex/t123-t124-pro-spec-and-pro-metric-audit@9272917df` 已合入根 `main@97e739514`。T123 将 OpenAI `response.failed`/裸 `error` 的客户端终态统一脱敏，并保留前导事件不作为语义输出的既有安全切号语义；T124 按规范化 BaseURL 逐 scope 刷新、评估、claim 和投递，一个 scope 失败不阻断其他 scope，并提供进程内健康快照。合并后精确 service/handler 测试、server build、diff-check 通过；无迁移、配置或生产数据写入。用户明确授权“快速部署主站，不部署验收站”，将按 C 路径记录主站/验收站版本差异；发布预检若 `downtime_required=true` 必须停止。
+**T123/T124 Responses 语义切号与飞书余额范围隔离（2026-09-03）：** 状态 `BLOCKED`。候选 `codex/t123-t124-pro-spec-and-pro-metric-audit@9272917df` 已合入根 `main@b4125db80` 并推送。直接相关测试、server build、diff-check 通过；无迁移、配置或生产数据写入。按用户“快速部署主站，不部署验收站”执行发布链时，本地构建成功，但 GHCR 镜像推送返回 `403 Forbidden`，未联系宿主、未停机、未切换、未迁移、未重启，生产未变更。失败证据绑定 `main@b4125db80` / tree `3faa9371`，候选 worktree/分支保留，待恢复 registry 授权后在同一候选重试；验收站未部署。
 
 **T121/T122 生产合并与快速发布（2026-09-03）：** 状态 `DONE`。T121 usage stats aggregate scan 与 T122 unified quality scheduling 已合入并推送根 `main@d2ab6d6e461471b8925e5339be871f75d3b4bbe5`。按用户明确“快速部署主站，不同步验收站”执行预加载蓝绿发布，结果 `succeeded/promoted`、`downtime_required=false`、`rolled_back=false`，活动槽 `blue`，公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。验收站按授权未同步，已记录版本差异。测试证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-03-main-d2ab6d6e-t121-t122-production-only-fast.json`；恢复 bundle 已归档至 `/Users/gongtengxinwen/Documents/sub2api-archives/2026-09-03-t121-t122-production-only-fast/` 并验证，两个 worktree/本地分支已删除。
 

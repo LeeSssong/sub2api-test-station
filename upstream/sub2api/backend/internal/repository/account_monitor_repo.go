@@ -1141,7 +1141,7 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 		), probe_ranked (group_id, account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start, rn) AS (
 			SELECT ag.group_id, r.account_id, r.checked_at, r.ttft_ms::double precision AS first_token_ms, r.latency_ms::double precision AS duration_ms,
 				(r.status = 'success') AS successful, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) AS bucket_start,
-				ROW_NUMBER() OVER (PARTITION BY r.account_id, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) ORDER BY r.checked_at DESC, r.id DESC) AS rn
+				ROW_NUMBER() OVER (PARTITION BY ag.group_id, r.account_id, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) ORDER BY r.checked_at DESC, r.id DESC) AS rn
 			FROM account_monitor_results r JOIN account_groups ag ON ag.account_id = r.account_id AND ag.group_id = ANY($1)
 			WHERE r.account_id = ANY($2) AND r.checked_at >= $3 AND r.checked_at < $4 AND r.status IN ('success', 'failed')
 		), latest_probe (group_id, account_id, created_at, first_token_ms, duration_ms, successful, bucket_start) AS ( SELECT group_id, account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1 ), selected_requests (group_id, account_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, is_probe) AS (

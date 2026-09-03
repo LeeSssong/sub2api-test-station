@@ -1081,7 +1081,7 @@ func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool
 	origin := regexp.QuoteMeta(bucketOrigin)
 	groupMarker := ``
 	if groupScoped {
-		groupMarker = `.*?group_id`
+		groupMarker = `.*?group_id.*?PARTITION BY ag\.group_id, r\.account_id`
 	}
 	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s+\('success',\s*'failed'\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
 }

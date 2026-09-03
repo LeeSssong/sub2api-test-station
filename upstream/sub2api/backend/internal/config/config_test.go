@@ -587,8 +587,8 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate != 0.5 {
 		t.Fatalf("Gateway.OpenAIScheduler.StickyEscapeErrorRate = %v, want 0.5", cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate)
 	}
-	if cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled {
-		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKEnabled = true, want false")
+	if !cfg.Gateway.OpenAIScheduler.AdaptiveTopKEnabled {
+		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKEnabled = false, want true")
 	}
 	if cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax != 7 {
 		t.Fatalf("Gateway.OpenAIScheduler.AdaptiveTopKMax = %d, want 7", cfg.Gateway.OpenAIScheduler.AdaptiveTopKMax)

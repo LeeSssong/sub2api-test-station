@@ -1,0 +1,148 @@
+验收站跨机器交接补全（明文清单）
+================================
+
+更新时间：2026-09-03
+用途：把另一台机器接管验收站所需的非秘密信息、受保护文件位置和操作边界集中写明。
+
+重要安全说明
+------------
+本文件是明文文件，故意不包含密码、Token、API Key、私钥内容、TOTP、支付凭据、上游凭据或通知凭据。
+这些值只能从本机受保护文件读取，不能复制到 Git、普通文档、聊天记录或命令输出中。
+
+一、验收站固定信息
+------------------
+
+- 验收站 SSH alias：sub2api-test-station
+- 当前服务器地址：49.51.203.200
+- SSH 用户：ubuntu
+- SSH 目标：独立测试站，不是主站，不是 /admin/lab 旧入口
+- 当前测试站部署目录：/opt/sub2api-test-station/
+- 当前 release 目录：/opt/sub2api-test-station/releases/e00c37e0e5ac076aaddc043fccf82af6bc5a1d1b/
+- Compose project：sub2api-test-station
+- 独立测试站公网入口（当前 IPv4）：http://49.51.203.200/
+- 健康检查：http://49.51.203.200/health
+- 就绪检查：http://49.51.203.200/readyz
+- 当前限制：宿主 IPv6 80 端口存在 Docker 绑定冲突，当前只保证 IPv4 入口。
+
+二、必须先补齐的本机前置条件
+----------------------------
+
+1. SSH 配置
+
+在 ~/.ssh/config 中配置 alias（不要把私钥内容写进仓库）：
+
+Host sub2api-test-station
+    HostName 49.51.203.200
+    User ubuntu
+    IdentityFile /Users/gongtengxinwen/.ssh/tencent_lighthouse_seoul_sub2api
+    UserKnownHostsFile /Users/gongtengxinwen/.config/sub2api/known_hosts
+    StrictHostKeyChecking yes
+
+验证命令：
+
+ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes sub2api-test-station 'true'
+
+2. 私钥文件
+
+- 文件路径：/Users/gongtengxinwen/.ssh/tencent_lighthouse_seoul_sub2api
+- 权限必须为：0600
+- 微信传递的私钥若为 0444，不要直接使用；先放入上述受保护路径并执行 chmod 600。
+- 如果私钥曾经通过微信或其他非受信渠道传递，建议在服务器上更换对应 authorized_keys 公钥后再继续。
+- 不要在聊天、Git 或日志中展示私钥。
+
+3. SSH 主机指纹
+
+- 文件路径：/Users/gongtengxinwen/.config/sub2api/known_hosts
+- 权限必须为：0600
+- 该文件必须包含 49.51.203.200 当前验收站 SSH host key。
+- 当前已核对：本机文件现有三条指纹均属于 43.133.75.82，不属于 49.51.203.200，禁止直接复用：
+  - ED25519：SHA256:6lH9yxzWyCfxEejPf9J/0HOig4w6W8kTkaYJbYIziUM
+  - RSA：SHA256:iqMk3GdmEuANArips/QfrvCyThp3h8os8PglTrOzv9Q
+  - ECDSA：SHA256:kQKcKdTr/aq0cFw5rEyPhNf1XOGZCi0uaKKthlL0hcY
+- 必须从可信渠道确认 49.51.203.200 指纹后再写入。
+- 未确认指纹前，保持 StrictHostKeyChecking=yes，不要用 -o StrictHostKeyChecking=no 绕过校验。
+
+4. 代码仓库
+
+- 主仓库远程地址：git@github.com:LeeSssong/sub2api.git
+- 验收站专用仓库远程（仅在需要测试站独立代码时使用）：git@github.com:LeeSssong/sub2api-test-station.git
+- 当前默认分支：main
+- 空 Git 仓库不能用于发布；必须先克隆包含源码和 ops/ 发布脚本的仓库。
+- 验收站发布只能从根目录、干净且已推送的 main 发起，不能从功能 worktree、候选分支或 detached HEAD 发起。
+
+克隆主仓库示例（不会打印秘密）：
+
+git clone git@github.com:LeeSssong/sub2api.git
+cd sub2api
+git switch main
+git fetch origin main
+
+5. GitHub CLI（可选但建议）
+
+- gh 不是 Git SSH 克隆的硬依赖；若需要验证私有仓库访问或 release 信息，再安装 gh。
+- 登录态应使用系统 keyring；用 gh auth status 验证，不要导出或打印 token。
+
+6. 验收站运行环境
+
+SSH 连通后只读核验以下内容：
+
+- /opt/sub2api-test-station/.env 存在且权限受保护；只核对权限和变量名，不打印完整内容。
+- sub2api-test-station Compose project 的服务、容器、网络、卷和健康状态。
+- 测试站 API、worker、detector、PostgreSQL、Redis、Caddy 的运行身份和版本。
+- 主站 project、主站数据库、主站 Redis、主站数据卷和主站凭据保持不可见且不被修改。
+
+三、受保护凭据索引（只读路径，不复制秘密）
+----------------------------------------------
+
+- 验收站环境参考文件：/Users/gongtengxinwen/.config/sub2api/acceptance-20260827.env（权限 0600）
+- SSH known_hosts：/Users/gongtengxinwen/.config/sub2api/known_hosts（权限 0600）
+- SSH 私钥：/Users/gongtengxinwen/.ssh/tencent_lighthouse_seoul_sub2api（权限 0600）
+- 测试站凭据索引：/Users/gongtengxinwen/.config/sub2api/test-station-credentials-index.md（权限 0600）
+
+说明：acceptance-20260827.env 是历史兼容验收环境参考，不能覆盖独立测试站服务器上的 /opt/sub2api-test-station/.env。
+
+四、允许与禁止的操作边界
+------------------------
+
+允许：
+
+- 只读查看 sub2api-test-station project 的状态和必要日志。
+- 只操作 Compose project sub2api-test-station。
+- 使用独立测试数据、独立数据库、独立 Redis、独立网络和独立卷进行验收。
+
+禁止：
+
+- 执行全局 docker compose down。
+- 触碰主站 project、主站数据、主站数据库、主站 Redis 或主站凭据。
+- 删除 sub2api-test-station-* 数据卷，或把主站数据/凭据复制到验收站。
+- 从非 main、脏工作树、功能 worktree、临时 checkout 或 detached HEAD 发布。
+- 因 SSH 不通而关闭严格主机校验，或把未确认的 known_hosts 指纹当作可信指纹。
+
+五、验收站发布入口
+------------------
+
+发布前必须满足：根目录当前分支是 main、工作树干净、HEAD 的 commit/tree 与 origin/main 完全一致。
+
+从仓库根目录执行：
+
+ACCEPTANCE_ENV_FILE=/Users/gongtengxinwen/.config/sub2api/acceptance-20260827.env \
+RELEASE_WORKTREE="$PWD" \
+ops/release-sub2api-acceptance.sh
+
+该脚本只允许发布到验收站；不要用主站蓝绿脚本替代，也不要把主站 .env、数据库或卷带入验收站。
+
+六、最短接管顺序
+----------------
+
+1. 建立并验证 sub2api-test-station SSH alias。
+2. 将私钥权限修正为 0600；确认服务器端授权公钥仍可信，必要时轮换。
+3. 从可信渠道确认 49.51.203.200 的 SSH host key，并写入专用 known_hosts。
+4. 克隆 git@github.com:LeeSssong/sub2api.git，确认 main 和 ops/ 发布脚本存在。
+5. 使用 SSH 只读核验测试站 .env 权限、Compose 服务、容器、卷、网络和健康状态。
+6. 仅在需要发布时，从已推送且干净的根 main 运行验收站发布脚本。
+7. 发布或接管后检查 /、/health、/readyz，并记录 commit/tree、服务状态和未解决限制。
+
+当前结论
+--------
+
+另一台机器目前缺少的是 SSH alias/目标身份、0600 私钥、正确 host fingerprint、非空源码仓库和（如需私有仓库验证）gh 登录态；这些补齐前只能做离线准备，不能执行验收站发布。

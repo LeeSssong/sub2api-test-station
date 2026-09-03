@@ -1,6 +1,10 @@
 # 项目全局进度总账
 
+**2026-09-03 站内服务质量日复盘：** 状态：准备完成（只读运维复盘）。已通过主站 SSH、运行日志、宿主运行态和生产 PostgreSQL 只读聚合，复盘 2026-09-03 00:00–21:51（Asia/Shanghai）的性能指标、统一质量调度相对原生调度的效果，以及分组性能监控缓存命中率与 Sub 原生控制面板口径的一致性；未执行发布、配置修改、停服、迁移或生产数据写入。更正结论：原始 `duration_ms` P95 受长输出完整耗时影响，不能代表首字体验；Monitor V4 的 `latency_p95_ms` 实际为去除两端 5% 后的截尾均值，不是标准 P95。404 `model_not_found` 均标记为 `error_owner=client/error_source=client_request`，且被分组指标 SQL 明确排除。质量调度使用 `openai-multi-window-quality-v1`，观测到 17 个发生实际切号的逻辑请求，其中 12 个最终成功、5 个最终失败。缓存公式与原生为 `cache_read/(cache_read+cache_creation)`，24h 面板三个分组简单平均约 63.81%，按请求量加权约 84.3%。刷新故障根因已确认：生产 `main@443a3ce8` 的 Monitor V4 Go `Scan` 接收 19 列，但同提交最终 `SELECT` 仍返回 16 列；本地未提交改动正补回 `cache_read_tokens/cache_creation_tokens/cache_hit_denominator` 三列。当前不新增超时降级逻辑，先完成该结构修复的直接测试、根 `main` 合并推送、发布与线上刷新验证；不修改 Sub 原生控制面板或其全站缓存汇总。
+
 **T125 账号监控统一请求口径与原生编辑入口恢复（2026-09-03）：** 状态：已部署生效（主站），验收站按用户明确授权未同步。候选提交 `414fb5508` 吸收最新 `main` 后合并为根 `main@443a3ce83221fbfe9d536d64c94bf73b271c47e9`，已推送 `origin/main`。直接相关后端契约测试、`go build ./cmd/server`、前端 Account Monitor 50 项、`pnpm typecheck` 与 `git diff --check` 通过；预加载蓝绿链返回 `succeeded`、`downtime_required=false`、活动槽 `blue`，生产 `/healthz`、`/readyz`、`/health` 均 HTTP 200。无迁移、无生产业务数据写入；验收站未同步，版本可能不同。
+
+**验收站跨机器交接补全（2026-09-03）：** 状态：已完成（文档交付）。新增明文交接清单 `docs/operations/acceptance-station-handoff-plaintext.txt`，集中记录验收站 SSH alias/地址/用户、仓库入口、受保护凭据路径、host key 核验要求、运行环境只读核验、发布来源门禁及“仅影响 sub2api-test-station、不得触碰主站/全局 docker compose down”的边界。未写入任何密码、Token、私钥、API key 或其他秘密值；未执行 SSH、部署、停服、迁移或生产变更。
 
 **独立测试服务器主站制品克隆（2026-09-03）：** 状态：已完成（`DONE`）。未修改 Sub2API/homepage 业务代码；从主站活动槽只读导出并复制 Sub2API image `sha256:1010e4b54f92f43a473e5f81e0a05b892733e4ae334207a54a609946ab794fd1` 与 homepage/Caddy image `sha256:314761379d810462bbeef03c28e88edd7da5775f3f958756a87f601f70c3eedb` 到独立服务器 `49.51.203.200`。测试站已切换为专用 `sub2api-test-station` Compose project，根首页 `/` 与主站 HTML 指纹一致，`/login`、`/health`、`/readyz` 返回 HTTP 200；API、worker、detector、PostgreSQL、Redis、Caddy healthy。测试数据保持独立（2 users、72 accounts、0 usage_logs），网络/卷/`.env` 与主站隔离，主站 source/image/health 未变化。IPv6 80 端口因宿主 Docker 绑定冲突暂未启用，IPv4 已验证。交付手册：`docs/operations/independent-test-station-handoff.md`；凭据索引仅保存受保护文件路径，未将秘密写入仓库或聊天。根 `main@b228f91ca2be4cef812a5ff071dcbd57ecf84059` 已推送 `origin/main`。
 
@@ -1101,3 +1105,5 @@ Compose/config 路由合同和本地回归；不推送、合并、部署或触�
 # 2026-09-03 生产发布收口（T127 + upstream balance）
 
 状态：已部署生效（主站），验收站按用户明确授权未同步。根 `main@5a327c8dc8eefecfd9fc37956a2d618dfb71760c` 已推送 `origin/main`，预加载蓝绿链首次因本机构建缓存空间不足失败；清理可回收 Docker builder cache 后重试成功，宿主返回 `succeeded`、`downtime_required=false`、活动槽 `green`，镜像为 `ghcr.io/leesssong/xingqiao-sub2api:release-5a327c8dc8eefecfd9fc37956a2d618dfb71760c-7023fa6da0a6ff02a9a90d5ae6170b13ba8222284ffdbe080f0bf41df04698b2`。公网 `/healthz`、`/readyz`、`/health` 均 HTTP 200。T127 与 upstream balance 候选及 clone 工作区已生成恢复 bundle 并删除；归档目录 `/Users/gongtengxinwen/Documents/sub2api-archives/2026-09-03-t127-upstream-cleanup`。`t125-account-monitor-unified-request` 仍存在未提交改动，未声称已合并或删除。
+
+**2026-09-03 T128 用户充值/注册与飞书通知修复：** 状态：进行中（`IMPLEMENTING`，直接相关测试已通过）。范围：恢复飞书余额通知卡片静默按钮所需的 worker callback token 路径透传；修复 Monitor V4 分组查询 `Scan 16 vs 19` 导致的账号监控加载失败；充值页只保留“充值”入口，移除订阅计划展示并将快捷充值额度收敛为 `20/50/100`；注册邮箱 placeholder 展示当前配置支持的邮箱后缀（含 `@qq.com`）。不修改通知、监控、账务事实源，不部署主站或验收站。

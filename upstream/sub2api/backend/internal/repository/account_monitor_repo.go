@@ -691,7 +691,8 @@ WITH scopes AS (
 	SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,
 	       probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count,
 	       ttft_p95_ms, ttft_sample_count,
-       latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational
+	       latency_p95_ms, latency_sample_count, cache_read_tokens, cache_creation_tokens,
+	       cache_hit_denominator, cache_hit_rate, source_updated_at, current_operational
 FROM aggregate
 ORDER BY group_id
 `, start.UTC(), end.UTC(), bucketSize.String(), pq.Array(scopeGroupIDs), pq.Array(accountIDs), pq.Array(uniqueGroupIDs))

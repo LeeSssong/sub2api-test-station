@@ -146,6 +146,7 @@ services:
       SUB2API_UPSTREAM_BALANCE_FEISHU_APP_SECRET_FILE: /run/secrets/upstream-balance/feishu-app-secret
       SUB2API_UPSTREAM_BALANCE_FEISHU_CHAT_ID_FILE: /run/secrets/upstream-balance/feishu-alert-chat-id
       SUB2API_UPSTREAM_BALANCE_FEISHU_RECIPIENTS_FILE: /run/secrets/upstream-balance/feishu-alert-recipients.json
+      SUB2API_UPSTREAM_BALANCE_FEISHU_CALLBACK_TOKEN_FILE: /run/secrets/upstream-balance/feishu-callback-token
       SUB2API_UPSTREAM_BALANCE_LOGIN_REGISTRY_FILE: /run/secrets/upstream-balance/upstream-login-registry.json
     volumes:
       - type: bind

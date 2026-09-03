@@ -2539,11 +2539,27 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 	if s == nil || s.multiplier == nil || len(scopes) == 0 {
 		return nil
 	}
+	var errs []error
+	for scope := range scopes {
+		result := s.RefreshUpstreamBalanceScope(ctx, scope)
+		if result.ErrorCode != "" {
+			errs = append(errs, fmt.Errorf("refresh scope %s: %s", scope, result.ErrorCode))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s *AccountMonitorService) RefreshUpstreamBalanceScope(ctx context.Context, scope string) UpstreamBalanceScopeRefreshResult {
+	result := UpstreamBalanceScopeRefreshResult{ScopeKey: scope, ObservedAt: time.Now().UTC()}
+	if s == nil || s.multiplier == nil || strings.TrimSpace(scope) == "" {
+		result.ErrorCode = "refresher_unavailable"
+		return result
+	}
 	accounts, err := s.listMonitorAccounts(ctx)
 	if err != nil {
-		return err
+		result.ErrorCode = "list_accounts_failed"
+		return result
 	}
-	var errs []error
 	for i := range accounts {
 		account := &accounts[i]
 		if account.Status != StatusActive || !isAccountMonitorBalanceEligible(account) {
@@ -2553,28 +2569,42 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScopes(ctx context.Context
 		if err != nil {
 			continue
 		}
-		if _, ok := scopes[baseURL]; !ok {
+		if baseURL != scope {
 			continue
 		}
 		refreshCtx, cancel := context.WithTimeout(ctx, accountMonitorMultiplierRefreshTimeout)
 		err = s.multiplier.Refresh(refreshCtx, account, AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true})
 		cancel()
 		if err != nil {
-			errs = append(errs, fmt.Errorf("refresh account %d upstream balance: %w", account.ID, err))
+			result.FailedAccounts++
 			continue
+		}
+		result.RefreshedAccounts++
+		snapshot := decodeAccountMonitorBalance(account.Extra)
+		if snapshot == nil || snapshot.ObservedAt == nil || result.ObservedAt.Sub(snapshot.ObservedAt.UTC()) > AccountMonitorBalanceMaxAge {
+			result.StaleSnapshots++
+		} else if snapshot.CredentialFingerprint != accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey()) {
+			result.CredentialConflicts++
+		} else if validNotificationSnapshot(snapshot) {
+			result.FreshValidSnapshots++
 		}
 		if accountBalanceSnapshotHealthy(account) && isDeterministicBalanceTempReason(account.TempUnschedulableReason) {
 			if repo, ok := s.accountRepo.(accountMonitorBalanceRecoveryRepository); ok {
 				cleared, clearErr := repo.ClearBalanceExhaustedTempUnschedulable(ctx, account)
 				if clearErr != nil {
-					errs = append(errs, fmt.Errorf("restore account %d scheduling: %w", account.ID, clearErr))
+					result.FailedAccounts++
 				} else if cleared && s.runtimeBlocker != nil {
 					s.runtimeBlocker.ClearAccountSchedulingBlock(account.ID)
 				}
 			}
 		}
 	}
-	return errors.Join(errs...)
+	if result.FailedAccounts > 0 && result.FreshValidSnapshots == 0 {
+		result.ErrorCode = "all_accounts_failed"
+	} else if result.RefreshedAccounts == 0 {
+		result.ErrorCode = "no_eligible_accounts"
+	}
+	return result
 }
 
 type accountMonitorBalanceRecoveryRepository interface {

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -28,6 +29,32 @@ type UpstreamBalanceEvaluationReader interface {
 
 type UpstreamBalanceScopeRefresher interface {
 	RefreshUpstreamBalanceScopes(context.Context, map[string]struct{}) error
+}
+
+type UpstreamBalanceSingleScopeRefresher interface {
+	RefreshUpstreamBalanceScope(context.Context, string) UpstreamBalanceScopeRefreshResult
+}
+
+type UpstreamBalanceScopeRefreshResult struct {
+	ScopeKey            string
+	RefreshedAccounts   int
+	FailedAccounts      int
+	FreshValidSnapshots int
+	StaleSnapshots      int
+	CredentialConflicts int
+	ObservedAt          time.Time
+	ErrorCode           string
+}
+
+type UpstreamBalanceNotificationHealth struct {
+	LastEvaluationAt            time.Time
+	LastSuccessfulScopeAt       time.Time
+	LastSuccessfulDeliveryAt    time.Time
+	ConsecutiveAllScopeFailures int
+	ActiveFiringScopeCount      int
+	FailedRefreshScopeCount     int
+	DueDeliveryScopeCount       int
+	OldestDueAgeSeconds         int64
 }
 
 type UpstreamBalanceNotificationSender interface {
@@ -56,6 +83,13 @@ type UpstreamBalanceNotificationService struct {
 	trigger     chan struct{}
 	dueInterval time.Duration
 	wg          sync.WaitGroup
+	health      UpstreamBalanceNotificationHealth
+}
+
+func (s *UpstreamBalanceNotificationService) Health() UpstreamBalanceNotificationHealth {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.health
 }
 
 func (s *AccountMonitorService) ReadUpstreamBalanceEvaluations(ctx context.Context) ([]UpstreamBalanceEvaluation, error) {
@@ -273,20 +307,55 @@ func (s *UpstreamBalanceNotificationService) RunDue(ctx context.Context) error {
 			scopes[event.ScopeKey] = struct{}{}
 		}
 	}
-	if refresher, ok := s.reader.(UpstreamBalanceScopeRefresher); ok && len(scopes) > 0 {
-		if err := refresher.RefreshUpstreamBalanceScopes(ctx, scopes); err != nil {
-			return errors.New("refresh active upstream balance scopes")
-		}
-	}
-	evaluations, err := s.reader.ReadUpstreamBalanceEvaluations(ctx)
-	if err != nil {
-		return errors.New("read upstream balance projection")
-	}
 	ruleID, err := s.repo.GetRuleID(ctx)
 	if err != nil {
 		return errors.New("read upstream balance notification rule")
 	}
-	return s.processEvaluations(ctx, ruleID, evaluations, scopes)
+	keys := make([]string, 0, len(scopes))
+	for scope := range scopes {
+		keys = append(keys, scope)
+	}
+	sort.Strings(keys)
+	failed := 0
+	var errs []error
+	for _, scope := range keys {
+		if refresher, ok := s.reader.(UpstreamBalanceSingleScopeRefresher); ok {
+			result := refresher.RefreshUpstreamBalanceScope(ctx, scope)
+			if result.ErrorCode != "" || (result.FailedAccounts > 0 && result.FreshValidSnapshots == 0) {
+				failed++
+				continue
+			}
+		} else if refresher, ok := s.reader.(UpstreamBalanceScopeRefresher); ok {
+			if err := refresher.RefreshUpstreamBalanceScopes(ctx, map[string]struct{}{scope: {}}); err != nil {
+				failed++
+				continue
+			}
+		}
+		evaluations, readErr := s.reader.ReadUpstreamBalanceEvaluations(ctx)
+		if readErr != nil {
+			failed++
+			continue
+		}
+		if processErr := s.processEvaluations(ctx, ruleID, evaluations, map[string]struct{}{scope: {}}); processErr != nil {
+			errs = append(errs, processErr)
+			continue
+		}
+		s.mu.Lock()
+		s.health.LastSuccessfulScopeAt = s.currentTime()
+		s.mu.Unlock()
+	}
+	s.mu.Lock()
+	s.health.LastEvaluationAt = s.currentTime()
+	s.health.ActiveFiringScopeCount = len(keys)
+	s.health.FailedRefreshScopeCount = failed
+	s.health.DueDeliveryScopeCount = len(keys)
+	if failed == len(keys) && len(keys) > 0 {
+		s.health.ConsecutiveAllScopeFailures++
+	} else {
+		s.health.ConsecutiveAllScopeFailures = 0
+	}
+	s.mu.Unlock()
+	return errors.Join(errs...)
 }
 
 func (s *UpstreamBalanceNotificationService) processEvaluations(
@@ -381,6 +450,9 @@ func (s *UpstreamBalanceNotificationService) deliver(ctx context.Context, lease 
 		if err != nil || !confirmed {
 			return errors.New("confirm upstream balance delivery")
 		}
+		s.mu.Lock()
+		s.health.LastSuccessfulDeliveryAt = s.currentTime()
+		s.mu.Unlock()
 		return nil
 	})
 	if err != nil {

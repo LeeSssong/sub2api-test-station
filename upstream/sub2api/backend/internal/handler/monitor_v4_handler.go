@@ -40,6 +40,9 @@ type monitorV4GroupResponse struct {
 	CacheReadTokensP95         *float64 `json:"cache_read_tokens_p95"`
 	CacheReadTokensSampleCount int      `json:"cache_read_tokens_sample_count"`
 	CacheHitRate               *float64 `json:"cache_hit_rate"`
+	CacheReadTokens            int64    `json:"cache_read_tokens"`
+	CacheCreationTokens        int64    `json:"cache_creation_tokens"`
+	CacheHitDenominator        int64    `json:"cache_hit_denominator"`
 	SourceUpdatedAt            *string  `json:"source_updated_at"`
 	CurrentOperational         bool     `json:"current_operational"`
 }
@@ -102,6 +105,7 @@ func (h *MonitorV4Handler) Snapshot(c *gin.Context) {
 			LatencyP95MS: group.LatencyP95MS, LatencySampleCount: group.LatencySampleCount,
 			CacheReadTokensP95: nil, CacheReadTokensSampleCount: 0,
 			CacheHitRate:    group.CacheHitRate,
+			CacheReadTokens: group.CacheReadTokens, CacheCreationTokens: group.CacheCreationTokens, CacheHitDenominator: group.CacheHitDenominator,
 			SourceUpdatedAt: updatedAt, CurrentOperational: group.CurrentOperational,
 		})
 	}

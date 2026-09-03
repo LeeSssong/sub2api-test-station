@@ -103,6 +103,25 @@ func TestStreamObservationRootCauseRequiresSufficientEvidence(t *testing.T) {
 	require.True(t, snapshot.CorrelationDegraded)
 }
 
+func TestStreamObservationIncompleteEventIsDistinctBeforeTerminal(t *testing.T) {
+	obs := NewStreamObservation(StreamObservationInput{RequestID: "req-1", LogicalRequestID: "logical-1", AttemptID: "attempt-1"})
+	obs.RecordFailure(StreamFailureStageUpstreamBodyRead, io.ErrUnexpectedEOF, false)
+	snapshot := obs.Snapshot()
+	require.Equal(t, "openai.stream_incomplete", snapshot.Event)
+	require.False(t, snapshot.SawTerminalEvent)
+	require.Equal(t, StreamErrorClassUpstreamEOF, snapshot.ErrorClass)
+}
+
+func TestStreamObservationTerminalEdgeKeepsLifecycleEvent(t *testing.T) {
+	obs := NewStreamObservation(StreamObservationInput{RequestID: "req-1", LogicalRequestID: "logical-1", AttemptID: "attempt-1"})
+	obs.RecordTerminal("response.completed", "resp-1", 1, 1, 2, 10)
+	obs.RecordFailure(StreamFailureStageClientWrite, context.Canceled, true)
+	snapshot := obs.Snapshot()
+	require.Equal(t, "openai.stream.lifecycle", snapshot.Event)
+	require.True(t, snapshot.SawTerminalEvent)
+	require.True(t, snapshot.ClientDisconnected)
+}
+
 func TestAppendOpsUpstreamErrorEmbedsSanitizedStreamSnapshot(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

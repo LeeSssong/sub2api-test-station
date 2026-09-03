@@ -47,8 +47,11 @@ type MonitorV4SnapshotRefresher interface {
 }
 
 func ValidateMonitorV4Projection(projection MonitorV4GroupProjection) error {
-	if projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 {
+	if projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 || projection.CacheReadTokens < 0 || projection.CacheCreationTokens < 0 || projection.CacheHitDenominator < 0 {
 		return fmt.Errorf("monitor v4 projection contains negative counts")
+	}
+	if projection.CacheHitDenominator != 0 && projection.CacheHitDenominator != projection.CacheReadTokens+projection.CacheCreationTokens {
+		return fmt.Errorf("monitor v4 cache denominator invariant violated")
 	}
 	if projection.SuccessCount > projection.RequestCount || projection.RealSuccessCount > projection.RealRequestCount || projection.ProbeFallbackRequestCount != projection.ProbeFallbackBucketCount || projection.RealRequestCount+projection.ProbeFallbackRequestCount != projection.RequestCount || projection.RealSuccessCount > projection.SuccessCount || projection.SuccessCount > projection.RealSuccessCount+projection.ProbeFallbackRequestCount {
 		return fmt.Errorf("monitor v4 projection count invariants violated")
@@ -78,6 +81,9 @@ type MonitorV4Group struct {
 	LatencyP95MS              *float64
 	LatencySampleCount        int
 	CacheHitRate              *float64
+	CacheReadTokens           int64
+	CacheCreationTokens       int64
+	CacheHitDenominator       int64
 	SourceUpdatedAt           *time.Time
 	CurrentOperational        bool
 }
@@ -238,7 +244,7 @@ func (s *MonitorV4Service) snapshotWithGroups(ctx context.Context, window Monito
 			ProbeFallbackBucketCount: projection.ProbeFallbackBucketCount, ProbeFallbackRequestCount: projection.ProbeFallbackRequestCount,
 			TTFTP95MS: projection.TTFTP95MS, TTFTSampleCount: projection.TTFTSampleCount,
 			LatencyP95MS: projection.LatencyP95MS, LatencySampleCount: projection.LatencySampleCount,
-			CacheHitRate:    projection.CacheHitRate,
+			CacheHitRate: projection.CacheHitRate, CacheReadTokens: projection.CacheReadTokens, CacheCreationTokens: projection.CacheCreationTokens, CacheHitDenominator: projection.CacheHitDenominator,
 			SourceUpdatedAt: projection.SourceUpdatedAt, CurrentOperational: projection.CurrentOperational,
 		})
 	}

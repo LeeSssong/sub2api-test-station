@@ -38,6 +38,16 @@ ssh -T sub2api-test-station 'sudo -n docker compose --project-name sub2api-test-
 
 ## 发布与回滚
 
+正式发布入口为根目录干净 `main` 上的 `ops/release-sub2api-test-station.sh`。脚本强制校验 `HEAD/tree == origin/main`，构建 Linux/amd64 应用镜像并调用 `ops/deploy-sub2api-test-station-host.sh`；远端只使用 Compose project `sub2api-test-station`、`/opt/sub2api-test-station/` 和独立 named volumes。服务器既有 `/opt/sub2api-test-station/.env` 不复制到本地，发布状态仅记录 source commit/tree、镜像归档摘要和 release 目录。
+
+发布后只读核对：
+
+```bash
+curl --fail http://49.51.203.200/health
+curl --fail http://49.51.203.200/readyz
+ssh -T sub2api-test-station 'sudo -n python3 -c "import json; print(json.load(open(\"/opt/sub2api-test-station/release-state.json\")))"'
+```
+
 发布前先从根目录干净 `main` 生成并校验主站活动制品；本手册中的 release 目录只作为当前已验证制品记录。测试站配置变更必须先在候选 worktree 验证，再合入并推送根 `main`。切换失败时保留新 release 目录，使用 `/opt/sub2api-test-station/backups/20260902T183440Z/` 中的 Compose、PostgreSQL dump、Redis/app-data tar 和 `SHA256SUMS` 恢复旧栈。
 
 ## 已知限制

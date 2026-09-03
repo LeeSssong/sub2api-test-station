@@ -281,6 +281,93 @@ func TestAccountMonitorHandlerDefaultsAndValidatesWindowRange(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorHandlerPublicJSONHidesProbeSourceAndPreservesSchedulerAndAccounting(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Now().UTC()
+	rate := 1.0
+	repo := &accountMonitorHandlerRepoStub{
+		aggregates: map[int64]service.AccountMonitorAggregate{
+			7: {SampleCount: 1, SuccessSampleCount: 1, SuccessRate: 1, LastCheckedAt: &now},
+		},
+		windowAggregates: map[int64]service.AccountMonitorWindowAggregate{
+			7: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now},
+		},
+		latest: map[int64]service.AccountMonitorLatest{
+			7: {Status: "success", CheckedAt: now},
+		},
+		groups: []service.AccountMonitorGroup{{
+			ID: 42, Name: "GPT-Pro", Platform: service.PlatformOpenAI, CustomerVisible: true,
+			RateMultiplier: 1, ScoreWeights: service.DefaultAccountMonitorScoreWeights,
+		}},
+	}
+	accounts := &accountMonitorHandlerAccountRepoStub{accounts: []*service.Account{{
+		ID: 7, Name: "probe-only", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Status: service.StatusActive, Schedulable: true, RateMultiplier: &rate, GroupIDs: []int64{42},
+	}}}
+	svc := service.NewAccountMonitorService(repo, accounts, nil, nil, &accountMonitorHandlerMultiplierStub{})
+	probeRank := 2
+	scheduler := &accountMonitorHandlerSchedulerProjectionStub{projection: &service.OpenAIAccountSchedulerProjection{
+		SnapshotAt: now, CandidateCount: 2,
+		Candidates: []service.OpenAIAccountSchedulerProjectionCandidate{{AccountID: 7, Rank: &probeRank, Eligible: true}},
+	}}
+	svc.SetOpenAIAccountSchedulerProjectionProvider(scheduler)
+	h := NewAccountMonitorHandler(svc, nil, nil, nil)
+
+	res := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(res)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/monitor?range=24h", nil)
+	h.List(c)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", res.Code, res.Body.String())
+	}
+	var envelope struct {
+		Data struct {
+			Groups []struct {
+				Accounts []map[string]json.RawMessage `json:"accounts"`
+			} `json:"groups"`
+			Accounts []map[string]json.RawMessage `json:"accounts"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v body=%s", err, res.Body.String())
+	}
+	if len(envelope.Data.Accounts) != 1 || len(envelope.Data.Groups) != 1 || len(envelope.Data.Groups[0].Accounts) != 1 {
+		t.Fatalf("accounts = %s", res.Body.String())
+	}
+	row := envelope.Data.Groups[0].Accounts[0]
+	fullSiteRow := envelope.Data.Accounts[0]
+	for _, field := range []string{"probe_count", "probe_success_count", "probe_failure_count", "probe_sample_count", "source", "real_request_sample_count"} {
+		if _, exposed := row[field]; exposed {
+			t.Fatalf("public monitor row exposed %q: %s", field, res.Body.String())
+		}
+		if _, exposed := fullSiteRow[field]; exposed {
+			t.Fatalf("public full-site row exposed %q: %s", field, res.Body.String())
+		}
+	}
+	var requestCount int64
+	if err := json.Unmarshal(row["request_count"], &requestCount); err != nil {
+		t.Fatal(err)
+	}
+	if requestCount != 1 {
+		t.Fatalf("request_count = %d, want 1", requestCount)
+	}
+	var schedulerRank int
+	if err := json.Unmarshal(row["scheduler_rank"], &schedulerRank); err != nil {
+		t.Fatal(err)
+	}
+	if schedulerRank != 2 {
+		t.Fatalf("scheduler_rank = %d, want 2", schedulerRank)
+	}
+	var profitability service.AccountMonitorGroupProfitability
+	if err := json.Unmarshal(row["group_profitability"], &profitability); err != nil {
+		t.Fatal(err)
+	}
+	if profitability.Revenue != 0 || profitability.AccountCost != 0 {
+		t.Fatalf("probe-only accounting leaked into profitability: %#v", profitability)
+	}
+}
+
 func TestAccountMonitorHandlerReturnsCompleteWindowTimelineAndGlobalRanking(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	now := time.Now().UTC()

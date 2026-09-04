@@ -60,7 +60,7 @@
 - Consumes: reviewed candidate commit and existing release scripts.
 - Produces: pushed root `main`, same-version main and acceptance deployments, health and target-interface evidence.
 
-- [ ] Run focused repository/service tests, build, formatting, and diff checks.
+- [x] Run focused repository/service tests, build, formatting, and diff checks.
 - [ ] Commit the candidate, merge it into root `main`, repeat the direct checks, and push `origin/main`.
 - [ ] Run production preflight; proceed only when `downtime_required=false`.
 - [ ] Deploy main, verify health and authenticated monitor endpoints, and confirm the two log errors stop recurring.

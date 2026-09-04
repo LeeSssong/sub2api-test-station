@@ -64,3 +64,19 @@ func TestAccountModelDetectionEvidenceMigrationAddsBoundedHistoryFields(t *testi
 		}
 	}
 }
+
+func TestAccountModelDetectionTriggerEvidenceMigrationAddsJSONSnapshot(t *testing.T) {
+	sqlBytes, err := FS.ReadFile("236_account_model_detection_trigger_evidence.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sql := strings.ToLower(string(sqlBytes))
+	if !strings.Contains(sql, "add column if not exists trigger_evidence jsonb") {
+		t.Fatal("trigger evidence migration must add a jsonb snapshot")
+	}
+	for _, forbidden := range []string{"api_key", "base_url", "authorization", "prompt", "output"} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("trigger evidence migration must not contain %q", forbidden)
+		}
+	}
+}

@@ -93,6 +93,56 @@ describe('AccountModelDetectionHistoryPanel', () => {
     expect(wrapper.find('[data-test="detection-history-timeline"]').exists()).toBe(true)
   })
 
+  it('explains the declared-model mismatch with bounded Juice evidence', async () => {
+    history.mockResolvedValueOnce({ items: [{
+      run_id: 'run-mismatch', status: 'abnormal', profile: 'low', mode: 'monitor',
+      trigger_reason: 'scheduled', planned_requests: 19, valid_samples: 19, evidence_state: 'complete',
+      claimed_model: 'gpt-5.6-sol', juice_status: 'mismatch', fingerprint_status: 'unclear',
+      juice_summary: {
+        claimed_model: 'gpt-5.6-sol', conflicting_models: ['gpt-5.6-luna'],
+        mismatch_samples: [{ effort: 'high', observed_value: '12345', matching_models: ['gpt-5.6-luna'] }],
+      },
+      finished_at: '2026-08-26T02:00:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    await wrapper.get('[data-test="detection-history-row"]').trigger('click')
+    const detail = wrapper.get('[data-test="detection-history-detail"]').text()
+    expect(detail).toContain('申报模型：gpt-5.6-sol')
+    expect(detail).toContain('冲突型号：gpt-5.6-luna')
+    expect(detail).toContain('high 档返回 12345')
+  })
+
+  it('explains which prior suspicious result triggered an escalated detection', async () => {
+    history.mockResolvedValueOnce({ items: [{
+      run_id: 'run-escalated', status: 'normal', profile: 'medium', mode: 'monitor',
+      trigger_reason: 'suspicious', planned_requests: 49, valid_samples: 49, evidence_state: 'complete',
+      claimed_model: 'gpt-5.6-sol', juice_status: 'pass', fingerprint_status: 'strong_match',
+      fingerprint_candidate: 'gpt-5.6-sol',
+      trigger_evidence: {
+        source_run_id: 'run-low', source_profile: 'low', kind: 'juice_model_mismatch',
+        claimed_model: 'gpt-5.6-sol', conflicting_model: 'gpt-5.6-luna',
+      },
+      finished_at: '2026-08-26T08:00:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    await wrapper.get('[data-test="detection-history-row"]').trigger('click')
+    expect(wrapper.get('[data-test="detection-history-detail"]').text()).toContain('由上一轮低档检测触发：Juice 命中 gpt-5.6-luna，与申报 gpt-5.6-sol 不一致')
+  })
+
+  it('does not invent details for legacy suspicious trigger records', async () => {
+    history.mockResolvedValueOnce({ items: [{
+      run_id: 'run-old', status: 'normal', profile: 'medium', mode: 'monitor',
+      trigger_reason: 'suspicious', planned_requests: 49, valid_samples: 49, evidence_state: 'complete',
+      juice_status: 'pass', fingerprint_status: 'unclear', finished_at: '2026-08-26T08:00:00Z',
+    }], next_cursor: '' })
+    const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
+    await flushPromises()
+    await wrapper.get('[data-test="detection-history-row"]').trigger('click')
+    expect(wrapper.get('[data-test="detection-history-detail"]').text()).toContain('历史记录未保存具体原因')
+  })
+
   it('loads the next cursor and applies status filters', async () => {
     history.mockResolvedValue({ items: [], next_cursor: '' })
     const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })

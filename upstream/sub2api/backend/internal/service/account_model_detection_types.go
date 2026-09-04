@@ -84,6 +84,7 @@ type AccountModelDetectionSummary struct {
 	Profile               string         `json:"profile,omitempty"`
 	Mode                  string         `json:"mode,omitempty"`
 	TriggerReason         string         `json:"trigger_reason,omitempty"`
+	TriggerEvidence       map[string]any `json:"trigger_evidence,omitempty"`
 	PlannedRequests       int            `json:"planned_requests,omitempty"`
 	ValidSamples          int            `json:"valid_samples,omitempty"`
 	EvidenceState         string         `json:"evidence_state,omitempty"`
@@ -121,6 +122,7 @@ type AccountModelDetectionRun struct {
 	Profile               string
 	Mode                  string
 	TriggerReason         string
+	TriggerEvidence       map[string]any
 	PlannedRequests       int
 	ValidSamples          int
 	EvidenceState         string

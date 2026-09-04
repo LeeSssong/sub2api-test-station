@@ -38,6 +38,42 @@ def _bounded_similarity(value: Any) -> dict[str, float]:
     return result
 
 
+def _bounded_model_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return list(dict.fromkeys(model for model in value if model in SUPPORTED_MODELS))
+
+
+def _bounded_juice_summary(report: dict[str, Any], declared_model: str, juice_status: str, planned: int, valid: int) -> dict[str, Any]:
+    source = report.get("juice_summary") if isinstance(report.get("juice_summary"), dict) else {}
+    samples: list[dict[str, Any]] = []
+    for event in source.get("sticky_events", []) if isinstance(source.get("sticky_events"), list) else []:
+        evidence = event.get("evidence") if isinstance(event, dict) and isinstance(event.get("evidence"), dict) else {}
+        observed = str(evidence.get("normalized_value") or "").strip()[:64]
+        matching = _bounded_model_list(evidence.get("mixed_models"))
+        effort = str(evidence.get("effort") or "").strip()
+        if observed or matching:
+            samples.append({
+                "effort": effort if effort in {"low", "medium", "high", "xhigh", "max"} else "unknown",
+                "observed_value": observed,
+                "matching_models": matching,
+            })
+        if len(samples) >= 8:
+            break
+    conflicting_models = _bounded_model_list(source.get("mixed_models_observed"))
+    if not conflicting_models:
+        conflicting_models = list(dict.fromkeys(model for sample in samples for model in sample["matching_models"]))
+    return {
+        "source": "gpt56_api_detector",
+        "verdict": juice_status,
+        "claimed_model": declared_model,
+        "conflicting_models": conflicting_models,
+        "mismatch_samples": samples,
+        "planned_requests": planned,
+        "valid_samples": valid,
+    }
+
+
 def report_to_sidecar_response(report: dict[str, Any], profile: str, declared_model: str) -> dict[str, Any]:
     profile = profile if profile in PROFILE_REQUESTS else "low"
     network = report.get("network_summary") if isinstance(report.get("network_summary"), dict) else {}
@@ -70,7 +106,7 @@ def report_to_sidecar_response(report: dict[str, Any], profile: str, declared_mo
         "fingerprint_candidate": candidate,
         "fingerprint_similarity": similarity,
         "detector_version": VERSION,
-        "juice_summary": {"source": "gpt56_api_detector", "verdict": juice_status, "planned_requests": planned, "valid_samples": valid},
+        "juice_summary": _bounded_juice_summary(report, declared_model, juice_status, planned, valid),
     }
 
 
@@ -99,7 +135,6 @@ def run_v411(request: dict[str, Any]) -> dict[str, Any]:
         from gpt56_vnext.presets import get_preset
 
         config = get_preset("single", profile)
-        config["workers"] = 1
         with tempfile.TemporaryDirectory(prefix="sub2api-v411-") as directory:
             session = DetectorSession(base_url=base_url, claimed_model=declared_model, request_model=request_model, api_key=api_key, config=config, directory=directory, retention_enabled=False)
             try:

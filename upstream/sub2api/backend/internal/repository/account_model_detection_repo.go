@@ -72,7 +72,8 @@ func (r *accountModelDetectionRepository) Enqueue(ctx context.Context, run servi
 	if !errors.Is(err, sql.ErrNoRows) {
 		return service.AccountModelDetectionRun{}, false, err
 	}
-	insertResult, err := r.db.ExecContext(ctx, `INSERT INTO account_model_detection_runs (id, account_id, slot_key, trigger_kind, model_id, claimed_model, status, profile, mode, trigger_reason, planned_requests, valid_samples, evidence_state, fingerprint_status, queued_at, created_at) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) ON CONFLICT DO NOTHING`, run.ID, run.AccountID, run.SlotKey, run.TriggerKind, run.ModelID, run.ClaimedModel, run.Status, nullableString(run.Profile), nullableString(run.Mode), nullableString(run.TriggerReason), nullableInt(run.PlannedRequests), nullableInt(run.ValidSamples), nullableString(run.EvidenceState), nullableString(run.FingerprintStatus), run.QueuedAt.UTC(), run.CreatedAt.UTC())
+	triggerEvidence, _ := json.Marshal(run.TriggerEvidence)
+	insertResult, err := r.db.ExecContext(ctx, `INSERT INTO account_model_detection_runs (id, account_id, slot_key, trigger_kind, model_id, claimed_model, status, profile, mode, trigger_reason, trigger_evidence, planned_requests, valid_samples, evidence_state, fingerprint_status, queued_at, created_at) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17) ON CONFLICT DO NOTHING`, run.ID, run.AccountID, run.SlotKey, run.TriggerKind, run.ModelID, run.ClaimedModel, run.Status, nullableString(run.Profile), nullableString(run.Mode), nullableString(run.TriggerReason), nullableJSON(triggerEvidence), nullableInt(run.PlannedRequests), nullableInt(run.ValidSamples), nullableString(run.EvidenceState), nullableString(run.FingerprintStatus), run.QueuedAt.UTC(), run.CreatedAt.UTC())
 	if err != nil {
 		return service.AccountModelDetectionRun{}, false, err
 	}
@@ -175,7 +176,7 @@ func (r *accountModelDetectionRepository) ListRecent(ctx context.Context, accoun
 		}
 	}
 	args = append(args, limit+1)
-	query := fmt.Sprintf(`SELECT id, account_id, slot_key, trigger_kind, model_id, claimed_model, status, profile, mode, trigger_reason, planned_requests, valid_samples, evidence_state, fingerprint_status, juice_status, juice_summary, fingerprint_candidate, fingerprint_similarity, detector_version, error_code, error_message, queued_at, started_at, finished_at, created_at FROM account_model_detection_runs WHERE %s ORDER BY created_at DESC, id DESC LIMIT $%d`, strings.Join(where, " AND "), arg)
+	query := fmt.Sprintf(`SELECT id, account_id, slot_key, trigger_kind, model_id, claimed_model, status, profile, mode, trigger_reason, trigger_evidence, planned_requests, valid_samples, evidence_state, fingerprint_status, juice_status, juice_summary, fingerprint_candidate, fingerprint_similarity, detector_version, error_code, error_message, queued_at, started_at, finished_at, created_at FROM account_model_detection_runs WHERE %s ORDER BY created_at DESC, id DESC LIMIT $%d`, strings.Join(where, " AND "), arg)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return service.AccountModelDetectionHistoryPage{}, err
@@ -276,10 +277,10 @@ func inferredDetectionPlannedRequests(profile string) int {
 
 func scanFullModelDetectionRun(row scanner) (service.AccountModelDetectionRun, error) {
 	var run service.AccountModelDetectionRun
-	var juice, fingerprint []byte
+	var triggerEvidence, juice, fingerprint []byte
 	var profile, mode, reason, evidence, fingerprintStatus, juiceStatus, candidate, version, errorCode, errorMessage sql.NullString
 	var planned, valid sql.NullInt64
-	err := row.Scan(&run.ID, &run.AccountID, &run.SlotKey, &run.TriggerKind, &run.ModelID, &run.ClaimedModel, &run.Status, &profile, &mode, &reason, &planned, &valid, &evidence, &fingerprintStatus, &juiceStatus, &juice, &candidate, &fingerprint, &version, &errorCode, &errorMessage, &run.QueuedAt, &run.StartedAt, &run.FinishedAt, &run.CreatedAt)
+	err := row.Scan(&run.ID, &run.AccountID, &run.SlotKey, &run.TriggerKind, &run.ModelID, &run.ClaimedModel, &run.Status, &profile, &mode, &reason, &triggerEvidence, &planned, &valid, &evidence, &fingerprintStatus, &juiceStatus, &juice, &candidate, &fingerprint, &version, &errorCode, &errorMessage, &run.QueuedAt, &run.StartedAt, &run.FinishedAt, &run.CreatedAt)
 	if err != nil {
 		return run, err
 	}
@@ -297,6 +298,9 @@ func scanFullModelDetectionRun(row scanner) (service.AccountModelDetectionRun, e
 	}
 	run.JuiceStatus, run.FingerprintCandidate, run.DetectorVersion = juiceStatus.String, candidate.String, version.String
 	run.ErrorCode, run.ErrorMessage = errorCode.String, errorMessage.String
+	if len(triggerEvidence) > 0 {
+		_ = json.Unmarshal(triggerEvidence, &run.TriggerEvidence)
+	}
 	if len(juice) > 0 {
 		_ = json.Unmarshal(juice, &run.JuiceSummary)
 	}

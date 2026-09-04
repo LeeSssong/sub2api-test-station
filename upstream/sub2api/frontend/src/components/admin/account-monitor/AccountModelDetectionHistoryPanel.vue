@@ -73,7 +73,7 @@ const Detail = defineComponent({
       return h('div', { class: 'grid gap-3 sm:grid-cols-2', 'data-test': 'detection-history-detail' }, [
         h('section', { class: 'rounded-md border border-slate-600 bg-slate-800 p-3' }, [h('p', { class: 'text-[10px] text-slate-400' }, t('admin.accounts.modelDetection.juiceFilter')), h('strong', { class: ['mt-1 block text-sm', juiceClass(item)] }, juiceLabelFor(item)), h('p', { class: 'mt-1.5 text-[11px] leading-5 text-slate-300' }, juiceDetail(item))]),
         h('section', { class: 'rounded-md border border-slate-600 bg-slate-800 p-3' }, [h('p', { class: 'text-[10px] text-slate-400' }, t('admin.accounts.modelDetection.fingerprint')), h('strong', { class: ['mt-1 block text-sm', fingerprintClass(item)] }, fingerprintLabelFor(item)), h('p', { class: 'mt-1.5 text-[11px] leading-5 text-slate-300' }, fingerprintDetail(item))]),
-        h('div', { class: 'flex flex-wrap gap-x-7 gap-y-3 px-1 text-[10px] text-slate-400 sm:col-span-2' }, [detailFact(t('admin.accounts.modelDetection.reason'), reasonLabel(item)), detailFact(t('admin.accounts.modelDetection.samples'), samplesLabel(item)), detailFact(t('admin.accounts.modelDetection.declaredModel'), item.claimed_model || t('admin.accounts.modelDetection.evidenceUnavailable')), detailFact(t('admin.accounts.modelDetection.detectorVersion'), item.detector_version || t('admin.accounts.modelDetection.evidenceUnavailable'))]),
+        h('div', { class: 'flex flex-wrap gap-x-7 gap-y-3 px-1 text-[10px] text-slate-400 sm:col-span-2' }, [detailFact(t('admin.accounts.modelDetection.reason'), triggerDetail(item)), detailFact(t('admin.accounts.modelDetection.samples'), samplesLabel(item)), detailFact(t('admin.accounts.modelDetection.declaredModel'), item.claimed_model || t('admin.accounts.modelDetection.evidenceUnavailable')), detailFact(t('admin.accounts.modelDetection.detectorVersion'), item.detector_version || t('admin.accounts.modelDetection.evidenceUnavailable'))]),
       ])
     }
   },
@@ -118,9 +118,32 @@ function reasonLabel(item: AccountModelDetectionSummary) {
   const labels: Record<string, string> = { scheduled: '定时检测', manual: '手动触发', first_run: '首次基线', consecutive_abnormal: '连续异常', insufficient: '连续证据不足', model_conflict: '模型冲突', suspicious: '检测到可疑结果' }
   return labels[item.trigger_reason] ?? '检测触发'
 }
+function stringArray(value: unknown) { return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [] }
+function triggerDetail(item: AccountModelDetectionSummary) {
+  if (item.trigger_reason !== 'suspicious') return reasonLabel(item)
+  const evidence = item.trigger_evidence
+  if (!evidence) return '检测到可疑结果；历史记录未保存具体原因'
+  const tier = evidence.source_profile === 'low' ? '低档' : evidence.source_profile === 'medium' ? '中档' : evidence.source_profile === 'high' ? '高档' : '上一轮'
+  const claimed = typeof evidence.claimed_model === 'string' ? evidence.claimed_model : ''
+  const conflict = typeof evidence.conflicting_model === 'string' ? evidence.conflicting_model : ''
+  if (evidence.kind === 'juice_model_mismatch') return `由上一轮${tier}检测触发：Juice 命中 ${conflict || '其他已知型号'}，与申报 ${claimed || '型号'} 不一致`
+  if (evidence.kind === 'fingerprint_model_mismatch') return `由上一轮${tier}检测触发：行为指纹强烈指向 ${conflict || '其他型号'}，与申报 ${claimed || '型号'} 不一致`
+  return '检测到可疑结果；历史记录未保存具体原因'
+}
 function samplesLabel(item: AccountModelDetectionSummary) { if (isHistorical(item)) return t('admin.accounts.modelDetection.samplesUnavailable'); if (item.valid_samples == null || item.valid_samples <= 0) return t('admin.accounts.modelDetection.evidenceUnavailable'); return `${item.valid_samples} / ${item.planned_requests ?? 0}` }
 function formatTime(value?: string) { if (!value) return '--'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date) }
 function safeSummary(value?: Record<string, unknown>) { if (!value) return ''; const allowed = Object.entries(value).filter(([key, raw]) => ['score', 'evidence_version', 'sample_count', 'status'].includes(key) && (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean')).slice(0, 6); return allowed.map(([key, raw]) => `${key}=${String(raw).slice(0, 80)}`).join(' · ') }
-function juiceDetail(item: AccountModelDetectionSummary) { if (isHistorical(item)) return t('admin.accounts.modelDetection.historicalRecordHint'); const summary = safeSummary(item.juice_summary); return summary || t(`admin.accounts.modelDetection.juiceDetail.${juiceTranslationStatus(item.juice_status) || 'unavailable'}`) }
+function juiceDetail(item: AccountModelDetectionSummary) {
+  if (isHistorical(item)) return t('admin.accounts.modelDetection.historicalRecordHint')
+  if (item.juice_status === 'mismatch' && item.juice_summary) {
+    const claimed = typeof item.juice_summary.claimed_model === 'string' ? item.juice_summary.claimed_model : item.claimed_model
+    const conflicts = stringArray(item.juice_summary.conflicting_models)
+    const samples = Array.isArray(item.juice_summary.mismatch_samples) ? item.juice_summary.mismatch_samples.filter((sample): sample is Record<string, unknown> => Boolean(sample) && typeof sample === 'object').slice(0, 8) : []
+    const sampleText = samples.map((sample) => `${typeof sample.effort === 'string' ? sample.effort : 'unknown'} 档返回 ${String(sample.observed_value || '--')}（命中 ${stringArray(sample.matching_models).join('、') || '其他已知型号'}）`).join('；')
+    return `申报模型：${claimed || '--'}；冲突型号：${conflicts.join('、') || '其他已知型号'}；冲突样本：${sampleText || '历史记录未保存'}；共 ${samples.length} 条`
+  }
+  const summary = safeSummary(item.juice_summary)
+  return summary || t(`admin.accounts.modelDetection.juiceDetail.${juiceTranslationStatus(item.juice_status) || 'unavailable'}`)
+}
 function fingerprintDetail(item: AccountModelDetectionSummary) { if (isHistorical(item)) return t('admin.accounts.modelDetection.historicalRecordHint'); return item.fingerprint_candidate ? t('admin.accounts.modelDetection.fingerprintCandidateDetail', { candidate: item.fingerprint_candidate }) : t(`admin.accounts.modelDetection.fingerprintDetail.${item.fingerprint_status || 'unavailable'}`) }
 </script>

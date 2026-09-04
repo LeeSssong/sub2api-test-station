@@ -164,10 +164,24 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="identity-column"]').text()).toContain(`${expected} · OpenAI`)
   })
 
-  it('does not expose insufficient as a completed model detection result', () => {
-    const wrapper = mountCard({ account: { ...account, model_detection: { ...account.model_detection, status: 'insufficient' } } })
-    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).not.toContain('证据不足')
-    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).toContain('status.failed')
+  it('renders separate Juice and model results without calling unclear evidence a failure', () => {
+    const wrapper = mountCard({ account: { ...account, model_detection: {
+      ...account.model_detection,
+      status: 'insufficient',
+      recent: { status: 'insufficient', juice_status: 'pass', fingerprint_status: 'unclear' },
+    } } })
+    expect(wrapper.get('[data-test="model-detection-juice-result"]').text()).toContain('Juice 结果：通过')
+    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('模型结果：证据不明确')
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).not.toContain('检测失败')
+  })
+
+  it('shows the strong fingerprint candidate on the model result row', () => {
+    const wrapper = mountCard({ account: { ...account, model_detection: {
+      ...account.model_detection,
+      status: 'normal',
+      recent: { status: 'normal', juice_status: 'pass', fingerprint_status: 'strong_match', fingerprint_candidate: 'gpt-5.6-terra' },
+    } } })
+    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('模型结果：强烈指向 Terra')
   })
 
   it('shows zero profit instead of an estimated or pending state before revenue exists', () => {
@@ -235,6 +249,24 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toBeUndefined()
     await wrapper.get('.performance-bar-wrap').trigger('mouseenter')
     expect(wrapper.get('[data-test="real-request-tooltip"]').text()).toBe('900ms')
+  })
+
+  it('keeps a single request bar at the same fixed width as a populated timeline', () => {
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        real_request_timeline: [{
+          start_at: '2026-08-30T00:00:00Z', end_at: '2026-08-30T01:00:00Z',
+          request_count: 1, success_count: 1, failure_count: 0, ttft_p95_ms: 900,
+        }],
+      },
+    })
+
+    const barWrapStyle = getComputedStyle(wrapper.get('.performance-bar-wrap').element)
+    const barStyle = getComputedStyle(wrapper.get('[data-test="real-request-bar"]').element)
+    expect(barWrapStyle.flexGrow).toBe('0')
+    expect(barWrapStyle.width).toBe('8px')
+    expect(barStyle.width).toBe('100%')
   })
 
   it('keeps manual model detection and account action entry points', async () => {

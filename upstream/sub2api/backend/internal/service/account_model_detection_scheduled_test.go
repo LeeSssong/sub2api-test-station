@@ -14,9 +14,13 @@ type modelDetectionUsageStub struct {
 
 func TestAccountModelDetectionEnabledDefaultsAndCanDisable(t *testing.T) {
 	account := &Account{}
-	if !account.ModelDetectionEnabled() { t.Fatal("missing model detection flag should default enabled") }
+	if !account.ModelDetectionEnabled() {
+		t.Fatal("missing model detection flag should default enabled")
+	}
 	account.Extra = map[string]any{ModelDetectionEnabledExtraKey: false}
-	if account.ModelDetectionEnabled() { t.Fatal("explicit false should disable model detection") }
+	if account.ModelDetectionEnabled() {
+		t.Fatal("explicit false should disable model detection")
+	}
 }
 
 type alwaysUsedActiveProbeUsageStub struct{}
@@ -117,6 +121,42 @@ func TestRunDueSlotsQueuesDetectionWhenUsageReaderFails(t *testing.T) {
 	}
 }
 
+func TestRunDueSlotsSnapshotsThePriorSuspiciousEvidence(t *testing.T) {
+	finished := time.Date(2026, 8, 27, 0, 10, 0, 0, time.UTC)
+	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}}
+	repo := &detectionRepoStub{recent: []AccountModelDetectionRun{{
+		ID: "run-low", AccountID: 7, TriggerKind: "scheduled", Status: AccountModelDetectionStatusAbnormal,
+		Profile: AccountModelDetectionProfileLow, Mode: AccountModelDetectionModeMonitor,
+		ClaimedModel: "gpt-5.6-sol", JuiceStatus: "mismatch",
+		JuiceSummary: map[string]any{"conflicting_models": []any{"gpt-5.6-luna"}}, FinishedAt: &finished,
+	}}}
+	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{accounts: []Account{account}}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
+	svc.now = func() time.Time { return time.Date(2026, 8, 27, 6, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
+	if _, err := svc.RunDueSlots(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.runs) != 1 || repo.runs[0].Profile != AccountModelDetectionProfileMedium || repo.runs[0].TriggerReason != AccountModelDetectionTriggerSuspicious {
+		t.Fatalf("runs = %#v", repo.runs)
+	}
+	if got := repo.runs[0].TriggerEvidence; got["source_run_id"] != "run-low" || got["kind"] != "juice_model_mismatch" || got["conflicting_model"] != "gpt-5.6-luna" {
+		t.Fatalf("trigger evidence = %#v", got)
+	}
+}
+
+func TestRunDueSlotsDoesNotInventMissingSuspiciousEvidence(t *testing.T) {
+	finished := time.Date(2026, 8, 27, 0, 10, 0, 0, time.UTC)
+	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}}
+	repo := &detectionRepoStub{recent: []AccountModelDetectionRun{{ID: "legacy-low", TriggerKind: "scheduled", Profile: AccountModelDetectionProfileLow, Mode: AccountModelDetectionModeMonitor, JuiceStatus: "mismatch", FinishedAt: &finished}}}
+	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{accounts: []Account{account}}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
+	svc.now = func() time.Time { return time.Date(2026, 8, 27, 6, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
+	if _, err := svc.RunDueSlots(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.runs) != 1 || repo.runs[0].TriggerReason == AccountModelDetectionTriggerSuspicious || len(repo.runs[0].TriggerEvidence) != 0 {
+		t.Fatalf("legacy evidence must not be invented: %#v", repo.runs)
+	}
+}
+
 func TestScheduledExecuteCallsDetectorWhenBucketBecameBusy(t *testing.T) {
 	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{
 		"api_key":       "secret",
@@ -182,6 +222,23 @@ func TestIsSuspiciousDetectionRequiresExplicitConflictEvidence(t *testing.T) {
 	}
 	if isSuspiciousDetection(AccountModelDetectionRun{Status: AccountModelDetectionStatusAbnormal, FinishedAt: &finished}) {
 		t.Fatal("abnormal without explicit conflict evidence must not be suspicious")
+	}
+}
+
+func TestSuspiciousDetectionEvidenceExplainsJuiceAndFingerprintConflicts(t *testing.T) {
+	juice := suspiciousDetectionEvidence(AccountModelDetectionRun{
+		ID: "run-low", Profile: AccountModelDetectionProfileLow, ClaimedModel: "gpt-5.6-sol", JuiceStatus: "mismatch",
+		JuiceSummary: map[string]any{"conflicting_models": []any{"gpt-5.6-luna"}},
+	})
+	if juice["kind"] != "juice_model_mismatch" || juice["source_run_id"] != "run-low" || juice["conflicting_model"] != "gpt-5.6-luna" {
+		t.Fatalf("juice evidence = %#v", juice)
+	}
+	fingerprint := suspiciousDetectionEvidence(AccountModelDetectionRun{
+		ID: "run-medium", Profile: AccountModelDetectionProfileMedium, ClaimedModel: "gpt-5.6-sol",
+		FingerprintStatus: "strong_match", FingerprintCandidate: "gpt-5.6-terra",
+	})
+	if fingerprint["kind"] != "fingerprint_model_mismatch" || fingerprint["conflicting_model"] != "gpt-5.6-terra" {
+		t.Fatalf("fingerprint evidence = %#v", fingerprint)
 	}
 }
 

@@ -1,7 +1,10 @@
 import importlib.util
 import inspect
 import pathlib
+import sys
+import types
 import unittest
+from unittest import mock
 
 
 ADAPTER_PATH = pathlib.Path(__file__).with_name("model-detector-v411-adapter.py")
@@ -89,8 +92,58 @@ class V411AdapterTests(unittest.TestCase):
         self.assertFalse(MODULE.authorized("wrong", "expected"))
         self.assertTrue(MODULE.authorized("expected", "expected"))
 
-    def test_limits_detector_session_to_one_worker(self):
-        self.assertIn('config["workers"] = 1', inspect.getsource(MODULE.run_v411))
+    def test_preserves_official_preset_workers_for_formal_fingerprint_policy(self):
+        source = inspect.getsource(MODULE.run_v411)
+        self.assertNotIn('config["workers"] = 1', source)
+        self.assertNotIn('config["workers"] =', source)
+
+        captured = {}
+        detector_module = types.ModuleType("gpt56_vnext.detector")
+        presets_module = types.ModuleType("gpt56_vnext.presets")
+        package = types.ModuleType("gpt56_vnext")
+
+        class Session:
+            def __init__(self, **kwargs):
+                captured.update(kwargs["config"])
+
+            def run_single(self):
+                return {"juice_verdict_state": "pass", "network_summary": {"logical_tasks": 19, "successful": 19}}
+
+            def close(self):
+                pass
+
+        detector_module.DetectorSession = Session
+        presets_module.get_preset = lambda _mode, _profile: {"workers": 8, "official": True, "config_hash": "official-hash"}
+        with mock.patch.dict(sys.modules, {"gpt56_vnext": package, "gpt56_vnext.detector": detector_module, "gpt56_vnext.presets": presets_module}):
+            MODULE.run_v411({"profile": "low", "declared_model": "gpt-5.6-sol", "request_model": "gpt-5.6-sol", "base_url": "https://example.test", "api_key": "secret"})
+
+        self.assertEqual(8, captured["workers"])
+        self.assertTrue(captured["official"])
+        self.assertEqual("official-hash", captured["config_hash"])
+
+    def test_maps_juice_mismatch_to_bounded_explainable_evidence(self):
+        response = MODULE.report_to_sidecar_response({
+            "juice_verdict_state": "mismatch",
+            "network_summary": {"logical_tasks": 19, "successful": 19},
+            "juice_summary": {
+                "claimed_model": "gpt-5.6-sol",
+                "mixed_models_observed": ["gpt-5.6-luna"],
+                "sticky_events": [{"evidence": {
+                    "effort": "high",
+                    "normalized_value": "12345",
+                    "mixed_models": ["gpt-5.6-luna"],
+                    "output": "must not survive",
+                }}],
+            },
+        }, "low", "gpt-5.6-sol")
+
+        self.assertEqual("gpt-5.6-sol", response["juice_summary"]["claimed_model"])
+        self.assertEqual(["gpt-5.6-luna"], response["juice_summary"]["conflicting_models"])
+        self.assertEqual([{
+            "effort": "high", "observed_value": "12345",
+            "matching_models": ["gpt-5.6-luna"],
+        }], response["juice_summary"]["mismatch_samples"])
+        self.assertNotIn("output", str(response["juice_summary"]))
 
 
 if __name__ == "__main__":

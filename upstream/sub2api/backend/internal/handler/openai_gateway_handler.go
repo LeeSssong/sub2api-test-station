@@ -994,7 +994,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
 		}
-		h.gatewayService.FinishOpenAIFirstOutputSlowObservation(attemptCtx, err == nil && result != nil && openAIForwardSucceededForScheduling(result), result == nil)
+		slowClientAbandonment := result != nil && result.FirstTokenMs == nil && time.Since(forwardStart) >= 60*time.Second && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+		h.gatewayService.FinishOpenAIFirstOutputSlowObservation(attemptCtx, err == nil && result != nil && openAIForwardSucceededForScheduling(result), slowClientAbandonment || result == nil, slowClientAbandonment)
 		var cyberBlockBodyHTTP []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyHTTP = sessionHashBody
@@ -1099,7 +1100,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
 				ImmediateCooldown: failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable,
-				Platform:          requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
+				CapacityPressure:  failure.CapacityPressure, CapacitySubtype: failure.CapacitySubtype,
+				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
 			if retryBudget.unified {
 				retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, channelMapping.ChannelID))
@@ -1922,7 +1924,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if result != nil {
 			result.AttemptMetadata = attemptMetadata
 		}
-		h.gatewayService.FinishOpenAIFirstOutputSlowObservation(attemptCtx, err == nil && result != nil && result.SucceededForScheduling(), result == nil)
+		slowClientAbandonment := result != nil && result.FirstTokenMs == nil && time.Since(forwardStart) >= 60*time.Second && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+		h.gatewayService.FinishOpenAIFirstOutputSlowObservation(attemptCtx, err == nil && result != nil && result.SucceededForScheduling(), slowClientAbandonment || result == nil, slowClientAbandonment)
 		var cyberBlockBodyMsg []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyMsg = body
@@ -2006,7 +2009,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				ErrorType: failure.ErrorType, OutputStarted: failure.OutputStarted, SafeToReplay: failure.SafeToReplay,
 				HasSideEffect: failure.HasSideEffect, UsageKnown: attemptMetadata.UsageProduced,
 				ImmediateCooldown: failure.StatusCode == http.StatusBadGateway || failure.StatusCode == http.StatusServiceUnavailable,
-				Platform:          requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
+				CapacityPressure:  failure.CapacityPressure, CapacitySubtype: failure.CapacitySubtype,
+				Platform: requestPlatform, GroupID: apiKey.GroupID, CacheMode: attemptMetadata.CachePreservationMode,
 			})
 			if retryBudget.unified {
 				retryBudget.RecordObservedDomains(openAIRetryFailureDomains(account, channelMappingMsg.ChannelID))

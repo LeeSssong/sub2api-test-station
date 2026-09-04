@@ -20,6 +20,7 @@ const (
 	OpenAIEventSchedulerSelection               = "openai.scheduler_selection"
 	OpenAIEventSchedulerRequestOutcome          = "openai.scheduler_request_outcome"
 	OpenAIEventFirstOutputSlow                  = "openai.first_output_slow"
+	OpenAIEventClientAbandonedAfterUpstreamWait = "openai.client_abandoned_after_upstream_wait"
 	OpenAIEventResponsesFailoverDecision        = "openai.responses_failover_decision"
 )
 
@@ -47,6 +48,11 @@ type OpenAIResilienceEvent struct {
 	AttemptID             string
 	AttemptNumber         int
 	StatusCode            int
+	FailureClass          string
+	CapacitySubtype       string
+	CurrentRequestAction  string
+	FutureRequestAction   string
+	SharedFeedbackWritten bool
 	OutputStarted         bool
 	UsageProduced         bool
 	ResponseFailedOnly    bool

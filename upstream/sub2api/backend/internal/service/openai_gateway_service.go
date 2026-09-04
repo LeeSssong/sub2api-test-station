@@ -639,11 +639,20 @@ func (s *OpenAIGatewayService) BeginOpenAIFirstOutputSlowObservation(ctx context
 	return withOpenAIFirstOutputSlowObservation(ctx, s.openaiFirstOutputSlow.Start(groupID, accountID, attemptID, startedAt))
 }
 
-func (s *OpenAIGatewayService) FinishOpenAIFirstOutputSlowObservation(ctx context.Context, success, keepUnknown bool) {
+func (s *OpenAIGatewayService) FinishOpenAIFirstOutputSlowObservation(ctx context.Context, success, keepUnknown, clientAbandoned bool) {
 	if ctx == nil {
 		return
 	}
 	if observation, ok := ctx.Value(openAIFirstOutputSlowObservationContextKey{}).(*OpenAIFirstOutputObservation); ok && observation != nil {
+		if !success && clientAbandoned && observation.IsSlow() {
+			if metadata, found := OpenAIRequestAttemptMetadataFromContext(ctx); found {
+				RecordOpenAIResilienceOutcomeWithContext(ctx, OpenAIResilienceEvent{
+					At: time.Now().UTC(), Platform: PlatformOpenAI, Name: OpenAIEventClientAbandonedAfterUpstreamWait,
+					AccountID: metadata.AccountID, CanonicalModel: metadata.CanonicalModel, AttemptID: metadata.AttemptID,
+					AttemptNumber: metadata.AttemptNumber, OutputStarted: false, Outcome: "right_censored",
+				})
+			}
+		}
 		if success {
 			observation.ObserveSemanticOutput(0)
 		} else {

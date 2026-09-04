@@ -115,6 +115,16 @@ func (o *OpenAIFirstOutputObservation) ObserveFailure(keepUnknown bool) {
 	o.tracker.mu.Unlock()
 }
 
+func (o *OpenAIFirstOutputObservation) IsSlow() bool {
+	if o == nil || o.tracker == nil {
+		return false
+	}
+	o.tracker.mu.Lock()
+	defer o.tracker.mu.Unlock()
+	_, ok := o.tracker.entries[o.key]
+	return ok
+}
+
 func (t *OpenAIFirstOutputSlowTracker) View(groupID, accountID int64) OpenAIFirstOutputSlowView {
 	if t == nil {
 		return OpenAIFirstOutputSlowView{}

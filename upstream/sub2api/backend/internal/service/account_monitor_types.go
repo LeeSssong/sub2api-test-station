@@ -397,6 +397,7 @@ type MonitorV4GroupProjection struct {
 	LatencyP95MS              *float64
 	LatencySampleCount        int
 	CacheHitRate              *float64
+	InputTokens               int64
 	CacheReadTokens           int64
 	CacheCreationTokens       int64
 	CacheHitDenominator       int64

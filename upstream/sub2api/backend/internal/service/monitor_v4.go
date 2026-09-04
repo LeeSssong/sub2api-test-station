@@ -47,10 +47,10 @@ type MonitorV4SnapshotRefresher interface {
 }
 
 func ValidateMonitorV4Projection(projection MonitorV4GroupProjection) error {
-	if projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 || projection.CacheReadTokens < 0 || projection.CacheCreationTokens < 0 || projection.CacheHitDenominator < 0 {
+	if projection.RequestCount < 0 || projection.SuccessCount < 0 || projection.RealRequestCount < 0 || projection.RealSuccessCount < 0 || projection.ProbeFallbackBucketCount < 0 || projection.ProbeFallbackRequestCount < 0 || projection.MissingProbeTerminalCount < 0 || projection.TTFTSampleCount < 0 || projection.LatencySampleCount < 0 || projection.InputTokens < 0 || projection.CacheReadTokens < 0 || projection.CacheCreationTokens < 0 || projection.CacheHitDenominator < 0 {
 		return fmt.Errorf("monitor v4 projection contains negative counts")
 	}
-	if projection.CacheHitDenominator != 0 && projection.CacheHitDenominator != projection.CacheReadTokens+projection.CacheCreationTokens {
+	if projection.CacheHitDenominator != projection.InputTokens+projection.CacheReadTokens+projection.CacheCreationTokens {
 		return fmt.Errorf("monitor v4 cache denominator invariant violated")
 	}
 	if projection.SuccessCount > projection.RequestCount || projection.RealSuccessCount > projection.RealRequestCount || projection.ProbeFallbackRequestCount != projection.ProbeFallbackBucketCount || projection.RealRequestCount+projection.ProbeFallbackRequestCount != projection.RequestCount || projection.RealSuccessCount > projection.SuccessCount || projection.SuccessCount > projection.RealSuccessCount+projection.ProbeFallbackRequestCount {

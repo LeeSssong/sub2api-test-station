@@ -42,12 +42,12 @@
 
 **Interfaces:**
 - Consumes: successful selected request events and their cache token fields.
-- Produces: `CacheHitDenominator == CacheReadTokens + CacheCreationTokens` and `CacheHitRate == CacheReadTokens / CacheHitDenominator`.
+- Produces: `CacheHitDenominator == InputTokens + CacheReadTokens + CacheCreationTokens` and `CacheHitRate == CacheReadTokens / CacheHitDenominator`.
 
-- [ ] Add a service regression test where `InputTokens + CacheCreationTokens + CacheReadTokens == CacheHitDenominator` is accepted and a mismatch is rejected.
-- [ ] Run the focused service test and verify the native input-inclusive case fails against the current validator.
-- [ ] Add `InputTokens` to the internal Monitor V4 projection and repository scan; restore the SQL denominator to all three prompt-token fields.
-- [ ] Re-run repository and service Monitor V4 tests and verify they pass.
+- [x] Add a service regression test where `InputTokens + CacheCreationTokens + CacheReadTokens == CacheHitDenominator` is accepted and a mismatch is rejected.
+- [x] Run the focused service test and verify the native input-inclusive case fails against the current validator.
+- [x] Add `InputTokens` to the internal Monitor V4 projection and repository scan; restore the SQL denominator to all three prompt-token fields.
+- [x] Re-run repository and service Monitor V4 tests and verify they pass.
 
 ### Task 3: Integrate and release
 

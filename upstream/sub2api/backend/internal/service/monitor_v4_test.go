@@ -146,3 +146,20 @@ func TestMonitorV4RequestCountsRemainConsistent(t *testing.T) {
 		t.Fatal("request-weighted projection is inconsistent")
 	}
 }
+
+func TestValidateMonitorV4ProjectionUsesNativeCacheDenominator(t *testing.T) {
+	projection := MonitorV4GroupProjection{
+		InputTokens:         60,
+		CacheCreationTokens: 10,
+		CacheReadTokens:     30,
+		CacheHitDenominator: 100,
+	}
+	if err := ValidateMonitorV4Projection(projection); err != nil {
+		t.Fatalf("native cache denominator rejected: %v", err)
+	}
+
+	projection.CacheHitDenominator = 99
+	if err := ValidateMonitorV4Projection(projection); err == nil {
+		t.Fatal("expected non-native cache denominator to be rejected")
+	}
+}

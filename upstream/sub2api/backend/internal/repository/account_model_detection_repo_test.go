@@ -151,6 +151,29 @@ func TestAccountModelDetectionRepositoryListsQueuedRunsInFIFOOrder(t *testing.T)
 	}
 }
 
+func TestAccountModelDetectionRepositoryRestoresTriggerEvidenceFromHistory(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mockDB.Close()
+	now := time.Date(2026, 8, 27, 2, 0, 0, 0, time.UTC)
+	columns := []string{"id", "account_id", "slot_key", "trigger_kind", "model_id", "claimed_model", "status", "profile", "mode", "trigger_reason", "trigger_evidence", "planned_requests", "valid_samples", "evidence_state", "fingerprint_status", "juice_status", "juice_summary", "fingerprint_candidate", "fingerprint_similarity", "detector_version", "error_code", "error_message", "queued_at", "started_at", "finished_at", "created_at"}
+	mock.ExpectQuery("SELECT id, account_id, slot_key.*trigger_evidence").WithArgs(int64(7), 26).
+		WillReturnRows(sqlmock.NewRows(columns).AddRow("11111111-1111-1111-1111-111111111111", int64(7), nil, "scheduled", "gpt-5.6-sol", "gpt-5.6-sol", "normal", "medium", "monitor", "suspicious", `{"kind":"juice_model_mismatch","source_run_id":"run-low","conflicting_model":"gpt-5.6-luna"}`, 49, 49, "complete", "strong_match", "pass", nil, "gpt-5.6-sol", nil, "4.1.1", nil, nil, now, now, now, now))
+	repo := &accountModelDetectionRepository{db: mockDB}
+	page, err := repo.ListRecent(context.Background(), 7, 25, "", "", "", "", "", "")
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("page=%#v err=%v", page, err)
+	}
+	if got := page.Items[0].TriggerEvidence; got["source_run_id"] != "run-low" || got["conflicting_model"] != "gpt-5.6-luna" {
+		t.Fatalf("trigger evidence = %#v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAccountModelDetectionRepositorySavesSettings(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	if err != nil {

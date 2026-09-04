@@ -15,6 +15,7 @@ var (
 	accountModelDetectionQueueInterval      = time.Second
 	accountMonitorTerminalWatchdogInterval  = time.Minute
 	accountMonitorV4SnapshotRefreshInterval = 5 * time.Minute
+	accountMonitorRunTimeout                = 4 * time.Minute
 )
 
 const (
@@ -108,8 +109,9 @@ func (r *AccountMonitorRunner) Start() {
 	}
 
 	if r.svc != nil {
-		r.wg.Add(1)
+		r.wg.Add(2)
 		go r.loop()
+		go r.terminalLoop()
 	}
 	if r.detector != nil {
 		r.wg.Add(1)
@@ -169,30 +171,59 @@ func (r *AccountMonitorRunner) ReloadSettings(settings AccountMonitorSettings) {
 
 func (r *AccountMonitorRunner) loop() {
 	defer r.wg.Done()
-	terminalTicker := time.NewTicker(accountMonitorTerminalWatchdogInterval)
-	defer terminalTicker.Stop()
+	r.mu.Lock()
+	interval := r.interval
+	r.mu.Unlock()
+	if interval <= 0 {
+		interval = AccountMonitorDefaultIntervalSeconds * time.Second
+	}
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 	for {
-		r.mu.Lock()
-		interval := r.interval
-		r.mu.Unlock()
-		if interval <= 0 {
-			interval = AccountMonitorDefaultIntervalSeconds * time.Second
-		}
-		timer := time.NewTimer(interval)
 		select {
 		case <-r.ctx.Done():
-			timer.Stop()
 			return
 		case <-r.trigger:
-			timer.Stop()
 			r.runOnce()
 		case <-r.reload:
-			timer.Stop()
-		case <-terminalTicker.C:
-			timer.Stop()
-			r.settleOnce()
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			r.mu.Lock()
+			interval = r.interval
+			r.mu.Unlock()
+			if interval <= 0 {
+				interval = AccountMonitorDefaultIntervalSeconds * time.Second
+			}
+			timer.Reset(interval)
 		case <-timer.C:
+			r.mu.Lock()
+			interval = r.interval
+			r.mu.Unlock()
+			if interval <= 0 {
+				interval = AccountMonitorDefaultIntervalSeconds * time.Second
+			}
+			// Arm the next slot before running so probe duration does not stretch
+			// the configured start-to-start cadence.
+			timer.Reset(interval)
 			r.runOnce()
+		}
+	}
+}
+
+func (r *AccountMonitorRunner) terminalLoop() {
+	defer r.wg.Done()
+	ticker := time.NewTicker(accountMonitorTerminalWatchdogInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-ticker.C:
+			r.settleOnce()
 		}
 	}
 }
@@ -273,16 +304,19 @@ func (r *AccountMonitorRunner) runOnce() {
 	if r.balanceNotification != nil {
 		defer r.balanceNotification.TriggerEvaluate()
 	}
-	if _, err := r.svc.RunAll(r.ctx, 0); err != nil {
+	ctx, cancel := context.WithTimeout(r.ctx, accountMonitorRunTimeout)
+	defer cancel()
+	completed, err := r.svc.RunAll(ctx, 0)
+	slog.Info("account_monitor: run completed", "completed", completed, "error", err)
+	if err != nil {
 		slog.Warn("account_monitor: run failed", "error", err)
 	}
 }
 
 func (r *AccountMonitorRunner) settleOnce() {
-	if r == nil || r.svc == nil || !r.runMu.TryLock() {
+	if r == nil || r.svc == nil {
 		return
 	}
-	defer r.runMu.Unlock()
 	if err := r.svc.SettleDueProbeBuckets(r.ctx); err != nil {
 		slog.Warn("account_monitor: terminal watchdog failed", "error", err)
 	}

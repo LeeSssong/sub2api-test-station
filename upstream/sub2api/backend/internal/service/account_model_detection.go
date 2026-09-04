@@ -190,7 +190,8 @@ func accountModelDetectionSummary(run AccountModelDetectionRun, source string) *
 		DetectorVersion: run.DetectorVersion, ErrorCode: run.ErrorCode, ErrorMessage: run.ErrorMessage,
 		QueuedAt: &queued, StartedAt: run.StartedAt, FinishedAt: run.FinishedAt, RunID: run.ID, Source: source,
 		Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason, PlannedRequests: run.PlannedRequests,
-		ValidSamples: run.ValidSamples, EvidenceState: run.EvidenceState, FingerprintStatus: run.FingerprintStatus,
+		TriggerEvidence: run.TriggerEvidence,
+		ValidSamples:    run.ValidSamples, EvidenceState: run.EvidenceState, FingerprintStatus: run.FingerprintStatus,
 	}
 }
 
@@ -426,6 +427,39 @@ func isSuspiciousDetection(run AccountModelDetectionRun) bool {
 		strings.TrimSpace(run.FingerprintCandidate) != strings.TrimSpace(run.ClaimedModel)
 }
 
+func suspiciousDetectionEvidence(run AccountModelDetectionRun) map[string]any {
+	base := map[string]any{
+		"source_run_id":  run.ID,
+		"source_profile": run.Profile,
+		"claimed_model":  strings.TrimSpace(run.ClaimedModel),
+	}
+	if run.JuiceStatus == "mismatch" {
+		conflictingModel := ""
+		if models, ok := run.JuiceSummary["conflicting_models"].([]any); ok && len(models) > 0 {
+			conflictingModel = strings.TrimSpace(fmt.Sprint(models[0]))
+		} else if models, ok := run.JuiceSummary["conflicting_models"].([]string); ok && len(models) > 0 {
+			conflictingModel = strings.TrimSpace(models[0])
+		}
+		if conflictingModel == "" {
+			return nil
+		}
+		base["kind"] = "juice_model_mismatch"
+		base["conflicting_model"] = conflictingModel
+		return base
+	}
+	if run.FingerprintStatus == "mismatch" || run.FingerprintStatus == "strong_conflict" ||
+		(strings.TrimSpace(run.FingerprintCandidate) != "" && strings.TrimSpace(run.ClaimedModel) != "" && strings.TrimSpace(run.FingerprintCandidate) != strings.TrimSpace(run.ClaimedModel)) {
+		conflictingModel := strings.TrimSpace(run.FingerprintCandidate)
+		if conflictingModel == "" {
+			return nil
+		}
+		base["kind"] = "fingerprint_model_mismatch"
+		base["conflicting_model"] = conflictingModel
+		return base
+	}
+	return nil
+}
+
 // nextScheduledDetectionProfile derives the profile for the next natural
 // six-hour slot from the most recent completed scheduled monitor run.
 func nextScheduledDetectionProfile(recent []AccountModelDetectionRun) string {
@@ -543,7 +577,16 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 		slotCopy := slot
 		run := newAccountModelDetectionRun(account.ID, models.ModelDetectionModel, profile, AccountModelDetectionModeMonitor, AccountModelDetectionTriggerScheduled)
 		if profile != AccountModelDetectionProfileLow {
-			run.TriggerReason = AccountModelDetectionTriggerSuspicious
+			for _, previous := range recent.Items {
+				if previous.FinishedAt == nil || (previous.Mode != "" && previous.Mode != AccountModelDetectionModeMonitor) || (previous.TriggerKind != "" && previous.TriggerKind != "scheduled") {
+					continue
+				}
+				if evidence := suspiciousDetectionEvidence(previous); len(evidence) > 0 {
+					run.TriggerReason = AccountModelDetectionTriggerSuspicious
+					run.TriggerEvidence = evidence
+				}
+				break
+			}
 		}
 		run.SlotKey = &slotCopy
 		run.TriggerKind = "scheduled"

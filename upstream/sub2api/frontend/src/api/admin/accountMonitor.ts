@@ -357,6 +357,7 @@ export interface AccountModelDetectionSummary {
   profile?: 'low' | 'medium' | 'high' | 'unknown' | string
   mode?: 'monitor' | 'manual' | 'escalation' | 'historical' | string
   trigger_reason?: string
+  trigger_evidence?: Record<string, unknown>
   planned_requests?: number
   valid_samples?: number
   evidence_state?: 'complete' | 'insufficient' | 'unavailable' | 'historical' | string

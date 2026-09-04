@@ -192,6 +192,87 @@ func TestAccountMonitorRunnerSettleOnceRunsTerminalWatchdog(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorRunnerTerminalWatchdogDoesNotWaitForProbeRun(t *testing.T) {
+	repo := &accountMonitorRepoStub{
+		groups: []AccountMonitorGroup{{ID: 7, Status: StatusActive}},
+	}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 31, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI,
+		GroupIDs: []int64{7},
+	}}}
+	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	svc.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+		close(started)
+		<-release
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+	runner := NewAccountMonitorRunner(svc)
+	done := make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		<-done
+	}()
+	go func() {
+		runner.runOnce()
+		close(done)
+	}()
+	<-started
+
+	runner.settleOnce()
+	if len(repo.probeBucketTerminals) == 0 {
+		t.Fatal("terminal watchdog was blocked by the in-flight probe run")
+	}
+
+	close(release)
+}
+
+func TestAccountMonitorRunnerCadenceIsMeasuredFromScheduledStart(t *testing.T) {
+	repo := &accountMonitorRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 31, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI,
+	}}}
+	svc := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{})
+	starts := make(chan time.Time, 2)
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	svc.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
+		starts <- time.Now()
+		if calls.Add(1) == 1 {
+			<-releaseFirst
+		}
+		return AccountMonitorProbeResult{Status: "success", CheckedAt: time.Now().UTC()}, nil
+	}
+	runner := NewAccountMonitorRunner(svc)
+	runner.interval = 100 * time.Millisecond
+	runner.wg.Add(1)
+	go runner.loop()
+	defer func() {
+		runner.cancel()
+		runner.wg.Wait()
+	}()
+	runner.TriggerNow()
+	first := <-starts
+	time.Sleep(80 * time.Millisecond)
+	close(releaseFirst)
+
+	select {
+	case second := <-starts:
+		if elapsed := second.Sub(first); elapsed > 140*time.Millisecond {
+			t.Fatalf("probe cadence drifted with run duration: %s", elapsed)
+		}
+	case <-time.After(70 * time.Millisecond):
+		t.Fatal("second probe did not start on the original cadence")
+	}
+}
+
 func TestAccountMonitorRunnerTriggersBalanceEvaluationAfterNativeRun(t *testing.T) {
 	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 60}}
 	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)

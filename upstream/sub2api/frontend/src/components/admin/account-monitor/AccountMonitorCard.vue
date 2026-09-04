@@ -14,7 +14,7 @@
             <span class="account-id">#{{ account.account_id }}</span>
           </h2>
           <div class="monitor-card-meta" data-test="account-metadata">
-            <span>{{ formatNumber(successfulRequestCount) }}/{{ formatNumber(account.request_count ?? 0) }}</span>
+            <span>{{ formatNumber(successfulRequestCount) }}/{{ formatNumber(account.request_count ?? 0) }} 有效观测</span>
             <template v-if="recommendation">
               <span aria-hidden="true">·</span>
               <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
@@ -40,7 +40,7 @@
             </div>
           </section>
           <section class="monitor-card-model" data-test="model-detection-section">
-            <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-pill" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span><Icon name="chevronDown" size="xs" /></button>
+            <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-results"><span data-test="model-detection-juice-result">Juice 结果：<strong>{{ modelDetectionJuiceLabel }}</strong></span><span data-test="model-detection-fingerprint-result">模型结果：<strong>{{ modelDetectionFingerprintLabel }}</strong></span></span><Icon name="chevronDown" size="xs" /></button>
             <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
             <label class="monitor-toggle"><input type="checkbox" :checked="account.active_probe_enabled !== false" data-test="auto-probe-toggle" @change="emit('updateAutomation', account.account_id, 'active_probe_enabled', ($event.target as HTMLInputElement).checked)"><span>自动探测</span></label>
             <label class="monitor-toggle"><input type="checkbox" :checked="account.model_detection_enabled !== false" data-test="auto-model-detection-toggle" @change="emit('updateAutomation', account.account_id, 'model_detection_enabled', ($event.target as HTMLInputElement).checked)"><span>自动模型检测</span></label>
@@ -52,8 +52,8 @@
             <button type="button" class="chart-action" data-test="refresh-account" title="刷新账号状态" aria-label="刷新账号状态" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新账号状态</button>
           </div>
           <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
-            <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
-              <span class="performance-bar" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" data-test="real-request-bar" />
+            <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" style="flex: 0 0 8px; width: 8px" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
+              <span class="performance-bar" :class="bar.colorClass" :style="{ width: '100%', height: `${bar.height}%` }" data-test="real-request-bar" />
               <span v-if="hoveredBarIndex === index && bar.latencyLabel" class="performance-bar-tooltip" role="tooltip" data-test="real-request-tooltip">{{ bar.latencyLabel }}</span>
             </span>
           </div>
@@ -454,9 +454,24 @@ const realTimelineAriaLabel = computed(() => `近期性能，${props.account.req
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const modelDetectionStatus = computed(() => {
   const status = props.account.model_detection?.status
-  return status === 'insufficient' ? 'failed' : (status ?? 'untested')
+  return status ?? 'untested'
 })
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
+const modelDetectionJuiceLabel = computed(() => {
+  const value = props.account.model_detection?.recent?.juice_status
+  if (value === 'pass' || value === 'verified') return '通过'
+  if (value === 'mismatch') return '与申报不一致'
+  if (value === 'possible_non_gpt' || value === 'non_gpt') return '可能非 GPT'
+  if (value === 'insufficient') return '证据不足'
+  return modelDetectionStatus.value === 'failed' ? '检测失败' : '未检测'
+})
+function shortDetectionModel(value?: string) { return String(value || '').replace(/^gpt-5\.6-/, '').replace(/^./, (letter) => letter.toUpperCase()) }
+const modelDetectionFingerprintLabel = computed(() => {
+  const recent = props.account.model_detection?.recent
+  if (recent?.fingerprint_status === 'strong_match' && recent.fingerprint_candidate) return `强烈指向 ${shortDetectionModel(recent.fingerprint_candidate)}`
+  if (recent?.fingerprint_status === 'unclear') return '证据不明确'
+  return modelDetectionStatus.value === 'failed' ? '检测失败' : '未检测'
+})
 const modelDetectionStatusHint = computed(() => {
   if (modelDetectionStatus.value === 'service_unconfigured') return t('admin.accounts.modelDetection.detectorUnconfigured')
   if (modelDetectionStatus.value === 'service_unavailable') return t('admin.accounts.modelDetection.detectorUnavailable')
@@ -1340,12 +1355,11 @@ const CostMetric = defineComponent({
   margin-top: 12px;
 }
 .performance-bar {
-  flex: 1;
-  min-width: 3px;
+  width: 100%;
   border-radius: 3px 3px 1px 1px;
   outline: none;
 }
-.performance-bar-wrap { position: relative; display: flex; flex: 1; min-width: 3px; height: 100%; align-items: flex-end; outline: none; }
+.performance-bar-wrap { position: relative; display: flex; flex: 0 0 8px; width: 8px; height: 100%; align-items: flex-end; outline: none; }
 .performance-bar-wrap:focus-visible { outline: 2px solid #67e8f9; outline-offset: 2px; }
 .performance-bar-tooltip { position: absolute; left: 50%; bottom: calc(100% + 6px); z-index: 30; transform: translateX(-50%); white-space: nowrap; border: 1px solid #3b526b; border-radius: 4px; background: #0b1727; color: #e5eef8; padding: 4px 7px; font-size: 11px; pointer-events: none; }
 .monitor-card-chart::after { display: none !important; content: none !important; }
@@ -1373,6 +1387,9 @@ const CostMetric = defineComponent({
 }
 .model-status > svg { color: #8fa3b8; }
 .model-title { font-weight: 650; }
+.model-results { display: grid; gap: 2px; min-width: 0; color: #90a3b8; font-size: 10px; line-height: 1.35; }
+.model-results > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-results strong { color: #dce8f3; font-weight: 650; }
 .model-pill { border-radius: 999px; padding: 3px 7px; color: #b9c8d8; font-size: 10px; }
 .model-edit, .model-detect {
   min-height: 28px;

@@ -170,7 +170,8 @@ COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/
 # uses Windows separators, so normalize them while rejecting path traversal.
 RUN set -eu; \
     mkdir -p /app/vendor/gpt56-v411; \
-    curl -fsSL "$GPT56_V411_RELEASE_URL" -o /tmp/gpt56-v411.zip; \
+    curl --fail --show-error --silent --location --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+        "$GPT56_V411_RELEASE_URL" -o /tmp/gpt56-v411.zip; \
     echo "$GPT56_V411_RELEASE_SHA256  /tmp/gpt56-v411.zip" | sha256sum -c -; \
     python3 - <<'PY'
 import pathlib

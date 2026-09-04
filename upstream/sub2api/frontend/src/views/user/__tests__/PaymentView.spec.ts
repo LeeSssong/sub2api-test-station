@@ -383,13 +383,13 @@ describe.skip('PaymentView subscription confirmation amounts (removed from user 
 })
 
 describe('PaymentView recharge-only experience', () => {
-  it('ignores legacy subscription navigation and keeps only 20, 50, and 100 quick amounts', async () => {
+  it('ignores legacy subscription navigation and keeps the confirmed recharge amounts', async () => {
     const wrapper = await mountSubscriptionPlanList(3)
 
     expect(wrapper.text()).not.toContain('payment.tabSubscribe')
     expect(wrapper.text()).not.toContain('payment.noPlans')
     const amountInput = wrapper.findComponent({ name: 'AmountInput' })
-    expect(amountInput.props('amounts')).toEqual([20, 50, 100])
+    expect(amountInput.props('amounts')).toEqual([10, 30, 50, 50])
   })
 })
 

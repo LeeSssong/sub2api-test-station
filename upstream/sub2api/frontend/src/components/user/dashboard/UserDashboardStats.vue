@@ -1,4 +1,5 @@
 <template>
+  <div class="user-dashboard-stats">
   <!-- Row 1: Core Stats -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     <!-- Balance -->
@@ -133,7 +134,7 @@
   </div>
 
   <!-- Row 3: Per-platform breakdown -->
-  <div v-if="!isSimple && platformCards.length > 0" class="card p-4">
+  <div v-if="showPlatformBreakdown !== false && !isSimple && platformCards.length > 0" class="card p-4">
     <div class="mb-3 flex items-center justify-between">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.platformBreakdown') }}</h3>
       <span class="text-xs text-gray-500 dark:text-gray-400">
@@ -220,6 +221,7 @@
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -244,6 +246,7 @@ const props = defineProps<{
   balance: number
   isSimple: boolean
   platformQuotas?: PlatformQuotaItem[] | null
+  showPlatformBreakdown?: boolean
 }>()
 const { t } = useI18n()
 
@@ -389,3 +392,32 @@ const formatTokens = (t: number) => {
 }
 const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
 </script>
+
+<style scoped>
+.user-dashboard-stats :deep(.card) {
+  border: 1px solid #173a5e;
+  border-radius: 0.625rem;
+  background: #0a162c;
+  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 18%);
+}
+
+.user-dashboard-stats :deep(.card:hover) {
+  border-color: #1d527d;
+  background: #0b1930;
+}
+
+.user-dashboard-stats :deep(.text-gray-500),
+.user-dashboard-stats :deep(.text-gray-400) {
+  color: #94bbd9;
+}
+
+.user-dashboard-stats :deep(.text-gray-900),
+.user-dashboard-stats :deep(.text-white) {
+  color: #e6f6ff;
+}
+
+.user-dashboard-stats :deep(.text-emerald-600),
+.user-dashboard-stats :deep(.text-emerald-400) {
+  color: #ffca48;
+}
+</style>

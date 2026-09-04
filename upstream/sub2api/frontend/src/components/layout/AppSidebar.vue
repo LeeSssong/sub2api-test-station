@@ -3,7 +3,7 @@
     class="sidebar"
     :class="[
       sidebarCollapsed ? 'w-[72px]' : 'w-64',
-      { '-translate-x-full lg:translate-x-0': !mobileOpen }
+      { '-translate-x-full lg:translate-x-0': !mobileOpen, 'user-sidebar': !isAdmin }
     ]"
   >
     <!-- Logo/Brand -->
@@ -14,7 +14,7 @@
         class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
       >
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        <img v-if="settingsLoaded" :src="isAdmin ? (siteLogo || '/logo.svg') : '/xingqiao-brand-logo.png'" alt="Logo" class="h-full w-full object-contain" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
@@ -148,7 +148,7 @@
     </nav>
 
     <!-- Bottom Section -->
-    <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+    <div v-if="isAdmin" class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
       <!-- Theme Toggle -->
       <button
         @click="toggleTheme"
@@ -175,7 +175,70 @@
         <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ t('nav.collapse') }}</span>
       </button>
     </div>
+
+    <div v-else class="user-sidebar-bottom">
+      <router-link
+        to="/purchase"
+        class="user-recharge-button"
+        :class="{ 'user-recharge-button-collapsed': sidebarCollapsed }"
+        data-testid="user-sidebar-recharge"
+        :aria-label="`${formatMoney(userBalance)} ${userNavLabel('recharge', '充值')}`"
+        @click="handleMenuItemClick('/purchase')"
+      >
+        <strong>{{ formatMoney(userBalance) }}</strong>
+        <span>{{ userNavLabel('recharge', '充值') }} <b aria-hidden="true">+</b></span>
+      </router-link>
+
+      <div ref="accountMenuRef" class="user-sidebar-actions">
+        <button
+          type="button"
+          class="user-account-button"
+          data-testid="user-sidebar-account"
+          :aria-label="t('common.userMenu')"
+          :aria-expanded="accountMenuOpen"
+          aria-haspopup="menu"
+          @click.stop="toggleAccountMenu"
+        >
+          <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="displayName" />
+          <span v-else>{{ userInitials }}</span>
+        </button>
+
+        <button
+          type="button"
+          class="user-support-button"
+          data-testid="user-sidebar-support"
+          :aria-label="t('common.contactSupport')"
+          :title="t('common.contactSupport')"
+          @click="supportDialogOpen = true"
+        >
+          <SupportIcon class="h-4 w-4" />
+        </button>
+
+        <transition name="dropdown">
+          <div v-if="accountMenuOpen" class="user-account-menu" role="menu">
+            <div class="user-account-summary">
+              <strong>{{ displayName }}</strong>
+              <span>{{ user?.email }}</span>
+            </div>
+            <router-link to="/profile" class="user-account-menu-item" role="menuitem" @click="closeAccountMenu">
+              <UserIcon class="h-4 w-4" />
+              <span>{{ t('nav.profile') }}</span>
+            </router-link>
+            <router-link to="/keys" class="user-account-menu-item" role="menuitem" @click="closeAccountMenu">
+              <KeyIcon class="h-4 w-4" />
+              <span>{{ t('nav.apiKeys') }}</span>
+            </router-link>
+            <button type="button" class="user-account-menu-item user-account-menu-danger" role="menuitem" @click="handleLogout">
+              <LogoutIcon class="h-4 w-4" />
+              <span>{{ t('nav.logout') }}</span>
+            </button>
+          </div>
+        </transition>
+      </div>
+    </div>
   </aside>
+
+  <ContactSupportDialog :show="supportDialogOpen" @close="supportDialogOpen = false" />
 
   <!-- Mobile Overlay -->
   <transition name="fade">
@@ -197,6 +260,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import ContactSupportDialog from './ContactSupportDialog.vue'
 
 interface NavItem {
   path: string
@@ -249,6 +313,9 @@ const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const accountMenuOpen = ref(false)
+const supportDialogOpen = ref(false)
+const accountMenuRef = ref<HTMLElement | null>(null)
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
@@ -260,6 +327,11 @@ const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const user = computed(() => authStore.user)
+const userBalance = computed(() => Number(user.value?.balance || 0))
+const userAvatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
+const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
+const userInitials = computed(() => displayName.value.substring(0, 2).toUpperCase())
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -693,6 +765,28 @@ const ChevronDownIcon = {
     )
 }
 
+const SupportIcon = {
+  render: () =>
+    h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [
+      h('path', {
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        d: 'M8.625 12a3.375 3.375 0 116.75 0c0 1.875-1.875 2.25-2.625 3M12 18h.008v.008H12V18zm9-6a9 9 0 11-18 0 9 9 0 0118 0z'
+      })
+    ])
+}
+
+const LogoutIcon = {
+  render: () =>
+    h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [
+      h('path', {
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        d: 'M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75'
+      })
+    ])
+}
+
 // Public-settings flags go through the registry in utils/featureFlags.ts,
 // which handles the opt-in vs opt-out fallback when settings haven't loaded
 // yet. Admin-only flags (not in public settings) stay inline below.
@@ -741,8 +835,21 @@ function finalizeNav(items: NavItem[]): NavItem[] {
   return authStore.isSimpleMode ? visible.filter(item => !item.hideInSimpleMode) : visible
 }
 
+function userNavLabel(key: string, fallback: string): string {
+  const translated = t(`nav.${key}`)
+  return translated === `nav.${key}` ? fallback : translated
+}
+
+function buildUserNavItems(): NavItem[] {
+  return [
+    { path: '/dashboard', label: userNavLabel('myRoutes', '我的线路'), icon: DashboardIcon },
+    { path: '/usage', label: t('nav.usage'), icon: ChartIcon },
+    { path: '/keys', label: userNavLabel('myKeys', '我的密钥'), icon: KeyIcon },
+  ]
+}
+
 // User navigation items (for regular users)
-const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+const userNavItems = computed((): NavItem[] => buildUserNavItems())
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).
 // Admins access 可用渠道 from this section just like regular users — there is no
@@ -874,6 +981,34 @@ function toggleSidebar() {
   appStore.toggleSidebar()
 }
 
+function formatMoney(value: number): string {
+  return `$${Number.isFinite(value) ? value.toFixed(2) : '0.00'}`
+}
+
+function toggleAccountMenu() {
+  accountMenuOpen.value = !accountMenuOpen.value
+}
+
+function closeAccountMenu() {
+  accountMenuOpen.value = false
+}
+
+async function handleLogout() {
+  closeAccountMenu()
+  try {
+    await authStore.logout()
+  } catch (error) {
+    console.error('Logout error:', error)
+  }
+  await router.push('/login')
+}
+
+function handleDocumentClick(event: MouseEvent) {
+  if (accountMenuRef.value && !accountMenuRef.value.contains(event.target as Node)) {
+    closeAccountMenu()
+  }
+}
+
 function toggleTheme() {
   isDark.value = !isDark.value
   document.documentElement.classList.toggle('dark', isDark.value)
@@ -969,6 +1104,7 @@ watch(
 )
 
 onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
   void refreshBatchImageAccess()
   if (isAdmin.value) {
     adminSettingsStore.fetch()
@@ -984,6 +1120,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
   }
@@ -1116,5 +1253,197 @@ onBeforeUnmount(() => {
   display: block;
   width: 1.25rem;
   height: 1.25rem;
+}
+
+.user-sidebar {
+  background: #020813;
+  border-color: #14304f;
+}
+
+.user-sidebar :deep(.sidebar-header) {
+  border-color: #10223a;
+}
+
+.user-sidebar .sidebar-brand-title {
+  color: #e6f6ff;
+}
+
+.user-sidebar :deep(.sidebar-link) {
+  color: #94bbd9;
+  border-radius: 0.5rem;
+}
+
+.user-sidebar :deep(.sidebar-link:hover) {
+  color: #e6f6ff;
+  background: #0a162c;
+}
+
+.user-sidebar :deep(.sidebar-link-active) {
+  color: #31b9ff;
+  background: #0a2440;
+  box-shadow: inset 3px 0 #ffca48;
+}
+
+.user-sidebar-bottom {
+  position: relative;
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  align-items: end;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding: 0.75rem;
+  border-top: 1px solid #10223a;
+}
+
+.user-recharge-button {
+  display: flex;
+  width: 5.75rem;
+  min-height: 4.25rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid #173a5e;
+  border-radius: 0.5rem;
+  background: #0a162c;
+  color: #ffca48;
+  text-decoration: none;
+}
+
+.user-recharge-button span {
+  color: #31b9ff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.user-recharge-button-collapsed {
+  width: 3rem;
+  min-height: 3.5rem;
+}
+
+.user-recharge-button-collapsed strong {
+  font-size: 0.75rem;
+}
+
+.user-recharge-button-collapsed span {
+  font-size: 0;
+}
+
+.user-recharge-button-collapsed span b {
+  font-size: 1rem;
+}
+
+.user-sidebar-actions {
+  position: relative;
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.user-account-button,
+.user-support-button {
+  display: grid;
+  place-items: center;
+  border: 1px solid #173a5e;
+  background: #071426;
+  color: #94bbd9;
+}
+
+.user-account-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  overflow: hidden;
+  border-color: #1d6088;
+  border-radius: 0.55rem;
+  background: #0e78ad;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.user-account-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-support-button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.45rem;
+}
+
+.user-account-menu {
+  position: absolute;
+  right: 0;
+  bottom: 3.25rem;
+  width: 13rem;
+  overflow: hidden;
+  border: 1px solid #173a5e;
+  border-radius: 0.5rem;
+  background: #071426;
+  box-shadow: 0 1rem 2rem rgb(0 0 0 / 30%);
+}
+
+.user-account-summary {
+  padding: 0.75rem;
+  border-bottom: 1px solid #17304d;
+}
+
+.user-account-summary strong,
+.user-account-summary span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-account-summary strong {
+  color: #e6f6ff;
+  font-size: 0.8rem;
+}
+
+.user-account-summary span {
+  margin-top: 0.2rem;
+  color: #94bbd9;
+  font-size: 0.7rem;
+}
+
+.user-account-menu-item {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0 0.75rem;
+  border: 0;
+  background: #071426;
+  color: #c6d9e8;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.user-account-menu-item:hover {
+  background: #0a2440;
+  color: #31b9ff;
+}
+
+.user-account-menu-danger {
+  border-top: 1px solid #17304d;
+  color: #ff6b72;
+}
+
+@media (max-width: 1023px) {
+  .user-sidebar-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .user-sidebar-actions {
+    flex-direction: column;
+  }
 }
 </style>

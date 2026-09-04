@@ -53,3 +53,24 @@ describe('AppSidebar header styles', () => {
     expect(sidebarBrandBlockMatch?.[0]).not.toContain('overflow: hidden;')
   })
 })
+
+describe('AppSidebar user navigation structure', () => {
+  it('keeps only the confirmed primary entries for regular users', () => {
+    const userItemsSource = componentSource.slice(
+      componentSource.indexOf('function buildUserNavItems'),
+      componentSource.indexOf('// Personal navigation items'),
+    )
+
+    expect(userItemsSource).toContain("{ path: '/dashboard', label: userNavLabel('myRoutes', '我的线路'), icon: DashboardIcon }")
+    expect(userItemsSource).toContain("{ path: '/usage', label: t('nav.usage'), icon: ChartIcon }")
+    expect(userItemsSource).toContain("{ path: '/keys', label: userNavLabel('myKeys', '我的密钥'), icon: KeyIcon }")
+    expect(userItemsSource).not.toContain("path: '/purchase'")
+    expect(userItemsSource).not.toContain("path: '/orders'")
+    expect(userItemsSource).not.toContain("path: '/redeem'")
+    expect(userItemsSource).not.toContain("path: '/profile'")
+    expect(componentSource).toContain('data-testid="user-sidebar-recharge"')
+    expect(componentSource).toContain('data-testid="user-sidebar-account"')
+    expect(componentSource).toContain('data-testid="user-sidebar-support"')
+    expect(componentSource).toContain("'/xingqiao-brand-logo.png'")
+  })
+})

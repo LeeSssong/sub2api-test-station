@@ -107,7 +107,7 @@ const formatCacheHitRate = (value: number | null) => value === null ? '--' : `${
 }
 @media (prefers-reduced-motion: reduce) { .hybrid-ring { animation: none; } }
 @media (max-width: 640px) { .hybrid-card { min-height: 29rem; padding: 18px; } .hybrid-card__ring-wrap { min-height: 15rem; } .hybrid-ring { width: min(72vw, 250px); } }
-html.dark .hybrid-card {
+:global(.dark) .hybrid-card {
   --card-bg: #0d182a;
   --card-border: #293d59;
   --card-ink: #edf5ff;
@@ -115,11 +115,11 @@ html.dark .hybrid-card {
   --divider: #263a55;
   --ring-surface: #122136;
 }
-html.dark .hybrid-card__meta,
-html.dark .hybrid-card__status,
-html.dark .hybrid-ring__center span,
-html.dark .hybrid-metric span,
-html.dark .hybrid-card__footer { color: #a8bad0; }
-html.dark .hybrid-metric strong { color: #dce8f5; }
-html.dark .hybrid-card__footer span:first-child { color: #c4d4e6; }
+:global(.dark) .hybrid-card__meta,
+:global(.dark) .hybrid-card__status,
+:global(.dark) .hybrid-ring__center span,
+:global(.dark) .hybrid-metric span,
+:global(.dark) .hybrid-card__footer { color: #a8bad0; }
+:global(.dark) .hybrid-metric strong { color: #dce8f5; }
+:global(.dark) .hybrid-card__footer span:first-child { color: #c4d4e6; }
 </style>

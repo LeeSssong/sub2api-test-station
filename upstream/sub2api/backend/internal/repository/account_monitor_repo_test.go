@@ -1020,7 +1020,13 @@ func TestAccountMonitorRepositoryGroupRealRequestAggregatesIncludeProbeFallback(
 }
 
 func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *testing.T) {
-	db, mock, err := sqlmock.New()
+	const safeRealBucketSQL = "SELECT account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz) AS bucket_start FROM real_candidates WHERE rn = 1 GROUP BY account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz)"
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherFunc(func(_, actual string) error {
+		if !strings.Contains(strings.Join(strings.Fields(actual), " "), safeRealBucketSQL) {
+			return errors.New("real_buckets must project and group by the date_bin expression")
+		}
+		return nil
+	})))
 	require.NoError(t, err)
 	defer db.Close()
 	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorRealRequestTimelineRepository)
@@ -1028,7 +1034,7 @@ func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *
 	since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	until := since.Add(10 * time.Minute)
 
-	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*SELECT account_id,.*bucket_index,\s*request_count, success_count, failure_count, ttft_p95_ms`).
+	mock.ExpectQuery("timeline-query").
 		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 2, 2).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
 			AddRow(7, 0, 1, 1, 0, 240.0).

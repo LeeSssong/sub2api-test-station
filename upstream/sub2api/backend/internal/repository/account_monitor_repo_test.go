@@ -504,13 +504,13 @@ func TestAccountMonitorRepositoryReadsAggregatesAndDeletesExpiredHistory(t *test
 			"account_id", "sample_count", "success_count", "error_count", "success_rate",
 			"success_sample_count", "ttft_sample_count", "latency_sample_count",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
-		}).AddRow(7, 4, 3, 1, 0.75, 4, 3, 2, 80.0, 120.0, 200.0, 300.0, lastChecked))
+		}).AddRow(7, 3, 3, 1, 1.0, 3, 3, 2, 80.0, 120.0, 200.0, 300.0, lastChecked))
 	aggregates, err := repo.ListAggregates(context.Background(), []int64{7}, since, until)
 	if err != nil {
 		t.Fatal(err)
 	}
 	row := aggregates[7]
-	if row.SampleCount != 4 || row.SuccessSampleCount != 4 || row.TTFTSampleCount != 3 || row.LatencySampleCount != 2 || row.SuccessRate != 0.75 || row.TTFTP95MS == nil || *row.TTFTP95MS != 120 {
+	if row.SampleCount != 3 || row.ErrorCount != 1 || row.SuccessSampleCount != 3 || row.TTFTSampleCount != 3 || row.LatencySampleCount != 2 || row.SuccessRate != 1 || row.TTFTP95MS == nil || *row.TTFTP95MS != 120 {
 		t.Fatalf("aggregate = %#v", row)
 	}
 
@@ -538,6 +538,10 @@ func TestAccountMonitorRepositoryProbeLatencyAggregatesUseOnlySuccessfulProbes(t
 
 	successOnlyMetrics := `(?s)` +
 		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
+		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
+		`COUNT\(\*\) FILTER \(WHERE status <> 'success'\)::int,\s*` +
+		`COALESCE\(\s*COUNT\(\*\) FILTER \(WHERE status = 'success'\)::double precision /\s*NULLIF\(COUNT\(\*\) FILTER \(WHERE status = 'success'\), 0\),\s*0\s*\),\s*` +
+		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
 		`COUNT\(ttft_ms\) FILTER \(WHERE status = 'success'\)::int,\s*` +
 		`COUNT\(latency_ms\) FILTER \(WHERE status = 'success'\)::int,\s*` +
 		`PERCENTILE_CONT\(0\.50\).*FILTER \(WHERE status = 'success' AND ttft_ms IS NOT NULL\),\s*` +
@@ -551,7 +555,7 @@ func TestAccountMonitorRepositoryProbeLatencyAggregatesUseOnlySuccessfulProbes(t
 			"account_id", "sample_count", "success_count", "error_count", "success_rate",
 			"success_sample_count", "ttft_sample_count", "latency_sample_count",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
-		}).AddRow(7, 2, 1, 1, 0.5, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
+		}).AddRow(7, 1, 1, 1, 1.0, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
 	if _, err := repo.ListAggregates(context.Background(), []int64{7}, since, until); err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +566,7 @@ func TestAccountMonitorRepositoryProbeLatencyAggregatesUseOnlySuccessfulProbes(t
 			"sample_count", "success_count", "error_count", "success_rate",
 			"success_sample_count", "ttft_sample_count", "latency_sample_count",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
-		}).AddRow(2, 1, 1, 0.5, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
+		}).AddRow(1, 1, 1, 1.0, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
 	if _, err := repo.(*accountMonitorRepository).LoadAggregate(context.Background(), []int64{7}, since); err != nil {
 		t.Fatal(err)
 	}
@@ -1092,5 +1096,5 @@ func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool
 	if groupScoped {
 		groupMarker = `.*?group_id.*?PARTITION BY ag\.group_id, r\.account_id`
 	}
-	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s+\('success',\s*'failed'\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
+	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s*=\s*'success'.*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
 }

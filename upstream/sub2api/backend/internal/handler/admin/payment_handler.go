@@ -125,6 +125,13 @@ type AdminPaymentOrderResult struct {
 	Amount              float64    `json:"amount"`
 	PayAmount           float64    `json:"pay_amount"`
 	FeeRate             float64    `json:"fee_rate"`
+	PaidQuotaUSD        string     `json:"paid_quota_usd"`
+	GiftQuotaUSD        string     `json:"gift_quota_usd"`
+	TotalQuotaUSD       string     `json:"total_quota_usd"`
+	QuotaAccountingStatus string   `json:"quota_accounting_status,omitempty"`
+	OperatorUserID      *int64     `json:"operator_user_id,omitempty"`
+	OperatorNote        *string    `json:"operator_note,omitempty"`
+	OperatorRechargedAt *time.Time `json:"operator_recharged_at,omitempty"`
 	Currency            string     `json:"currency"`
 	RechargeCode        string     `json:"recharge_code,omitempty"`
 	OutTradeNo          string     `json:"out_trade_no"`
@@ -182,6 +189,13 @@ func sanitizeAdminPaymentOrderForResponse(order *dbent.PaymentOrder) *AdminPayme
 		Amount:              order.Amount,
 		PayAmount:           order.PayAmount,
 		FeeRate:             order.FeeRate,
+		PaidQuotaUSD:        order.PaidQuotaUsd.String(),
+		GiftQuotaUSD:        order.GiftQuotaUsd.String(),
+		TotalQuotaUSD:       order.TotalQuotaUsd.String(),
+		QuotaAccountingStatus: order.QuotaAccountingStatus,
+		OperatorUserID:      order.OperatorUserID,
+		OperatorNote:        order.OperatorNote,
+		OperatorRechargedAt: order.OperatorRechargedAt,
 		Currency:            service.PaymentOrderCurrency(order),
 		RechargeCode:        order.RechargeCode,
 		OutTradeNo:          order.OutTradeNo,

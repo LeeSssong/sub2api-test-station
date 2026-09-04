@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/shopspring/decimal"
@@ -35,5 +36,21 @@ func TestValidateAdminRechargeInputDefaultsPaymentType(t *testing.T) {
 	}
 	if in.PaymentType != "admin_recharge" {
 		t.Fatalf("payment type=%q, want admin_recharge", in.PaymentType)
+	}
+}
+
+func TestValidateAdminRechargeInputNormalizesAndValidatesTradeNumber(t *testing.T) {
+	in := AdminRechargeInput{UserID: 7, OperatorUserID: 9, Amount: decimal.NewFromInt(1), PaymentTradeNo: "  WX:2026/09-01_ABC.7  ", Note: "N"}
+	if err := ValidateAdminRechargeInput(&in); err != nil {
+		t.Fatal(err)
+	}
+	if in.PaymentTradeNo != "WX:2026/09-01_ABC.7" {
+		t.Fatalf("trade number=%q, want trimmed value", in.PaymentTradeNo)
+	}
+	for _, tradeNo := range []string{"bad#trade", "订单-1", strings.Repeat("A", 129)} {
+		in.PaymentTradeNo = tradeNo
+		if err := ValidateAdminRechargeInput(&in); err == nil {
+			t.Fatalf("trade number %q should be rejected", tradeNo)
+		}
 	}
 }

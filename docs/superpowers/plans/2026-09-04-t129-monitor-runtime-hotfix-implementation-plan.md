@@ -29,10 +29,10 @@
 - Consumes: `ListRealRequestTimelines(ctx, accountIDs, since, until, bucketCount)`.
 - Produces: the unchanged timeline result contract without an invalid `bucket_start` reference.
 
-- [ ] Add a regression expectation that rejects the old unaliased `date_bin(...)` projection and requires an explicit projected `bucket_start` expression.
-- [ ] Run the focused repository test and verify it fails against the current SQL.
-- [ ] Apply the minimal SQL correction in `real_buckets`.
-- [ ] Re-run the focused repository test and verify it passes.
+- [x] Add a regression expectation that rejects the old unaliased `date_bin(...)` projection and requires an explicit projected `bucket_start` expression.
+- [x] Run the focused repository test and verify it fails against the current SQL.
+- [x] Apply the minimal SQL correction in `real_buckets`.
+- [x] Re-run the focused repository test and verify it passes.
 
 ### Task 2: Monitor V4 cache denominator
 
@@ -44,10 +44,10 @@
 - Consumes: successful selected request events and their cache token fields.
 - Produces: `CacheHitDenominator == CacheReadTokens + CacheCreationTokens` and `CacheHitRate == CacheReadTokens / CacheHitDenominator`.
 
-- [ ] Tighten the repository query expectation so including `input_tokens` in the cache denominator fails.
-- [ ] Run the focused repository test and verify it fails against the current SQL.
-- [ ] Remove `input_tokens` from both cache denominator expressions.
-- [ ] Re-run repository and service Monitor V4 tests and verify they pass.
+- [x] Tighten the repository query expectation so including `input_tokens` in the cache denominator fails.
+- [x] Run the focused repository test and verify it fails against the current SQL.
+- [x] Remove `input_tokens` from both cache denominator expressions.
+- [x] Re-run repository and service Monitor V4 tests and verify they pass.
 
 ### Task 3: Integrate and release
 

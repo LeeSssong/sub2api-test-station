@@ -461,6 +461,10 @@ type AccountMonitorAccount struct {
 	Platform                     string                                   `json:"platform"`
 	AccountType                  string                                   `json:"account_type"`
 	Status                       string                                   `json:"status"`
+	RateLimitedAt                *time.Time                               `json:"rate_limited_at,omitempty"`
+	RateLimitResetAt             *time.Time                               `json:"rate_limit_reset_at,omitempty"`
+	OverloadUntil                *time.Time                               `json:"overload_until,omitempty"`
+	TempUnschedulableUntil       *time.Time                               `json:"temp_unschedulable_until,omitempty"`
 	Schedulable                  bool                                     `json:"schedulable"`
 	EffectiveSchedulable         bool                                     `json:"effective_schedulable"`
 	EffectiveSchedulableAt       time.Time                                `json:"effective_schedulable_at"`

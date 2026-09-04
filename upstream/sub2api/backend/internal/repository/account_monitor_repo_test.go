@@ -848,7 +848,7 @@ func TestAccountMonitorRepositoryListsLifetimeRealRequestCounts(t *testing.T) {
 	}
 }
 
-func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing.T) {
+func TestAccountMonitorRepositoryRealRequestTimelineOmitsUnobservedBuckets(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -871,20 +871,23 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(timelines[7]) != 24 || len(timelines[8]) != 24 {
-		t.Fatalf("timeline lengths = %d/%d, want 24/24", len(timelines[7]), len(timelines[8]))
+	if len(timelines[7]) != 2 || len(timelines[8]) != 1 {
+		t.Fatalf("timeline lengths = %d/%d, want only 2/1 observed buckets", len(timelines[7]), len(timelines[8]))
 	}
-	if timelines[8][1].RequestCount != 1 || timelines[8][1].SuccessCount != 1 || timelines[8][1].FailureCount != 0 {
-		t.Fatalf("probe fallback bucket = %#v", timelines[8][1])
+	if timelines[8][0].RequestCount != 1 || timelines[8][0].SuccessCount != 1 || timelines[8][0].FailureCount != 0 {
+		t.Fatalf("probe fallback bucket = %#v", timelines[8][0])
 	}
-	if timelines[7][0].RequestCount != 0 || timelines[7][0].TTFTP95MS != nil {
-		t.Fatalf("empty bucket = %#v", timelines[7][0])
+	for index, point := range timelines[7] {
+		if point.RequestCount == 0 {
+			t.Fatalf("timeline bucket %d is empty: %#v", index, point)
+		}
 	}
-	if timelines[7][3].RequestCount != 5 || timelines[7][3].FailureCount != 1 || timelines[7][3].TTFTP95MS == nil || *timelines[7][3].TTFTP95MS != 6200 {
-		t.Fatalf("filled bucket = %#v", timelines[7][3])
+	if timelines[7][0].RequestCount != 5 || timelines[7][0].FailureCount != 1 || timelines[7][0].TTFTP95MS == nil || *timelines[7][0].TTFTP95MS != 6200 {
+		t.Fatalf("filled bucket = %#v", timelines[7][0])
 	}
-	if !timelines[7][23].EndAt.Equal(until) {
-		t.Fatalf("last bucket end = %s, want %s", timelines[7][23].EndAt, until)
+	wantLastEnd := since.Add(23 * time.Hour)
+	if !timelines[7][1].EndAt.Equal(wantLastEnd) {
+		t.Fatalf("last observed bucket end = %s, want %s", timelines[7][1].EndAt, wantLastEnd)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

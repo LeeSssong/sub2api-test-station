@@ -86,31 +86,31 @@ func TestRunDueSlotsDeduplicatesTheSameSixHourSlot(t *testing.T) {
 	}
 }
 
-func TestRunDueSlotsSkipsAccountWithCurrentBucketUsage(t *testing.T) {
+func TestRunDueSlotsQueuesDetectionDespiteCurrentBucketUsage(t *testing.T) {
 	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}}
 	repo := &detectionRepoStub{}
 	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{accounts: []Account{account}}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
 	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{accountUsed: true})
 	svc.now = func() time.Time { return time.Date(2026, 8, 27, 6, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
 	queued, err := svc.RunDueSlots(context.Background())
-	if err != nil || queued != 0 || len(repo.runs) != 0 {
-		t.Fatalf("queued=%d runs=%#v err=%v, want skipped", queued, repo.runs, err)
+	if err != nil || queued != 1 || len(repo.runs) != 1 {
+		t.Fatalf("queued=%d runs=%#v err=%v, want one model detection", queued, repo.runs, err)
 	}
 }
 
-func TestRunDueSlotsSkipsWhenUsageReaderFails(t *testing.T) {
+func TestRunDueSlotsQueuesDetectionWhenUsageReaderFails(t *testing.T) {
 	account := Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"}}}
 	repo := &detectionRepoStub{}
 	svc := NewAccountModelDetectionService(repo, &detectionAccountReaderStub{accounts: []Account{account}}, &detectionSidecarStub{catalog: []string{"gpt-5.6-sol"}})
 	svc.SetActiveProbeUsageReader(&modelDetectionUsageStub{err: context.DeadlineExceeded})
 	svc.now = func() time.Time { return time.Date(2026, 8, 27, 6, 5, 0, 0, time.FixedZone("Asia/Shanghai", 8*60*60)) }
 	queued, err := svc.RunDueSlots(context.Background())
-	if err != nil || queued != 0 || len(repo.runs) != 0 {
-		t.Fatalf("queued=%d runs=%#v err=%v, want skipped", queued, repo.runs, err)
+	if err != nil || queued != 1 || len(repo.runs) != 1 {
+		t.Fatalf("queued=%d runs=%#v err=%v, want model detection independent from traffic lookup", queued, repo.runs, err)
 	}
 }
 
-func TestScheduledExecuteRechecksUsageBeforeCallingDetector(t *testing.T) {
+func TestScheduledExecuteCallsDetectorWhenBucketBecameBusy(t *testing.T) {
 	account := &Account{ID: 7, Type: AccountTypeAPIKey, Platform: PlatformOpenAI, Status: StatusActive, Schedulable: true, Credentials: map[string]any{
 		"api_key":       "secret",
 		"model_mapping": map[string]any{"gpt-5.6-sol": "gpt-5.6-sol"},
@@ -125,12 +125,12 @@ func TestScheduledExecuteRechecksUsageBeforeCallingDetector(t *testing.T) {
 		t.Fatalf("initial bucket check used=%v err=%v, want empty bucket", used, err)
 	}
 	svc.execute(context.Background(), run.ID)
-	if calls := sidecar.detectCallCount(); calls != 0 {
-		t.Fatalf("detector calls=%d, want no upstream request when bucket became busy", calls)
+	if calls := sidecar.detectCallCount(); calls != 1 {
+		t.Fatalf("detector calls=%d, want model detection independent from request traffic", calls)
 	}
 	completion := repo.completion(run.ID)
-	if completion.response.Status != AccountModelDetectionStatusInsufficient {
-		t.Fatalf("completion status=%q, want insufficient", completion.response.Status)
+	if completion.response.Status == AccountModelDetectionStatusInsufficient {
+		t.Fatalf("completion status=%q, must be an explicit detector result", completion.response.Status)
 	}
 }
 

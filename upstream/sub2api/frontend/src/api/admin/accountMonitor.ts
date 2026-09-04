@@ -233,6 +233,10 @@ export interface AccountMonitorAccount {
   platform: string
   account_type: string
   status: string
+  rate_limited_at?: string | null
+  rate_limit_reset_at?: string | null
+  overload_until?: string | null
+  temp_unschedulable_until?: string | null
   schedulable: boolean
   effective_schedulable: boolean
   effective_schedulable_at: string

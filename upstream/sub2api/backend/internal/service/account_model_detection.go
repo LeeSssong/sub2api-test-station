@@ -528,12 +528,7 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 	completed := 0
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || !account.ActiveProbeEnabled() || !accountActiveProbeEnabledByGroups(account) || s.usage == nil {
-			continue
-		}
-		bucketStart, bucketEnd := currentActiveProbeBucket(now)
-		used, usageErr := s.usage.HasAccountUsageInWindow(ctx, account.ID, bucketStart, bucketEnd)
-		if usageErr != nil || used {
+		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || !account.ActiveProbeEnabled() || !accountActiveProbeEnabledByGroups(account) {
 			continue
 		}
 		models, err := s.modelsForAccount(ctx, account)
@@ -680,14 +675,6 @@ func (s *AccountModelDetectionService) execute(ctx context.Context, runID string
 	if strings.TrimSpace(apiKey) == "" {
 		_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusFailed}, "missing_api_key", "检测前未发现 API Key")
 		return
-	}
-	if run.TriggerKind == "scheduled" && run.Mode == AccountModelDetectionModeMonitor && s.usage != nil {
-		bucketStart, bucketEnd := currentActiveProbeBucket(s.now())
-		used, usageErr := s.usage.HasAccountUsageInWindow(ctx, account.ID, bucketStart, bucketEnd)
-		if usageErr != nil || used {
-			_ = s.completeRun(ctx, *run, AccountModelDetectionResponse{Status: AccountModelDetectionStatusInsufficient, Profile: run.Profile, PlannedRequests: run.PlannedRequests, EvidenceState: AccountModelDetectionEvidenceInsufficient}, "", "当前 5 分钟桶有真实请求，已跳过主动检测")
-			return
-		}
 	}
 	baseURL := account.GetBaseURL()
 	response, err := s.sidecar.Detect(ctx, AccountModelDetectionRequest{RunID: run.ID, DeclaredModel: run.ClaimedModel, RequestModel: run.ModelID, APIKey: apiKey, BaseURL: baseURL, Profile: run.Profile, Mode: run.Mode, TriggerReason: run.TriggerReason})

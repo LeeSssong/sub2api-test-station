@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Restore account-monitor queries and Monitor V4 snapshot refreshes by correcting two PostgreSQL projection contracts.
+**Goal:** Restore account-monitor queries and Monitor V4 snapshot refreshes while preserving Sub's native input-inclusive cache-rate denominator.
 
 **Architecture:** Keep the existing repository and service boundaries. Correct SQL generation at the repository layer while preserving the service's fail-closed projection validator.
 
@@ -44,10 +44,10 @@
 - Consumes: successful selected request events and their cache token fields.
 - Produces: `CacheHitDenominator == CacheReadTokens + CacheCreationTokens` and `CacheHitRate == CacheReadTokens / CacheHitDenominator`.
 
-- [x] Tighten the repository query expectation so including `input_tokens` in the cache denominator fails.
-- [x] Run the focused repository test and verify it fails against the current SQL.
-- [x] Remove `input_tokens` from both cache denominator expressions.
-- [x] Re-run repository and service Monitor V4 tests and verify they pass.
+- [ ] Add a service regression test where `InputTokens + CacheCreationTokens + CacheReadTokens == CacheHitDenominator` is accepted and a mismatch is rejected.
+- [ ] Run the focused service test and verify the native input-inclusive case fails against the current validator.
+- [ ] Add `InputTokens` to the internal Monitor V4 projection and repository scan; restore the SQL denominator to all three prompt-token fields.
+- [ ] Re-run repository and service Monitor V4 tests and verify they pass.
 
 ### Task 3: Integrate and release
 

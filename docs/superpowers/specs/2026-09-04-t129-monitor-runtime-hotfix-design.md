@@ -4,7 +4,7 @@
 
 - 主站运行镜像 `07ef269d4345f800a47b1965f5dbe15646bfa2c1` 的 `GET /api/v1/admin/accounts/monitor` 返回 500；服务日志明确为 `list real request timelines: pq: column "bucket_start" does not exist`。
 - `ListRealRequestTimelines` 的 `real_buckets` CTE 在同一层 `SELECT` 中定义 `bucket_start` 别名，又在 `GROUP BY account_id, bucket_start` 中引用它。生产 PostgreSQL 将其解析为不存在的输入列。
-- Monitor V4 定时刷新持续报 `monitor v4 cache denominator invariant violated`。SQL 把 `input_tokens + cache_creation_tokens + cache_read_tokens` 作为分母，但服务契约要求分母等于 `cache_creation_tokens + cache_read_tokens`。
+- Monitor V4 定时刷新持续报 `monitor v4 cache denominator invariant violated`。SQL 正确沿用 Sub 原生渠道状态监控的 `input_tokens + cache_creation_tokens + cache_read_tokens` 分母，但 T128 新增的服务校验错误地要求分母等于 `cache_creation_tokens + cache_read_tokens`。
 - 前端行为符合现有失败处理：账号页将 500 显示为“账号监控服务暂时不可用”；分组性能页继续显示最后一份可用快照，因此截图中的数据不是最新刷新结果。
 
 ## 目标与非目标
@@ -12,7 +12,7 @@
 ### 目标
 
 1. 账号监控 1h、24h、7d、30d 时间线查询均不再引用未投影的 `bucket_start`。
-2. Monitor V4 缓存命中率继续使用原生口径 `cache_read / (cache_read + cache_creation)`，且仓储投影满足服务不变量。
+2. Monitor V4 缓存命中率严格使用 Sub 原生渠道状态监控口径 `cache_read / (input + cache_read + cache_creation)`，且仓储投影满足服务不变量。
 3. 主站与独立验收站部署同一根 `main` commit/tree，两个站点健康且目标接口恢复。
 
 ### 非目标
@@ -24,19 +24,19 @@
 
 ## 方案比较与选择
 
-1. **推荐：修正两处 SQL 表达式并补仓储行为测试。** 改动最小，直接消除生产错误，并保持服务层 fail-closed 校验。
-2. 放宽服务层缓存分母校验。会掩盖统计口径漂移，使页面与 Sub 原生控制面板不一致，拒绝。
+1. **推荐：修正时间线 SQL，并让 Monitor V4 内部投影携带 input token 后按原生公式精确校验。** 直接消除生产错误，并保持服务层 fail-closed 校验。
+2. 仅把服务校验放宽为“分母不小于缓存 token”。无法证明分母精确等于原生公式，拒绝。
 3. 前端在接口失败时改用估算或静态快照。只能隐藏后端故障，不能恢复账号监控接口，拒绝。
 
 ## 实现设计
 
 - 在 `ListRealRequestTimelines` 的 `real_buckets` CTE 中为 `date_bin(...)` 显式命名，并按相同表达式分组，避免 PostgreSQL 在同层 `GROUP BY` 解析输出别名。
-- 在 Monitor V4 聚合中把 `cache_hit_denominator` 改为成功请求的 `cache_creation_tokens + cache_read_tokens` 之和；`cache_hit_rate` 使用同一分母。
-- 保持 `ValidateMonitorV4Projection` 不变，继续拒绝任何仓储与 API 契约不一致的数据。
+- 保留 Monitor V4 聚合中 `cache_hit_denominator = input_tokens + cache_creation_tokens + cache_read_tokens` 和相同分母的 `cache_hit_rate`。
+- 在内部 `MonitorV4GroupProjection` 增加聚合后的 `InputTokens`，并将 `ValidateMonitorV4Projection` 改为精确要求分母等于三者之和；该内部字段不扩展用户 API。
 
 ## 测试与验收
 
-- RED：新增真实 PostgreSQL 语法边界测试，证明旧 `real_buckets` 查询报 `bucket_start` 不存在；新增 SQL 投影测试，证明旧缓存分母包含 `input_tokens`。
+- RED：新增 PostgreSQL SQL 生成边界测试，证明旧 `real_buckets` 查询会引用不可见别名；新增服务校验测试，证明原生含 input 的合法分母被旧校验错误拒绝。
 - GREEN：仓储定向测试通过；Monitor V4 service 定向测试通过；server build 和 `git diff --check` 通过。
 - 主站：发布预检必须报告 `downtime_required=false`；发布后健康端点均 200，登录态 `/api/v1/admin/accounts/monitor?range=24h` 返回 200，日志不再新增两类错误，Monitor V4 快照时间推进。
 - 验收站：只从同一干净根 `main` 使用独立站发布控制器部署；根、`/health`、`/readyz` 通过，source commit/tree 与主站一致，登录态目标接口返回 200。

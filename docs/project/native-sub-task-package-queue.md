@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**T129 账号与分组监控运行时故障修复（2026-09-04）：** 状态 `INTEGRATING`。候选 `2ebeb22b3` 已合入根 `main`；两条旧实现回归均完成 RED，修复后仓储 AccountMonitor、Monitor V4 服务测试、server build 与 diff-check 通过。用户授权以同一 commit/tree 部署主站和独立验收站。无迁移、配置、数据回填或生产业务数据写入；若发布预检返回 `downtime_required=true`，必须在任何停服或切换前暂停。
+**T129 账号与分组监控运行时故障修复（2026-09-04）：** 状态 `IMPLEMENTING`，发布已暂停。用户纠正确认缓存命中率须与 Sub 原生渠道状态监控一致，分母包含 `input_tokens + cache_creation_tokens + cache_read_tokens`；源码核验成立。已推送但未部署的 `main@6ff0cbe4b` 将以新提交前向纠正服务校验和内部 input 投影，保留 `bucket_start` 修复。完成新 TDD 与直接回归前不得发布。
 
 **2026-09-04 主站发布收口与验收站同步阻塞：** 状态 `VERIFYING`。用户已明确“测试站验收通过，部署主站”；根 `main@b8423672a59476c71093cc86e1d6f9e96d5f62ae` 已从干净且与 `origin/main` 一致的根目录发布主站，结果 `succeeded/promoted`、`downtime_required=false`，生产 green 槽和 `api.xingqiaolab.top` 三项健康探针通过。独立验收站 `sub2api-test-station@49.51.203.200` 仍为 `3f7d59df5/e049847d`，健康但未同步；旧 `ops/release-sub2api-acceptance.sh` 不能用于新独立站，故不得伪造同版本证据或直接用旧 `/admin/lab` 链发布。待独立站发布控制器适配并从同一根 `main` 完成同步后，才能解除本发布阻塞。
 

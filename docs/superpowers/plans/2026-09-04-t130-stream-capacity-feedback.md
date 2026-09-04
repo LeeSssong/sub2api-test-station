@@ -110,4 +110,3 @@
 - [ ] **Step 1: Record** baseline `main` SHA, candidate branch/worktree, commit list, changed files, tests, migration/config/data/secrets assessment, `downtime_required` expectation, rollback, and unverified items.
 - [ ] **Step 2: Verify** root `main` remains untouched, candidate is not deployed, and no remote environment was accessed for writes.
 - [ ] **Step 3: Commit** the handoff document on the T130 branch.
-

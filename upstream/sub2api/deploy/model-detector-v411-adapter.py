@@ -50,12 +50,12 @@ def report_to_sidecar_response(report: dict[str, Any], profile: str, declared_mo
     fingerprint_status = str(report.get("fingerprint_verdict_state") or fingerprint.get("fingerprint_status") or "unclear")
     similarity = _bounded_similarity(fingerprint.get("fingerprint_match") or report.get("fingerprint_match"))
     candidate = str(report.get("fingerprint_model") or fingerprint.get("fingerprint_model") or "").strip()
-    if fingerprint_status != "strong_match" or candidate not in SUPPORTED_MODELS:
+    if candidate not in SUPPORTED_MODELS:
         candidate = ""
     complete = planned > 0 and valid >= math.ceil(planned * 0.9)
     if juice_status == "mismatch" or (candidate and candidate != declared_model):
         status = "abnormal"
-    elif juice_status == "pass" and fingerprint_status == "strong_match" and candidate == declared_model and complete:
+    elif juice_status == "pass" and candidate == declared_model and complete:
         status = "normal"
     else:
         status = "insufficient"

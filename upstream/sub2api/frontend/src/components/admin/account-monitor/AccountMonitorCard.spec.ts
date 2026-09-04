@@ -88,8 +88,8 @@ describe('AccountMonitorCard R2', () => {
     const wrapper = mountCard()
     const text = wrapper.text()
 
-    expect(text).toContain('12,846 次有效观测')
-    expect(text).toContain('累计 54,231 次')
+    expect(text).toContain('12,846/12,846')
+    expect(text).not.toContain('累计 54,231 次')
     expect(text).not.toContain('质量评分')
     expect(text).not.toContain('全站质量排名')
     expect(text).not.toContain('组内质量排名')
@@ -146,7 +146,7 @@ describe('AccountMonitorCard R2', () => {
     expect(identityText).not.toContain('有效调度')
   })
 
-  it('shows multiplier-estimated profit before real requests exist', () => {
+  it('shows zero profit instead of an estimated or pending state before revenue exists', () => {
     const wrapper = mountCard({
       account: {
         ...account,
@@ -159,11 +159,11 @@ describe('AccountMonitorCard R2', () => {
           ttft_sample_count: 0,
           observed_at: '2026-08-30T00:00:00Z',
         },
-        group_profitability: { status: 'estimated', profit_rate: 0.25 },
+        group_profitability: { status: 'no_real_request', profit_rate: 0 },
       },
     })
 
-    expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('25%')
+    expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('0%')
   })
 
   it('routes all-site profitability to group views', () => {
@@ -171,10 +171,10 @@ describe('AccountMonitorCard R2', () => {
     expect(mountCard({ rankingScope: 'group' }).get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')
   })
 
-  it('renders 24 empty request buckets without exposing a source label', () => {
+  it('does not render fake gray bars when no request buckets exist', () => {
     const wrapper = mountCard({ account: { ...account, real_request_timeline: [] } })
 
-    expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(24)
+    expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(0)
     expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('近期请求')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
@@ -196,13 +196,13 @@ describe('AccountMonitorCard R2', () => {
       },
     })
 
-    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('1 次有效观测 · 累计 51 次')
+    expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('1/1')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
     expect(wrapper.get('[data-test="real-request-bar"]').classes()).toContain('bg-emerald-500')
     expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toBeUndefined()
     await wrapper.get('.performance-bar-wrap').trigger('mouseenter')
-    expect(wrapper.get('[data-test="real-request-tooltip"]').text()).toBe('TTFT P95 900 ms')
+    expect(wrapper.get('[data-test="real-request-tooltip"]').text()).toBe('900ms')
   })
 
   it('keeps manual model detection and account action entry points', async () => {

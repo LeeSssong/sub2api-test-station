@@ -50,6 +50,22 @@ class V411AdapterTests(unittest.TestCase):
         self.assertEqual(19, response["planned_requests"])
         self.assertEqual(3, response["valid_samples"])
 
+    def test_keeps_unclear_supported_candidate_when_evidence_is_complete(self):
+        report = {
+            "juice_verdict_state": "pass",
+            "fingerprint_verdict_state": "unclear",
+            "fingerprint_model": "gpt-5.6-luna",
+            "fingerprint_match": {"gpt-5.6-luna": 0.987, "gpt-5.6-sol": 0.01},
+            "network_summary": {"logical_tasks": 49, "successful": 48},
+        }
+
+        response = MODULE.report_to_sidecar_response(report, "medium", "gpt-5.6-luna")
+
+        self.assertEqual("normal", response["status"])
+        self.assertEqual("complete", response["evidence_state"])
+        self.assertEqual("gpt-5.6-luna", response["fingerprint_candidate"])
+        self.assertEqual(0.987, response["fingerprint_similarity"]["gpt-5.6-luna"])
+
     def test_rejects_unauthorized_requests(self):
         self.assertFalse(MODULE.authorized("wrong", "expected"))
         self.assertTrue(MODULE.authorized("expected", "expected"))

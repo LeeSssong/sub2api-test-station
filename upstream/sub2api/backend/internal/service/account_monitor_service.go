@@ -959,23 +959,13 @@ func applyGroupProfitability(groups []AccountMonitorGroup, aggregates map[int64]
 		for i := range groups[gi].Accounts {
 			row := &groups[gi].Accounts[i]
 			a := aggregates[row.AccountID]
-			profit := &AccountMonitorGroupProfitability{GroupID: groups[gi].ID, GroupName: groups[gi].Name, Revenue: a.Revenue, AccountCost: a.AccountCost, SampleCount: a.RequestCount, Status: "no_real_request"}
-			if a.RequestCount > 0 {
-				if a.Revenue <= 0 {
-					profit.Status = "no_revenue"
-				} else if !a.CostComplete {
-					profit.Status = "cost_incomplete"
-				} else {
-					value := (a.Revenue - a.AccountCost) / a.Revenue
-					profit.ProfitRate = &value
-					profit.Status = "confirmed"
-					members = append(members, i)
-				}
-			} else if estimated, ok := accountMonitorEstimatedProfitRate(groups[gi].RateMultiplier, row.Multiplier); ok {
-				profit.ProfitRate = &estimated
-				profit.Status = "estimated"
-				members = append(members, i)
+			profit := &AccountMonitorGroupProfitability{GroupID: groups[gi].ID, GroupName: groups[gi].Name, Revenue: a.Revenue, AccountCost: a.AccountCost, SampleCount: a.RequestCount, Status: "confirmed"}
+			value := 0.0
+			if a.Revenue > 0 {
+				value = (a.Revenue - a.AccountCost) / a.Revenue
 			}
+			profit.ProfitRate = &value
+			members = append(members, i)
 			row.GroupProfitability = profit
 		}
 		sort.SliceStable(members, func(i, j int) bool {
@@ -998,24 +988,13 @@ func applyGroupProfitabilityByGroup(groups []AccountMonitorGroup, aggregates map
 		for i := range groups[gi].Accounts {
 			row := &groups[gi].Accounts[i]
 			a := aggregates[groups[gi].ID][row.AccountID]
-			profit := &AccountMonitorGroupProfitability{GroupID: groups[gi].ID, GroupName: groups[gi].Name, Revenue: a.Revenue, AccountCost: a.AccountCost, SampleCount: a.RequestCount, Status: "no_real_request"}
-			if a.RequestCount > 0 {
-				switch {
-				case a.Revenue <= 0:
-					profit.Status = "no_revenue"
-				case !a.CostComplete:
-					profit.Status = "cost_incomplete"
-				default:
-					value := (a.Revenue - a.AccountCost) / a.Revenue
-					profit.ProfitRate = &value
-					profit.Status = "confirmed"
-					members = append(members, i)
-				}
-			} else if estimated, ok := accountMonitorEstimatedProfitRate(groups[gi].RateMultiplier, row.Multiplier); ok {
-				profit.ProfitRate = &estimated
-				profit.Status = "estimated"
-				members = append(members, i)
+			profit := &AccountMonitorGroupProfitability{GroupID: groups[gi].ID, GroupName: groups[gi].Name, Revenue: a.Revenue, AccountCost: a.AccountCost, SampleCount: a.RequestCount, Status: "confirmed"}
+			value := 0.0
+			if a.Revenue > 0 {
+				value = (a.Revenue - a.AccountCost) / a.Revenue
 			}
+			profit.ProfitRate = &value
+			members = append(members, i)
 			row.GroupProfitability = profit
 		}
 		sort.SliceStable(members, func(i, j int) bool {
@@ -2660,13 +2639,6 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 	if err != nil {
 		return 0, err
 	}
-	groupAccounts := monitorGroupAccountIDs(allAccounts)
-	accountGroups := make(map[int64][]int64)
-	for groupID, accountIDs := range groupAccounts {
-		for _, accountID := range accountIDs {
-			accountGroups[accountID] = append(accountGroups[accountID], groupID)
-		}
-	}
 	runID := uuid.NewString()
 	ids := make([]int64, 0, len(accounts))
 	for _, account := range accounts {
@@ -2695,39 +2667,9 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
 				RefreshDeclaration: true, RefreshBalance: true,
 			})
-			reader := s.activeProbeUsageReader()
-			if reader != nil {
-				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
-				groupIDs := accountGroups[account.ID]
-				if len(groupIDs) == 0 {
-					groupIDs = append([]int64(nil), account.GroupIDs...)
-				}
-				allGroupsUsed := len(groupIDs) > 0
-				var usageErr error
-				for _, groupID := range groupIDs {
-					used, err := reader.HasGroupUsageInWindow(gctx, groupID, bucketStart, bucketEnd)
-					if err != nil {
-						usageErr = err
-						break
-					}
-					if !used {
-						allGroupsUsed = false
-						break
-					}
-				}
-				if usageErr != nil {
-					// A usage-read failure must not silently turn into a skipped
-					// probe. Real requests still win in the projection; when the
-					// reader is unavailable, execute the probe and let persistence
-					// or the read-side fail-closed path record the failure.
-					slog.WarnContext(gctx, "account_monitor.active_probe_usage_read_failed", "account_id", account.ID, "error", usageErr)
-				} else if allGroupsUsed {
-					return nil
-				}
-			}
-			if reader == nil {
-				slog.WarnContext(gctx, "account_monitor.active_probe_usage_reader_unavailable", "account_id", account.ID)
-			}
+			// Probe admission is account-scoped. The read-side projection selects
+			// real traffic for a bucket before this probe, so another account's
+			// traffic must never suppress this account's fallback probe.
 			if err := gctx.Err(); err != nil {
 				return err
 			}

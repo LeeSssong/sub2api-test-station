@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
+	stdsql "database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/shopspring/decimal"
 	"log/slog"
 	"math"
 	"strconv"
@@ -21,7 +21,84 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
+	"github.com/shopspring/decimal"
 )
+
+var ErrAdminAccountingRefundUnavailable = errors.New("admin accounting refund unavailable")
+
+// AdminAccountingRefund refunds only paid quota from an admin_recharge order.
+// It never calls an external payment provider and leaves gift quota untouched.
+func (s *PaymentService) AdminAccountingRefund(ctx context.Context, orderID, operatorID int64, amount float64, tradeNo, reason string) (*RefundResult, error) {
+	tradeNo, reason = strings.TrimSpace(tradeNo), strings.TrimSpace(reason)
+	if s == nil || s.entClient == nil || orderID <= 0 || operatorID <= 0 || amount <= 0 || tradeNo == "" || reason == "" {
+		return nil, ErrAdminAccountingRefundUnavailable
+	}
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var userID int64
+	var paymentType, status, paid, refunded string
+	if err := scanQuotaOne(ctx, tx.Client(), `SELECT user_id,payment_type,status,paid_quota_usd::text,refunded_paid_quota_usd::text FROM payment_orders WHERE id=$1 FOR UPDATE`, []any{orderID}, &userID, &paymentType, &status, &paid, &refunded); err != nil {
+		if errors.Is(err, stdsql.ErrNoRows) {
+			return nil, ErrAdminAccountingRefundUnavailable
+		}
+		return nil, err
+	}
+	if paymentType != "admin_recharge" || (status != OrderStatusCompleted && status != OrderStatusPartiallyRefunded) {
+		return nil, ErrAdminAccountingRefundUnavailable
+	}
+	var duplicate int64
+	if err := scanQuotaOne(ctx, tx.Client(), `SELECT id FROM user_quota_adjustments WHERE refund_method='admin_accounting' AND refund_trade_no=$1`, []any{tradeNo}, &duplicate); err == nil {
+		return nil, fmt.Errorf("admin accounting refund trade number already exists")
+	} else if !errors.Is(err, stdsql.ErrNoRows) {
+		return nil, err
+	}
+	paidD, err := decimal.NewFromString(paid)
+	if err != nil {
+		return nil, err
+	}
+	refundedD, err := decimal.NewFromString(refunded)
+	if err != nil {
+		return nil, err
+	}
+	var consumed string
+	if err := scanQuotaOne(ctx, tx.Client(), `SELECT COALESCE(SUM(consumed_paid_quota_usd),0)::text FROM user_quota_grants WHERE payment_order_id=$1`, []any{orderID}, &consumed); err != nil {
+		return nil, err
+	}
+	consumedD, err := decimal.NewFromString(consumed)
+	if err != nil {
+		return nil, err
+	}
+	refundD := decimal.NewFromFloat(amount)
+	remaining := paidD.Sub(refundedD).Sub(consumedD)
+	if refundD.GreaterThan(remaining) {
+		return nil, fmt.Errorf("admin accounting refund exceeds remaining paid quota")
+	}
+	key := "admin-accounting-refund:" + tradeNo
+	if _, err := tx.Client().ExecContext(ctx, `INSERT INTO user_quota_adjustments (user_id,adjustment_type,payment_order_id,reserved_allocations,applied_allocations,refund_amount,refund_currency,refund_method,refund_trade_no,provider_state,requested_paid_quota_usd,applied_paid_quota_usd,applied_gift_quota_usd,shortfall_paid_quota_usd,force_refund,actor_type,reason,status,idempotency_key,operator_user_id,adjusted_at) VALUES ($1,'refund_recovery',$2,'[]'::jsonb,'[]'::jsonb,$3,'CNY','admin_accounting',$4,'succeeded',$5,$5,0,0,false,'admin',$6,'completed',$7,NOW())`, userID, orderID, refundD.StringFixed(8), tradeNo, refundD.StringFixed(8), reason, key); err != nil {
+		return nil, err
+	}
+	newRefunded := refundedD.Add(refundD)
+	newStatus := OrderStatusPartiallyRefunded
+	if newRefunded.Add(consumedD).GreaterThanOrEqual(paidD) {
+		newStatus = OrderStatusRefunded
+	}
+	if _, err := tx.Client().ExecContext(ctx, `UPDATE payment_orders SET refunded_paid_quota_usd=$1,status=$2,refund_amount=refund_amount+$3,refund_reason=$4,refund_at=NOW(),quota_accounting_status='confirmed',updated_at=NOW() WHERE id=$5`, newRefunded.StringFixed(8), newStatus, refundD.StringFixed(8), reason, orderID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Client().ExecContext(ctx, `UPDATE user_wallets SET paid_quota_balance_usd=paid_quota_balance_usd-$1,version=version+1,updated_at=NOW() WHERE user_id=$2`, refundD.StringFixed(8), userID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Client().ExecContext(ctx, `UPDATE users SET balance=(SELECT paid_quota_balance_usd+gift_quota_balance_usd FROM user_wallets WHERE user_id=$1),updated_at=NOW() WHERE id=$1`, userID); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &RefundResult{Success: true}, nil
+}
 
 // --- Refund Flow ---
 

@@ -28,14 +28,15 @@ func fuseAccountMonitorQualityEvidence(window AccountMonitorWindowAggregate, _ A
 	if samples == 0 {
 		return accountMonitorUnknownQualityEvidenceWithFreshness("missing", false)
 	}
-	if observedAt.IsZero() || !isAccountMonitorEvidenceFresh(observedAt, now, ttl) {
-		return accountMonitorUnknownQualityEvidenceWithFreshness("stale", true)
-	}
+	stale := observedAt.IsZero() || !isAccountMonitorEvidenceFresh(observedAt, now, ttl)
 	evidence := AccountMonitorQualityEvidence{
 		Source: accountMonitorQualitySourceUnified, Known: true,
 		Freshness: accountMonitorQualityFreshnessFresh, ObservedAt: observedAt,
 		SampleCount: int(samples), SuccessSampleCount: int(successes),
 		SuccessRate: float64(successes) / float64(samples),
+	}
+	if stale {
+		evidence.Freshness = accountMonitorQualityFreshnessStale
 	}
 	if window.TTFTSampleCount > 0 && window.TTFTP50MS != nil {
 		evidence.TTFTSampleCount = window.TTFTSampleCount

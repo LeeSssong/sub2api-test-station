@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestApplyGroupProfitabilityEstimatesFromMultipliersWithoutRealRequests(t *testing.T) {
+func TestApplyGroupProfitabilityShowsZeroWithoutRevenue(t *testing.T) {
 	upstream := 0.15
 	groups := []AccountMonitorGroup{{
 		ID:             7,
@@ -27,15 +27,15 @@ func TestApplyGroupProfitabilityEstimatesFromMultipliersWithoutRealRequests(t *t
 
 	profit := groups[0].Accounts[0].GroupProfitability
 	require.NotNil(t, profit)
-	require.Equal(t, "estimated", profit.Status)
+	require.Equal(t, "confirmed", profit.Status)
 	require.NotNil(t, profit.ProfitRate)
-	require.InDelta(t, 0.25, *profit.ProfitRate, 0.000001)
+	require.InDelta(t, 0, *profit.ProfitRate, 0.000001)
 	require.NotNil(t, profit.Rank)
 	require.Equal(t, 1, profit.Rank.Rank)
 	require.Equal(t, 1, profit.Rank.Total)
 }
 
-func TestApplyGroupProfitabilityKeepsMissingMultiplierUnconfirmed(t *testing.T) {
+func TestApplyGroupProfitabilityDoesNotDependOnMultiplier(t *testing.T) {
 	groups := []AccountMonitorGroup{{
 		ID:             7,
 		Name:           "GPT-Pro",
@@ -54,7 +54,8 @@ func TestApplyGroupProfitabilityKeepsMissingMultiplierUnconfirmed(t *testing.T) 
 
 	profit := groups[0].Accounts[0].GroupProfitability
 	require.NotNil(t, profit)
-	require.Equal(t, "no_real_request", profit.Status)
-	require.Nil(t, profit.ProfitRate)
-	require.Nil(t, profit.Rank)
+	require.Equal(t, "confirmed", profit.Status)
+	require.NotNil(t, profit.ProfitRate)
+	require.Equal(t, float64(0), *profit.ProfitRate)
+	require.NotNil(t, profit.Rank)
 }

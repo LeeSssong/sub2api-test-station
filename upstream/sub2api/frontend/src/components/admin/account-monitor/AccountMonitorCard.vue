@@ -14,7 +14,7 @@
             <span class="account-id">#{{ account.account_id }}</span>
           </h2>
           <div class="monitor-card-meta" data-test="account-metadata">
-            <span>{{ currentGroupLabel }}</span><span aria-hidden="true">·</span><span>{{ formatNumber(account.request_count ?? 0) }} 次有效观测 · 累计 {{ formatNumber(account.lifetime_real_request_count ?? 0) }} 次</span>
+            <span>{{ formatNumber(successfulRequestCount) }}/{{ formatNumber(account.request_count ?? 0) }}</span>
             <template v-if="recommendation">
               <span aria-hidden="true">·</span>
               <button v-if="formalMigration" class="monitor-card-recommendation" data-test="group-recommendation" type="button" :title="recommendationTooltip">{{ recommendationLabel }}<span data-test="recommendation-warning">!</span></button>
@@ -52,7 +52,7 @@
           <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
             <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
               <span class="performance-bar" :class="bar.colorClass" :style="{ height: `${bar.height}%` }" data-test="real-request-bar" />
-              <span v-if="hoveredBarIndex === index" class="performance-bar-tooltip" role="tooltip" data-test="real-request-tooltip">{{ bar.latencyLabel }}</span>
+              <span v-if="hoveredBarIndex === index && bar.latencyLabel" class="performance-bar-tooltip" role="tooltip" data-test="real-request-tooltip">{{ bar.latencyLabel }}</span>
             </span>
           </div>
         </section>
@@ -420,8 +420,12 @@ const qualityObservedAtLabel = computed(() => formatDateTime(props.account.quali
 const concurrencyValue = computed(() => props.concurrency ? `${props.concurrency.current} / ${props.concurrency.limit}` : '-- / --')
 const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
-const callsSummary = computed(() => `${formatNumber(props.account.request_count)} 次请求 · ${formatNumber(props.account.error_count)} 次失败`)
-const successfulRequestCount = computed(() => Math.max(0, Number(props.account.request_count) - Number(props.account.error_count)))
+const callsSummary = computed(() => `${successfulRequestCount.value}/${formatNumber(props.account.request_count)}`)
+const successfulRequestCount = computed(() => {
+  const total = Number(props.account.request_count) || 0
+  const failures = Number(props.account.error_count ?? (props.account as unknown as { failure_count?: number }).failure_count) || 0
+  return Math.max(0, total - failures)
+})
 const successRate = computed(() => {
   if (props.account.success_rate != null && (props.account.sample_count > 0 || props.account.request_count > 0)) return formatPercent(props.account.success_rate)
   return '--'
@@ -429,17 +433,18 @@ const successRate = computed(() => {
 const profitRateLabel = computed(() => {
   if (props.rankingScope === 'global') return '按分组查看'
   const profit = props.account.group_profitability
-  if (!profit || !['confirmed', 'estimated'].includes(profit.status) || profit.profit_rate == null) return profit?.status === 'no_real_request' ? '--' : '待确认'
-  return formatPercent(profit.profit_rate)
+  if (!profit || profit.profit_rate == null) return '$0.00 / 0%'
+  const amount = Number(profit.revenue || 0) - Number(profit.account_cost || 0)
+  return `$${amount.toFixed(2)} / ${formatPercent(profit.profit_rate)}`
 })
 const realRequestBars = computed(() => {
   const points = props.account.real_request_timeline ?? []
-  if (!points.length) return Array.from({ length: 24 }, () => ({ colorClass: 'bg-gray-200 dark:bg-slate-700', height: 16, latencyLabel: 'TTFT P95 --' }))
+  if (!points.length) return []
   return points.map((point) => {
     const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 10000
     const requestCount = point.request_count
     const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
-    return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: `TTFT P95 ${formatMs(point.ttft_p95_ms)}` }
+    return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: point.ttft_p95_ms != null && Number.isFinite(point.ttft_p95_ms) ? `${Math.round(point.ttft_p95_ms)}ms` : null }
   })
 })
 const realTimelineAriaLabel = computed(() => `近期性能，${props.account.request_count ?? 0} 次有效观测`)

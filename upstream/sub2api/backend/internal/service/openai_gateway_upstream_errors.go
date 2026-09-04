@@ -69,6 +69,8 @@ type OpenAIUpstreamFailureClass struct {
 	OutputStarted            bool
 	HasSideEffect            bool
 	RequestScopedTransient   bool
+	CapacityPressure         bool
+	CapacitySubtype          string
 }
 
 // OpenAIStreamRecoveryPayload is the wire contract emitted after an already
@@ -176,6 +178,8 @@ func ClassifyOpenAIUpstreamFailure(statusCode int, upstreamMessage string, respo
 		errCode = strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "response.error.code").String()))
 	}
 	combined := strings.TrimSpace(errType + " " + errCode + " " + text)
+	capacitySubtype := classifyOpenAIUpstreamCapacitySubtype(errType, errCode, message)
+	capacityPressure := capacitySubtype != ""
 
 	hard := statusCode == http.StatusUnauthorized || statusCode == http.StatusPaymentRequired || statusCode == http.StatusForbidden
 	for _, marker := range []string{
@@ -219,6 +223,9 @@ func ClassifyOpenAIUpstreamFailure(statusCode int, upstreamMessage string, respo
 				break
 			}
 		}
+		if capacityPressure {
+			transient = true
+		}
 	}
 	if hard {
 		transient = false
@@ -239,7 +246,38 @@ func ClassifyOpenAIUpstreamFailure(statusCode int, upstreamMessage string, respo
 		OutputStarted:            outputStarted,
 		HasSideEffect:            requestHasSideEffects,
 		RequestScopedTransient:   statusCode == http.StatusBadRequest && isOpenAITransientProcessingError(statusCode, message, responseBody),
+		CapacityPressure:         capacityPressure,
+		CapacitySubtype:          capacitySubtype,
 	}
+}
+
+func classifyOpenAIUpstreamCapacitySubtype(errorType, errorCode, message string) string {
+	structured := strings.ToLower(strings.TrimSpace(errorType + " " + errorCode))
+	text := structured
+	if text == "" {
+		text = strings.ToLower(strings.TrimSpace(message))
+	}
+	capacitySubtype := ""
+	for _, capacityClass := range []struct {
+		subtype string
+		markers []string
+	}{
+		{"pending_requests", []string{"too many pending requests", "pending request limit"}},
+		{"account_concurrency", []string{"concurrency limit exceeded", "too many concurrent requests", "account concurrency"}},
+		{"rate_limit", []string{"rate limit exceeded", "upstream rate limit", "rate_limit_exceeded"}},
+		{"temporary_unavailable", []string{"service temporarily unavailable", "temporarily unavailable"}},
+	} {
+		for _, marker := range capacityClass.markers {
+			if strings.Contains(text, marker) {
+				capacitySubtype = capacityClass.subtype
+				break
+			}
+		}
+		if capacitySubtype != "" {
+			break
+		}
+	}
+	return capacitySubtype
 }
 
 func logOpenAIInstructionsRequiredDebug(

@@ -74,6 +74,35 @@ func TestClassifyOpenAIUpstreamFailure_StatusZeroRequiresTransportSignature(t *t
 	require.True(t, got.Transient)
 }
 
+func TestClassifyOpenAIUpstreamFailure_CapacityPressureIsTransientEvenAfterDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, subtype string
+		status                 int
+	}{
+		{"pending", "Too many pending requests", "pending_requests", 0},
+		{"concurrency", "Concurrency limit exceeded for account", "account_concurrency", 429},
+		{"rate", "Upstream rate limit exceeded", "rate_limit", 429},
+		{"unavailable", "Service temporarily unavailable", "temporary_unavailable", 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ClassifyOpenAIUpstreamFailure(tc.status, tc.message, nil, true, true)
+			require.True(t, got.CapacityPressure)
+			require.Equal(t, tc.subtype, got.CapacitySubtype)
+			require.True(t, got.Transient)
+			require.False(t, got.Retryable)
+		})
+	}
+}
+
+func TestClassifyOpenAIUpstreamFailure_DoesNotTreatArbitraryTextAsCapacity(t *testing.T) {
+	got := ClassifyOpenAIUpstreamFailure(0, "client cancelled while waiting", nil, false, false)
+	require.False(t, got.CapacityPressure)
+	require.False(t, got.Transient)
+
+	got = ClassifyOpenAIUpstreamFailure(0, "request failed", []byte(`{"input":"Too many pending requests","error":{"type":"unknown","message":"request failed"}}`), false, false)
+	require.False(t, got.CapacityPressure)
+}
+
 func TestClassifyOpenAIUpstreamFailure_NonModel404BlocksReplayWhenRequestWasSent(t *testing.T) {
 	got := ClassifyOpenAIUpstreamFailure(http.StatusNotFound, "endpoint route not found", []byte(`{"error":{"message":"endpoint route not found"}}`), false, false)
 

@@ -40,6 +40,30 @@ func TestRecordOpenAIAccountModelFailure_502ImmediatelyStartsShortCooldown(t *te
 	}
 }
 
+func TestRecordOpenAIAccountModelFailure_CapacityPressureCoolsAfterOutput(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	now := time.Date(2026, 9, 4, 1, 0, 0, 0, time.UTC)
+	decision := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{
+		AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 0,
+		ErrorType: "upstream_capacity_pressure", CapacityPressure: true,
+		OutputStarted: true, SafeToReplay: false, HasSideEffect: true, Now: now,
+	})
+	require.Equal(t, openAIModelTransientShortCooldown, decision.Cooldown)
+	require.True(t, decision.ExcludeFromRequest)
+	require.False(t, decision.CurrentRequestRetry)
+}
+
+func TestRecordOpenAIAccountModelSuccessRetainsCapacityFailureWindow(t *testing.T) {
+	svc := &OpenAIGatewayService{openaiModelTransient: newOpenAIAccountModelTransientState(16)}
+	now := time.Date(2026, 9, 4, 1, 0, 0, 0, time.UTC)
+	event := OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 0, ErrorType: "upstream_capacity_pressure", CapacityPressure: true, Now: now}
+	svc.RecordOpenAIAccountModelFailure(nil, event)
+	svc.RecordOpenAIAccountModelSuccess(nil, OpenAIAccountModelSuccessEvent{AccountID: 35, CanonicalModel: "gpt-5.5", Now: now.Add(time.Second)})
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlockedAt(&Account{ID: 35}, "gpt-5.5", now.Add(2*time.Second)), "concurrent success must not clear an active capacity cooldown")
+	decision := svc.RecordOpenAIAccountModelFailure(nil, OpenAIAccountModelFailureEvent{AccountID: 35, CanonicalModel: "gpt-5.5", StatusCode: 0, ErrorType: "upstream_capacity_pressure", CapacityPressure: true, Now: now.Add(2 * time.Second)})
+	require.Equal(t, openAIModelWindowShortCooldown, decision.Cooldown)
+}
+
 func TestOpenAIModelTransient_SecondFailureCreatesShortModelBlock(t *testing.T) {
 	state := newOpenAIAccountModelTransientState(128)
 	now := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)

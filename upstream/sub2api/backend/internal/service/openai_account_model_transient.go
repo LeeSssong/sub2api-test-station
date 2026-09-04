@@ -74,6 +74,8 @@ type OpenAIAccountModelFailureEvent struct {
 	HasSideEffect     bool
 	UsageKnown        bool
 	ImmediateCooldown bool
+	CapacityPressure  bool
+	CapacitySubtype   string
 	Platform          string
 	GroupID           *int64
 	CacheMode         string
@@ -303,6 +305,43 @@ func (s *openAIAccountModelTransientState) recordSuccess(accountID int64, model 
 	s.mu.Unlock()
 }
 
+func (s *openAIAccountModelTransientState) recordOrdinarySuccess(accountID int64, model string, now time.Time) {
+	key, ok := openAIAccountModelTransientKey(accountID, model)
+	if s == nil || !ok {
+		return
+	}
+	s.mu.Lock()
+	entry, exists := s.entries[key]
+	if !exists {
+		s.mu.Unlock()
+		return
+	}
+	// A successful request clears the active breaker, but recent failures remain
+	// in their bounded windows so intermittent capacity pressure still escalates.
+	if now.IsZero() {
+		now = time.Now()
+	}
+	cutoff := now.Add(-openAIModelFailureWindowLong)
+	kept := entry.recentFailures[:0]
+	for _, at := range entry.recentFailures {
+		if !at.Before(cutoff) {
+			kept = append(kept, at)
+		}
+	}
+	entry.recentFailures = kept
+	if entry.blockUntil.IsZero() {
+		entry.failureStreak = 0
+		entry.lastFailure = time.Time{}
+	}
+	entry.lastTouched = now
+	if len(kept) == 0 {
+		delete(s.entries, key)
+	} else {
+		s.entries[key] = entry
+	}
+	s.mu.Unlock()
+}
+
 func (s *openAIAccountModelTransientState) isBlocked(accountID int64, model string, now time.Time) bool {
 	key, ok := openAIAccountModelTransientKey(accountID, model)
 	if s == nil || !ok {
@@ -410,7 +449,7 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 		return decision
 	}
 	if event.StatusCode == 0 || event.StatusCode == 400 {
-		if !strings.Contains(errorType, "transient") {
+		if !strings.Contains(errorType, "transient") && !event.CapacityPressure {
 			return decision
 		}
 	} else if !transientFailureStatus(event.StatusCode) {
@@ -425,7 +464,7 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 		return decision
 	}
 	raw := state.recordFailureWindowed(event.AccountID, event.CanonicalModel, now)
-	if event.ImmediateCooldown && raw.Cooldown < openAIModelTransientShortCooldown {
+	if (event.ImmediateCooldown || event.CapacityPressure) && raw.Cooldown < openAIModelTransientShortCooldown {
 		raw.Cooldown = openAIModelTransientShortCooldown
 		raw.BlockUntil = now.Add(openAIModelTransientShortCooldown)
 		if key, ok := openAIAccountModelTransientKey(event.AccountID, event.CanonicalModel); ok {
@@ -440,7 +479,9 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 	}
 	state.setFailureDetails(event.AccountID, event.CanonicalModel, event.StatusCode, event.ErrorType, event.OutputStarted)
 	decision.FailureStreak, decision.Cooldown, decision.BlockUntil = raw.FailureStreak, raw.Cooldown, raw.BlockUntil
+	sharedFeedbackWritten := false
 	if shared, ok := s.recordOpenAISharedHealthFailure(ctx, event, now, raw); ok {
+		sharedFeedbackWritten = true
 		if shared.FailureStreak > decision.FailureStreak {
 			decision.FailureStreak = shared.FailureStreak
 		}
@@ -470,6 +511,16 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelFailure(ctx context.Conte
 		}(),
 		Outcome: "failure",
 	}
+	if event.CapacityPressure {
+		resilienceEvent.FailureClass = "upstream_capacity_pressure"
+		resilienceEvent.CapacitySubtype = event.CapacitySubtype
+		resilienceEvent.CurrentRequestAction = "do_not_replay"
+		if decision.CurrentRequestRetry {
+			resilienceEvent.CurrentRequestAction = "retry_allowed"
+		}
+		resilienceEvent.FutureRequestAction = "cooldown"
+		resilienceEvent.SharedFeedbackWritten = sharedFeedbackWritten
+	}
 	RecordOpenAIResilienceOutcomeWithContext(ctx, resilienceEvent)
 	slog.Info(OpenAIEventAccountModelSoftFailure,
 		"account_id", event.AccountID, "canonical_scheduling_model", normalizeOpenAIAccountModelTransientModel(event.CanonicalModel),
@@ -494,7 +545,10 @@ func (s *OpenAIGatewayService) RecordOpenAIAccountModelSuccess(ctx context.Conte
 	if now.IsZero() {
 		now = time.Now()
 	}
-	s.clearOpenAIAccountModelTransientState(event.AccountID, event.CanonicalModel)
+	state := s.getOpenAIAccountModelTransientState()
+	if state != nil {
+		state.recordOrdinarySuccess(event.AccountID, event.CanonicalModel, now)
+	}
 	s.recordOpenAISharedHealthSuccess(ctx, event, now)
 }
 

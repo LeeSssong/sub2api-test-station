@@ -16,6 +16,10 @@
         <label class="input-label">{{ t('admin.users.giftQuota') }}</label>
         <div class="relative"><div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500">$</div><input v-model.number="form.giftQuota" type="number" step="any" min="0" class="input pl-8" /></div>
       </div>
+      <div v-if="operation === 'add'">
+        <label class="input-label">{{ t('payment.orders.transactionNo') }}</label>
+        <input v-model="form.paymentTradeNo" type="text" maxlength="128" required class="input" autocomplete="off" />
+      </div>
       <div v-else class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{{ t('admin.users.refundGiftClears') }}</div>
       <div><label class="input-label">{{ t('admin.users.notes') }}</label><textarea v-model="form.notes" rows="3" class="input"></textarea></div>
       <div v-if="form.amount > 0" class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"><div class="flex items-center justify-between text-sm"><span class="text-gray-700 dark:text-gray-300">{{ t('admin.users.newBalance') }}:</span><span class="font-bold text-gray-900 dark:text-gray-100">${{ formatBalance(calculateNewBalance()) }}</span></div></div>
@@ -41,8 +45,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'add' | 'subtract' }>()
 const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()
 
-const submitting = ref(false); const summary = ref<QuotaSummary | null>(null); const form = reactive({ amount: 0, giftQuota: 0, notes: '' })
-watch(() => props.show, (v) => { if(v) { form.amount = 0; form.giftQuota = 0; form.notes = ''; summary.value = null; if (props.user) void loadSummary(props.user.id) } })
+const submitting = ref(false); const summary = ref<QuotaSummary | null>(null); const form = reactive({ amount: 0, giftQuota: 0, paymentTradeNo: '', notes: '' })
+watch(() => props.show, (v) => { if(v) { form.amount = 0; form.giftQuota = 0; form.paymentTradeNo = ''; form.notes = ''; summary.value = null; if (props.user) void loadSummary(props.user.id) } })
 const loadSummary = async (id: number) => { try { summary.value = await adminAPI.users.getUserQuotaSummary(id) } catch { summary.value = null } }
 
 const refundableCashBalance = computed(() => {
@@ -78,7 +82,7 @@ const calculateNewBalance = () => {
   return Math.abs(result) < 1e-10 ? 0 : result
 }
 const hasValidMutation = () => props.operation === 'add'
-  ? form.amount > 0 || form.giftQuota > 0
+  ? (form.amount > 0 || form.giftQuota > 0) && form.paymentTradeNo.trim().length > 0
   : form.amount > 0
 const handleBalanceSubmit = async () => {
   if (!props.user) return
@@ -98,7 +102,7 @@ const handleBalanceSubmit = async () => {
   }
   submitting.value = true
   try {
-    await adminAPI.users.createQuotaLedgerEntry(props.user.id, { record_type: props.operation === 'add' ? 'recharge' : 'refund', amount_cny: form.amount, gift_quota_usd: props.operation === 'add' ? form.giftQuota : 0, note: form.notes })
+    await adminAPI.users.createQuotaLedgerEntry(props.user.id, { record_type: props.operation === 'add' ? 'recharge' : 'refund', amount_cny: form.amount, gift_quota_usd: props.operation === 'add' ? form.giftQuota : 0, payment_trade_no: props.operation === 'add' ? form.paymentTradeNo.trim() : undefined, note: form.notes })
     appStore.showSuccess(t('common.success')); emit('success'); emit('close')
   } catch (e: any) {
     console.error('Failed to update balance:', e)

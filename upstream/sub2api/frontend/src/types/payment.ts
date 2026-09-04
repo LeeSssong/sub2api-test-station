@@ -19,7 +19,7 @@ export type OrderStatus =
   | 'REFUNDED'
   | 'REFUND_FAILED'
 
-export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
+export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex' | 'admin_recharge'
 
 export type OrderType = 'balance' | 'subscription'
 
@@ -102,6 +102,13 @@ export interface PaymentOrder {
   refund_requested_at?: string
   refund_requested_by?: number
   refund_request_reason?: string
+  payment_trade_no?: string
+  paid_quota_usd?: number
+  gift_quota_usd?: number
+  total_quota_usd?: number
+  operator_user_id?: number
+  operator_note?: string
+  operator_recharged_at?: string
   plan_id?: number
   provider_instance_id?: string
 }

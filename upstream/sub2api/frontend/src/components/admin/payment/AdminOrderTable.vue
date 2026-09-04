@@ -62,6 +62,9 @@
           </div>
         </div>
       </template>
+      <template #cell-total_quota_usd="{ value }"><span class="text-sm text-gray-700 dark:text-gray-300">${{ Number(value ?? 0).toFixed(2) }}</span></template>
+      <template #cell-paid_quota_usd="{ value }"><span class="text-sm text-gray-700 dark:text-gray-300">${{ Number(value ?? 0).toFixed(2) }}</span></template>
+      <template #cell-gift_quota_usd="{ value }"><span class="text-sm text-gray-700 dark:text-gray-300">${{ Number(value ?? 0).toFixed(2) }}</span></template>
 
       <template #cell-payment_type="{ value }">
         <span class="text-sm text-gray-700 dark:text-gray-300">
@@ -193,6 +196,9 @@ const columns = computed<Column[]>(() => [
   { key: 'id', label: t('payment.orders.orderId') },
   { key: 'user_id', label: t('payment.orders.userId') },
   { key: 'pay_amount', label: t('payment.orders.payAmount') },
+  { key: 'total_quota_usd', label: t('payment.orders.totalQuota') },
+  { key: 'paid_quota_usd', label: t('payment.orders.paidQuota') },
+  { key: 'gift_quota_usd', label: t('payment.orders.giftQuota') },
   { key: 'payment_type', label: t('payment.orders.paymentMethod') },
   { key: 'status', label: t('payment.orders.status') },
   { key: 'order_type', label: t('payment.orders.orderType') },
@@ -220,6 +226,7 @@ const paymentTypeFilterOptions = computed(() => [
   { value: 'wxpay', label: t('payment.methods.wxpay') },
   { value: 'stripe', label: t('payment.methods.stripe') },
   { value: 'airwallex', label: t('payment.methods.airwallex') },
+  { value: 'admin_recharge', label: t('payment.methods.admin_recharge') },
 ])
 
 const orderTypeFilterOptions = computed(() => [

@@ -706,6 +706,29 @@ func HasGroupWith(preds ...predicate.Group) predicate.RedeemCode {
 	})
 }
 
+// HasQuotaGrants applies the HasEdge predicate on the "quota_grants" edge.
+func HasQuotaGrants() predicate.RedeemCode {
+	return predicate.RedeemCode(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, QuotaGrantsTable, QuotaGrantsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasQuotaGrantsWith applies the HasEdge predicate on the "quota_grants" edge with a given conditions (other predicates).
+func HasQuotaGrantsWith(preds ...predicate.UserQuotaGrant) predicate.RedeemCode {
+	return predicate.RedeemCode(func(s *sql.Selector) {
+		step := newQuotaGrantsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.RedeemCode) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.AndPredicates(predicates...))

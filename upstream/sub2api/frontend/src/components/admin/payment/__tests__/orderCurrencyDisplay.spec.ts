@@ -22,14 +22,20 @@ const BaseDialogStub = {
 }
 
 const DataTableStub = {
-  props: ['data'],
+  props: ['data', 'columns'],
   template: `
     <div>
+      <span v-for="column in columns" :key="column.key">{{ column.label }}</span>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-pay_amount" :value="row.pay_amount" :row="row" />
       </div>
     </div>
   `,
+}
+
+const SelectStub = {
+  props: ['options'],
+  template: '<span><i v-for="option in options" :key="option.value">{{ option.label }}</i></span>',
 }
 
 function orderFactory(overrides: Partial<PaymentOrder> = {}): PaymentOrder {
@@ -140,7 +146,7 @@ describe('admin order currency display', () => {
           DataTable: DataTableStub,
           Icon: true,
           Pagination: true,
-          Select: true,
+          Select: SelectStub,
         },
       },
     })
@@ -149,5 +155,12 @@ describe('admin order currency display', () => {
     expect(text).toContain('$108.00')
     expect(text).toContain('¥108.00')
     expect(text).toContain('$100.00')
+    const totalIndex = text.indexOf('payment.orders.totalQuota')
+    const paidIndex = text.indexOf('payment.orders.paidQuota')
+    const giftIndex = text.indexOf('payment.orders.giftQuota')
+    expect(totalIndex).toBeGreaterThan(text.indexOf('payment.orders.payAmount'))
+    expect(paidIndex).toBeGreaterThan(totalIndex)
+    expect(giftIndex).toBeGreaterThan(paidIndex)
+    expect(text).toContain('payment.methods.admin_recharge')
   })
 })

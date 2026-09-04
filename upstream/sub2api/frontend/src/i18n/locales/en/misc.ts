@@ -311,6 +311,7 @@ export default {
       link: 'Link',
       alipay_direct: 'Alipay (Direct)',
       wxpay_direct: 'WeChat Pay (Direct)',
+      admin_recharge: 'Administrator Recharge',
     },
     status: {
       pending: 'Pending',
@@ -360,6 +361,10 @@ export default {
       amount: 'Amount',
       payAmount: 'Paid',
       creditedAmount: 'Credited Amount',
+      totalQuota: 'Total Quota Earned',
+      paidQuota: 'Paid Quota',
+      giftQuota: 'Gift Quota',
+      transactionNo: 'Transaction No.',
       fee: 'Fee',
       baseAmount: 'Base Amount',
       includedInPayAmount: 'included in paid amount',

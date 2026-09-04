@@ -23,6 +23,9 @@
         </div>
       </div>
     </template>
+    <template #cell-total_quota_usd="{ value }"><span class="text-sm text-gray-700 dark:text-gray-300">${{ Number(value ?? 0).toFixed(2) }}</span></template>
+    <template #cell-paid_quota_usd="{ value }"><span class="text-sm text-gray-700 dark:text-gray-300">${{ Number(value ?? 0).toFixed(2) }}</span></template>
+    <template #cell-gift_quota_usd="{ value }"><span class="text-sm text-gray-700 dark:text-gray-300">${{ Number(value ?? 0).toFixed(2) }}</span></template>
     <template #cell-payment_type="{ value }">
       <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.methods.' + value, value) }}</span>
     </template>
@@ -73,6 +76,9 @@ const columns = computed((): Column[] => {
   }
   cols.push(
     { key: 'pay_amount', label: t('payment.orders.payAmount') },
+    { key: 'total_quota_usd', label: t('payment.orders.totalQuota') },
+    { key: 'paid_quota_usd', label: t('payment.orders.paidQuota') },
+    { key: 'gift_quota_usd', label: t('payment.orders.giftQuota') },
     { key: 'payment_type', label: t('payment.orders.paymentMethod') },
     { key: 'status', label: t('payment.orders.status') },
     { key: 'created_at', label: t('payment.orders.createdAt') },

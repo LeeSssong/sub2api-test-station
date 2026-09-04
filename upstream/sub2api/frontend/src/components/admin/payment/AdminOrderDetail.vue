@@ -29,6 +29,9 @@
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p>
           <p class="text-sm font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol }}{{ order.pay_amount.toFixed(2) }}</p>
         </div>
+        <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.totalQuota') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">${{ Number(order.total_quota_usd ?? 0).toFixed(2) }}</p></div>
+        <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.paidQuota') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">${{ Number(order.paid_quota_usd ?? 0).toFixed(2) }}</p></div>
+        <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.giftQuota') }}</p><p class="text-sm font-medium text-gray-900 dark:text-white">${{ Number(order.gift_quota_usd ?? 0).toFixed(2) }}</p></div>
         <div v-if="order.amount !== order.pay_amount">
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.creditedAmount') }}</p>
           <p class="text-sm font-medium text-gray-900 dark:text-white">{{ creditedAmountSymbol }}{{ order.amount.toFixed(2) }}</p>
@@ -39,6 +42,7 @@
             {{ t('payment.methods.' + order.payment_type, order.payment_type) }}
           </p>
         </div>
+        <div v-if="order.payment_trade_no"><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.transactionNo') }}</p><p class="font-mono text-sm text-gray-700 dark:text-gray-300">{{ order.payment_trade_no }}</p></div>
         <div>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.orderType') }}</p>
           <p class="text-sm text-gray-700 dark:text-gray-300">

@@ -335,6 +335,7 @@ export default {
       link: 'Link',
       alipay_direct: '支付宝（直连）',
       wxpay_direct: '微信支付（直连）',
+      admin_recharge: '管理员代充值',
     },
     status: {
       pending: '待支付',
@@ -384,6 +385,10 @@ export default {
       amount: '金额',
       payAmount: '实付',
       creditedAmount: '到账金额',
+      totalQuota: '获得总额度',
+      paidQuota: '充值额度',
+      giftQuota: '赠送额度',
+      transactionNo: '交易单号',
       fee: '手续费',
       baseAmount: '充值金额',
       includedInPayAmount: '已含在实付金额中',

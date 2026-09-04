@@ -18,6 +18,8 @@ var (
 	accountMonitorRunTimeout                = 4 * time.Minute
 )
 
+const accountMonitorFallbackProbeMaxInterval = 5 * time.Minute
+
 const (
 	accountMonitorV4SnapshotLeaderLockTTL = 10 * time.Minute
 	accountMonitorV4SnapshotLeaderLockKey = "account-monitor-v4-snapshot"
@@ -104,7 +106,7 @@ func (r *AccountMonitorRunner) Start() {
 			settings.IntervalSeconds = AccountMonitorDefaultIntervalSeconds
 		}
 		r.mu.Lock()
-		r.interval = time.Duration(settings.IntervalSeconds) * time.Second
+		r.interval = accountMonitorProbeInterval(settings.IntervalSeconds)
 		r.mu.Unlock()
 	}
 
@@ -157,16 +159,21 @@ func (r *AccountMonitorRunner) ReloadSettings(settings AccountMonitorSettings) {
 	if interval < AccountMonitorMinIntervalSeconds {
 		interval = AccountMonitorMinIntervalSeconds
 	}
-	if interval > AccountMonitorMaxIntervalSeconds {
-		interval = AccountMonitorMaxIntervalSeconds
-	}
 	r.mu.Lock()
-	r.interval = time.Duration(interval) * time.Second
+	r.interval = accountMonitorProbeInterval(interval)
 	r.mu.Unlock()
 	select {
 	case r.reload <- struct{}{}:
 	default:
 	}
+}
+
+func accountMonitorProbeInterval(intervalSeconds int) time.Duration {
+	interval := time.Duration(intervalSeconds) * time.Second
+	if interval <= 0 || interval > accountMonitorFallbackProbeMaxInterval {
+		return accountMonitorFallbackProbeMaxInterval
+	}
+	return interval
 }
 
 func (r *AccountMonitorRunner) loop() {

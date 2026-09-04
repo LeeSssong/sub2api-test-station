@@ -168,12 +168,13 @@ func TestHTTPAccountModelDetectionSidecarRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
-func TestHTTPAccountModelDetectionSidecarRejectsInsufficientAsFinalStatus(t *testing.T) {
+func TestHTTPAccountModelDetectionSidecarAcceptsInsufficientAsFinalStatus(t *testing.T) {
 	client := NewHTTPAccountModelDetectionSidecar("http://detector.test", "", &http.Client{Transport: accountModelDetectionRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return accountModelDetectionJSONResponse(http.StatusOK, map[string]any{"status": "insufficient"}), nil
 	})})
-	if _, err := client.Detect(context.Background(), AccountModelDetectionRequest{}); err == nil {
-		t.Fatal("expected non-terminal insufficient response to be rejected")
+	response, err := client.Detect(context.Background(), AccountModelDetectionRequest{})
+	if err != nil || response.Status != AccountModelDetectionStatusInsufficient {
+		t.Fatalf("insufficient response = %#v, err = %v", response, err)
 	}
 }
 

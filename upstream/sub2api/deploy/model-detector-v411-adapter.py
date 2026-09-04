@@ -94,7 +94,7 @@ def report_to_sidecar_response(report: dict[str, Any], profile: str, declared_mo
     elif juice_status in {"pass", "verified"} and (not candidate or candidate == declared_model) and complete:
         status = "normal"
     else:
-        status = "failed"
+        status = "insufficient"
     return {
         "status": status,
         "profile": profile,

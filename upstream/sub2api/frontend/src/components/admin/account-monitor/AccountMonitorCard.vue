@@ -1355,7 +1355,6 @@ const CostMetric = defineComponent({
   margin-top: 12px;
 }
 .performance-bar {
-  width: 100%;
   border-radius: 3px 3px 1px 1px;
   outline: none;
 }

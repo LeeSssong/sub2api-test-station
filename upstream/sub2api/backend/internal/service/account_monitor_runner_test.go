@@ -139,6 +139,18 @@ func TestAccountMonitorRunnerReloadSettingsResetsCadenceWithoutTriggeringProbe(t
 	}
 }
 
+func TestAccountMonitorRunnerCapsFallbackProbeCadenceAtFiveMinutes(t *testing.T) {
+	runner := NewAccountMonitorRunner(nil)
+	runner.ReloadSettings(AccountMonitorSettings{IntervalSeconds: 3600})
+
+	runner.mu.Lock()
+	interval := runner.interval
+	runner.mu.Unlock()
+	if interval != 5*time.Minute {
+		t.Fatalf("fallback probe interval = %s, want 5m", interval)
+	}
+}
+
 func TestAccountMonitorRunnerDetectionLoopRunsImmediatelyAndStopsWithRunner(t *testing.T) {
 	previousInterval := accountModelDetectionScheduleInterval
 	accountModelDetectionScheduleInterval = 5 * time.Millisecond

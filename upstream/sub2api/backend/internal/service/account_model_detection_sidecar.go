@@ -138,7 +138,7 @@ func (s *HTTPAccountModelDetectionSidecar) doJSON(ctx context.Context, method, p
 
 func validDetectionStatus(status string) bool {
 	switch status {
-	case AccountModelDetectionStatusNormal, AccountModelDetectionStatusAbnormal, AccountModelDetectionStatusFailed:
+	case AccountModelDetectionStatusNormal, AccountModelDetectionStatusAbnormal, AccountModelDetectionStatusInsufficient, AccountModelDetectionStatusFailed:
 		return true
 	default:
 		return false

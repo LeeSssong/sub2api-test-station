@@ -36,7 +36,7 @@ class V411AdapterTests(unittest.TestCase):
         self.assertEqual("4.1.1", response["detector_version"])
         self.assertNotIn("api_key", str(response))
 
-    def test_maps_incomplete_report_to_explicit_failure_without_inventing_fingerprint(self):
+    def test_maps_incomplete_report_to_insufficient_without_inventing_fingerprint(self):
         report = {
             "juice_verdict_state": "insufficient",
             "fingerprint_verdict_state": "unclear",
@@ -46,7 +46,7 @@ class V411AdapterTests(unittest.TestCase):
 
         response = MODULE.report_to_sidecar_response(report, "low", "gpt-5.6-sol")
 
-        self.assertEqual("failed", response["status"])
+        self.assertEqual("insufficient", response["status"])
         self.assertEqual("insufficient", response["evidence_state"])
         self.assertEqual("unclear", response["fingerprint_status"])
         self.assertEqual("", response["fingerprint_candidate"])

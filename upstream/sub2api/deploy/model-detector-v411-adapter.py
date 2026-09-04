@@ -53,12 +53,12 @@ def report_to_sidecar_response(report: dict[str, Any], profile: str, declared_mo
     if candidate not in SUPPORTED_MODELS:
         candidate = ""
     complete = planned > 0 and valid >= math.ceil(planned * 0.9)
-    if juice_status == "mismatch" or (candidate and candidate != declared_model):
+    if juice_status in {"mismatch", "possible_non_gpt"} or (candidate and candidate != declared_model):
         status = "abnormal"
-    elif juice_status == "pass" and candidate == declared_model and complete:
+    elif juice_status in {"pass", "verified"} and (not candidate or candidate == declared_model) and complete:
         status = "normal"
     else:
-        status = "insufficient"
+        status = "failed"
     return {
         "status": status,
         "profile": profile,
@@ -77,7 +77,7 @@ def report_to_sidecar_response(report: dict[str, Any], profile: str, declared_mo
 def unavailable_response(profile: str, code: str) -> dict[str, Any]:
     profile = profile if profile in PROFILE_REQUESTS else "low"
     return {
-        "status": "insufficient", "profile": profile, "planned_requests": PROFILE_REQUESTS[profile], "valid_samples": 0,
+        "status": "failed", "profile": profile, "planned_requests": PROFILE_REQUESTS[profile], "valid_samples": 0,
         "evidence_state": "unavailable", "juice_status": "insufficient", "fingerprint_status": "unavailable",
         "detector_version": VERSION, "error_code": code,
     }

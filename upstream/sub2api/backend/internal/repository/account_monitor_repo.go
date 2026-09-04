@@ -1137,7 +1137,23 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		p.EndAt = points[index].EndAt
 		result[id][index] = p
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for id, points := range result {
+		result[id] = populatedRealRequestTimeline(points)
+	}
+	return result, nil
+}
+
+func populatedRealRequestTimeline(points []service.AccountMonitorRealRequestTimelinePoint) []service.AccountMonitorRealRequestTimelinePoint {
+	populated := make([]service.AccountMonitorRealRequestTimelinePoint, 0, len(points))
+	for _, point := range points {
+		if point.RequestCount > 0 {
+			populated = append(populated, point)
+		}
+	}
+	return populated
 }
 
 func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Context, groupIDs, accountIDs []int64, since, until time.Time) (map[int64]map[int64]service.AccountMonitorWindowAggregate, error) {

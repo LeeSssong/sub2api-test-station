@@ -33,7 +33,7 @@ class V411AdapterTests(unittest.TestCase):
         self.assertEqual("4.1.1", response["detector_version"])
         self.assertNotIn("api_key", str(response))
 
-    def test_maps_incomplete_report_without_inventing_fingerprint(self):
+    def test_maps_incomplete_report_to_explicit_failure_without_inventing_fingerprint(self):
         report = {
             "juice_verdict_state": "insufficient",
             "fingerprint_verdict_state": "unclear",
@@ -43,7 +43,7 @@ class V411AdapterTests(unittest.TestCase):
 
         response = MODULE.report_to_sidecar_response(report, "low", "gpt-5.6-sol")
 
-        self.assertEqual("insufficient", response["status"])
+        self.assertEqual("failed", response["status"])
         self.assertEqual("insufficient", response["evidence_state"])
         self.assertEqual("unclear", response["fingerprint_status"])
         self.assertEqual("", response["fingerprint_candidate"])
@@ -65,6 +65,25 @@ class V411AdapterTests(unittest.TestCase):
         self.assertEqual("complete", response["evidence_state"])
         self.assertEqual("gpt-5.6-luna", response["fingerprint_candidate"])
         self.assertEqual(0.987, response["fingerprint_similarity"]["gpt-5.6-luna"])
+
+    def test_uses_juice_pass_as_an_explicit_normal_result_when_fingerprint_is_unclear(self):
+        response = MODULE.report_to_sidecar_response({
+            "juice_verdict_state": "pass",
+            "fingerprint_verdict_state": "unclear",
+            "network_summary": {"logical_tasks": 49, "successful": 48},
+        }, "medium", "gpt-5.6-sol")
+        self.assertEqual("normal", response["status"])
+
+    def test_maps_unavailable_detector_execution_to_failed(self):
+        self.assertEqual("failed", MODULE.unavailable_response("medium", "detector_error")["status"])
+
+    def test_maps_possible_non_gpt_to_abnormal(self):
+        response = MODULE.report_to_sidecar_response({
+            "juice_verdict_state": "possible_non_gpt",
+            "fingerprint_verdict_state": "unclear",
+            "network_summary": {"logical_tasks": 19, "successful": 19},
+        }, "low", "gpt-5.6-sol")
+        self.assertEqual("abnormal", response["status"])
 
     def test_rejects_unauthorized_requests(self):
         self.assertFalse(MODULE.authorized("wrong", "expected"))

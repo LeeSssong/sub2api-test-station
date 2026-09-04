@@ -303,26 +303,26 @@ watch(() => props.account.priority, (value) => {
 })
 
 const statusLabel = computed(() => {
-  if (props.account.availability_status === 'disabled' || props.account.management_state === 'paused') return '暂停'
-  if (props.account.availability_status === 'normal') return '正常'
-  if (props.account.availability_status === 'abnormal') return '异常'
-  if (props.account.availability_status === 'stale') return '待确认'
-  if (props.account.availability_status === 'unavailable') return '不可用'
-  if (props.account.service_state === 'available') return '正常'
-  if (props.account.service_state === 'pending') return '待确认'
-  return '不可用'
+  const now = Date.now()
+  if (props.account.temp_unschedulable_until && Date.parse(props.account.temp_unschedulable_until) > now) return '临时不可调度'
+  if (props.account.rate_limit_reset_at && Date.parse(props.account.rate_limit_reset_at) > now) return '限流中'
+  if (props.account.overload_until && Date.parse(props.account.overload_until) > now) return '错误'
+  if (props.account.status === 'error') return '错误'
+  if (props.account.status !== 'active') return '停用'
+  if (!props.account.schedulable) return '不可调度'
+  return '正常'
 })
 const statusBadgeClass = computed(() => ({
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300': statusLabel.value === '正常',
-  'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': statusLabel.value === '待确认' || statusLabel.value === '异常',
-  'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': statusLabel.value === '暂停',
-  'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': statusLabel.value === '不可用',
+  'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300': ['限流中', '临时不可调度'].includes(statusLabel.value),
+  'bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300': ['停用', '不可调度'].includes(statusLabel.value),
+  'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300': statusLabel.value === '错误',
 }))
 const statusDotClass = computed(() => ({
   'bg-emerald-500': statusLabel.value === '正常',
-  'bg-amber-500': statusLabel.value === '待确认' || statusLabel.value === '异常',
-  'bg-gray-400': statusLabel.value === '暂停',
-  'bg-red-500': statusLabel.value === '不可用',
+  'bg-amber-500': ['限流中', '临时不可调度'].includes(statusLabel.value),
+  'bg-gray-400': ['停用', '不可调度'].includes(statusLabel.value),
+  'bg-red-500': statusLabel.value === '错误',
 }))
 const evidenceDetail = computed(() => {
   if (props.account.evidence_source === 'historical_final') {
@@ -440,16 +440,19 @@ const profitRateLabel = computed(() => {
 const realRequestBars = computed(() => {
   const points = props.account.real_request_timeline ?? []
   if (!points.length) return []
-  return points.map((point) => {
+  return points.filter((point) => point.request_count > 0).map((point) => {
     const slow = point.ttft_p95_ms != null && point.ttft_p95_ms > 10000
     const requestCount = point.request_count
-    const colorClass = requestCount === 0 ? 'bg-gray-200 dark:bg-slate-700' : point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
-    return { colorClass, height: requestCount === 0 ? 16 : Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: point.ttft_p95_ms != null && Number.isFinite(point.ttft_p95_ms) ? `${Math.round(point.ttft_p95_ms)}ms` : null }
+    const colorClass = point.failure_count > 0 && point.success_count === 0 ? 'bg-red-500' : slow ? 'bg-amber-400' : 'bg-emerald-500'
+    return { colorClass, height: Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: point.ttft_p95_ms != null && Number.isFinite(point.ttft_p95_ms) ? String(Math.round(point.ttft_p95_ms)) + 'ms' : null }
   })
 })
 const realTimelineAriaLabel = computed(() => `近期性能，${props.account.request_count ?? 0} 次有效观测`)
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
-const modelDetectionStatus = computed(() => props.account.model_detection?.status ?? 'untested')
+const modelDetectionStatus = computed(() => {
+  const status = props.account.model_detection?.status
+  return status === 'insufficient' ? 'failed' : (status ?? 'untested')
+})
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
 const modelDetectionStatusHint = computed(() => {
   if (modelDetectionStatus.value === 'service_unconfigured') return t('admin.accounts.modelDetection.detectorUnconfigured')

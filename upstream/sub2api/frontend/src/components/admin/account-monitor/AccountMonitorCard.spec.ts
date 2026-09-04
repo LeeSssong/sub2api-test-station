@@ -141,9 +141,33 @@ describe('AccountMonitorCard R2', () => {
     })
     const identityText = wrapper.get('[data-test="identity-column"]').text()
 
-    expect(identityText).toContain('暂停 · OpenAI')
+    expect(identityText).toContain('停用 · OpenAI')
     expect(identityText).not.toContain('人工开关')
     expect(identityText).not.toContain('有效调度')
+  })
+
+  it('uses the native account status instead of monitor freshness', () => {
+    const wrapper = mountCard({ account: { ...account, status: 'active', availability_status: 'stale', service_state: 'pending' } })
+    expect(wrapper.get('[data-test="identity-column"]').text()).toContain('正常 · OpenAI')
+    expect(wrapper.get('[data-test="identity-column"]').text()).not.toContain('待确认')
+  })
+
+  it.each([
+    [{ status: 'active', temp_unschedulable_until: '2099-01-01T00:00:00Z' }, '临时不可调度'],
+    [{ status: 'active', rate_limit_reset_at: '2099-01-01T00:00:00Z' }, '限流中'],
+    [{ status: 'error' }, '错误'],
+    [{ status: 'inactive' }, '停用'],
+    [{ status: 'active', schedulable: false }, '不可调度'],
+    [{ status: 'active', schedulable: true }, '正常'],
+  ])('uses native account status fields for %s', (overrides, expected) => {
+    const wrapper = mountCard({ account: { ...account, ...overrides } })
+    expect(wrapper.get('[data-test="identity-column"]').text()).toContain(`${expected} · OpenAI`)
+  })
+
+  it('does not expose insufficient as a completed model detection result', () => {
+    const wrapper = mountCard({ account: { ...account, model_detection: { ...account.model_detection, status: 'insufficient' } } })
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).not.toContain('证据不足')
+    expect(wrapper.get('[data-test="model-detection-status-row"]').text()).toContain('status.failed')
   })
 
   it('shows zero profit instead of an estimated or pending state before revenue exists', () => {
@@ -172,7 +196,15 @@ describe('AccountMonitorCard R2', () => {
   })
 
   it('does not render fake gray bars when no request buckets exist', () => {
-    const wrapper = mountCard({ account: { ...account, real_request_timeline: [] } })
+    const wrapper = mountCard({
+      account: {
+        ...account,
+        real_request_timeline: [{
+          start_at: '2026-08-30T00:00:00Z', end_at: '2026-08-30T01:00:00Z',
+          request_count: 0, success_count: 0, failure_count: 0, ttft_p95_ms: null,
+        }],
+      },
+    })
 
     expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(0)
     expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('近期请求')

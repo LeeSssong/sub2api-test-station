@@ -20,7 +20,7 @@ describe('confirmed user shell composition', () => {
   it('shares recharge navigation and balance across recharge and redeem pages', () => {
     expect(payment).toContain('<UserRechargeNav active="recharge"')
     expect(redeem).toContain('<UserRechargeNav active="redeem"')
-    expect(payment).toContain(':amounts="[10, 30, 50, 50]"')
+    expect(payment).toContain(':amounts="[10, 30, 50, 100]"')
     expect(payment).toContain('const amount = ref(30)')
   })
 

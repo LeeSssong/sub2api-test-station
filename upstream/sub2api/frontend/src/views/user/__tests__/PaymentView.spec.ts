@@ -389,7 +389,7 @@ describe('PaymentView recharge-only experience', () => {
     expect(wrapper.text()).not.toContain('payment.tabSubscribe')
     expect(wrapper.text()).not.toContain('payment.noPlans')
     const amountInput = wrapper.findComponent({ name: 'AmountInput' })
-    expect(amountInput.props('amounts')).toEqual([10, 30, 50, 50])
+    expect(amountInput.props('amounts')).toEqual([10, 30, 50, 100])
   })
 })
 

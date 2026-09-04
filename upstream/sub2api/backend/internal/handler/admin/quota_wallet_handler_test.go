@@ -71,7 +71,7 @@ func TestQuotaWalletHandlerRequiresIdempotencyKey(t *testing.T) {
 	h.SetQuotaWalletService(fake)
 	r := gin.New()
 	r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
-	req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"recharge","amount_cny":1}`))
+	req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"recharge","amount_cny":1,"payment_trade_no":"T-1","note":"manual"}`))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
 	r.ServeHTTP(resp, req)
@@ -87,7 +87,7 @@ func TestQuotaWalletHandlerCreateRechargeDelegatesToCoordinator(t *testing.T) {
 	h.SetQuotaWalletService(fake)
 	r := gin.New()
 	r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
-	req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"recharge","amount_cny":5,"gift_quota_usd":2}`))
+	req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"recharge","amount_cny":5,"gift_quota_usd":2,"payment_trade_no":"T-2","note":"manual"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "admin-test-1")
 	resp := httptest.NewRecorder()
@@ -116,7 +116,9 @@ func TestQuotaWalletHandlerInvalidatesBalanceCacheAfterLedgerMutation(t *testing
 			r := gin.New()
 			r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
 
-			req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"`+tc.recordType+`","amount_cny":5}`))
+			body := `{"record_type":"` + tc.recordType + `","amount_cny":5}`
+			if tc.recordType == service.QuotaRecordRecharge { body = `{"record_type":"recharge","amount_cny":5,"payment_trade_no":"T-3","note":"manual"}` }
+			req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Idempotency-Key", "admin-test-"+tc.recordType)
 			resp := httptest.NewRecorder()

@@ -69,6 +69,7 @@ describe('UserBalanceModal', () => {
     })
 
     await wrapper.findAll('input[type="number"]')[0].setValue('10')
+    await wrapper.find('input[type="text"]').setValue('TRX-FAIL')
     await wrapper.get('#balance-form').trigger('submit')
     await flushPromises()
 
@@ -85,6 +86,7 @@ describe('UserBalanceModal', () => {
     const inputs = wrapper.findAll('input[type="number"]')
     await inputs[0].setValue('0')
     await inputs[1].setValue('5')
+    await wrapper.find('input[type="text"]').setValue('TRX-GIFT')
     await wrapper.get('#balance-form').trigger('submit')
     await flushPromises()
 
@@ -92,6 +94,7 @@ describe('UserBalanceModal', () => {
       record_type: 'recharge',
       amount_cny: 0,
       gift_quota_usd: 5,
+      payment_trade_no: 'TRX-GIFT',
       note: '',
     })
   })

@@ -128,6 +128,7 @@ type QuotaLedgerMutationRequest struct {
 	RecordType   string  `json:"record_type" binding:"required"`
 	AmountCNY    float64 `json:"amount_cny"`
 	GiftQuotaUSD float64 `json:"gift_quota_usd"`
+	PaymentTradeNo string `json:"payment_trade_no"`
 	Note         string  `json:"note"`
 }
 
@@ -538,6 +539,17 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 		response.BadRequest(c, "amounts must not be negative")
 		return
 	}
+	if req.RecordType == service.QuotaRecordRecharge {
+		tradeNo := strings.TrimSpace(req.PaymentTradeNo)
+		if tradeNo == "" {
+			response.BadRequest(c, "payment_trade_no is required for admin recharge")
+			return
+		}
+		if err := service.ValidateAdminRechargeInput(&service.AdminRechargeInput{UserID: userID, OperatorUserID: getAdminIDFromContext(c), Amount: decimal.NewFromFloat(req.AmountCNY), GiftQuota: decimal.NewFromFloat(req.GiftQuotaUSD), PaymentTradeNo: tradeNo, Note: strings.TrimSpace(req.Note)}); err != nil {
+			response.BadRequest(c, "invalid admin recharge")
+			return
+		}
+	}
 	actor := getAdminIDFromContext(c)
 	var actorID *int64
 	if actor > 0 {
@@ -545,7 +557,7 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 	}
 	var result service.QuotaMutationResult
 	if req.RecordType == service.QuotaRecordRecharge {
-		result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: key, ReferenceType: "admin_manual", Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+		result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: key, ReferenceType: "admin_recharge", ReferenceID: strings.TrimSpace(req.PaymentTradeNo), Note: strings.TrimSpace(req.Note), OperatorID: actorID})
 	} else {
 		if req.GiftQuotaUSD != 0 {
 			response.BadRequest(c, "gift_quota_usd is only valid for recharge")

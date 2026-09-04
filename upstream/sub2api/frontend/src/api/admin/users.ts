@@ -231,7 +231,7 @@ export function createIdempotencyKey(): string {
 
 export async function createQuotaLedgerEntry(
   id: number,
-  request: { record_type: 'recharge' | 'refund'; amount_cny: number; gift_quota_usd?: number; note?: string },
+  request: { record_type: 'recharge' | 'refund'; amount_cny: number; gift_quota_usd?: number; payment_trade_no?: string; note?: string },
   idempotencyKey = createIdempotencyKey()
 ): Promise<{ ledger_entry_id: number; idempotent: boolean; summary: QuotaSummary }> {
   const { data } = await apiClient.post<{ ledger_entry_id: number; idempotent: boolean; summary: QuotaSummary }>(

@@ -1116,8 +1116,8 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		), latest_probe (account_id, created_at, first_token_ms, successful, bucket_start) AS ( SELECT account_id, checked_at, first_token_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1 ), selected_requests (account_id, created_at, first_token_ms, successful) AS (
 			SELECT account_id, created_at, first_token_ms, successful FROM real_candidates WHERE rn = 1 UNION ALL SELECT p.account_id, p.created_at, p.first_token_ms, p.successful FROM latest_probe p WHERE NOT EXISTS (SELECT 1 FROM real_buckets r WHERE r.account_id = p.account_id AND r.bucket_start = p.bucket_start)
 		), buckets AS ( SELECT account_id, FLOOR(EXTRACT(EPOCH FROM (date_bin('5 minutes'::interval, created_at, $2::timestamptz) - $2)) / %v)::int AS source_bucket_index, COUNT(*)::bigint AS request_count, COUNT(*) FILTER (WHERE successful)::bigint AS success_count, COUNT(*) FILTER (WHERE NOT successful)::bigint AS failure_count, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_p95_ms FROM selected_requests GROUP BY account_id, source_bucket_index )
-		SELECT account_id, FLOOR(source_bucket_index::double precision * $5 / $6)::int AS bucket_index, request_count, success_count, failure_count, ttft_p95_ms FROM buckets ORDER BY account_id, bucket_index
-	`, sourceBucketSeconds), pq.Array(accountIDs), since.UTC(), until.UTC(), sourceBucketSeconds, bucketCount, sourceBucketCount)
+			SELECT account_id, FLOOR(source_bucket_index::double precision * $4 / $5)::int AS bucket_index, request_count, success_count, failure_count, ttft_p95_ms FROM buckets ORDER BY account_id, bucket_index
+		`, sourceBucketSeconds), pq.Array(accountIDs), since.UTC(), until.UTC(), bucketCount, sourceBucketCount)
 	if err != nil {
 		return nil, err
 	}

@@ -860,8 +860,8 @@ func TestAccountMonitorRepositoryRealRequestTimelineKeepsEmptyBuckets(t *testing
 	}
 	since := time.Date(2026, 8, 30, 0, 0, 0, 0, time.UTC)
 	until := since.Add(24 * time.Hour)
-	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*SELECT account_id,.*bucket_index,\s*request_count, success_count, failure_count, ttft_p95_ms`).
-		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 24, 288).
+	mock.ExpectQuery(unifiedAccountMonitorSelectionPattern("$2::timestamptz", false)+`.*SELECT account_id, FLOOR\(source_bucket_index::double precision \* \$4 / \$5\)::int AS bucket_index,\s*request_count, success_count, failure_count, ttft_p95_ms`).
+		WithArgs(sqlmock.AnyArg(), since, until, 24, 288).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
 			AddRow(7, 3, 5, 4, 1, 6200.0).
 			AddRow(7, 22, 2, 2, 0, 900.0).
@@ -1035,7 +1035,7 @@ func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *
 	until := since.Add(10 * time.Minute)
 
 	mock.ExpectQuery("timeline-query").
-		WithArgs(sqlmock.AnyArg(), since, until, 300.0, 2, 2).
+		WithArgs(sqlmock.AnyArg(), since, until, 2, 2).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
 			AddRow(7, 0, 1, 1, 0, 240.0).
 			AddRow(7, 1, 2, 1, 1, nil))

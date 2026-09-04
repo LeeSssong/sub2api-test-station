@@ -2,7 +2,7 @@
 
 **T130 流式容量失败与无首输出反馈闭环（2026-09-04）：** 状态 `DESIGNING`。已完成主站只读根因追踪并形成正式规格：明确容量类 SSE 失败即使当前请求因已输出不可重放，也必须对后续请求触发账号+模型短冷却；成功不再抹掉尚未自然过期的失败窗口；已派发上游且超过 60 秒无首输出后客户端取消，只保留右删失 TTFT 进入 W1 排名，不计失败、不冷却、不推断计费。无迁移、配置、历史回填或生产业务数据写入；等待用户审阅规格，且不得抢占 T129 的整合/发布车道。
 
-**T129 账号与分组监控运行时故障修复（2026-09-04）：** 状态 `VERIFYING`，双站 `32e31a1e6/0ee4654f` 已发布但管理员页面验收失败，正在前向返修。Monitor V4 原生含 input 分母及快照刷新已恢复；账号监控 500 的剩余根因是 `ListRealRequestTimelines` SQL 跳过 `$4` 却传入 6 个参数，生产 PostgreSQL 报 `could not determine data type of parameter $4`。返修改为连续 `$1..$5` 并删除多余实参，直接相关 RED/GREEN、仓储测试、Monitor V4 测试和构建已通过；重新完成双站发布和登录态页面验收前不得标记完成。
+**T129 账号与分组监控运行时故障修复（2026-09-04）：** 状态 `DONE`。最终运行时修复源 `b44708a62/fad4355a` 已推送并发布到主站与独立验收站；Monitor V4 原生含 input 分母及快照刷新已恢复，`ListRealRequestTimelines` SQL 参数已连续绑定为 `$1..$5`。直接相关 RED/GREEN、仓储测试、Monitor V4 测试、后端构建和 diff 检查通过；主站管理员登录态与独立验收站受保护管理员登录探针均确认 `GET /api/v1/admin/accounts/monitor` HTTP 200，历史 `$4`、`bucket_start` 与缓存分母错误未再出现。
 
 **2026-09-04 主站发布收口与验收站同步阻塞：** 状态 `VERIFYING`。用户已明确“测试站验收通过，部署主站”；根 `main@b8423672a59476c71093cc86e1d6f9e96d5f62ae` 已从干净且与 `origin/main` 一致的根目录发布主站，结果 `succeeded/promoted`、`downtime_required=false`，生产 green 槽和 `api.xingqiaolab.top` 三项健康探针通过。独立验收站 `sub2api-test-station@49.51.203.200` 仍为 `3f7d59df5/e049847d`，健康但未同步；旧 `ops/release-sub2api-acceptance.sh` 不能用于新独立站，故不得伪造同版本证据或直接用旧 `/admin/lab` 链发布。待独立站发布控制器适配并从同一根 `main` 完成同步后，才能解除本发布阻塞。
 

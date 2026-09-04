@@ -80,10 +80,10 @@ func TestOpenAISharedHealthRecordAttemptIsIdempotentAndResetsOnSuccess(t *testin
 	}
 	snapshot, err = store.RecordAttempt(ctx, success)
 	require.NoError(t, err)
-	require.Equal(t, 0, snapshot.FailureStreak)
+	require.Equal(t, 1, snapshot.FailureStreak)
 	require.Equal(t, int64(2), snapshot.Revision)
-	require.Equal(t, service.OpenAISharedHealthStateHealthy, snapshot.State)
-	require.Zero(t, snapshot.CooldownUntil)
+	require.Equal(t, service.OpenAISharedHealthStateCooldown, snapshot.State)
+	require.Equal(t, now.Add(10*time.Second), snapshot.CooldownUntil)
 	require.InDelta(t, 0.8, snapshot.EWMAErrorRate, 0.0001)
 	require.InDelta(t, 1300, snapshot.EWMATTFT.Milliseconds(), 1)
 

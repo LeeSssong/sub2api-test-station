@@ -6,7 +6,7 @@
 - Worktree: `.worktrees/t130-stream-capacity-feedback`
 - Branch: `codex/t130-stream-capacity-feedback`
 - Baseline commit: `9e4c708842fbf4ea2900225bc7f330902aa0364d`
-- Implementation commit: `3bfd7e2fe`
+- Primary implementation commit: `3bfd7e2fe`; the branch tip also contains the shared-health follow-up and this handoff update.
 - Root `main` observed during handoff: `0a95e23b7e5e1fa3c8b9592577934c8623c62307`
 - `origin/main` observed during handoff: `32e31a1e64179d022018aa6274ef62c68c1e0618`
 - Status: ready for refresh and root review; not pushed, merged, or deployed
@@ -19,6 +19,7 @@ The user stated that `main` was deploying and instructed this task not to touch 
 - Applies a 10-second future-request account/model cooldown for capacity failures even when output already started, without allowing current-request replay.
 - Retains bounded 60-second, 5-minute, and 15-minute failure-window history across ordinary successes; explicit restore remains a hard clear.
 - Preserves active cooldown when a concurrent successful request completes.
+- Preserves the same active cooldown in the existing Redis shared-health projection.
 - Records bounded capacity failure metadata in the existing resilience ledger.
 - Retains 60-second no-first-output client cancellation as T114 right-censored slow evidence and emits `openai.client_abandoned_after_upstream_wait`.
 - Does not count client abandonment as upstream failure, start cooldown, create another attempt, or alter billing/replay safety.
@@ -53,7 +54,7 @@ Before integration, fetch and rebase/cherry-pick the candidate onto the then-cur
 
 ## Rollback
 
-Before deployment, discard or revert candidate commit `3bfd7e2fe`. After integration, use an explicit revert commit on `main`, push it, then run the reviewed release chain from clean synchronized `main`.
+Before deployment, discard the candidate branch. After integration, use explicit revert commits for the T130 changes on `main`, push them, then run the reviewed release chain from clean synchronized `main`.
 
 ## Unverified
 

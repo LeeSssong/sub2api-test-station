@@ -41,13 +41,19 @@ local alpha = tonumber(ARGV[12])
 local function update_state(key)
   local revision = redis.call("HINCRBY", key, "revision", 1)
   local streak = tonumber(redis.call("HGET", key, "failure_streak") or "0")
+  local existing_cooldown_ms = tonumber(redis.call("HGET", key, "cooldown_until_unix_ms") or "0")
   local sample_error = 1
   local state = "soft_failed"
   if success then
-    streak = 0
     sample_error = 0
-    state = "healthy"
-    cooldown_ms = 0
+    if existing_cooldown_ms > observed_ms then
+      state = "cooldown"
+      cooldown_ms = existing_cooldown_ms
+    else
+      streak = 0
+      state = "healthy"
+      cooldown_ms = 0
+    end
   else
     streak = streak + 1
     if cooldown_ms > observed_ms then

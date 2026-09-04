@@ -3832,13 +3832,13 @@ func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
 		require.NotEmpty(t, repo.probeBucketTerminals)
 	})
 
-	t.Run("shared account probes when one group bucket is empty", func(t *testing.T) {
+	t.Run("shared account skips probe when the account bucket has traffic", func(t *testing.T) {
 		shared := account
 		shared.GroupIDs = []int64{7, 8}
 		repo := &accountMonitorRepoStub{}
 		svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{shared}}, nil, nil, nil)
-		// Group 7 has real traffic; group 8 does not. The single account probe
-		// must still run so its result can supply group 8's fallback.
+		// Probe admission is account-scoped. Group membership must not turn an
+		// account's real request into a second active probe.
 		svc.SetActiveProbeUsageReader(&sequencedModelDetectionUsageStub{used: []bool{true, false}})
 		calls := 0
 		svc.probeConnection = func(context.Context, int64, string, string, string) (AccountMonitorProbeResult, error) {
@@ -3847,9 +3847,9 @@ func TestAccountMonitorRunAllOnlyProbesEmptyUsageBucket(t *testing.T) {
 		}
 		completed, err := svc.RunAll(context.Background(), 1)
 		require.NoError(t, err)
-		require.Equal(t, 1, completed)
-		require.Equal(t, 1, calls)
-		require.Len(t, repo.results, 1)
+		require.Equal(t, 0, completed)
+		require.Equal(t, 0, calls)
+		require.Empty(t, repo.results)
 	})
 }
 

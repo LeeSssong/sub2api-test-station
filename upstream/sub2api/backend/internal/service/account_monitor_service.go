@@ -2667,9 +2667,18 @@ func (s *AccountMonitorService) runAll(ctx context.Context, actorID int64) (int,
 			s.refreshAuxiliary(gctx, &account, AccountMonitorRefreshOptions{
 				RefreshDeclaration: true, RefreshBalance: true,
 			})
-			// Probe admission is account-scoped. The read-side projection selects
-			// real traffic for a bucket before this probe, so another account's
-			// traffic must never suppress this account's fallback probe.
+			reader := s.activeProbeUsageReader()
+			if reader != nil {
+				bucketStart, bucketEnd := currentActiveProbeBucket(time.Now())
+				used, usageErr := reader.HasAccountUsageInWindow(gctx, account.ID, bucketStart, bucketEnd)
+				if usageErr != nil {
+					slog.WarnContext(gctx, "account_monitor.active_probe_usage_read_failed", "account_id", account.ID, "error", usageErr)
+				} else if used {
+					return nil
+				}
+			} else {
+				slog.WarnContext(gctx, "account_monitor.active_probe_usage_reader_unavailable", "account_id", account.ID)
+			}
 			if err := gctx.Err(); err != nil {
 				return err
 			}

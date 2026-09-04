@@ -7,11 +7,13 @@
 - Branch: `codex/t130-stream-capacity-feedback`
 - Baseline commit: `9e4c708842fbf4ea2900225bc7f330902aa0364d`
 - Primary implementation commit: `3bfd7e2fe`; the branch tip also contains the shared-health follow-up and this handoff update.
-- Root `main` observed during handoff: `0a95e23b7e5e1fa3c8b9592577934c8623c62307`
-- `origin/main` observed during handoff: `32e31a1e64179d022018aa6274ef62c68c1e0618`
-- Status: ready for refresh and root review; not pushed, merged, or deployed
+- Root `main` at final check: `b44708a624163ab3b19ee39cdec49f2b23c70db0`
+- Root `main` tree at final check: `fad4355ae888588ddede5dea4757319072a2f29a`
+- `origin/main` at final check: `b44708a624163ab3b19ee39cdec49f2b23c70db0`
+- Candidate tip before the final handoff-only commit: `97aaaec81918e3e43828e8fd8b942eb8b60148d0`
+- Status: `REFRESH_REQUIRED`; not pushed, merged, or deployed
 
-The user stated that `main` was deploying and instructed this task not to touch it. Root `main` advanced and contained deployment-related uncommitted repository changes during implementation. T130 did not modify, stage, clean, merge, or deploy from root `main`.
+The user stated that `main` was deploying and instructed this task not to touch it. Root `main` advanced during implementation and was clean and synchronized with `origin/main` at the final read-only check. T130 did not modify, stage, clean, merge, or deploy from root `main`.
 
 ## Changes
 

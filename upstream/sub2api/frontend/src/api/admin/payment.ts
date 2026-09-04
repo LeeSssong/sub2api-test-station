@@ -120,6 +120,10 @@ export const adminPaymentAPI = {
     return apiClient.post<RefundResult>(`/admin/payment/orders/${id}/refund`, data)
   },
 
+  accountingRefund(id: number, data: { amount: number; refund_trade_no: string; reason: string }) {
+    return apiClient.post<RefundResult>(`/admin/payment/orders/${id}/accounting-refund`, data)
+  },
+
   /** Query and finalize a pending refund */
   queryRefund(id: number) {
     return apiClient.post<RefundResult>(`/admin/payment/orders/${id}/refund/query`)

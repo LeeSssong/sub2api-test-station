@@ -239,6 +239,32 @@ type AdminProcessRefundRequest struct {
 	DeductBalance bool    `json:"deduct_balance"`
 }
 
+type AdminAccountingRefundRequest struct {
+	Amount        float64 `json:"amount"`
+	RefundTradeNo string  `json:"refund_trade_no"`
+	Reason        string  `json:"reason"`
+}
+
+// ProcessAccountingRefund handles manual refunds for admin_recharge orders.
+func (h *PaymentHandler) ProcessAccountingRefund(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req AdminAccountingRefundRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	operatorID := getAdminIDFromContext(c)
+	result, err := h.paymentService.AdminAccountingRefund(c.Request.Context(), orderID, operatorID, req.Amount, req.RefundTradeNo, req.Reason)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // ProcessRefund processes a refund for an order (admin).
 // POST /api/v1/admin/payment/orders/:id/refund
 func (h *PaymentHandler) ProcessRefund(c *gin.Context) {

@@ -80,6 +80,19 @@
           </svg>
           {{ t('admin.users.withdraw') }}
         </button>
+        <button v-if="!hideActions" class="rounded-lg border border-amber-200 px-3 py-2 text-sm text-amber-700" @click="loadRefundOrders('accounting')">{{ t('admin.users.accountingRefund') }}</button>
+        <button v-if="!hideActions" class="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700" @click="loadRefundOrders('channel')">{{ t('admin.users.paymentChannelRefund') }}</button>
+      </div>
+
+      <div v-if="refundMode" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+        <div class="mb-2 flex items-center justify-between"><span class="text-sm font-medium">{{ refundMode === 'accounting' ? t('admin.users.accountingRefund') : t('admin.users.paymentChannelRefund') }}</span><button class="text-xs text-gray-500" @click="refundMode = null">{{ t('common.close') }}</button></div>
+        <div v-if="refundLoading" class="py-4 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
+        <div v-else-if="refundOrders.length === 0" class="py-4 text-center text-sm text-gray-500">{{ t('admin.users.noRefundableOrders') }}</div>
+        <div v-else class="space-y-2">
+          <button v-for="order in refundOrders" :key="order.id" class="flex w-full items-center justify-between rounded border border-gray-200 p-2 text-left hover:bg-gray-50 dark:border-dark-600 dark:hover:bg-dark-700" @click="emit('refund-order', order)">
+            <span><span class="font-mono text-xs">#{{ order.id }}</span> <span class="ml-2 text-sm">{{ order.out_trade_no }}</span></span><span class="text-sm font-medium">${{ Number(order.paid_quota_usd ?? order.amount).toFixed(2) }}</span>
+          </button>
+        </div>
       </div>
 
       <!-- Loading -->
@@ -192,6 +205,8 @@
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type BalanceHistoryItem, type QuotaLedgerEntry, type QuotaSummary } from '@/api/admin'
+import { adminPaymentAPI } from '@/api/admin/payment'
+import type { PaymentOrder } from '@/types/payment'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -199,7 +214,7 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const props = defineProps<{ show: boolean; user: AdminUser | null; hideActions?: boolean }>()
-const emit = defineEmits(['close', 'deposit', 'withdraw'])
+const emit = defineEmits(['close', 'deposit', 'withdraw', 'refund-order'])
 const { t } = useI18n()
 
 const history = ref<BalanceHistoryItem[]>([])
@@ -215,6 +230,9 @@ const quotaLoading = ref(false)
 const quotaTotal = ref(0)
 const quotaPage = ref(1)
 const quotaSummary = ref<QuotaSummary | null>(null)
+const refundMode = ref<'accounting' | 'channel' | null>(null)
+const refundOrders = ref<PaymentOrder[]>([])
+const refundLoading = ref(false)
 
 const refundableCashBalance = computed(() => {
   if (!quotaSummary.value) return 0
@@ -241,10 +259,28 @@ watch(() => props.show, (v) => {
     activeTab.value = 'legacy'
     quotaHistory.value = []
     quotaSummary.value = null
+    refundMode.value = null
+    refundOrders.value = []
     loadHistory(1)
     void loadQuotaSummary()
   }
 })
+
+const loadRefundOrders = async (mode: 'accounting' | 'channel') => {
+  if (!props.user) return
+  refundMode.value = mode
+  refundLoading.value = true
+  try {
+    const result = await adminPaymentAPI.getOrders({ user_id: props.user.id, payment_type: mode === 'accounting' ? 'admin_recharge' : undefined, page: 1, page_size: 100 })
+    refundOrders.value = (result.data.items || []).filter((order) => {
+      const active = order.status === 'COMPLETED' || order.status === 'PARTIALLY_REFUNDED'
+      if (mode === 'accounting') return active && order.payment_type === 'admin_recharge'
+      return active && order.payment_type !== 'admin_recharge' && Boolean(order.provider_instance_id)
+    })
+  } finally {
+    refundLoading.value = false
+  }
+}
 
 const loadQuotaSummary = async () => {
   if (!props.user) return

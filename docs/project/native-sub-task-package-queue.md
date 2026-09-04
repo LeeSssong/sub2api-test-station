@@ -2,7 +2,7 @@
 
 **T130 流式容量失败与无首输出反馈闭环（2026-09-04）：** 状态 `DESIGNING`。已完成主站只读根因追踪并形成正式规格：明确容量类 SSE 失败即使当前请求因已输出不可重放，也必须对后续请求触发账号+模型短冷却；成功不再抹掉尚未自然过期的失败窗口；已派发上游且超过 60 秒无首输出后客户端取消，只保留右删失 TTFT 进入 W1 排名，不计失败、不冷却、不推断计费。无迁移、配置、历史回填或生产业务数据写入；等待用户审阅规格，且不得抢占 T129 的整合/发布车道。
 
-**T129 账号与分组监控运行时故障修复（2026-09-04）：** 状态 `IMPLEMENTING`，发布已暂停。用户纠正确认缓存命中率须与 Sub 原生渠道状态监控一致，分母包含 `input_tokens + cache_creation_tokens + cache_read_tokens`；源码核验成立。已推送但未部署的 `main@6ff0cbe4b` 将以新提交前向纠正服务校验和内部 input 投影，保留 `bucket_start` 修复。完成新 TDD 与直接回归前不得发布。
+**T129 账号与分组监控运行时故障修复（2026-09-04）：** 状态 `INTEGRATING`，尚未部署。用户纠正确认缓存命中率须与 Sub 原生渠道状态监控一致，分母包含 `input_tokens + cache_creation_tokens + cache_read_tokens`；源码核验成立。前向修复候选 `0ab88de30` 已推送并合入根 `main`，保留 `bucket_start` 修复，内部投影补齐 input 并按原生公式精确校验；候选及合并后定向测试、构建、diff 检查均通过。等待根 `main` 推送一致性门禁及双站发布。
 
 **2026-09-04 主站发布收口与验收站同步阻塞：** 状态 `VERIFYING`。用户已明确“测试站验收通过，部署主站”；根 `main@b8423672a59476c71093cc86e1d6f9e96d5f62ae` 已从干净且与 `origin/main` 一致的根目录发布主站，结果 `succeeded/promoted`、`downtime_required=false`，生产 green 槽和 `api.xingqiaolab.top` 三项健康探针通过。独立验收站 `sub2api-test-station@49.51.203.200` 仍为 `3f7d59df5/e049847d`，健康但未同步；旧 `ops/release-sub2api-acceptance.sh` 不能用于新独立站，故不得伪造同版本证据或直接用旧 `/admin/lab` 链发布。待独立站发布控制器适配并从同一根 `main` 完成同步后，才能解除本发布阻塞。
 

@@ -178,6 +178,7 @@
           @edit-connection-probe-model="loadModelDetectionModels"
           @save-model-detection-models="saveModelDetectionModels"
           @detect-model-detection="enqueueModelDetection"
+          @update-automation="updateAutomation"
           @open-model-detection-history="openModelDetectionHistory"
           @update-priority="updatePriority"
           @edit-cost="openCostDialog"
@@ -641,6 +642,15 @@ async function enqueueModelDetection(accountID: number) {
   }
 }
 
+async function updateAutomation(accountID: number, field: 'active_probe_enabled' | 'model_detection_enabled', enabled: boolean) {
+  try {
+    await adminAPI.accounts.update(accountID, { [field]: enabled })
+    await load(activeRange.value, { notifyError: false })
+  } catch (reason: unknown) {
+    appStore.showError(extractApiErrorMessage(reason, '账号自动监控设置保存失败'))
+  }
+}
+
 function openModelDetectionHistory(accountID: number) {
   selectedDetectionHistoryAccount.value = allAccounts.value.find((account) => account.account_id === accountID) ?? null
   showDetectionHistoryPanel.value = selectedDetectionHistoryAccount.value != null
@@ -730,6 +740,7 @@ async function saveAccountMultiplier(multiplier: number, model: 'direct_multipli
       upstream_actual_cost: model === 'ratio_based_upstream' ? actualCost : null,
       upstream_obtained_quota: model === 'ratio_based_upstream' ? obtainedQuota : null,
       upstream_billing_rate_sync_enabled: false,
+      extra: { rate_multiplier_mode: model === 'direct_multiplier' ? 'manual' : 'native' },
     })
     const reloaded = await load(activeRange.value, { notifyError: false })
     if (!reloaded) {

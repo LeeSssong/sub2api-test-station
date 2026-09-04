@@ -662,6 +662,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	requestedProbeEnabledUpdate := input.ProbeEnabled
 	requestedRateSyncEnabledUpdate := input.RateSyncEnabled
 	requestedActiveProbeEnabledUpdate := input.ActiveProbeEnabled
+	requestedModelDetectionEnabledUpdate := input.ModelDetectionEnabled
 	if input.Extra != nil {
 		if raw, ok := normalizedExtra[ActiveProbeEnabledExtraKey]; ok {
 			enabled, valid := raw.(bool)
@@ -674,6 +675,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			requestedActiveProbeEnabledUpdate = &enabled
 		}
 		delete(normalizedExtra, ActiveProbeEnabledExtraKey)
+		if raw, ok := normalizedExtra[ModelDetectionEnabledExtraKey]; ok {
+			enabled, valid := raw.(bool)
+			if !valid {
+				return nil, infraerrors.BadRequest("INVALID_MODEL_DETECTION_ENABLED", "model_detection_enabled must be a boolean")
+			}
+			if requestedModelDetectionEnabledUpdate != nil && *requestedModelDetectionEnabledUpdate != enabled {
+				return nil, infraerrors.BadRequest("CONFLICTING_MODEL_DETECTION_ENABLED", "conflicting model_detection_enabled values")
+			}
+			requestedModelDetectionEnabledUpdate = &enabled
+		}
+		delete(normalizedExtra, ModelDetectionEnabledExtraKey)
 		requestedProbeEnabled, hasRequestedProbeEnabled := normalizedExtra[UpstreamBillingProbeEnabledExtraKey]
 		if hasRequestedProbeEnabled {
 			enabled, ok := requestedProbeEnabled.(bool)
@@ -706,6 +718,8 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
 			ActiveProbeEnabledExtraKey,
+			ModelDetectionEnabledExtraKey,
+			"rate_multiplier_mode",
 			EffectiveCostModelExtraKey,
 			UpstreamActualCostExtraKey,
 			UpstreamObtainedQuotaExtraKey,
@@ -771,6 +785,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if requestedActiveProbeEnabledUpdate != nil {
 		account.Extra[ActiveProbeEnabledExtraKey] = *requestedActiveProbeEnabledUpdate
+	}
+	if requestedModelDetectionEnabledUpdate != nil {
+		if account.Extra == nil {
+			account.Extra = make(map[string]any)
+		}
+		account.Extra[ModelDetectionEnabledExtraKey] = *requestedModelDetectionEnabledUpdate
 	}
 	// 影子代理恒继承母账号(由 propagateProxyToShadows 同步),不接受独立编辑——外审 B/P1;
 	// 否则要等母账号下次改 proxy 才被覆盖,期间影子会出现"有时继承、有时独立"的漂移。

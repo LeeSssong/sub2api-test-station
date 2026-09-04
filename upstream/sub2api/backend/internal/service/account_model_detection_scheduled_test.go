@@ -12,6 +12,13 @@ type modelDetectionUsageStub struct {
 	err         error
 }
 
+func TestAccountModelDetectionEnabledDefaultsAndCanDisable(t *testing.T) {
+	account := &Account{}
+	if !account.ModelDetectionEnabled() { t.Fatal("missing model detection flag should default enabled") }
+	account.Extra = map[string]any{ModelDetectionEnabledExtraKey: false}
+	if account.ModelDetectionEnabled() { t.Fatal("explicit false should disable model detection") }
+}
+
 type alwaysUsedActiveProbeUsageStub struct{}
 
 func (*alwaysUsedActiveProbeUsageStub) HasAccountUsageInWindow(context.Context, int64, time.Time, time.Time) (bool, error) {

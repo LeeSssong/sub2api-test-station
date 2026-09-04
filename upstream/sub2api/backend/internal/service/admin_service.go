@@ -434,6 +434,7 @@ type UpdateAccountInput struct {
 	RateSyncEnabled    *bool
 	// ActiveProbeEnabled controls automatic connection probes and scheduled model detection.
 	ActiveProbeEnabled    *bool
+	ModelDetectionEnabled *bool
 	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
 }
 

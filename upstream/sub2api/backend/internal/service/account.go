@@ -98,12 +98,21 @@ type Account struct {
 // scheduled model detection. Missing values preserve the historical default of
 // enabled; this key never changes user-request scheduling.
 const ActiveProbeEnabledExtraKey = "active_probe_enabled"
+const ModelDetectionEnabledExtraKey = "model_detection_enabled"
 
 func (a *Account) ActiveProbeEnabled() bool {
 	if a == nil || a.Extra == nil {
 		return true
 	}
 	value, ok := a.Extra[ActiveProbeEnabledExtraKey].(bool)
+	return !ok || value
+}
+
+func (a *Account) ModelDetectionEnabled() bool {
+	if a == nil || a.Extra == nil {
+		return true
+	}
+	value, ok := a.Extra[ModelDetectionEnabledExtraKey].(bool)
 	return !ok || value
 }
 

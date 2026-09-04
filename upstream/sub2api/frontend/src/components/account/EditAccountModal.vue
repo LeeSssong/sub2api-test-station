@@ -1547,7 +1547,7 @@
             step="0.001"
             class="input disabled:cursor-not-allowed disabled:opacity-60"
             data-testid="account-rate-multiplier"
-            :disabled="upstreamBillingRateSyncEnabled"
+            :disabled="upstreamBillingRateSyncEnabled || rateMultiplierMode === 'native'"
           />
           <p class="input-hint">
             {{
@@ -1558,6 +1558,11 @@
               )
             }}
           </p>
+          <select v-model="rateMultiplierMode" class="input mt-2" data-testid="rate-multiplier-mode" @change="handleRateMultiplierModeChange">
+            <option value="auto">自动读取上游声明倍率</option>
+            <option value="manual">手工维护</option>
+            <option value="native">Sub 原生</option>
+          </select>
           <p v-if="account?.extra?.newapi_rate_registration?.status === 'registered'" class="mt-1 text-xs text-amber-600 dark:text-amber-400" data-testid="newapi-rate-manual-edit-hint">
             {{ t('admin.accounts.upstreamBilling.manualEditMayBeOverwritten') }}
           </p>
@@ -1592,6 +1597,10 @@
           data-testid="active-probe-enabled"
           :aria-label="t('admin.accounts.activeProbe.title')"
         />
+      </div>
+      <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div><label class="input-label mb-0">自动模型检测</label><p class="mt-1 text-xs text-gray-500 dark:text-gray-400">关闭后不再执行定时模型检测。</p></div>
+        <Toggle v-model="modelDetectionEnabled" data-testid="model-detection-enabled" aria-label="自动模型检测" />
       </div>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
@@ -3177,7 +3186,9 @@ const autoResetCredit5hThreshold = ref(100)
 const autoResetCredit7dThreshold = ref(100)
 const upstreamBillingAutoProbeEnabled = ref(false)
 const upstreamBillingRateSyncEnabled = ref(false)
+const rateMultiplierMode = ref<'auto' | 'manual' | 'native'>('auto')
 const activeProbeEnabled = ref(true)
+const modelDetectionEnabled = ref(true)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityProjectId = ref('')
@@ -3572,6 +3583,7 @@ const form = reactive({
 })
 
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
+  rateMultiplierMode.value = enabled ? 'auto' : (rateMultiplierMode.value === 'auto' ? 'manual' : rateMultiplierMode.value)
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
     upstreamBillingAutoProbeEnabled.value = true
@@ -3583,6 +3595,11 @@ const handleUpstreamBillingAutoProbeChange = (enabled: boolean) => {
   if (!enabled) {
     upstreamBillingRateSyncEnabled.value = false
   }
+}
+
+const handleRateMultiplierModeChange = () => {
+  upstreamBillingRateSyncEnabled.value = rateMultiplierMode.value === 'auto'
+  if (rateMultiplierMode.value === 'auto') upstreamBillingAutoProbeEnabled.value = true
 }
 
 const statusOptions = computed(() => {
@@ -3680,6 +3697,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.group_ids = newAccount.group_ids || []
   form.expires_at = newAccount.expires_at ?? null
   activeProbeEnabled.value = newAccount.active_probe_enabled !== false
+  modelDetectionEnabled.value = newAccount.extra?.model_detection_enabled !== false
 
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
@@ -3713,6 +3731,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	upstreamBillingAutoProbeEnabled.value = extra?.upstream_billing_probe_enabled === true
   upstreamBillingRateSyncEnabled.value =
     upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
+  rateMultiplierMode.value = extra?.rate_multiplier_mode === 'native' ? 'native' : (upstreamBillingRateSyncEnabled.value ? 'auto' : (extra?.rate_multiplier_mode === 'manual' ? 'manual' : 'manual'))
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
@@ -4626,9 +4645,11 @@ const handleSubmit = async () => {
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
     updatePayload.active_probe_enabled = activeProbeEnabled.value
+    updatePayload.model_detection_enabled = modelDetectionEnabled.value
     if (props.account.type === 'apikey') {
       updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
       updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
+      updatePayload.extra = { ...(updatePayload.extra as Record<string, unknown> || {}), rate_multiplier_mode: rateMultiplierMode.value }
       if (upstreamBillingRateSyncEnabled.value) {
         delete updatePayload.rate_multiplier
       }

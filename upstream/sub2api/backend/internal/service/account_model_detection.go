@@ -528,7 +528,7 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 	completed := 0
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || !account.ActiveProbeEnabled() || !accountActiveProbeEnabledByGroups(account) {
+		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || !account.ActiveProbeEnabled() || !account.ModelDetectionEnabled() || !accountActiveProbeEnabledByGroups(account) {
 			continue
 		}
 		models, err := s.modelsForAccount(ctx, account)

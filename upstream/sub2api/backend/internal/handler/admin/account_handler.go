@@ -147,6 +147,7 @@ type CreateAccountRequest struct {
 	ProbeEnabled            *bool          `json:"upstream_billing_probe_enabled"`
 	RateSyncEnabled         *bool          `json:"upstream_billing_rate_sync_enabled"`
 	ActiveProbeEnabled      *bool          `json:"active_probe_enabled"`
+	ModelDetectionEnabled   *bool          `json:"model_detection_enabled"`
 	ConfirmMixedChannelRisk *bool          `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
@@ -175,6 +176,7 @@ type UpdateAccountRequest struct {
 	ProbeEnabled            *bool                  `json:"upstream_billing_probe_enabled"`
 	RateSyncEnabled         *bool                  `json:"upstream_billing_rate_sync_enabled"`
 	ActiveProbeEnabled      *bool                  `json:"active_probe_enabled"`
+	ModelDetectionEnabled   *bool                  `json:"model_detection_enabled"`
 	ConfirmMixedChannelRisk *bool                  `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
 }
 
@@ -1180,6 +1182,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		ProbeEnabled:          req.ProbeEnabled,
 		RateSyncEnabled:       req.RateSyncEnabled,
 		ActiveProbeEnabled:    req.ActiveProbeEnabled,
+		ModelDetectionEnabled: req.ModelDetectionEnabled,
 		SkipMixedChannelCheck: skipCheck,
 	}
 	var account *service.Account
@@ -1226,7 +1229,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func hasNonProcurementAccountUpdate(req UpdateAccountRequest) bool {
-	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.EffectiveCostModel != nil || req.UpstreamActualCost != nil || req.UpstreamObtainedQuota != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ActiveProbeEnabled != nil || req.ConfirmMixedChannelRisk != nil
+	return req.Name != "" || req.Notes != nil || req.Type != "" || len(req.Credentials) > 0 || len(req.Extra) > 0 || req.ProxyID != nil || req.Concurrency != nil || req.Priority != nil || req.RateMultiplier != nil || req.EffectiveCostModel != nil || req.UpstreamActualCost != nil || req.UpstreamObtainedQuota != nil || req.LoadFactor != nil || req.Status != "" || req.GroupIDs != nil || req.ExpiresAt != nil || req.AutoPauseOnExpired != nil || req.ProbeEnabled != nil || req.RateSyncEnabled != nil || req.ActiveProbeEnabled != nil || req.ModelDetectionEnabled != nil || req.ConfirmMixedChannelRisk != nil
 }
 
 func toServiceProcurementCostUpdate(cost, quota procurementCostRequest) *service.ProcurementCostUpdate {

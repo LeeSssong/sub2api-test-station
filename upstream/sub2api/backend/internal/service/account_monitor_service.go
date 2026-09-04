@@ -306,6 +306,8 @@ func (s *AccountMonitorService) List(ctx context.Context) (AccountMonitorPage, e
 			Platform:                     account.Platform,
 			AccountType:                  account.Type,
 			Status:                       account.Status,
+			ActiveProbeEnabled:           account.ActiveProbeEnabled(),
+			ModelDetectionEnabled:        account.ModelDetectionEnabled(),
 			RateLimitedAt:                account.RateLimitedAt,
 			RateLimitResetAt:             account.RateLimitResetAt,
 			OverloadUntil:                account.OverloadUntil,
@@ -745,7 +747,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		}
 		row := AccountMonitorAccount{
 			AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type,
-			Status: account.Status, RateLimitedAt: account.RateLimitedAt, RateLimitResetAt: account.RateLimitResetAt, OverloadUntil: account.OverloadUntil, TempUnschedulableUntil: account.TempUnschedulableUntil, Schedulable: account.Schedulable,
+			Status: account.Status, ActiveProbeEnabled: account.ActiveProbeEnabled(), ModelDetectionEnabled: account.ModelDetectionEnabled(), RateLimitedAt: account.RateLimitedAt, RateLimitResetAt: account.RateLimitResetAt, OverloadUntil: account.OverloadUntil, TempUnschedulableUntil: account.TempUnschedulableUntil, Schedulable: account.Schedulable,
 			EffectiveSchedulable: effectiveSchedulable, EffectiveSchedulableAt: observedAt,
 			EffectiveUnschedulableReason: effectiveUnschedulableReason, Priority: account.Priority,
 			HomepageURL: accountMonitorHomepageURL(account), GroupIDs: append([]int64{}, account.GroupIDs...),

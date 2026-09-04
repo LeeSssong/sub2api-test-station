@@ -42,6 +42,8 @@
           <section class="monitor-card-model" data-test="model-detection-section">
             <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-pill" :class="modelDetectionStatusClass">{{ modelDetectionStatusLabel }}</span><Icon name="chevronDown" size="xs" /></button>
             <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
+            <label class="monitor-toggle"><input type="checkbox" :checked="account.active_probe_enabled !== false" data-test="auto-probe-toggle" @change="emit('updateAutomation', account.account_id, 'active_probe_enabled', ($event.target as HTMLInputElement).checked)"><span>自动探测</span></label>
+            <label class="monitor-toggle"><input type="checkbox" :checked="account.model_detection_enabled !== false" data-test="auto-model-detection-toggle" @change="emit('updateAutomation', account.account_id, 'model_detection_enabled', ($event.target as HTMLInputElement).checked)"><span>自动模型检测</span></label>
           </section>
         </div>
         <section class="monitor-card-chart" data-test="timeline-section" aria-label="近期性能">
@@ -247,6 +249,7 @@ const emit = defineEmits<{
   (event: 'editConnectionProbeModel', account: AccountMonitorAccount): void
   (event: 'saveModelDetectionModels', accountID: number, payload: { connectionModel: string; detectionModel: string }): void
   (event: 'detectModelDetection', accountID: number): void
+  (event: 'updateAutomation', accountID: number, field: 'active_probe_enabled' | 'model_detection_enabled', enabled: boolean): void
   (event: 'openModelDetectionHistory', accountID: number): void
 }>()
 

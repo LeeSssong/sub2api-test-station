@@ -461,6 +461,8 @@ type AccountMonitorAccount struct {
 	Platform                     string                                   `json:"platform"`
 	AccountType                  string                                   `json:"account_type"`
 	Status                       string                                   `json:"status"`
+	ActiveProbeEnabled           bool                                     `json:"active_probe_enabled"`
+	ModelDetectionEnabled        bool                                     `json:"model_detection_enabled"`
 	RateLimitedAt                *time.Time                               `json:"rate_limited_at,omitempty"`
 	RateLimitResetAt             *time.Time                               `json:"rate_limit_reset_at,omitempty"`
 	OverloadUntil                *time.Time                               `json:"overload_until,omitempty"`

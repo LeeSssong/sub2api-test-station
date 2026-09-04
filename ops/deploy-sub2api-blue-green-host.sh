@@ -88,6 +88,8 @@ readonly MAINTENANCE_24_OLD_MIGRATIONS_HASH=db6674e8502b84901bcacd74f0a0a9bac17e
 readonly MAINTENANCE_24_NEW_MIGRATIONS_HASH=87ee95b8a6a52ded87a1d92fdd1adc7b7508e5807d190ddd7f6e2801f9c10077
 readonly MAINTENANCE_25_OLD_MIGRATIONS_HASH=87ee95b8a6a52ded87a1d92fdd1adc7b7508e5807d190ddd7f6e2801f9c10077
 readonly MAINTENANCE_25_NEW_MIGRATIONS_HASH=30adae913d7470c785b3d7e0e54153985be9e0fcdc1d6d3d3e5067896aef3f59
+readonly MAINTENANCE_26_OLD_MIGRATIONS_HASH=30adae913d7470c785b3d7e0e54153985be9e0fcdc1d6d3d3e5067896aef3f59
+readonly MAINTENANCE_26_NEW_MIGRATIONS_HASH=a01097cc0beb4376aca6982f0c993b5e2dd34cc8b8a739757cf178feb26c9a8d
 
 while (($#)); do
   case "$1" in
@@ -141,7 +143,8 @@ approved_maintenance_transition() {
     || "$from_hash" == "$MAINTENANCE_22_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_22_NEW_MIGRATIONS_HASH" \
     || "$from_hash" == "$MAINTENANCE_23_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_23_NEW_MIGRATIONS_HASH" \
     || "$from_hash" == "$MAINTENANCE_24_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_24_NEW_MIGRATIONS_HASH" \
-    || "$from_hash" == "$MAINTENANCE_25_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_25_NEW_MIGRATIONS_HASH" ]]
+    || "$from_hash" == "$MAINTENANCE_25_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_25_NEW_MIGRATIONS_HASH" \
+    || "$from_hash" == "$MAINTENANCE_26_OLD_MIGRATIONS_HASH" && "$to_hash" == "$MAINTENANCE_26_NEW_MIGRATIONS_HASH" ]]
 }
 preloaded_image=${RELEASE_PRELOADED_IMAGE:-false}
 [[ "$preloaded_image" == true || "$preloaded_image" == false ]] \

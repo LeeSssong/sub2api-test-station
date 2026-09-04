@@ -147,6 +147,14 @@ to   d9a19c7ac0b6686acd8b281fa0310c8e6aaf6e747ea1733cf973583c4d937ca3
 file 233_upstream_balance_notification_silence.sql — add-only alert silence columns and a partial BaseURL alert index; no account, balance, usage, credential, or business-data rewrite.
 ```
 
+Current T132 transition:
+
+```text
+from 30adae913d7470c785b3d7e0e54153985be9e0fcdc1d6d3d3e5067896aef3f59
+to   a01097cc0beb4376aca6982f0c993b5e2dd34cc8b8a739757cf178feb26c9a8d
+file 236_account_model_detection_trigger_evidence.sql (SHA-256 89e5b4f68afb7d21c4f95d24a13623e1cc8a8198e36e4b31f8e2e710740ad8bf) — add-only nullable JSONB trigger evidence for model-detection runs; no historical backfill, credential/prompt/output persistence, usage/accounting rewrite, or destructive data operation.
+```
+
 Invoke the same controller with the explicit maintenance flag:
 
 ```bash

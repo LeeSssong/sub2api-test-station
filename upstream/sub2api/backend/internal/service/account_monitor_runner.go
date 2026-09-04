@@ -15,6 +15,7 @@ var (
 	accountModelDetectionQueueInterval      = time.Second
 	accountMonitorTerminalWatchdogInterval  = time.Minute
 	accountMonitorV4SnapshotRefreshInterval = 5 * time.Minute
+	accountMonitorRunTimeout                = 4 * time.Minute
 )
 
 const (
@@ -273,7 +274,11 @@ func (r *AccountMonitorRunner) runOnce() {
 	if r.balanceNotification != nil {
 		defer r.balanceNotification.TriggerEvaluate()
 	}
-	if _, err := r.svc.RunAll(r.ctx, 0); err != nil {
+	ctx, cancel := context.WithTimeout(r.ctx, accountMonitorRunTimeout)
+	defer cancel()
+	completed, err := r.svc.RunAll(ctx, 0)
+	slog.Info("account_monitor: run completed", "completed", completed, "error", err)
+	if err != nil {
 		slog.Warn("account_monitor: run failed", "error", err)
 	}
 }

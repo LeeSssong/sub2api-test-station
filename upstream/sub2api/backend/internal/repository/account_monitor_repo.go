@@ -652,7 +652,7 @@ WITH scopes AS (
 		'probe'::text AS source,
 		bm.probe_missing
 	FROM bucket_matrix bm
-	WHERE bm.probe_missing IS NOT TRUE
+	WHERE bm.probe_missing IS NOT TRUE AND bm.probe_successful IS TRUE
 ), latest_selected AS (
   SELECT DISTINCT ON (group_id) group_id, successful
   FROM selected_events
@@ -811,12 +811,12 @@ func (r *accountMonitorRepository) ListAggregates(
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			account_id,
-			COUNT(*)::int,
+			COUNT(*) FILTER (WHERE status = 'success')::int,
 			COUNT(*) FILTER (WHERE status = 'success')::int,
 			COUNT(*) FILTER (WHERE status <> 'success')::int,
 			COALESCE(
 				COUNT(*) FILTER (WHERE status = 'success')::double precision /
-					NULLIF(COUNT(*), 0),
+					NULLIF(COUNT(*) FILTER (WHERE status = 'success'), 0),
 				0
 			),
 			COUNT(*) FILTER (WHERE status = 'success')::int,

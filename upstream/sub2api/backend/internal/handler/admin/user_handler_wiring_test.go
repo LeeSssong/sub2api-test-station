@@ -12,7 +12,7 @@ import (
 func TestProvideUserHandlerInjectsQuotaWalletService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &quotaWalletHandlerFake{}
-	h := ProvideUserHandler(nil, nil, nil, nil, nil, nil, nil, fake)
+	h := ProvideUserHandler(nil, nil, nil, nil, nil, nil, nil, nil, fake)
 	r := gin.New()
 	r.GET("/admin/users/:id/quota-summary", h.GetQuotaSummary)
 

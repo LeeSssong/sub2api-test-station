@@ -15,9 +15,8 @@ func TestValidateAdminRechargeInputRequiresAuditFields(t *testing.T) {
 	for name, mutate := range map[string]func(*AdminRechargeInput){
 		"user":        func(v *AdminRechargeInput) { v.UserID = 0 },
 		"operator":    func(v *AdminRechargeInput) { v.OperatorUserID = 0 },
-		"amount":      func(v *AdminRechargeInput) { v.Amount = decimal.Zero },
+		"amounts":     func(v *AdminRechargeInput) { v.Amount = decimal.Zero; v.GiftQuota = decimal.Zero },
 		"trade":       func(v *AdminRechargeInput) { v.PaymentTradeNo = "" },
-		"note":        func(v *AdminRechargeInput) { v.Note = " " },
 		"gift":        func(v *AdminRechargeInput) { v.GiftQuota = decimal.NewFromInt(-1) },
 		"paymentType": func(v *AdminRechargeInput) { v.PaymentType = "stripe" },
 	} {
@@ -26,6 +25,13 @@ func TestValidateAdminRechargeInputRequiresAuditFields(t *testing.T) {
 		if err := ValidateAdminRechargeInput(&in); err == nil {
 			t.Fatalf("%s input should be rejected", name)
 		}
+	}
+}
+
+func TestValidateAdminRechargeInputAllowsGiftOnlyAndEmptyNote(t *testing.T) {
+	in := AdminRechargeInput{UserID: 7, OperatorUserID: 9, GiftQuota: decimal.NewFromInt(5), PaymentTradeNo: "GIFT-1"}
+	if err := ValidateAdminRechargeInput(&in); err != nil {
+		t.Fatal(err)
 	}
 }
 

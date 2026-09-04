@@ -99,6 +99,23 @@ describe('UserBalanceModal', () => {
     })
   })
 
+  it('trims the required administrator transaction number', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: true, user, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.findAll('input[type="number"]')[0].setValue('10')
+    const confirm = wrapper.find('button[type="submit"]')
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await wrapper.find('input[type="text"]').setValue('  ADMIN-20260904  ')
+    expect(confirm.attributes('disabled')).toBeUndefined()
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
+
+    expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, expect.objectContaining({ payment_trade_no: 'ADMIN-20260904' }))
+  })
+
   it('shows refreshed quota summary rather than the stale users-list balance', async () => {
     const wrapper = mount(UserBalanceModal, {
       props: { show: false, user: { ...user, balance: 0.33 }, operation: 'add' },

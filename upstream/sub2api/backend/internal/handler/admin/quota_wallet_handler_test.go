@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -21,6 +22,13 @@ type quotaWalletHandlerFake struct {
 type quotaWalletBalanceCacheFake struct {
 	service.BillingCache
 	invalidatedUserIDs []int64
+}
+
+func withTestAdmin(r *gin.Engine) {
+	r.Use(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 99})
+		c.Next()
+	})
 }
 
 func (f *quotaWalletBalanceCacheFake) InvalidateUserBalance(_ context.Context, userID int64) error {
@@ -55,6 +63,7 @@ func TestQuotaWalletHandlerSummaryUsesStringPrecision(t *testing.T) {
 	h := NewUserHandler(nil, nil, nil, nil, nil, nil, nil)
 	h.SetQuotaWalletService(fake)
 	r := gin.New()
+	withTestAdmin(r)
 	r.GET("/admin/users/:id/quota-summary", h.GetQuotaSummary)
 	req := httptest.NewRequest("GET", "/admin/users/7/quota-summary", nil)
 	resp := httptest.NewRecorder()
@@ -70,6 +79,7 @@ func TestQuotaWalletHandlerRequiresIdempotencyKey(t *testing.T) {
 	h := NewUserHandler(nil, nil, nil, nil, nil, nil, nil)
 	h.SetQuotaWalletService(fake)
 	r := gin.New()
+	withTestAdmin(r)
 	r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
 	req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"recharge","amount_cny":1,"payment_trade_no":"T-1","note":"manual"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -86,6 +96,7 @@ func TestQuotaWalletHandlerCreateRechargeDelegatesToCoordinator(t *testing.T) {
 	h := NewUserHandler(nil, nil, nil, nil, nil, nil, nil)
 	h.SetQuotaWalletService(fake)
 	r := gin.New()
+	withTestAdmin(r)
 	r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
 	req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(`{"record_type":"recharge","amount_cny":5,"gift_quota_usd":2,"payment_trade_no":"T-2","note":"manual"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -114,10 +125,13 @@ func TestQuotaWalletHandlerInvalidatesBalanceCacheAfterLedgerMutation(t *testing
 			h := NewUserHandler(nil, nil, nil, cache, nil, nil, nil)
 			h.SetQuotaWalletService(fake)
 			r := gin.New()
+			withTestAdmin(r)
 			r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
 
 			body := `{"record_type":"` + tc.recordType + `","amount_cny":5}`
-			if tc.recordType == service.QuotaRecordRecharge { body = `{"record_type":"recharge","amount_cny":5,"payment_trade_no":"T-3","note":"manual"}` }
+			if tc.recordType == service.QuotaRecordRecharge {
+				body = `{"record_type":"recharge","amount_cny":5,"payment_trade_no":"T-3","note":"manual"}`
+			}
 			req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Idempotency-Key", "admin-test-"+tc.recordType)

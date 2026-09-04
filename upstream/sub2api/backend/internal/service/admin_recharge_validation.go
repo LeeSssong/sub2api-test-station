@@ -26,7 +26,7 @@ type AdminRechargeInput struct {
 }
 
 func ValidateAdminRechargeInput(in *AdminRechargeInput) error {
-	if in == nil || in.UserID <= 0 || in.OperatorUserID <= 0 || in.Amount.LessThanOrEqual(decimal.Zero) || in.GiftQuota.IsNegative() || strings.TrimSpace(in.PaymentTradeNo) == "" || strings.TrimSpace(in.Note) == "" {
+	if in == nil || in.UserID <= 0 || in.OperatorUserID <= 0 || in.Amount.IsNegative() || in.GiftQuota.IsNegative() || (in.Amount.IsZero() && in.GiftQuota.IsZero()) || strings.TrimSpace(in.PaymentTradeNo) == "" {
 		return ErrInvalidAdminRecharge
 	}
 	in.PaymentTradeNo = strings.TrimSpace(in.PaymentTradeNo)

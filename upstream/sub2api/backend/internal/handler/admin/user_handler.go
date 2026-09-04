@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -36,6 +38,7 @@ type UserHandler struct {
 	userService           *service.UserService
 	settingService        *service.SettingService // step-up 功能开关
 	quotaWallet           service.QuotaWalletService
+	entClient             *dbent.Client
 }
 
 // SetQuotaWalletService attaches the native quota wallet without changing the
@@ -55,8 +58,9 @@ func NewUserHandler(
 	totpService *service.TotpService,
 	userService *service.UserService,
 	settingService *service.SettingService,
+	entClients ...*dbent.Client,
 ) *UserHandler {
-	return &UserHandler{
+	h := &UserHandler{
 		adminService:          adminService,
 		concurrencyService:    concurrencyService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
@@ -65,6 +69,10 @@ func NewUserHandler(
 		userService:           userService,
 		settingService:        settingService,
 	}
+	if len(entClients) > 0 {
+		h.entClient = entClients[0]
+	}
+	return h
 }
 
 // ProvideUserHandler wires optional native services while preserving the
@@ -77,9 +85,10 @@ func ProvideUserHandler(
 	totpService *service.TotpService,
 	userService *service.UserService,
 	settingService *service.SettingService,
+	entClient *dbent.Client,
 	wallets ...service.QuotaWalletService,
 ) *UserHandler {
-	h := NewUserHandler(adminService, concurrencyService, userPlatformQuotaRepo, billingCache, totpService, userService, settingService)
+	h := NewUserHandler(adminService, concurrencyService, userPlatformQuotaRepo, billingCache, totpService, userService, settingService, entClient)
 	if len(wallets) > 0 {
 		h.SetQuotaWalletService(wallets[0])
 	}
@@ -125,11 +134,11 @@ type UpdateBalanceRequest struct {
 }
 
 type QuotaLedgerMutationRequest struct {
-	RecordType   string  `json:"record_type" binding:"required"`
-	AmountCNY    float64 `json:"amount_cny"`
-	GiftQuotaUSD float64 `json:"gift_quota_usd"`
-	PaymentTradeNo string `json:"payment_trade_no"`
-	Note         string  `json:"note"`
+	RecordType     string  `json:"record_type" binding:"required"`
+	AmountCNY      float64 `json:"amount_cny"`
+	GiftQuotaUSD   float64 `json:"gift_quota_usd"`
+	PaymentTradeNo string  `json:"payment_trade_no"`
+	Note           string  `json:"note"`
 }
 
 type quotaSummaryResponse struct {
@@ -557,7 +566,20 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 	}
 	var result service.QuotaMutationResult
 	if req.RecordType == service.QuotaRecordRecharge {
-		result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: key, ReferenceType: "admin_recharge", ReferenceID: strings.TrimSpace(req.PaymentTradeNo), Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+		rechargeKey := "admin-recharge:" + strings.TrimSpace(req.PaymentTradeNo)
+		var order *dbent.PaymentOrder
+		if h.entClient != nil && h.userService != nil {
+			order, err = h.prepareAdminRechargeOrder(c.Request.Context(), userID, actor, req, rechargeKey)
+			if err != nil {
+				response.ErrorFrom(c, err)
+				return
+			}
+		}
+		result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: rechargeKey, ReferenceType: "admin_recharge", ReferenceID: strings.TrimSpace(req.PaymentTradeNo), Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+		if err == nil && order != nil {
+			now := time.Now()
+			_, err = h.entClient.PaymentOrder.UpdateOneID(order.ID).SetStatus(service.OrderStatusCompleted).SetQuotaAccountingStatus("confirmed").SetPaidAt(now).SetCompletedAt(now).SetOperatorRechargedAt(now).Save(c.Request.Context())
+		}
 	} else {
 		if req.GiftQuotaUSD != 0 {
 			response.BadRequest(c, "gift_quota_usd is only valid for recharge")
@@ -575,6 +597,56 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 		}
 	}
 	response.Success(c, gin.H{"ledger_entry_id": result.LedgerEntryID, "idempotent": result.Idempotent, "summary": quotaSummaryDTO(result.Summary)})
+}
+
+func (h *UserHandler) prepareAdminRechargeOrder(ctx context.Context, userID, actorID int64, req QuotaLedgerMutationRequest, key string) (*dbent.PaymentOrder, error) {
+	if h.entClient == nil || h.userService == nil {
+		return nil, fmt.Errorf("admin recharge order service not available")
+	}
+	tradeNo := strings.TrimSpace(req.PaymentTradeNo)
+	existing, err := h.entClient.PaymentOrder.Query().Where(paymentorder.PaymentTypeEQ("admin_recharge"), paymentorder.PaymentTradeNoEQ(tradeNo)).Only(ctx)
+	if err == nil {
+		if existing.UserID != userID || !decimal.NewFromFloat(existing.PayAmount).Equal(decimal.NewFromFloat(req.AmountCNY)) || !existing.GiftQuotaUsd.Equal(decimal.NewFromFloat(req.GiftQuotaUSD)) {
+			return nil, fmt.Errorf("admin recharge transaction number already exists")
+		}
+		return existing, nil
+	}
+	if !dbent.IsNotFound(err) {
+		return nil, err
+	}
+	user, err := h.userService.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	paid := decimal.NewFromFloat(req.AmountCNY)
+	gift := decimal.NewFromFloat(req.GiftQuotaUSD)
+	total := paid.Add(gift)
+	now := time.Now()
+	outTradeNo := fmt.Sprintf("admin_%d_%d", userID, now.UnixNano())
+	return h.entClient.PaymentOrder.Create().
+		SetUserID(userID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(req.AmountCNY).
+		SetPayAmount(req.AmountCNY).
+		SetFeeRate(0).
+		SetPaidQuotaUsd(paid).
+		SetGiftQuotaUsd(gift).
+		SetTotalQuotaUsd(total).
+		SetQuotaRuleSnapshot(map[string]any{"source": "admin_recharge", "idempotency_key": key}).
+		SetQuotaAccountingStatus("pending").
+		SetOperatorUserID(actorID).
+		SetOperatorNote(strings.TrimSpace(req.Note)).
+		SetRechargeCode("").
+		SetOutTradeNo(outTradeNo).
+		SetPaymentType("admin_recharge").
+		SetPaymentTradeNo(tradeNo).
+		SetOrderType("balance").
+		SetStatus(service.OrderStatusPending).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetClientIP("admin").
+		SetSrcHost("admin").
+		Save(ctx)
 }
 
 // GetQuotaLedger lists sanitized quota entries for an administrator.

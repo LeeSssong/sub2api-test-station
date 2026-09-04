@@ -98,6 +98,9 @@ func TestClassifyOpenAIUpstreamFailure_DoesNotTreatArbitraryTextAsCapacity(t *te
 	got := ClassifyOpenAIUpstreamFailure(0, "client cancelled while waiting", nil, false, false)
 	require.False(t, got.CapacityPressure)
 	require.False(t, got.Transient)
+
+	got = ClassifyOpenAIUpstreamFailure(0, "request failed", []byte(`{"input":"Too many pending requests","error":{"type":"unknown","message":"request failed"}}`), false, false)
+	require.False(t, got.CapacityPressure)
 }
 
 func TestClassifyOpenAIUpstreamFailure_NonModel404BlocksReplayWhenRequestWasSent(t *testing.T) {

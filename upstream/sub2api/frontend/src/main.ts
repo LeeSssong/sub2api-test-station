@@ -50,12 +50,16 @@ export async function bootstrap() {
   }
   updateFavicon(appStore.siteLogo)
 
-  await initI18n()
-
   app.use(router)
   app.use(i18n)
 
   app.mount('#app')
+
+  // Locale chunks are optional for the initial shell. Never let a failed
+  // locale fetch prevent public routes from mounting.
+  initI18n().catch((error) => {
+    console.error('Locale initialization failed:', error)
+  })
 
   // Mount before waiting for initial navigation. A rejected or stalled async
   // guard must not leave the public login/register routes as a blank page.

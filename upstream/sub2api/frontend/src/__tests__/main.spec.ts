@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mount, isReady } = vi.hoisted(() => ({
+const { mount, isReady, initI18n } = vi.hoisted(() => ({
   mount: vi.fn(),
-  isReady: vi.fn()
+  isReady: vi.fn(),
+  initI18n: vi.fn()
 }))
 
 vi.mock('vue', () => ({
@@ -11,7 +12,7 @@ vi.mock('vue', () => ({
 vi.mock('pinia', () => ({ createPinia: vi.fn(() => ({})) }))
 vi.mock('../App.vue', () => ({ default: {} }))
 vi.mock('../router', () => ({ default: { isReady } }))
-vi.mock('../i18n', () => ({ default: {}, initI18n: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../i18n', () => ({ default: {}, initI18n }))
 vi.mock('@/stores/app', () => ({
   useAppStore: vi.fn(() => ({
     initFromInjectedConfig: vi.fn(),
@@ -26,6 +27,8 @@ describe('frontend bootstrap', () => {
   beforeEach(() => {
     mount.mockClear()
     isReady.mockReset()
+    initI18n.mockReset()
+    initI18n.mockResolvedValue(undefined)
     isReady.mockRejectedValue(new Error('navigation failed'))
     document.body.innerHTML = '<div id="app"></div>'
   })
@@ -37,5 +40,15 @@ describe('frontend bootstrap', () => {
 
     expect(mount).toHaveBeenCalledWith('#app')
     expect(isReady).toHaveBeenCalled()
+  })
+
+  it('mounts the app even when locale initialization rejects', async () => {
+    initI18n.mockRejectedValue(new Error('locale chunk unavailable'))
+
+    const { bootstrap } = await import('../main')
+
+    await bootstrap()
+
+    expect(mount).toHaveBeenCalledWith('#app')
   })
 })

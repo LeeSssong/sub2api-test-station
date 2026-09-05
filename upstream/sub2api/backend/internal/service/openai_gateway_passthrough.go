@@ -1568,6 +1568,7 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffects(
 	payload []byte,
 	message string,
 	headers http.Header,
+	canonicalModel ...string,
 ) (int, bool) {
 	statusCode := openAIStreamFailureStatus(payload, message)
 	switch statusCode {
@@ -1581,14 +1582,15 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffects(
 		if c != nil && c.Request != nil {
 			ctx = c.Request.Context()
 		}
+		model := firstNonEmpty(canonicalModel...)
+		if model == "" {
+			model = firstNonEmpty(gjson.GetBytes(payload, "model").String(), gjson.GetBytes(payload, "response.model").String())
+		}
 		accountHeaders := headers
 		if statusCode == http.StatusTooManyRequests {
-			// The enclosing HTTP response succeeded. Its quota snapshot describes
-			// normal account state and must not become the reset for a semantic 429
-			// carried by a stream terminal event.
-			accountHeaders = nil
+			accountHeaders = openAIWSSemantic429Headers(account, model, headers)
 		}
-		return statusCode, s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, accountHeaders, payload)
+		return statusCode, s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, accountHeaders, payload, model)
 	default:
 		return statusCode, false
 	}
@@ -1703,6 +1705,44 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	}
 	// Preserve the existing generic envelope for unclassified stream failures;
 	// only typed access/capacity failures need the original payload downstream.
+	failoverErr.ResponseBody = body
+	return failoverErr
+}
+
+func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorWithModel(
+	c *gin.Context,
+	account *Account,
+	passthrough bool,
+	upstreamRequestID string,
+	payload []byte,
+	message string,
+	canonicalModel string,
+	responseHeaders ...http.Header,
+) *UpstreamFailoverError {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "OpenAI stream disconnected before completion"
+	}
+	var headers http.Header
+	if len(responseHeaders) > 0 && responseHeaders[0] != nil {
+		headers = responseHeaders[0].Clone()
+	}
+	statusCode, shouldDisable := s.handleOpenAIStreamTerminalAccountSideEffects(c, account, payload, message, headers, canonicalModel)
+	message = s.recordOpenAIStreamUpstreamError(c, account, passthrough, upstreamRequestID, "failover", payload, message)
+	errType := "upstream_error"
+	if statusCode == http.StatusTooManyRequests {
+		errType = "rate_limit_error"
+	}
+	body, _ := json.Marshal(gin.H{"error": gin.H{"type": errType, "message": message}})
+	retryableOnSameAccount := openAIStreamFailedEventRetryableOnSameAccount(account, payload, message)
+	classificationHeaders := headers
+	if statusCode == http.StatusTooManyRequests {
+		classificationHeaders = nil
+	}
+	failoverErr := s.newOpenAIAccountFailoverErrorWithClassificationHeaders(account, statusCode, headers, classificationHeaders, payload, message, shouldDisable, retryableOnSameAccount)
+	if failoverErr.IsCredentialFailure() || failoverErr.RequestScopedTransient {
+		return failoverErr
+	}
 	failoverErr.ResponseBody = body
 	return failoverErr
 }

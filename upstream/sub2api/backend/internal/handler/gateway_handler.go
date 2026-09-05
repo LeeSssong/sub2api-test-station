@@ -1251,6 +1251,63 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	})
 }
 
+func (h *GatewayHandler) CodexModels(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil || apiKey.Group == nil {
+		h.errorResponse(c, http.StatusUnauthorized, "invalid_request_error", "API key group is required")
+		return
+	}
+	forcedPlatform := ""
+	if value, exists := middleware2.GetForcePlatformFromContext(c); exists {
+		forcedPlatform = strings.TrimSpace(value)
+	}
+	modelIDs := service.FilterCodexModelIDsForGroup(h.codexModelIDsForGroup(c.Request.Context(), apiKey.Group, forcedPlatform), apiKey.Group)
+	body, err := h.gatewayService.BuildCodexModelsManifestForGroup(c.Request.Context(), apiKey.Group, forcedPlatform, modelIDs)
+	if err != nil {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
+		return
+	}
+	etag := service.CodexModelsManifestETag(body)
+	c.Header("ETag", etag)
+	if service.CodexModelsManifestETagMatches(c.GetHeader("If-None-Match"), etag) {
+		c.Status(http.StatusNotModified)
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	c.Data(http.StatusOK, "application/json", body)
+}
+
+func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *service.Group, platformOverride string) []string {
+	if h == nil || h.gatewayService == nil || group == nil {
+		return nil
+	}
+	groupID := &group.ID
+	platform := strings.TrimSpace(platformOverride)
+	if platform == "" {
+		platform = group.Platform
+	}
+	if platform == service.PlatformComposite {
+		availableModels := h.compositeAvailableModels(ctx, groupID)
+		fallbackModels := defaultCodexModelIDsForPlatform(platform)
+		if group.CustomModelsListEnabled() {
+			return filterModelsByCustomList(availableModels, fallbackModels, group.ModelsListConfig.Models)
+		}
+		if len(availableModels) > 0 {
+			return availableModels
+		}
+		return fallbackModels
+	}
+	availableModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
+	fallbackModels := defaultCodexModelIDsForPlatform(platform)
+	if group.CustomModelsListEnabled() {
+		return filterModelsByCustomList(customModelsListSource(platform, availableModels, fallbackModels), fallbackModels, group.ModelsListConfig.Models)
+	}
+	if len(availableModels) > 0 {
+		return availableModels
+	}
+	return fallbackModels
+}
+
 func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {
 	if h == nil || h.gatewayService == nil {
 		return nil
@@ -1452,6 +1509,13 @@ func customModelsListAllowsModel(availablePatterns []string, model string) bool 
 		}
 	}
 	return false
+}
+
+func defaultCodexModelIDsForPlatform(platform string) []string {
+	if platform == service.PlatformDeepseek {
+		return []string{"deepseek-v4-pro", "deepseek-v4-flash"}
+	}
+	return defaultModelIDsForPlatform(platform)
 }
 
 func defaultModelIDsForPlatform(platform string) []string {
@@ -1874,7 +1938,7 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
-	status, errType, message := concurrencyErrorResponse(err, slotType)
+	status, errType, _, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
 

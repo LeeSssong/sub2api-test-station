@@ -4087,6 +4087,34 @@ func (r *accountRepository) ResetQuotaUsed(ctx context.Context, id int64) error 
 	return nil
 }
 
+// ResetQuotaUsedAndClearRateLimitCooldown resets quota dimensions and the
+// account-level cooldown atomically while preserving other scheduler state.
+func (r *accountRepository) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.Context, id int64) error {
+	result, err := r.sql.ExecContext(ctx,
+		`UPDATE accounts SET extra = (
+			COALESCE(extra, '{}'::jsonb)
+			|| '{"quota_used": 0, "quota_daily_used": 0, "quota_weekly_used": 0}'::jsonb
+		) - 'quota_daily_start' - 'quota_weekly_start' - 'quota_daily_reset_at' - 'quota_weekly_reset_at',
+		rate_limited_at = NULL, rate_limit_reset_at = NULL,
+		updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
+		WHERE id = $1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrAccountNotFound
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue quota reset failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return nil
+}
+
 // RevertProxyFallback 将账号的 proxy_id 切回 proxy_fallback_origin_id，并清空 origin 字段。
 // 仅当 proxy_fallback_origin_id IS NOT NULL 时执行更新；
 // 若影响行数为 0，则返回 ErrAccountNotInFallback（账号存在但不在 fallback 状态）。

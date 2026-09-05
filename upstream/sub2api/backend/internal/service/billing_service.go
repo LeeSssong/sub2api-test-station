@@ -1606,6 +1606,44 @@ func (s *BillingService) CalculateCost(model string, tokens UsageTokens, rateMul
 	return s.calculateCostInternal(model, tokens, rateMultiplier, "", nil)
 }
 
+func (s *BillingService) CalculateCostWithLongContext(model string, tokens UsageTokens, rateMultiplier float64, threshold int, extraMultiplier float64) (*CostBreakdown, error) {
+	if threshold <= 0 || extraMultiplier <= 1 || tokens.CacheReadTokens+tokens.InputTokens <= threshold {
+		return s.CalculateCost(model, tokens, rateMultiplier)
+	}
+	inRange := tokens
+	outRange := UsageTokens{OutputTokens: 0}
+	if tokens.CacheReadTokens >= threshold {
+		inRange.CacheReadTokens = threshold
+		outRange.CacheReadTokens = tokens.CacheReadTokens - threshold
+		outRange.InputTokens = tokens.InputTokens
+		inRange.InputTokens = 0
+	} else {
+		inRange.CacheReadTokens = tokens.CacheReadTokens
+		inRange.InputTokens = threshold - tokens.CacheReadTokens
+		outRange.InputTokens = tokens.InputTokens - inRange.InputTokens
+		outRange.CacheReadTokens = 0
+	}
+	inCost, err := s.CalculateCost(model, inRange, rateMultiplier)
+	if err != nil {
+		return nil, err
+	}
+	outCost, err := s.CalculateCost(model, outRange, rateMultiplier*extraMultiplier)
+	if err != nil {
+		return inCost, fmt.Errorf("out-range cost: %w", err)
+	}
+	return &CostBreakdown{
+		InputCost:                 inCost.InputCost + outCost.InputCost,
+		ImageInputCost:            inCost.ImageInputCost + outCost.ImageInputCost,
+		OutputCost:                inCost.OutputCost,
+		ImageOutputCost:           inCost.ImageOutputCost,
+		CacheCreationCost:         inCost.CacheCreationCost,
+		CacheReadCost:             inCost.CacheReadCost + outCost.CacheReadCost,
+		TotalCost:                 inCost.TotalCost + outCost.TotalCost,
+		ActualCost:                inCost.ActualCost + outCost.ActualCost,
+		LongContextBillingApplied: true,
+	}, nil
+}
+
 func (s *BillingService) CalculateCostWithServiceTier(model string, tokens UsageTokens, rateMultiplier float64, serviceTier string) (*CostBreakdown, error) {
 	return s.calculateCostInternal(model, tokens, rateMultiplier, serviceTier, nil)
 }

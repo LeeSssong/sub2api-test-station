@@ -99,6 +99,16 @@ func openAIWSTurnBillingModel(result *service.OpenAIForwardResult, mapping servi
 	return billingModel
 }
 
+// openAIChannelForwardModel returns the concrete model used for upstream routing.
+func openAIChannelForwardModel(mapping service.ChannelMappingResult, requestedModel string) string {
+	if mapping.Mapped {
+		if mappedModel := strings.TrimSpace(mapping.MappedModel); mappedModel != "" {
+			return mappedModel
+		}
+	}
+	return requestedModel
+}
+
 type grokMediaEligibilityProber interface {
 	ProbeMediaEligibility(ctx context.Context, accountID int64) (bool, string, error)
 }
@@ -587,7 +597,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
 		return
 	}
-	if cappedBody, changed := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); changed {
+	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
+		respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
+		return
+	} else if changed {
 		body = cappedBody
 	}
 
@@ -2577,7 +2590,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		if selection.UnifiedQualityActive() {
 			return nil, openAISlotAcquireRetryNext
 		}
-		status, errType, message := concurrencyErrorResponse(err, "account")
+		status, errType, _, message := concurrencyErrorResponse(err, "account")
 		writeError(status, errType, message)
 		return nil, openAISlotAcquireFailed
 	}
@@ -2637,7 +2650,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 		if selection.UnifiedQualityActive() {
 			return nil, openAISlotAcquireRetryNext
 		}
-		status, errType, message := concurrencyErrorResponse(err, "account")
+		status, errType, _, message := concurrencyErrorResponse(err, "account")
 		writeError(status, errType, message)
 		return nil, openAISlotAcquireFailed
 	}
@@ -3146,7 +3159,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
 
-		maxReasoningEffort, reasoningEffortMappings, _ := openAIReasoningEffortPolicyForRequest(c, apiKey)
+		maxReasoningEffort, reasoningEffortMappings, _, _ := openAIReasoningEffortPolicyForRequest(c, apiKey)
 		var requestPayloadHash string
 		var turnStartsMu sync.Mutex
 		turnStarts := make(map[int]time.Time, 4)
@@ -3742,7 +3755,7 @@ func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, stream
 
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
-	status, errType, message := concurrencyErrorResponse(err, slotType)
+	status, errType, _, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
 

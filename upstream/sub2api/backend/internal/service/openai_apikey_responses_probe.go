@@ -102,7 +102,8 @@ func selectResponsesProbeModel(account *Account) string {
 // 调用时机：账号创建/更新后，且仅当 platform=openai && type=apikey 时。
 //
 // 探测策略（参见包文档 internal/pkg/openai_compat）：
-//   - 上游 404 / 405 → 端点不存在,写 false
+//   - 上游 404 且 error.code/type=model_not_found → 探测模型不存在,保持 unknown
+//   - 其他上游 404 / 405 → 端点不存在,写 false
 //   - 上游 2xx → 端点存在,进一步看工具能力:响应含 function_call 输出项才写 true;
 //     仅 reasoning / 无 function_call(如火山方舟 coding/v3 × kimi-k2.6)写 false
 //   - 其他非 2xx（401/422/400/5xx 等）→ 端点存在但无法判定工具能力,保守写 true
@@ -259,9 +260,13 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 // 其余 2xx 一律可下结论——尤其 status=completed 却只回 reasoning 的上游（火山方舟
 // coding/v3 × kimi-k2.6），仍按原逻辑判为不支持。
 //
-// 非 2xx 的结论只看状态码、不依赖响应内容，恒可下结论。
+// 非 2xx 通常只看状态码；但 404 明确返回 model_not_found 时只说明探测模型
+// 不存在，不能据此把整个账号的 Responses 能力判为 false。
 // 缺少 status 字段的响应体（含非 JSON）也按可下结论处理，保持既有行为。
 func responsesProbeVerdictIsConclusive(status int, body []byte) bool {
+	if status == http.StatusNotFound && responsesProbe404IsModelNotFound(body) {
+		return false
+	}
 	if status < 200 || status >= 300 {
 		return true
 	}
@@ -273,6 +278,15 @@ func responsesProbeVerdictIsConclusive(status int, body []byte) bool {
 	default:
 		return true
 	}
+}
+
+func responsesProbe404IsModelNotFound(body []byte) bool {
+	for _, path := range []string{"error.code", "error.type"} {
+		if strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, path).String()), "model_not_found") {
+			return true
+		}
+	}
+	return false
 }
 
 // isResponsesEndpointSupportedByStatus 根据探测响应的 HTTP 状态码判定上游

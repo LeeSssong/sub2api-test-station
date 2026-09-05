@@ -241,7 +241,7 @@ export default {
     alreadyHaveAccount: 'Already have an account?',
     registrationDisabled: 'Registration is currently disabled. Please contact the administrator.',
     emailLabel: 'Email',
-    emailPlaceholder: 'Enter your email, e.g. xxx@qq.com',
+    emailPlaceholder: "Enter your email, e.g. xxx{'@'}qq.com",
     emailPlaceholderWithAllowed: 'Enter your email. Allowed suffixes: {suffixes}',
     passwordLabel: 'Password',
     passwordPlaceholder: 'Enter your password',

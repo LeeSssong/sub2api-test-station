@@ -241,7 +241,7 @@ export default {
     alreadyHaveAccount: '已有账户？',
     registrationDisabled: '注册功能暂时关闭，请联系管理员。',
     emailLabel: '邮箱',
-    emailPlaceholder: '请输入邮箱，例如：xxx@qq.com',
+    emailPlaceholder: "请输入邮箱，例如：xxx{'@'}qq.com",
     emailPlaceholderWithAllowed: '请输入邮箱，可用后缀：{suffixes}',
     passwordLabel: '密码',
     passwordPlaceholder: '请输入密码',

@@ -37,9 +37,14 @@ func resolveAccountStatsCost(
 	requestCount int,
 	totalCost float64,
 	serviceTier string,
+	reasoningEfforts ...string,
 ) *float64 {
+	reasoningEffort := ""
+	if len(reasoningEfforts) > 0 {
+		reasoningEffort = reasoningEfforts[0]
+	}
 	resolution := resolveAccountStatsCostResolution(ctx, channelService, billingService,
-		accountID, groupID, upstreamModel, BillingModeToken, "", 0, tokens, requestCount, totalCost, serviceTier)
+		accountID, groupID, upstreamModel, BillingModeToken, "", 0, tokens, requestCount, totalCost, serviceTier, reasoningEffort)
 	return resolution.StatsCost
 }
 
@@ -57,7 +62,12 @@ func resolveAccountStatsCostResolution(
 	requestCount int,
 	totalCost float64,
 	serviceTier string,
+	reasoningEfforts ...string,
 ) AccountStatsCostResolution {
+	reasoningEffort := ""
+	if len(reasoningEfforts) > 0 {
+		reasoningEffort = reasoningEfforts[0]
+	}
 	if channelService == nil || upstreamModel == "" {
 		return AccountStatsCostResolution{ApplyAccountRate: true}
 	}
@@ -70,7 +80,7 @@ func resolveAccountStatsCostResolution(
 
 	// 优先级 1：自定义规则（始终尝试）
 	if resolution := tryCustomRulesResolution(channel, accountID, groupID, platform, upstreamModel,
-		billingMode, imageSize, imageCount, tokens, requestCount); resolution.Matched {
+		billingMode, imageSize, imageCount, tokens, requestCount, reasoningEffort); resolution.Matched {
 		return resolution
 	}
 
@@ -85,7 +95,7 @@ func resolveAccountStatsCostResolution(
 
 	// 优先级 3：模型定价文件（LiteLLM）默认价格
 	if billingService != nil {
-		cost := tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier)
+		cost := tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier, reasoningEffort)
 		if cost != nil {
 			return AccountStatsCostResolution{StatsCost: cost, ApplyAccountRate: true, Matched: true}
 		}
@@ -95,38 +105,31 @@ func resolveAccountStatsCostResolution(
 }
 
 // tryModelFilePricing 使用模型定价文件（LiteLLM/fallback）中的价格计算费用。
-func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens, serviceTier string) *float64 {
-	pricing, err := billingService.GetModelPricing(model)
-	if err != nil || pricing == nil {
+func tryModelFilePricing(billingService *BillingService, model string, tokens UsageTokens, serviceTier string, reasoningEfforts ...string) *float64 {
+	reasoningEffort := ""
+	if len(reasoningEfforts) > 0 {
+		reasoningEffort = reasoningEfforts[0]
+	}
+	breakdown, err := billingService.CalculateCostWithServiceTier(model, tokens, 1, normalizeBillingServiceTier(serviceTier))
+	if err != nil || breakdown == nil || breakdown.TotalCost <= 0 {
 		return nil
 	}
-	normalizedTier := normalizeBillingServiceTier(serviceTier)
-	if normalizedTier == "priority" || normalizedTier == "fast" || normalizedTier == "flex" ||
-		billingService.shouldApplySessionLongContextPricing(tokens, pricing) {
-		breakdown, err := billingService.CalculateCostWithServiceTier(model, tokens, 1, normalizedTier)
-		if err != nil || breakdown == nil || breakdown.TotalCost <= 0 {
-			return nil
-		}
-		return &breakdown.TotalCost
-	}
-	cost := float64(tokens.InputTokens)*pricing.InputPricePerToken +
-		float64(tokens.OutputTokens)*pricing.OutputPricePerToken +
-		float64(tokens.CacheCreationTokens)*pricing.CacheCreationPricePerToken +
-		float64(tokens.CacheReadTokens)*pricing.CacheReadPricePerToken +
-		float64(tokens.ImageOutputTokens)*pricing.ImageOutputPricePerToken
-	if cost <= 0 {
-		return nil
-	}
-	return &cost
+	applyCostBreakdownMultiplier(breakdown, maxReasoningEffortBillingMultiplier(model, reasoningEffort, nil))
+	return &breakdown.TotalCost
 }
 
 // tryCustomRules 遍历自定义规则，按数组顺序先命中为准。
 func tryCustomRules(
 	channel *Channel, accountID, groupID int64,
 	platform, model string, tokens UsageTokens, requestCount int,
+	reasoningEfforts ...string,
 ) *float64 {
+	reasoningEffort := ""
+	if len(reasoningEfforts) > 0 {
+		reasoningEffort = reasoningEfforts[0]
+	}
 	return tryCustomRulesResolution(channel, accountID, groupID, platform, model,
-		BillingModeToken, "", 0, tokens, requestCount).StatsCost
+		BillingModeToken, "", 0, tokens, requestCount, reasoningEffort).StatsCost
 }
 
 func tryCustomRulesResolution(
@@ -138,7 +141,12 @@ func tryCustomRulesResolution(
 	imageCount int,
 	tokens UsageTokens,
 	requestCount int,
+	reasoningEfforts ...string,
 ) AccountStatsCostResolution {
+	reasoningEffort := ""
+	if len(reasoningEfforts) > 0 {
+		reasoningEffort = reasoningEfforts[0]
+	}
 	modelLower := strings.ToLower(model)
 	for _, rule := range channel.AccountStatsPricingRules {
 		if !matchAccountStatsRule(&rule, accountID, groupID) {
@@ -171,6 +179,7 @@ func tryCustomRulesResolution(
 		if cost == nil {
 			return AccountStatsCostResolution{ApplyAccountRate: true}
 		}
+		*cost *= maxReasoningEffortBillingMultiplier(model, reasoningEffort, nil)
 		return AccountStatsCostResolution{StatsCost: cost, ApplyAccountRate: true, Matched: true}
 	}
 	return AccountStatsCostResolution{ApplyAccountRate: true}
@@ -270,11 +279,12 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 		totalTokens := tokens.InputTokens + tokens.OutputTokens + tokens.CacheCreationTokens + tokens.CacheReadTokens
 		if iv := FindMatchingInterval(pricing.Intervals, totalTokens); iv != nil {
 			p = &ChannelModelPricing{
-				InputPrice:      iv.InputPrice,
-				OutputPrice:     iv.OutputPrice,
-				CacheWritePrice: iv.CacheWritePrice,
-				CacheReadPrice:  iv.CacheReadPrice,
-				PerRequestPrice: iv.PerRequestPrice,
+				InputPrice:        iv.InputPrice,
+				OutputPrice:       iv.OutputPrice,
+				CacheWritePrice:   iv.CacheWritePrice,
+				CacheWrite1hPrice: iv.CacheWrite1hPrice,
+				CacheReadPrice:    iv.CacheReadPrice,
+				PerRequestPrice:   iv.PerRequestPrice,
 			}
 		}
 	}
@@ -284,9 +294,16 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 		}
 		return *ptr
 	}
+	cacheCreationCost := float64(tokens.CacheCreationTokens) * deref(p.CacheWritePrice)
+	if p.CacheWrite1hPrice != nil {
+		cache5m, cache1h := normalizeCacheCreationBreakdown(tokens)
+		if cache5m > 0 || cache1h > 0 {
+			cacheCreationCost = float64(cache5m)*deref(p.CacheWritePrice) + float64(cache1h)*deref(p.CacheWrite1hPrice)
+		}
+	}
 	cost := float64(tokens.InputTokens)*deref(p.InputPrice) +
 		float64(tokens.OutputTokens)*deref(p.OutputPrice) +
-		float64(tokens.CacheCreationTokens)*deref(p.CacheWritePrice) +
+		cacheCreationCost +
 		float64(tokens.CacheReadTokens)*deref(p.CacheReadPrice) +
 		float64(tokens.ImageOutputTokens)*deref(p.ImageOutputPrice)
 	if cost <= 0 {
@@ -329,11 +346,15 @@ func applyAccountStatsCost(
 		imageCount = usageLog.ImageCount
 	}
 	serviceTier := ""
+	reasoningEffort := ""
 	if usageLog != nil && usageLog.ServiceTier != nil {
 		serviceTier = *usageLog.ServiceTier
 	}
+	if usageLog != nil && usageLog.ReasoningEffort != nil {
+		reasoningEffort = *usageLog.ReasoningEffort
+	}
 	resolution := resolveAccountStatsCostResolution(ctx, cs, bs, accountID, groupID, model,
-		billingMode, imageSize, imageCount, tokens, requestCount, totalCost, serviceTier)
+		billingMode, imageSize, imageCount, tokens, requestCount, totalCost, serviceTier, reasoningEffort)
 	usageLog.AccountStatsCost = resolution.StatsCost
 	finalCost := totalCost * accountRateMultiplier
 	if resolution.Matched && resolution.StatsCost != nil {

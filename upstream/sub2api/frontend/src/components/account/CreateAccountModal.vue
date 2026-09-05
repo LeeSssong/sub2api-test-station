@@ -547,6 +547,25 @@
         </div>
       </div>
 
+      <div v-if="form.platform === 'zhipu' && accountMode === 'coding'" class="mt-4">
+        <div class="flex items-center">
+          <label class="input-label">{{ t('admin.accounts.cnProviders.zhipuTeam.title') }}</label>
+          <HelpTooltip trigger="click" width-class="w-80">
+            <p class="mb-1 font-medium">{{ t('admin.accounts.cnProviders.zhipuTeam.help.title') }}</p>
+            <ol class="list-decimal space-y-1 pl-4">
+              <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step1') }}</li>
+              <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step2') }}</li>
+              <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step3') }}</li>
+              <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step4') }}</li>
+            </ol>
+          </HelpTooltip>
+        </div>
+        <div class="mt-2 grid gap-4 sm:grid-cols-2">
+          <input v-model="zhipuOrganization" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.zhipuTeam.organizationPlaceholder')" />
+          <input v-model="zhipuProject" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.zhipuTeam.projectPlaceholder')" />
+        </div>
+      </div>
+
       <!-- Account Type Selection (Gemini) -->
       <div v-if="form.platform === 'gemini'">
         <div class="flex items-center justify-between">
@@ -1289,7 +1308,7 @@
               />
             </div>
           </div>
-          <p v-if="form.platform !== 'deepseek'" class="input-hint">
+          <p v-if="!cnSupportsNativeResponses(form.platform)" class="input-hint">
             {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
           </p>
         </div>
@@ -1421,7 +1440,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :platform="form.platform" :sync-credentials="syncPreviewCredentials" />
+              <ModelWhitelistSelector v-model="allowedModels" :platform="form.platform" :sync-credentials="syncPreviewCredentials" @upstream-synced="upstreamModelsPreviewed = true" />
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0">{{
@@ -1903,7 +1922,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" platform="anthropic" :sync-credentials="syncPreviewCredentials" />
+            <ModelWhitelistSelector v-model="allowedModels" platform="anthropic" :sync-credentials="syncPreviewCredentials" @upstream-synced="upstreamModelsPreviewed = true" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
@@ -2239,7 +2258,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="form.platform" :sync-credentials="syncPreviewCredentials" />
+            <ModelWhitelistSelector v-model="allowedModels" :platform="form.platform" :sync-credentials="syncPreviewCredentials" @upstream-synced="upstreamModelsPreviewed = true" />
             <p class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0">{{
@@ -2896,6 +2915,8 @@
         <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
       </div>
 
+      <UpstreamRequestIdHeaderField v-model="upstreamRequestIdHeader" :platform="form.platform" :type="form.type" />
+
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
@@ -3287,6 +3308,34 @@
             </label>
           </div>
           <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
+        </div>
+
+        <!-- OpenAI APIKey images: backfill b64_json from url -->
+        <div class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.imagesUrlToB64Json') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.imagesUrlToB64JsonDesc') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-testid="openai-images-url-to-b64-json-toggle"
+            role="switch"
+            :aria-checked="openAIImagesUrlToB64JsonEnabled"
+            @click="openAIImagesUrlToB64JsonEnabled = !openAIImagesUrlToB64JsonEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              openAIImagesUrlToB64JsonEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                openAIImagesUrlToB64JsonEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
         </div>
       </div>
 
@@ -3780,6 +3829,8 @@ import type {
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -3796,6 +3847,7 @@ import {
   applyAntigravityProjectID,
   applyHeaderOverride,
   applyInterceptWarmup,
+  cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
   isHeaderOverrideCapable,
@@ -3837,6 +3889,15 @@ interface OAuthFlowExposed {
 
 const { t } = useI18n()
 const authStore = useAuthStore()
+const upstreamRequestIdHeader = ref('')
+const upstreamModelsPreviewed = ref(false)
+const zhipuOrganization = ref('')
+const zhipuProject = ref('')
+const openAIImagesUrlToB64JsonEnabled = ref(false)
+const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefined>(extra: T) => {
+  const name = upstreamRequestIdHeader.value.trim()
+  return name ? { ...(extra || {}), upstream_request_id_header: name } : extra
+}
 
 const oauthStepTitle = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.oauth.openai.title')
@@ -4690,6 +4751,7 @@ watch(
     // 避免上一平台的配置行被提交到新平台账号
     headerOverrideEnabled.value = false
     headerOverrideRows.value = []
+    openAIImagesUrlToB64JsonEnabled.value = false
     grokOAuthCustomBaseUrlEnabled.value = false
     grokOAuthBaseUrl.value = ''
     // Reset OAuth states
@@ -5165,6 +5227,7 @@ const resetForm = () => {
   antigravityOAuth.resetState()
   grokOAuth.resetState()
   oauthFlowRef.value?.reset()
+  openAIImagesUrlToB64JsonEnabled.value = false
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
 }
@@ -5241,6 +5304,12 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.openai_responses_mode = openAIResponsesMode.value
   } else {
     delete extra.openai_responses_mode
+  }
+
+  if (accountCategory.value === 'apikey' && openAIImagesUrlToB64JsonEnabled.value) {
+    extra.images_url_to_b64_json = true
+  } else {
+    delete extra.images_url_to_b64_json
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined
@@ -5559,6 +5628,10 @@ const handleSubmit = async () => {
     if (apiProtocol.value !== 'adaptive' && resolvedCNBase) {
       credentials.base_url = resolvedCNBase
     }
+    if (form.platform === 'zhipu' && accountMode.value === 'coding') {
+      if (zhipuOrganization.value.trim()) credentials.zhipu_organization = zhipuOrganization.value.trim()
+      if (zhipuProject.value.trim()) credentials.zhipu_project = zhipuProject.value.trim()
+    }
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）
@@ -5619,7 +5692,7 @@ const handleSubmit = async () => {
     ...accountForm,
     ...(nativeRateSyncEnabled ? {} : { rate_multiplier: rateMultiplier }),
     group_ids: form.group_ids,
-    extra,
+    extra: withUpstreamRequestIdHeader(extra),
     upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
     upstream_billing_rate_sync_enabled:
       form.platform === 'openai' && form.type === 'apikey'
@@ -5686,9 +5759,9 @@ const createAccountAndFinish = async (
     return
   }
   // Inject quota limits for apikey/bedrock accounts
-  let finalExtra = extra
+  let finalExtra = withUpstreamRequestIdHeader(extra)
   if (type === 'apikey' || type === 'bedrock') {
-    const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
+    const quotaExtra: Record<string, unknown> = { ...(withUpstreamRequestIdHeader(extra) || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value
     }
@@ -5816,7 +5889,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           platform: 'grok',
           type: 'oauth',
           credentials,
-          extra,
+          extra: withUpstreamRequestIdHeader(extra),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -5993,7 +6066,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           platform: 'grok',
           type: 'oauth',
           credentials,
-          extra,
+          extra: withUpstreamRequestIdHeader(extra),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -6092,7 +6165,7 @@ const handleOpenAIExchange = async (authCode: string) => {
         platform: 'openai',
         type: 'oauth',
         credentials,
-        extra,
+        extra: withUpstreamRequestIdHeader(extra),
         proxy_id: form.proxy_id,
         concurrency: form.concurrency,
         load_factor: form.load_factor ?? undefined,
@@ -6207,7 +6280,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra,
+      extra: withUpstreamRequestIdHeader(extra),
       update_existing: true,
       active_probe_enabled: activeProbeEnabled.value
     })
@@ -6286,7 +6359,7 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
       expires_at: form.expires_at,
       auto_pause_on_expired: autoPauseOnExpired.value,
       credential_extras: Object.keys(credentialExtras).length > 0 ? credentialExtras : undefined,
-      extra,
+      extra: withUpstreamRequestIdHeader(extra),
       active_probe_enabled: activeProbeEnabled.value
     })
 
@@ -6375,7 +6448,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
             platform: 'openai',
             type: 'oauth',
             credentials,
-            extra,
+            extra: withUpstreamRequestIdHeader(extra),
             proxy_id: form.proxy_id,
             concurrency: form.concurrency,
             load_factor: form.load_factor ?? undefined,
@@ -6474,7 +6547,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           platform: 'antigravity',
           type: 'oauth',
           credentials,
-          extra: {},
+          extra: withUpstreamRequestIdHeader({}),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,
@@ -6855,7 +6928,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           platform: form.platform,
           type: addMethod.value, // Use addMethod as type: 'oauth' or 'setup-token'
           credentials,
-          extra,
+          extra: withUpstreamRequestIdHeader(extra),
           proxy_id: form.proxy_id,
           concurrency: form.concurrency,
           load_factor: form.load_factor ?? undefined,

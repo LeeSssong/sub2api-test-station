@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,12 +32,52 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for OpenAI and Composite groups")
 		return
 	}
+	ifNoneMatch := c.GetHeader("If-None-Match")
+	configuredManifest, configured, err := h.gatewayService.BuildGroupConfiguredCodexModelsManifest(c.Request.Context(), apiKey.Group, ifNoneMatch)
+	if err != nil {
+		if c.Request.Context().Err() != nil {
+			return
+		}
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
+		return
+	}
+	if configured {
+		writeCodexModelsManifestResponse(c, configuredManifest)
+		return
+	}
+
+	if apiKey.Group.Platform == service.PlatformOpenAI &&
+		apiKey.Group.CodexModelsManifestConfig.Enabled &&
+		len(apiKey.Group.CodexModelsManifestConfig.AccountIDs) > 0 {
+		pinnedManifest, pinnedAccount, pinnedErr := h.gatewayService.FetchPinnedCodexModelsManifest(c.Request.Context(), apiKey.Group, c.Query("client_version"))
+		if pinnedErr != nil {
+			if c.Request.Context().Err() != nil {
+				return
+			}
+			if !apiKey.Group.CodexModelsManifestConfig.FallbackToScheduler {
+				if errors.Is(pinnedErr, service.ErrNoPinnedCodexModelsAccounts) {
+					h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "No available pinned OpenAI accounts")
+					return
+				}
+				h.errorResponse(c, infraerrors.Code(pinnedErr), "upstream_error", infraerrors.Message(pinnedErr))
+				return
+			}
+		} else {
+			setOpsSelectedAccount(c, pinnedAccount.ID, pinnedAccount.Platform)
+			if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, pinnedManifest, ifNoneMatch); err != nil {
+				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
+				return
+			}
+			writeCodexModelsManifestResponse(c, pinnedManifest)
+			return
+		}
+	}
 
 	manifest, err := h.gatewayService.FetchCodexModelsManifestForGroup(
 		c.Request.Context(),
 		*apiKey.GroupID,
 		c.Query("client_version"),
-		c.GetHeader("If-None-Match"),
+		"",
 	)
 	if err != nil {
 		if c.Request.Context().Err() != nil {
@@ -48,7 +89,14 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	if c.Request.Context().Err() != nil {
 		return
 	}
+	if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, manifest, ifNoneMatch); err != nil {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
+		return
+	}
+	writeCodexModelsManifestResponse(c, manifest)
+}
 
+func writeCodexModelsManifestResponse(c *gin.Context, manifest *service.CodexModelsManifest) {
 	if manifest.ETag != "" {
 		c.Header("ETag", manifest.ETag)
 	}

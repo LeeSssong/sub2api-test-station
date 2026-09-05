@@ -192,6 +192,8 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 				kind = "failover"
 			}
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				ProxyID:            opsUpstreamProxyID(account),
+				ProxyName:          opsUpstreamProxyName(account),
 				Platform:           account.Platform,
 				AccountID:          account.ID,
 				AccountName:        account.Name,
@@ -292,6 +294,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientOutputStarted := false
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
+	var terminal openAIRawStreamTerminalState
 	defer func() { FinishStreamObservation(c, false) }()
 
 	writeLine := func(line string) {
@@ -335,6 +338,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		semanticOutput := false
 		if payload, ok := extractOpenAISSEDataLine(line); ok {
 			trimmedPayload := strings.TrimSpace(payload)
+			terminal.ObserveDataLine(trimmedPayload)
 			if trimmedPayload != "[DONE]" {
 				eventType := strings.TrimSpace(gjson.Get(trimmedPayload, "type").String())
 				ObserveSSEEvent(c, eventType, streamEventIndex, int64(len(line)))
@@ -375,15 +379,58 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		ObserveReadFailure(c, StreamFailureStageUpstreamBodyRead, err)
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+	resultWithUsage := func() *OpenAIForwardResult {
+		return &OpenAIForwardResult{
+			RequestID:                     requestID,
+			UpstreamHeaders:               resp.Header,
+			Usage:                         usage,
+			Model:                         originalModel,
+			BillingModel:                  billingModel,
+			UpstreamModel:                 upstreamModel,
+			ActualResponseModel:           actualResponseModel,
+			UpstreamResponseModel:         observedUpstreamResponseModel(c),
+			UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+			UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
+			ReasoningEffort:               reasoningEffort,
+			ServiceTier:                   resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+			Stream:                        true,
+			Duration:                      time.Since(startTime),
+			FirstTokenMs:                  firstTokenMs,
+		}
+	}
+
+	scanErr := scanner.Err()
+	if scanErr != nil {
+		ObserveReadFailure(c, StreamFailureStageUpstreamBodyRead, scanErr)
+		if !errors.Is(scanErr, context.Canceled) && !errors.Is(scanErr, context.DeadlineExceeded) {
 			logger.L().Warn("openai chat_completions raw: stream read error",
-				zap.Error(err),
+				zap.Error(scanErr),
 				zap.String("request_id", requestID),
 			)
 		}
-	} else if !clientDisconnected && !clientOutputStarted {
+	}
+	clientAborted := clientDisconnected || errors.Is(scanErr, context.Canceled) || errors.Is(scanErr, context.DeadlineExceeded)
+	if !clientAborted && terminal.IsTruncated(clientOutputStarted) {
+		cause := scanErr
+		if cause == nil {
+			cause = ErrOpenAIUpstreamStreamTruncated
+		}
+		logger.L().Warn("openai chat_completions raw: upstream stream truncated before terminal chunk",
+			zap.Error(cause),
+			zap.String("request_id", requestID),
+			zap.Int64("account_id", account.ID),
+			zap.String("upstream_model", upstreamModel),
+			zap.Bool("saw_sse_data", terminal.sawDataLine),
+			zap.Bool("client_output_started", clientOutputStarted),
+		)
+		if !clientOutputStarted {
+			return nil, newOpenAIRawStreamTruncatedFailoverError(c, account, requestID, cause)
+		}
+		recordOpenAIRawStreamTruncation(c, account, requestID, cause, "http_error")
+		return resultWithUsage(), newOpenAIUpstreamStreamReadError(cause)
+	}
+
+	if scanErr == nil && !clientDisconnected && !clientOutputStarted {
 		if refusalDetector.IsSilentRefusal() {
 			return nil, newOpenAISilentRefusalFailoverError(c, account, requestID)
 		}
@@ -407,22 +454,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 	}
 
-	return &OpenAIForwardResult{
-		RequestID:                     requestID,
-		Usage:                         usage,
-		Model:                         originalModel,
-		BillingModel:                  billingModel,
-		UpstreamModel:                 upstreamModel,
-		ActualResponseModel:           actualResponseModel,
-		UpstreamResponseModel:         observedUpstreamResponseModel(c),
-		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
-		UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
-		ReasoningEffort:               reasoningEffort,
-		ServiceTier:                   resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-		Stream:                        true,
-		Duration:                      time.Since(startTime),
-		FirstTokenMs:                  firstTokenMs,
-	}, nil
+	return resultWithUsage(), nil
 }
 
 func chatChunkPayloadStartsSemanticOutput(payload string) bool {
@@ -525,6 +557,7 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 
 	return &OpenAIForwardResult{
 		RequestID:                     requestID,
+		UpstreamHeaders:               resp.Header,
 		Usage:                         usage,
 		Model:                         originalModel,
 		BillingModel:                  billingModel,

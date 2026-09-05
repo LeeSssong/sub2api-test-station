@@ -129,6 +129,15 @@ type accountMonitorRepoStub struct {
 	lifetimeCountCalls     int
 }
 
+type accountMonitorUnifiedGroupRepoStub struct {
+	*accountMonitorRepoStub
+	groupReal map[int64]map[int64]AccountMonitorWindowAggregate
+}
+
+func (s *accountMonitorUnifiedGroupRepoStub) ListGroupRealRequestAggregates(_ context.Context, _ []int64, _ []int64, _, _ time.Time) (map[int64]map[int64]AccountMonitorWindowAggregate, error) {
+	return s.groupReal, nil
+}
+
 func (s *accountMonitorRepoStub) ListLifetimeRealRequestCounts(_ context.Context, _ []int64) (map[int64]int64, error) {
 	s.lifetimeCountCalls++
 	return s.lifetimeCounts, nil
@@ -614,6 +623,32 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 	}
 	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{4, 1, 3, 2}) {
 		t.Fatalf("full-site scheduler order = %v", got)
+	}
+}
+
+func TestAccountMonitorListWindowKeepsUnifiedGroupProbeSuccessRate(t *testing.T) {
+	rate := 1.0
+	now := time.Now().UTC()
+	account := Account{ID: 1, Name: "probe-only", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}}
+	base := &accountMonitorRepoStub{
+		settings:              AccountMonitorSettings{IntervalSeconds: 300},
+		windowAggregates:      map[int64]AccountMonitorWindowAggregate{1: {RequestCount: 1, SuccessCount: 1, SuccessRate: 1, LastObservedAt: &now}},
+		groupWindowAggregates: map[int64]map[int64]AccountMonitorWindowAggregate{7: {1: {RequestCount: 0, SuccessCount: 0, ErrorCount: 0, SuccessRate: 0}}},
+		aggregates:            map[int64]AccountMonitorAggregate{1: {SampleCount: 1, SuccessCount: 1, SuccessSampleCount: 1, SuccessRate: 1, LastCheckedAt: &now}},
+		latest:                map[int64]AccountMonitorLatest{1: {Status: "success", CheckedAt: now}},
+		groups:                []AccountMonitorGroup{{ID: 7, Name: "seven", Platform: PlatformOpenAI, RateMultiplier: 1, ScoreWeights: DefaultAccountMonitorScoreWeights}},
+	}
+	repo := &accountMonitorUnifiedGroupRepoStub{accountMonitorRepoStub: base, groupReal: map[int64]map[int64]AccountMonitorWindowAggregate{
+		7: {1: {RequestCount: 1, SuccessCount: 1, ErrorCount: 0, SuccessRate: 1, LastObservedAt: &now}},
+	}}
+
+	page, err := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{accounts: []Account{account}}, nil, nil, accountMonitorConfirmedMultiplier(rate)).ListWindow(context.Background(), "24h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := findAccountMonitorGroupAccount(t, page.Groups[0].Accounts, account.ID)
+	if row.Evidence.SampleCount != 1 || row.Evidence.SuccessSampleCount != 1 || row.SuccessRate != 1 {
+		t.Fatalf("unified group probe evidence overwritten by legacy window: %#v", row)
 	}
 }
 

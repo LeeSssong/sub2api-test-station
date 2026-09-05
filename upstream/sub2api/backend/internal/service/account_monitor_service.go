@@ -796,7 +796,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
 	applyRealRequestEvidence(rows, windowAggregates, observedAt)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
-	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
+	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, groupReal, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
 	if groupReal != nil {
 		applyGroupProfitabilityByGroup(groups, groupReal)
 	} else {
@@ -1177,6 +1177,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 	groups []AccountMonitorGroup,
 	accounts []Account,
 	rows []AccountMonitorAccount,
+	groupReal map[int64]map[int64]AccountMonitorWindowAggregate,
 	probes map[int64]AccountMonitorAggregate,
 	historicalProbes map[int64]AccountMonitorAggregate,
 	latest map[int64]AccountMonitorLatest,
@@ -1202,7 +1203,14 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
 		groupWindowReadError := false
 		groupWindowResultAvailable := false
-		if hasGroupWindowProvider && len(members) > 0 {
+		if groupReal != nil {
+			groupWindows = groupReal[group.ID]
+			if groupWindows == nil {
+				groupWindows = map[int64]AccountMonitorWindowAggregate{}
+			}
+			groupWindowResultAvailable = true
+			hasGroupWindowProvider = true
+		} else if hasGroupWindowProvider && len(members) > 0 {
 			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
 				if loaded != nil {
 					groupWindows = loaded

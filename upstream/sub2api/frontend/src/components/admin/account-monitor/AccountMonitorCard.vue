@@ -41,6 +41,7 @@
           </section>
           <section class="monitor-card-model" data-test="model-detection-section">
             <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-results"><span data-test="model-detection-juice-result">Juice 结果：<strong>{{ modelDetectionJuiceLabel }}</strong></span><span data-test="model-detection-fingerprint-result">模型结果：<strong>{{ modelDetectionFingerprintLabel }}</strong></span></span><Icon name="chevronDown" size="xs" /></button>
+            <label class="connection-model-control"><span>连接测试模型</span><select v-model="inlineConnectionModel" data-test="connection-probe-model-select" :disabled="inlineConnectionModelSaving || savingModelDetection" @focus="loadConnectionModelOptions" @change="saveInlineConnectionModel"><option v-for="option in connectionModelOptions" :key="option.id" :value="option.id">{{ option.id }}</option></select></label>
             <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
             <label class="monitor-toggle"><input type="checkbox" :checked="account.active_probe_enabled !== false" data-test="auto-probe-toggle" @change="emit('updateAutomation', account.account_id, 'active_probe_enabled', ($event.target as HTMLInputElement).checked)"><span>自动探测</span></label>
             <label class="monitor-toggle"><input type="checkbox" :checked="account.model_detection_enabled !== false" data-test="auto-model-detection-toggle" @change="emit('updateAutomation', account.account_id, 'model_detection_enabled', ($event.target as HTMLInputElement).checked)"><span>自动模型检测</span></label>
@@ -247,7 +248,7 @@ const emit = defineEmits<{
   (event: 'accountMore', account: AccountMonitorAccount, triggerEvent?: MouseEvent): void
   (event: 'refresh', accountID: number): void
   (event: 'editConnectionProbeModel', account: AccountMonitorAccount): void
-  (event: 'saveModelDetectionModels', accountID: number, payload: { connectionModel: string; detectionModel: string }): void
+  (event: 'saveModelDetectionModels', accountID: number, payload: { connectionModel: string; detectionModel: string }, completion?: { resolve: () => void; reject: (reason?: unknown) => void }): void
   (event: 'detectModelDetection', accountID: number): void
   (event: 'updateAutomation', accountID: number, field: 'active_probe_enabled' | 'model_detection_enabled', enabled: boolean): void
   (event: 'openModelDetectionHistory', accountID: number): void
@@ -262,6 +263,35 @@ const priorityInput = ref<HTMLInputElement | null>(null)
 const callsExpanded = ref(false)
 const modelDetectionDialogOpen = ref(false)
 const hoveredBarIndex = ref<number | null>(null)
+const inlineConnectionModel = ref(props.modelDetectionModels?.connection_probe_model ?? props.account.connection_probe_model ?? '')
+const inlineConnectionModelSaving = ref(false)
+watch(() => props.modelDetectionModels?.connection_probe_model ?? props.account.connection_probe_model ?? '', (value) => {
+  if (!inlineConnectionModelSaving.value) inlineConnectionModel.value = value
+})
+const connectionModelOptions = computed(() => {
+  const options = props.modelDetectionModels?.connection_models ?? []
+  if (options.some(option => option.id === inlineConnectionModel.value) || !inlineConnectionModel.value) return options
+  return [{ id: inlineConnectionModel.value, supported: true, selected: true }, ...options]
+})
+function loadConnectionModelOptions() {
+  if (!props.modelDetectionModels) emit('editConnectionProbeModel', props.account)
+}
+function saveInlineConnectionModel() {
+  const previous = props.modelDetectionModels?.connection_probe_model ?? props.account.connection_probe_model ?? ''
+  const next = inlineConnectionModel.value
+  if (!next || next === previous || inlineConnectionModelSaving.value) return
+  inlineConnectionModelSaving.value = true
+  emit('saveModelDetectionModels', props.account.account_id, {
+    connectionModel: next,
+    detectionModel: props.modelDetectionModels?.model_detection_model ?? props.account.model_detection?.settings.model_detection_model ?? '',
+  }, {
+    resolve: () => { inlineConnectionModelSaving.value = false },
+    reject: () => {
+      inlineConnectionModel.value = previous
+      inlineConnectionModelSaving.value = false
+    },
+  })
+}
 function openModelDetectionDialog() {
   modelDetectionDialogOpen.value = true
   emit('editConnectionProbeModel', props.account)
@@ -1365,7 +1395,7 @@ const CostMetric = defineComponent({
 
 .monitor-card-model {
   display: grid;
-  grid-template-columns: auto auto 1fr auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(190px, 240px) auto auto auto;
   align-items: center;
   gap: 9px;
   min-width: 0;
@@ -1373,6 +1403,9 @@ const CostMetric = defineComponent({
   padding-top: 13px;
   border-top: 1px solid var(--monitor-line);
 }
+.connection-model-control { display: flex; min-width: 0; align-items: center; gap: 7px; color: #90a3b8; font-size: 10px; white-space: nowrap; }
+.connection-model-control select { min-width: 0; width: 100%; height: 28px; border: 1px solid #2f4862; border-radius: 4px; background: #102237; color: #dce8f5; padding: 0 7px; font-size: 11px; }
+.connection-model-control select:disabled { cursor: wait; opacity: .65; }
 .model-status {
   display: inline-flex;
   align-items: center;
@@ -1450,6 +1483,7 @@ const CostMetric = defineComponent({
   .footer-button { width: 100%; justify-content: center; }
   .monitor-card-model { grid-template-columns: 1fr auto; }
   .model-status { grid-column: 1 / -1; }
+  .connection-model-control { grid-column: 1 / -1; }
   .model-edit, .model-detect { width: 100%; }
 }
 </style>

@@ -184,6 +184,59 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('模型结果：强烈指向 Terra')
   })
 
+  it('places the native connection model selector beside detection results and automation toggles', async () => {
+    const save = vi.fn((_accountID, _payload, completion) => completion.resolve())
+    const wrapper = mountCard({
+      modelDetectionModels: {
+        account_id: 278,
+        detector_state: 'available',
+        connection_probe_model: 'gpt-5.6-sol',
+        model_detection_model: 'gpt-5.6-sol',
+        connection_models: [
+          { id: 'gpt-5.6-sol', supported: true, selected: true },
+          { id: 'gpt-5.6-terra', supported: true, selected: false },
+        ],
+        detection_models: [],
+      },
+      onSaveModelDetectionModels: save,
+    })
+
+    const section = wrapper.get('[data-test="model-detection-section"]')
+    const select = section.get('[data-test="connection-probe-model-select"]')
+    expect(section.get('[data-test="auto-probe-toggle"]').exists()).toBe(true)
+    expect(section.get('[data-test="auto-model-detection-toggle"]').exists()).toBe(true)
+    await select.setValue('gpt-5.6-terra')
+    expect(save).toHaveBeenCalledWith(278, {
+      connectionModel: 'gpt-5.6-terra',
+      detectionModel: 'gpt-5.6-sol',
+    }, expect.objectContaining({ resolve: expect.any(Function), reject: expect.any(Function) }))
+    expect((select.element as HTMLSelectElement).value).toBe('gpt-5.6-terra')
+  })
+
+  it('restores the previous connection model when inline save fails', async () => {
+    const save = vi.fn()
+    const wrapper = mountCard({
+      modelDetectionModels: {
+        account_id: 278,
+        detector_state: 'available',
+        connection_probe_model: 'gpt-5.6-sol',
+        model_detection_model: 'gpt-5.6-sol',
+        connection_models: [
+          { id: 'gpt-5.6-sol', supported: true, selected: true },
+          { id: 'gpt-5.6-terra', supported: true, selected: false },
+        ],
+        detection_models: [],
+      },
+      onSaveModelDetectionModels: save,
+    })
+
+    const select = wrapper.get('[data-test="connection-probe-model-select"]')
+    await select.setValue('gpt-5.6-terra')
+    save.mock.calls[0]?.[2]?.reject(new Error('save failed'))
+    await wrapper.vm.$nextTick()
+    expect((select.element as HTMLSelectElement).value).toBe('gpt-5.6-sol')
+  })
+
   it('shows zero profit instead of an estimated or pending state before revenue exists', () => {
     const wrapper = mountCard({
       account: {

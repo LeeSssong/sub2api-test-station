@@ -610,7 +610,7 @@ async function loadModelDetectionModels(account: AccountMonitorAccount) {
   }
 }
 
-async function saveModelDetectionModels(accountID: number, payload: { connectionModel: string; detectionModel: string }) {
+async function saveModelDetectionModels(accountID: number, payload: { connectionModel: string; detectionModel: string }, completion?: SaveCompletion) {
   if (savingModelDetectionIDs.value.includes(accountID)) return
   savingModelDetectionIDs.value = [...savingModelDetectionIDs.value, accountID]
   try {
@@ -620,8 +620,10 @@ async function saveModelDetectionModels(accountID: number, payload: { connection
     })
     modelDetectionModelsByID.value = { ...modelDetectionModelsByID.value, [accountID]: models }
     await load(activeRange.value, { notifyError: false })
+    completion?.resolve()
     appStore.showSuccess('账号连接测试模型与检测模型已保存')
   } catch (reason: unknown) {
+    completion?.reject(reason)
     appStore.showError(extractApiErrorMessage(reason, '保存账号检测模型失败'))
   } finally {
     savingModelDetectionIDs.value = savingModelDetectionIDs.value.filter((id) => id !== accountID)

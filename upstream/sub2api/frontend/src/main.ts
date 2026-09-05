@@ -30,7 +30,7 @@ function initThemeClass() {
   document.documentElement.classList.toggle('dark', shouldUseDark)
 }
 
-async function bootstrap() {
+export async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
   initIOSViewportZoomFix()
@@ -55,9 +55,15 @@ async function bootstrap() {
   app.use(router)
   app.use(i18n)
 
-  // 等待路由器完成初始导航后再挂载，避免竞态条件导致的空白渲染
-  await router.isReady()
   app.mount('#app')
+
+  // Mount before waiting for initial navigation. A rejected or stalled async
+  // guard must not leave the public login/register routes as a blank page.
+  try {
+    await router.isReady()
+  } catch (error) {
+    console.error('Initial router navigation failed:', error)
+  }
 }
 
 bootstrap()

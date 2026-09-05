@@ -61,26 +61,39 @@ func runResponsesProbe(t *testing.T, status int, body string) map[string]any {
 // 跑一次，标记不会自动恢复。因此判据不成立的响应绝不能落标。
 func TestProbeOpenAIAPIKeyResponsesSupport_InconclusiveResponseKeepsUnknown(t *testing.T) {
 	cases := []struct {
-		name string
-		body string
+		name   string
+		status int
+		body   string
 	}{
 		{
 			// 探测请求自带 openaiResponsesProbeMaxOutputTokens 预算，推理型模型可能
 			// 把预算烧在 reasoning 上就被截断——没有 function_call 是预算不足所致。
-			name: "incomplete_max_output_tokens",
+			name:   "incomplete_max_output_tokens",
+			status: http.StatusOK,
 			body: `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},` +
 				`"output":[{"type":"reasoning","summary":[]}]}`,
 		},
 		{
 			// HTTP 200 携带的失败响应是上游瞬时故障，不构成工具能力证据。
-			name: "failed_status_on_http_200",
-			body: `{"status":"failed","error":{"code":"server_error","message":"upstream hiccup"},"output":[]}`,
+			name:   "failed_status_on_http_200",
+			status: http.StatusOK,
+			body:   `{"status":"failed","error":{"code":"server_error","message":"upstream hiccup"},"output":[]}`,
+		},
+		{
+			name:   "model_not_found_error_code_on_404",
+			status: http.StatusNotFound,
+			body:   `{"error":{"code":"model_not_found","type":"invalid_request_error","message":"Model does not exist"}}`,
+		},
+		{
+			name:   "model_not_found_error_type_on_404",
+			status: http.StatusNotFound,
+			body:   `{"error":{"type":"model_not_found","message":"Model does not exist"}}`,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Nil(t, runResponsesProbe(t, http.StatusOK, tc.body),
+			require.Nil(t, runResponsesProbe(t, tc.status, tc.body),
 				"判据不成立时必须保持 unknown，不得落标")
 		})
 	}
@@ -163,8 +176,9 @@ func TestResponsesProbeVerdictIsConclusive(t *testing.T) {
 		{"200_no_status_field", 200, `{"output":[]}`, true},
 		{"200_non_json", 200, `not-json`, true},
 		{"200_empty_body", 200, ``, true},
-		// 非 2xx 只看状态码，不读 body。
-		{"404_ignores_body_status", 404, `{"status":"failed"}`, true},
+		{"404_model_not_found_code", 404, `{"error":{"code":"model_not_found"}}`, false},
+		{"404_model_not_found_type", 404, `{"error":{"type":"model_not_found"}}`, false},
+		{"404_endpoint_not_found", 404, `{"error":{"message":"Not Found"}}`, true},
 		{"500_ignores_body_status", 500, `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}`, true},
 	}
 

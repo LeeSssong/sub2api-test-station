@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**T133 账号监控连接测试模型入口与主动探测成功率修复（2026-09-05）：** 状态 `DESIGNING`。在账号监控卡片的模型检测结果与自动化勾选项同一紧凑区域放置原生“连接测试模型”选择框，复用现有字段/API并即时保存、失败回滚；统一全局和分组五分钟桶证据：真实请求优先，否则一个主动探测终态，成功/失败均进入请求成功率，探测不进入收入或成本。生产只读根因确认分组旧窗口聚合用仅业务流水的零成功率覆盖统一计数，且统一查询只纳入成功探测。用户已确认书面方案并明确授权修复后快速部署主站、不同步验收站；当前先完成正式规格/计划和 TDD，实现与发布不得绕过 `downtime_required=true` 停机门禁。
+**T133 账号监控连接测试模型入口与主动探测成功率修复（2026-09-05）：** 状态 `INTEGRATING`。候选 `45177506d` 已推送并无冲突合入根 `main`；连接测试模型原生选择框已置于模型结果与自动化勾选项旁，懒加载选项、即时保存、失败回滚；统一聚合已让 `success/failed` 探测终态都进入分母，同桶真实请求优先、最新探测去重，分组质量不再被旧业务窗口零成功率覆盖。候选直接相关后端/前端测试、typecheck、server build、production build 和 diff-check 通过，无 migration、配置或生产数据写入；正在根 `main` 复验，完成后按用户 C 路径快速部署主站且不同步验收站，仍受停机门禁约束。
 
 **T132 账号监控检测判定与证据可见性修复（2026-09-05）：** 状态 `DONE`。候选提交 `0b53b67b8`、`f6ad3d34f`、`9ea86eb0d` 已合入根 `main`，追加修复与发布门禁补丁最终为 `main@da17702e2631236bd8a40b056973e9169bd902e5`、tree `061e9405106bb9a843d3ede06d03e55e4991224e` 并已推送。migration 236 精确转换 `30adae913... -> a01097cc0...` 已通过完整维护合同，未知/错误哈希继续 fail-closed；直接功能测试、构建、类型检查、脚本语法和 diff-check 通过。用户明确授权快速部署主站、不同步验收站并允许停机；主站宿主记录 `/var/lib/sub2api/release-records/20260904T184317Z-production-2355103.json` 返回 `succeeded/promoted`、`rolled_back=false`，活动槽 green；三项公网健康探针和 API/worker/model-detector 健康通过。证据 `/Users/gongtengxinwen/.codex/release-evidence/sub2api/2026-09-05-main-da17702e2-t132-maintenance.json`（0600）。验收站按授权未同步，版本差异已保留；候选 bundle `/Users/gongtengxinwen/Documents/sub2api-archives/2026-09-05-t132-monitor-production-only-fast/monitor-probe-failure-exclusion.bundle` 已验证后删除分支。
 

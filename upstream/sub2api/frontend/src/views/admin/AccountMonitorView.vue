@@ -630,10 +630,17 @@ async function saveModelDetectionModels(accountID: number, payload: { connection
   }
 }
 
-async function enqueueModelDetection(accountID: number) {
+async function enqueueModelDetection(accountID: number, payload?: { connectionModel: string; detectionModel: string }) {
   if (detectingModelDetectionIDs.value.includes(accountID)) return
   detectingModelDetectionIDs.value = [...detectingModelDetectionIDs.value, accountID]
   try {
+    if (payload?.connectionModel && payload?.detectionModel) {
+      const models = await adminAPI.accountMonitor.saveModelDetectionModels(accountID, {
+        connection_probe_model: payload.connectionModel,
+        model_detection_model: payload.detectionModel,
+      })
+      modelDetectionModelsByID.value = { ...modelDetectionModelsByID.value, [accountID]: models }
+    }
     const result = await adminAPI.accountMonitor.enqueueModelDetection(accountID)
     await load(activeRange.value, { notifyError: false })
     appStore.showSuccess(result.reused ? '已复用该账号正在进行的检测' : '账号模型检测已排队')

@@ -83,15 +83,16 @@ describe('HybridPerformanceView', () => {
     wrapper.unmount()
   })
 
-  it('requests the 1-hour window when its tab is selected', async () => {
+  it('does not offer the removed 1-hour window', async () => {
     getSnapshot.mockReset()
     getSnapshot.mockResolvedValue({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })
     const wrapper = mount(HybridPerformanceView, {
       global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
     })
     await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal)))
-    await wrapper.get('[data-test="hybrid-window-1h"]').trigger('click')
-    await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('1h', expect.any(AbortSignal)))
+    expect(wrapper.find('[data-test="hybrid-window-1h"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="hybrid-window-24h"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="hybrid-window-7d"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

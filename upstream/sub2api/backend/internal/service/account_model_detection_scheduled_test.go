@@ -281,3 +281,16 @@ func TestActiveProbeSwitchesDefaultOnAndFailClosedWhenDisabled(t *testing.T) {
 		t.Fatal("any disabled group must disable automatic probes")
 	}
 }
+
+func TestScheduledModelDetectionUsesOnlyItsOwnAutomationSwitch(t *testing.T) {
+	account := &Account{ID: 7, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Extra:  map[string]any{ActiveProbeEnabledExtraKey: false, ModelDetectionEnabledExtraKey: true},
+		Groups: []*Group{{ID: 9, ActiveProbeEnabled: false}}}
+	if !accountScheduledModelDetectionEligible(account) {
+		t.Fatal("connection probe switches must not disable scheduled model/fingerprint detection")
+	}
+	account.Extra[ModelDetectionEnabledExtraKey] = false
+	if accountScheduledModelDetectionEligible(account) {
+		t.Fatal("model detection switch=false must disable scheduled model/fingerprint detection")
+	}
+}

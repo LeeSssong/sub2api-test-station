@@ -46,6 +46,9 @@ func (r *accountRepository) ClaimNewAPIRateRefresh(ctx context.Context, accountI
 				AND COALESCE(extra -> 'upstream_billing_probe' ->> 'status', '') = $5)
 		  )
 		  AND COALESCE(extra -> 'upstream_billing_probe' ->> 'status', '') <> $6
+		  AND COALESCE((extra ->> 'upstream_billing_probe_enabled')::boolean, false)
+		  AND COALESCE((extra ->> 'upstream_billing_rate_sync_enabled')::boolean, false)
+		  AND COALESCE(extra ->> 'rate_multiplier_mode', 'auto') <> 'manual'
 		  AND COALESCE(extra -> 'newapi_rate_registration' ->> 'last_refresh_date', '') <> $7
 		  AND (
 			(extra -> 'newapi_rate_registration' ->> 'claim_token') IS NULL
@@ -120,6 +123,9 @@ func (r *accountRepository) CompleteNewAPIRateRefresh(ctx context.Context, input
 				AND COALESCE(extra -> 'upstream_billing_probe' ->> 'status', '') = $7)
 		  )
 		  AND COALESCE(extra -> 'upstream_billing_probe' ->> 'status', '') <> $8
+		  AND COALESCE((extra ->> 'upstream_billing_probe_enabled')::boolean, false)
+		  AND COALESCE((extra ->> 'upstream_billing_rate_sync_enabled')::boolean, false)
+		  AND COALESCE(extra ->> 'rate_multiplier_mode', 'auto') <> 'manual'
 		  AND extra -> 'newapi_rate_registration' ->> 'claim_token' = $9
 		  AND extra -> 'newapi_rate_registration' ->> 'claim_date' = $10
 		`, input.GroupRatio, string(snapshot), input.ObservedAt.UTC().Format(time.RFC3339Nano), input.AccountID, service.AccountTypeAPIKey, service.AccountMonitorBalanceSourceNewAPI, service.UpstreamBillingProbeStatusUnsupported, service.UpstreamBillingProbeStatusOK, input.ClaimToken, input.RefreshDate)

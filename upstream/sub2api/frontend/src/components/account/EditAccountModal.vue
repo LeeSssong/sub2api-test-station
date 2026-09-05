@@ -1582,7 +1582,7 @@
             step="0.001"
             class="input disabled:cursor-not-allowed disabled:opacity-60"
             data-testid="account-rate-multiplier"
-            :disabled="upstreamBillingRateSyncEnabled || rateMultiplierMode === 'native'"
+            :disabled="upstreamBillingRateSyncEnabled"
           />
           <p class="input-hint">
             {{
@@ -1593,11 +1593,6 @@
               )
             }}
           </p>
-          <select v-model="rateMultiplierMode" class="input mt-2" data-testid="rate-multiplier-mode" @change="handleRateMultiplierModeChange">
-            <option value="auto">自动读取上游声明倍率</option>
-            <option value="manual">手工维护</option>
-            <option value="native">Sub 原生</option>
-          </select>
           <p v-if="account?.extra?.newapi_rate_registration?.status === 'registered'" class="mt-1 text-xs text-amber-600 dark:text-amber-400" data-testid="newapi-rate-manual-edit-hint">
             {{ t('admin.accounts.upstreamBilling.manualEditMayBeOverwritten') }}
           </p>
@@ -1607,10 +1602,10 @@
           >
             <div class="min-w-0">
               <p class="text-xs font-medium text-gray-700 dark:text-gray-200">
-                {{ t('admin.accounts.upstreamBilling.syncRate') }}
+                同步上游倍率
               </p>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('admin.accounts.upstreamBilling.syncRateHint') }}
+                开启后优先读取 Sub 原生声明；读取不到时自动按 NewAPI 流水字段读取。关闭后使用上方手工倍率，任何流水或探测都不会覆盖。
               </p>
             </div>
             <Toggle
@@ -3672,7 +3667,7 @@ const form = reactive({
 })
 
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
-  rateMultiplierMode.value = enabled ? 'auto' : (rateMultiplierMode.value === 'auto' ? 'manual' : rateMultiplierMode.value)
+  rateMultiplierMode.value = enabled ? 'auto' : 'manual'
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
     upstreamBillingAutoProbeEnabled.value = true
@@ -3684,11 +3679,6 @@ const handleUpstreamBillingAutoProbeChange = (enabled: boolean) => {
   if (!enabled) {
     upstreamBillingRateSyncEnabled.value = false
   }
-}
-
-const handleRateMultiplierModeChange = () => {
-  upstreamBillingRateSyncEnabled.value = rateMultiplierMode.value === 'auto'
-  if (rateMultiplierMode.value === 'auto') upstreamBillingAutoProbeEnabled.value = true
 }
 
 const statusOptions = computed(() => {
@@ -3822,7 +3812,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	upstreamBillingAutoProbeEnabled.value = extra?.upstream_billing_probe_enabled === true
   upstreamBillingRateSyncEnabled.value =
     upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
-  rateMultiplierMode.value = extra?.rate_multiplier_mode === 'native' ? 'native' : (upstreamBillingRateSyncEnabled.value ? 'auto' : (extra?.rate_multiplier_mode === 'manual' ? 'manual' : 'manual'))
+  rateMultiplierMode.value = upstreamBillingRateSyncEnabled.value ? 'auto' : 'manual'
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false

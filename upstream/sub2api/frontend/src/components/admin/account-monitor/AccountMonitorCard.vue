@@ -40,9 +40,10 @@
             </div>
           </section>
           <section class="monitor-card-model" data-test="model-detection-section">
-            <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-results"><span data-test="model-detection-juice-result">Juice 结果：<strong>{{ modelDetectionJuiceLabel }}</strong></span><span data-test="model-detection-fingerprint-result">模型结果：<strong>{{ modelDetectionFingerprintLabel }}</strong></span></span><Icon name="chevronDown" size="xs" /></button>
-            <label class="connection-model-control"><span>连接测试模型</span><select v-model="inlineConnectionModel" data-test="connection-probe-model-select" :disabled="inlineConnectionModelSaving || savingModelDetection" @focus="loadConnectionModelOptions" @change="saveInlineConnectionModel"><option v-for="option in connectionModelOptions" :key="option.id" :value="option.id">{{ option.id }}</option></select></label>
-            <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection" @click="emit('detectModelDetection', account.account_id)">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
+            <button type="button" class="model-status" data-test="model-detection-status-row" :aria-expanded="modelDetectionDialogOpen" @click="openModelDetectionEntry"><span class="model-title">{{ t('admin.accounts.modelDetection.section') }}</span><span class="model-results"><span data-test="model-detection-juice-result">模型结论：<strong>{{ modelDetectionJuiceLabel }}</strong></span><span data-test="model-detection-fingerprint-result">指纹结论：<strong>{{ modelDetectionFingerprintLabel }}</strong></span></span><Icon name="chevronDown" size="xs" /></button>
+            <label class="connection-model-control"><span>连接检测默认模型</span><select v-model="inlineConnectionModel" data-test="connection-probe-model-select" :disabled="inlineConnectionModelSaving || savingModelDetection" @focus="loadConnectionModelOptions" @change="saveInlineModels"><option v-for="option in connectionModelOptions" :key="option.id" :value="option.id">{{ option.id }}</option></select></label>
+            <label class="connection-model-control"><span>模型检测默认模型</span><select v-model="inlineDetectionModel" data-test="model-detection-model-select" :disabled="inlineModelSaving || savingModelDetection" @focus="loadConnectionModelOptions" @change="saveInlineModels"><option v-for="option in detectionModelOptions" :key="option.id" :value="option.id" :disabled="!option.supported">{{ option.id }}</option></select></label>
+            <button type="button" class="model-detect" data-test="detect-model-detection" :disabled="detectingModelDetection || inlineModelSaving" @click="detectWithSelectedModels">{{ detectingModelDetection ? t('admin.accounts.modelDetection.detecting') : t('admin.accounts.modelDetection.detectNow') }}</button>
             <label class="monitor-toggle"><input type="checkbox" :checked="account.active_probe_enabled !== false" data-test="auto-probe-toggle" @change="emit('updateAutomation', account.account_id, 'active_probe_enabled', ($event.target as HTMLInputElement).checked)"><span>自动探测</span></label>
             <label class="monitor-toggle"><input type="checkbox" :checked="account.model_detection_enabled !== false" data-test="auto-model-detection-toggle" @change="emit('updateAutomation', account.account_id, 'model_detection_enabled', ($event.target as HTMLInputElement).checked)"><span>自动模型检测</span></label>
           </section>
@@ -52,12 +53,7 @@
             <h3>近期请求</h3>
             <button type="button" class="chart-action" data-test="refresh-account" title="刷新账号状态" aria-label="刷新账号状态" :disabled="running" @click="emit('refresh', account.account_id)"><Icon name="refresh" size="xs" :class="{ 'animate-spin': running }" />刷新账号状态</button>
           </div>
-          <div class="performance-bars" role="img" :aria-label="realTimelineAriaLabel">
-            <span v-for="(bar, index) in realRequestBars" :key="`${account.account_id}-${index}`" tabindex="0" class="performance-bar-wrap" style="flex: 0 0 8px; width: 8px" @mouseenter="hoveredBarIndex = index" @mouseleave="hoveredBarIndex = null" @focus="hoveredBarIndex = index" @blur="hoveredBarIndex = null">
-              <span class="performance-bar" :class="bar.colorClass" :style="{ width: '100%', height: `${bar.height}%` }" data-test="real-request-bar" />
-              <span v-if="hoveredBarIndex === index && bar.latencyLabel" class="performance-bar-tooltip" role="tooltip" data-test="real-request-tooltip">{{ bar.latencyLabel }}</span>
-            </span>
-          </div>
+          <MonitorV2Timeline :points="monitorTimelinePoints" data-test="account-monitor-v3-timeline" />
         </section>
       </div>
       <footer class="monitor-card-footer" data-test="account-actions" aria-label="账号操作">
@@ -215,6 +211,7 @@ import Icon from '@/components/icons/Icon.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import type { AccountModelDetectionModelsResponse, AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
 import AccountModelDetectionDialog from './AccountModelDetectionDialog.vue'
+import MonitorV2Timeline from '@/features/monitor-v2/MonitorV2Timeline.vue'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
 type SchedulerDetails = NonNullable<AccountMonitorAccount['scheduler_explanation']> & {
@@ -249,7 +246,7 @@ const emit = defineEmits<{
   (event: 'refresh', accountID: number): void
   (event: 'editConnectionProbeModel', account: AccountMonitorAccount): void
   (event: 'saveModelDetectionModels', accountID: number, payload: { connectionModel: string; detectionModel: string }, completion?: { resolve: () => void; reject: (reason?: unknown) => void }): void
-  (event: 'detectModelDetection', accountID: number): void
+  (event: 'detectModelDetection', accountID: number, payload?: { connectionModel: string; detectionModel: string }): void
   (event: 'updateAutomation', accountID: number, field: 'active_probe_enabled' | 'model_detection_enabled', enabled: boolean): void
   (event: 'openModelDetectionHistory', accountID: number): void
 }>()
@@ -262,11 +259,15 @@ const priorityError = ref('')
 const priorityInput = ref<HTMLInputElement | null>(null)
 const callsExpanded = ref(false)
 const modelDetectionDialogOpen = ref(false)
-const hoveredBarIndex = ref<number | null>(null)
 const inlineConnectionModel = ref(props.modelDetectionModels?.connection_probe_model ?? props.account.connection_probe_model ?? '')
 const inlineConnectionModelSaving = ref(false)
+const inlineModelSaving = ref(false)
+const inlineDetectionModel = ref(props.modelDetectionModels?.model_detection_model ?? props.account.model_detection?.settings.model_detection_model ?? '')
 watch(() => props.modelDetectionModels?.connection_probe_model ?? props.account.connection_probe_model ?? '', (value) => {
   if (!inlineConnectionModelSaving.value) inlineConnectionModel.value = value
+})
+watch(() => props.modelDetectionModels?.model_detection_model ?? props.account.model_detection?.settings.model_detection_model ?? '', (value) => {
+  if (!inlineModelSaving.value) inlineDetectionModel.value = value
 })
 const connectionModelOptions = computed(() => {
   const options = props.modelDetectionModels?.connection_models ?? []
@@ -276,21 +277,30 @@ const connectionModelOptions = computed(() => {
 function loadConnectionModelOptions() {
   if (!props.modelDetectionModels) emit('editConnectionProbeModel', props.account)
 }
-function saveInlineConnectionModel() {
+const detectionModelOptions = computed(() => props.modelDetectionModels?.detection_models ?? props.account.model_detection?.model_options ?? [])
+function saveInlineModels() {
   const previous = props.modelDetectionModels?.connection_probe_model ?? props.account.connection_probe_model ?? ''
+  const previousDetection = props.modelDetectionModels?.model_detection_model ?? props.account.model_detection?.settings.model_detection_model ?? ''
   const next = inlineConnectionModel.value
-  if (!next || next === previous || inlineConnectionModelSaving.value) return
+  const nextDetection = inlineDetectionModel.value
+  if (!next || !nextDetection || (next === previous && nextDetection === previousDetection) || inlineModelSaving.value) return
   inlineConnectionModelSaving.value = true
+  inlineModelSaving.value = true
   emit('saveModelDetectionModels', props.account.account_id, {
     connectionModel: next,
-    detectionModel: props.modelDetectionModels?.model_detection_model ?? props.account.model_detection?.settings.model_detection_model ?? '',
+    detectionModel: nextDetection,
   }, {
-    resolve: () => { inlineConnectionModelSaving.value = false },
+    resolve: () => { inlineConnectionModelSaving.value = false; inlineModelSaving.value = false },
     reject: () => {
       inlineConnectionModel.value = previous
+      inlineDetectionModel.value = previousDetection
       inlineConnectionModelSaving.value = false
+      inlineModelSaving.value = false
     },
   })
+}
+function detectWithSelectedModels() {
+  emit('detectModelDetection', props.account.account_id, { connectionModel: inlineConnectionModel.value, detectionModel: inlineDetectionModel.value })
 }
 function openModelDetectionDialog() {
   modelDetectionDialogOpen.value = true
@@ -480,6 +490,12 @@ const realRequestBars = computed(() => {
     return { colorClass, height: Math.max(28, Math.min(100, 28 + requestCount * 4)), latencyLabel: point.ttft_p95_ms != null && Number.isFinite(point.ttft_p95_ms) ? String(Math.round(point.ttft_p95_ms)) + 'ms' : null }
   })
 })
+const monitorTimelinePoints = computed(() => (props.account.real_request_timeline ?? []).map((point) => ({
+  bucket_start: point.start_at,
+  status: point.failure_count > 0 && point.success_count === 0 ? 'unavailable' as const : 'operational' as const,
+  latency_ms: point.ttft_p95_ms == null ? null : Math.round(point.ttft_p95_ms),
+  has_result: point.request_count > 0,
+})))
 const realTimelineAriaLabel = computed(() => `近期性能，${props.account.request_count ?? 0} 次有效观测`)
 const checkedAtLabel = computed(() => formatDateTime(props.account.checked_at ?? props.account.latest?.checked_at ?? null))
 const modelDetectionStatus = computed(() => {
@@ -488,18 +504,25 @@ const modelDetectionStatus = computed(() => {
 })
 const modelDetectionStatusLabel = computed(() => t(`admin.accounts.modelDetection.status.${modelDetectionStatus.value}`))
 const modelDetectionJuiceLabel = computed(() => {
-  const value = props.account.model_detection?.recent?.juice_status
+  const recent = props.account.model_detection?.recent
+  const value = recent?.juice_status
   if (value === 'pass' || value === 'verified') return '通过'
-  if (value === 'mismatch') return '与申报不一致'
+  if (value === 'mismatch') {
+    const conflicts = Array.isArray(recent?.juice_summary?.conflicting_models) ? recent.juice_summary.conflicting_models.filter((item): item is string => typeof item === 'string') : []
+    return `${recent?.claimed_model || '--'} -> ${conflicts.join('、') || '疑似其他模型'}`
+  }
   if (value === 'possible_non_gpt' || value === 'non_gpt') return '可能非 GPT'
-  if (value === 'insufficient') return '证据不足'
+  if (value === 'insufficient') return '检测未完成（有效样本不足）'
   return modelDetectionStatus.value === 'failed' ? '检测失败' : '未检测'
 })
 function shortDetectionModel(value?: string) { return String(value || '').replace(/^gpt-5\.6-/, '').replace(/^./, (letter) => letter.toUpperCase()) }
 const modelDetectionFingerprintLabel = computed(() => {
   const recent = props.account.model_detection?.recent
-  if (recent?.fingerprint_status === 'strong_match' && recent.fingerprint_candidate) return `强烈指向 ${shortDetectionModel(recent.fingerprint_candidate)}`
-  if (recent?.fingerprint_status === 'unclear') return '证据不明确'
+  if (recent?.fingerprint_status === 'strong_match' && recent.fingerprint_candidate) {
+    if (recent.fingerprint_candidate !== recent.claimed_model) return `${recent.claimed_model || '--'} -> ${recent.fingerprint_candidate}`
+    return `匹配 ${shortDetectionModel(recent.fingerprint_candidate)}`
+  }
+  if (recent?.fingerprint_status === 'unclear') return '检测未完成（未形成可识别指纹）'
   return modelDetectionStatus.value === 'failed' ? '检测失败' : '未检测'
 })
 const modelDetectionStatusHint = computed(() => {
@@ -1394,8 +1417,8 @@ const CostMetric = defineComponent({
 .monitor-card-chart::after { display: none !important; content: none !important; }
 
 .monitor-card-model {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(190px, 240px) auto auto auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 9px;
   min-width: 0;
@@ -1403,11 +1426,12 @@ const CostMetric = defineComponent({
   padding-top: 13px;
   border-top: 1px solid var(--monitor-line);
 }
-.connection-model-control { display: flex; min-width: 0; align-items: center; gap: 7px; color: #90a3b8; font-size: 10px; white-space: nowrap; }
+.connection-model-control { display: flex; flex: 1 1 190px; min-width: 170px; max-width: 240px; flex-direction: column; align-items: stretch; gap: 4px; color: #90a3b8; font-size: 10px; white-space: nowrap; }
 .connection-model-control select { min-width: 0; width: 100%; height: 28px; border: 1px solid #2f4862; border-radius: 4px; background: #102237; color: #dce8f5; padding: 0 7px; font-size: 11px; }
 .connection-model-control select:disabled { cursor: wait; opacity: .65; }
 .model-status {
   display: inline-flex;
+  flex: 1 1 200px;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -1481,9 +1505,8 @@ const CostMetric = defineComponent({
   .monitor-card-metrics :deep(.service-metric:nth-child(2n)) { border-right: 0; padding-right: 0; padding-left: 10px; }
   .monitor-card-footer { flex-direction: column; padding-inline: 16px; }
   .footer-button { width: 100%; justify-content: center; }
-  .monitor-card-model { grid-template-columns: 1fr auto; }
-  .model-status { grid-column: 1 / -1; }
-  .connection-model-control { grid-column: 1 / -1; }
+  .monitor-card-model { align-items: stretch; }
+  .model-status, .connection-model-control { flex-basis: 100%; max-width: none; }
   .model-edit, .model-detect { width: 100%; }
 }
 </style>

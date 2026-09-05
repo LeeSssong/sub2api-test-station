@@ -1002,7 +1002,7 @@ func (r *accountMonitorRepository) ListRealRequestAggregates(
 			SELECT account_id, checked_at, ttft_ms::double precision AS first_token_ms, latency_ms::double precision AS duration_ms,
 				(status = 'success') AS successful, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) AS bucket_start,
 				ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) ORDER BY checked_at DESC, id DESC) AS rn
-			FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status = 'success'
+			FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status IN ('success', 'failed')
 		), latest_probe (account_id, created_at, first_token_ms, duration_ms, successful, bucket_start) AS (
 			SELECT account_id, checked_at AS created_at, first_token_ms, duration_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1
 		), selected_requests (account_id, source_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, request_key, is_probe) AS (
@@ -1060,7 +1060,7 @@ func (r *accountMonitorRepository) ListLifetimeRealRequestCounts(ctx context.Con
 		), probe_ranked (account_id, checked_at, bucket_start, rn) AS (
 			SELECT account_id, checked_at, date_bin('5 minutes'::interval, checked_at, TIMESTAMPTZ 'epoch') AS bucket_start,
 				ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, TIMESTAMPTZ 'epoch') ORDER BY checked_at DESC, id DESC) AS rn
-			FROM account_monitor_results WHERE account_id = ANY($1) AND status = 'success'
+			FROM account_monitor_results WHERE account_id = ANY($1) AND status IN ('success', 'failed')
 		), latest_probe (account_id, created_at, bucket_start) AS (
 			SELECT account_id, checked_at AS created_at, bucket_start FROM probe_ranked WHERE rn = 1
 		), selected_requests (account_id, created_at, is_probe) AS (
@@ -1112,7 +1112,7 @@ func (r *accountMonitorRepository) ListRealRequestTimelines(ctx context.Context,
 		), real_buckets (account_id, bucket_start) AS ( SELECT account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz) AS bucket_start FROM real_candidates WHERE rn = 1 GROUP BY account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz) ), probe_ranked (
 			account_id, checked_at, first_token_ms, successful, bucket_start, rn
 		) AS (
-			SELECT account_id, checked_at, ttft_ms::double precision AS first_token_ms, TRUE AS successful, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) AS bucket_start, ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) ORDER BY checked_at DESC, id DESC) AS rn FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status = 'success'
+			SELECT account_id, checked_at, ttft_ms::double precision AS first_token_ms, (status = 'success') AS successful, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) AS bucket_start, ROW_NUMBER() OVER (PARTITION BY account_id, date_bin('5 minutes'::interval, checked_at, $2::timestamptz) ORDER BY checked_at DESC, id DESC) AS rn FROM account_monitor_results WHERE account_id = ANY($1) AND checked_at >= $2 AND checked_at < $3 AND status IN ('success', 'failed')
 		), latest_probe (account_id, created_at, first_token_ms, successful, bucket_start) AS ( SELECT account_id, checked_at, first_token_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1 ), selected_requests (account_id, created_at, first_token_ms, successful) AS (
 			SELECT account_id, created_at, first_token_ms, successful FROM real_candidates WHERE rn = 1 UNION ALL SELECT p.account_id, p.created_at, p.first_token_ms, p.successful FROM latest_probe p WHERE NOT EXISTS (SELECT 1 FROM real_buckets r WHERE r.account_id = p.account_id AND r.bucket_start = p.bucket_start)
 		), buckets AS ( SELECT account_id, FLOOR(EXTRACT(EPOCH FROM (date_bin('5 minutes'::interval, created_at, $2::timestamptz) - $2)) / %v)::int AS source_bucket_index, COUNT(*)::bigint AS request_count, COUNT(*) FILTER (WHERE successful)::bigint AS success_count, COUNT(*) FILTER (WHERE NOT successful)::bigint AS failure_count, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY first_token_ms) FILTER (WHERE successful AND first_token_ms IS NOT NULL) AS ttft_p95_ms FROM selected_requests GROUP BY account_id, source_bucket_index )
@@ -1189,10 +1189,10 @@ func (r *accountMonitorRepository) ListGroupRealRequestAggregates(ctx context.Co
 			FROM real_candidates WHERE rn = 1 GROUP BY group_id, account_id, bucket_start
 		), probe_ranked (group_id, account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start, rn) AS (
 			SELECT ag.group_id, r.account_id, r.checked_at, r.ttft_ms::double precision AS first_token_ms, r.latency_ms::double precision AS duration_ms,
-				TRUE AS successful, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) AS bucket_start,
+				(r.status = 'success') AS successful, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) AS bucket_start,
 				ROW_NUMBER() OVER (PARTITION BY ag.group_id, r.account_id, date_bin('5 minutes'::interval, r.checked_at, $3::timestamptz) ORDER BY r.checked_at DESC, r.id DESC) AS rn
 			FROM account_monitor_results r JOIN account_groups ag ON ag.account_id = r.account_id AND ag.group_id = ANY($1)
-			WHERE r.account_id = ANY($2) AND r.checked_at >= $3 AND r.checked_at < $4 AND r.status = 'success'
+			WHERE r.account_id = ANY($2) AND r.checked_at >= $3 AND r.checked_at < $4 AND r.status IN ('success', 'failed')
 		), latest_probe (group_id, account_id, created_at, first_token_ms, duration_ms, successful, bucket_start) AS ( SELECT group_id, account_id, checked_at, first_token_ms, duration_ms, successful, bucket_start FROM probe_ranked WHERE rn = 1 ), selected_requests (group_id, account_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, is_probe) AS (
 			SELECT group_id, account_id, created_at, first_token_ms, duration_ms, revenue, account_cost, cost_complete, successful, FALSE FROM real_candidates WHERE rn = 1
 			UNION ALL SELECT group_id, account_id, created_at, first_token_ms, duration_ms, 0::double precision, 0::double precision, FALSE, successful, TRUE FROM latest_probe p

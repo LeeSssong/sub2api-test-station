@@ -953,6 +953,13 @@ func TestAccountMonitorRepositoryRealRequestAggregatesSelectUnifiedBucketRequest
 			requestCount: 1, successCount: 1, errorCount: 0, ttftSamples: 1, ttftP95: float64Ptr(240), lastObserved: time.Date(2026, 9, 1, 0, 9, 0, 0, time.UTC),
 		},
 		{
+			name: "failed probe fills denominator without a success sample",
+			rows: sqlmock.NewRows([]string{
+				"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
+			}).AddRow(7, 1, 0, 1, 0.0, 0.0, false, 0.0, 0, nil, nil, time.Date(2026, 9, 1, 0, 14, 0, 0, time.UTC)),
+			requestCount: 1, successCount: 0, errorCount: 1, ttftSamples: 0, lastObserved: time.Date(2026, 9, 1, 0, 14, 0, 0, time.UTC),
+		},
+		{
 			name: "empty bucket is absent from denominator",
 			rows: sqlmock.NewRows([]string{
 				"account_id", "request_count", "success_count", "error_count", "revenue", "account_cost", "cost_complete", "success_rate", "ttft_sample_count", "ttft_p95_ms", "latency_p95_ms", "last_observed_at",
@@ -1096,5 +1103,5 @@ func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool
 	if groupScoped {
 		groupMarker = `.*?group_id.*?PARTITION BY ag\.group_id, r\.account_id`
 	}
-	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s*=\s*'success'.*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
+	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s*\(\s*'success'\s*,\s*'failed'\s*\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
 }

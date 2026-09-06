@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 const (
 	codexRadarInsightsURL      = "https://codexradar.com/api/radar-insights"
+	codexRadarMetricsURL       = "https://codexradar.com/api/intelligence-efficiency-metrics"
 	codexRadarMaxResponseBytes = 2 << 20
 	codexRadarCacheTTL         = 60 * time.Second
 	codexRadarTimeout          = 10 * time.Second
@@ -47,10 +49,34 @@ type CodexRadarInsights struct {
 }
 
 type codexRadarWireResponse struct {
-	Schema          int                        `json:"schema"`
-	GeneratedAt     string                     `json:"generated_at"`
-	SourceUpdatedAt string                     `json:"source_updated_at"`
-	Recommendations []CodexRadarRecommendation `json:"recommendations"`
+	Schema          int                            `json:"schema"`
+	GeneratedAt     string                         `json:"generated_at"`
+	SourceUpdatedAt string                         `json:"source_updated_at"`
+	Comprehensive   []codexRadarComprehensivePoint `json:"comprehensive_points"`
+	Recommendations []CodexRadarRecommendation     `json:"recommendations"`
+}
+
+type codexRadarComprehensivePoint struct {
+	Model  string  `json:"model"`
+	Effort string  `json:"effort"`
+	IQ     float64 `json:"iq"`
+}
+
+type codexRadarMetricsResponse struct {
+	Points []codexRadarMetricsPoint `json:"points"`
+}
+
+type codexRadarMetricsPoint struct {
+	Model             string   `json:"model"`
+	Effort            string   `json:"effort"`
+	AveragePriceUSD   *float64 `json:"average_price_usd"`
+	AverageMinutes    *float64 `json:"average_minutes"`
+	CombinedCostIndex *float64 `json:"combined_cost_index"`
+}
+
+type codexRadarSupplementCandidate struct {
+	item              CodexRadarRecommendationItem
+	combinedCostIndex float64
 }
 
 type CodexRadarInsightsService struct {
@@ -135,10 +161,125 @@ func (s *CodexRadarInsightsService) fetch(ctx context.Context) (CodexRadarInsigh
 	if err := validateCodexRadarWire(wire); err != nil {
 		return CodexRadarInsights{}, err
 	}
+	if hasEmptyPrimaryRecommendation(wire.Recommendations) && len(wire.Comprehensive) > 0 {
+		var metrics codexRadarMetricsResponse
+		if err := s.fetchJSON(ctx, codexRadarMetricsURL, &metrics); err == nil {
+			supplementEmptyPrimaryRecommendations(&wire, metrics)
+		}
+	}
 	return CodexRadarInsights{
 		GeneratedAt: wire.GeneratedAt, SourceUpdatedAt: wire.SourceUpdatedAt,
 		SourceStatus: "fresh", Recommendations: normalizeCodexRadarRecommendations(wire.Recommendations),
 	}, nil
+}
+
+func hasEmptyPrimaryRecommendation(recommendations []CodexRadarRecommendation) bool {
+	for _, recommendation := range recommendations {
+		if (recommendation.Key == "daily_development" || recommendation.Key == "hard_problems") && len(recommendation.Items) == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func supplementEmptyPrimaryRecommendations(wire *codexRadarWireResponse, metrics codexRadarMetricsResponse) {
+	metricsByKey := make(map[string]codexRadarMetricsPoint, len(metrics.Points))
+	for _, point := range metrics.Points {
+		metricsByKey[codexRadarRecommendationKey(point.Model, point.Effort)] = point
+	}
+	candidates := make([]codexRadarSupplementCandidate, 0, len(wire.Comprehensive))
+	for _, point := range wire.Comprehensive {
+		if !isCodexRadarStationModel(point.Model) || point.IQ < 0 {
+			continue
+		}
+		metric, ok := metricsByKey[codexRadarRecommendationKey(point.Model, point.Effort)]
+		if !ok || metric.AveragePriceUSD == nil || metric.AverageMinutes == nil || metric.CombinedCostIndex == nil {
+			continue
+		}
+		candidates = append(candidates, codexRadarSupplementCandidate{
+			item: CodexRadarRecommendationItem{
+				Model: point.Model, Effort: point.Effort, IQ: point.IQ,
+				AverageDurationMinutes: *metric.AverageMinutes,
+				AverageCostUSD:         *metric.AveragePriceUSD,
+			},
+			combinedCostIndex: *metric.CombinedCostIndex,
+		})
+	}
+	for index := range wire.Recommendations {
+		recommendation := &wire.Recommendations[index]
+		if len(recommendation.Items) > 0 {
+			continue
+		}
+		eligible := make([]codexRadarSupplementCandidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if recommendation.Key == "daily_development" && candidate.item.IQ >= 90 {
+				eligible = append(eligible, candidate)
+			}
+			if recommendation.Key == "hard_problems" {
+				eligible = append(eligible, candidate)
+			}
+		}
+		sort.SliceStable(eligible, func(i, j int) bool {
+			if recommendation.Key == "daily_development" {
+				if eligible[i].item.AverageDurationMinutes != eligible[j].item.AverageDurationMinutes {
+					return eligible[i].item.AverageDurationMinutes < eligible[j].item.AverageDurationMinutes
+				}
+				if eligible[i].combinedCostIndex != eligible[j].combinedCostIndex {
+					return eligible[i].combinedCostIndex < eligible[j].combinedCostIndex
+				}
+				return eligible[i].item.IQ > eligible[j].item.IQ
+			}
+			if eligible[i].item.IQ != eligible[j].item.IQ {
+				return eligible[i].item.IQ > eligible[j].item.IQ
+			}
+			return eligible[i].combinedCostIndex < eligible[j].combinedCostIndex
+		})
+		if len(eligible) > 2 {
+			eligible = eligible[:2]
+		}
+		recommendation.Items = make([]CodexRadarRecommendationItem, len(eligible))
+		for itemIndex := range eligible {
+			eligible[itemIndex].item.Rule = recommendation.Rule
+			recommendation.Items[itemIndex] = eligible[itemIndex].item
+		}
+	}
+}
+
+func (s *CodexRadarInsightsService) fetchJSON(ctx context.Context, target string, destination any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, codexRadarMaxResponseBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(body) > codexRadarMaxResponseBytes {
+		return errors.New("response too large")
+	}
+	return json.Unmarshal(body, destination)
+}
+
+func codexRadarRecommendationKey(model, effort string) string {
+	return strings.ToLower(strings.TrimSpace(model)) + "|" + strings.ToLower(strings.TrimSpace(effort))
+}
+
+func isCodexRadarStationModel(model string) bool {
+	switch strings.ToLower(strings.TrimSpace(model)) {
+	case "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "deepseek-v4-flash", "deepseek-v4-pro":
+		return !strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "deepseek")
+	default:
+		return false
+	}
 }
 
 func validateCodexRadarWire(wire codexRadarWireResponse) error {

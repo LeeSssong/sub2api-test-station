@@ -40,6 +40,7 @@ type RelayResult struct {
 	// response event; "" when the upstream never declared one.
 	ResponseServiceTier     string
 	Usage                   Usage
+	UsageKnown              bool
 	RequestID               string
 	TerminalEventType       string
 	FirstTokenMs            *int
@@ -65,10 +66,11 @@ type RelayTurnResult struct {
 }
 
 type RelayExit struct {
-	Stage           string
-	Err             error
-	Graceful        bool
-	WroteDownstream bool
+	Stage                 string
+	Err                   error
+	Graceful              bool
+	WroteDownstream       bool
+	SemanticOutputStarted bool
 }
 
 type RelayOptions struct {
@@ -86,6 +88,8 @@ type RelayOptions struct {
 	BeforeWriteClient               func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error
 	BeforeClientWrite               func(msgType coderws.MessageType, payload []byte)
 	AfterClientWrite                func(msgType coderws.MessageType, payload []byte, writeErr error)
+	OnSemanticOutput                func(eventType string, payload []byte)
+	OnUsageObserved                 func()
 	BeforeRelayCancel               func(exit RelayExit)
 	ReadClientFrame                 func(ctx context.Context, clientConn FrameConn) (coderws.MessageType, []byte, error)
 	OnTrace                         func(event RelayTraceEvent)
@@ -104,6 +108,7 @@ type RelayTraceEvent struct {
 
 type relayState struct {
 	usage                   Usage
+	usageKnown              bool
 	turnUsage               Usage
 	requestModelMu          sync.RWMutex
 	requestModel            string
@@ -121,10 +126,11 @@ type relayState struct {
 }
 
 type relayExitSignal struct {
-	stage           string
-	err             error
-	graceful        bool
-	wroteDownstream bool
+	stage                 string
+	err                   error
+	graceful              bool
+	wroteDownstream       bool
+	semanticOutputStarted bool
 }
 
 type observedUpstreamEvent struct {
@@ -300,6 +306,8 @@ func Relay(
 			options.BeforeWriteClient,
 			options.BeforeClientWrite,
 			options.AfterClientWrite,
+			options.OnSemanticOutput,
+			options.OnUsageObserved,
 			func(msgType coderws.MessageType, payload []byte) {
 				if options.StartClientAfterFirstDownstream {
 					startClientReader()
@@ -339,6 +347,7 @@ func Relay(
 		})
 	}
 	combinedWroteDownstream := firstExit.wroteDownstream
+	combinedSemanticOutputStarted := firstExit.semanticOutputStarted
 	secondExit := relayExitSignal{graceful: true}
 	hasSecondExit := false
 
@@ -355,6 +364,7 @@ func Relay(
 	}
 	if hasSecondExit {
 		combinedWroteDownstream = combinedWroteDownstream || secondExit.wroteDownstream
+		combinedSemanticOutputStarted = combinedSemanticOutputStarted || secondExit.semanticOutputStarted
 		emitRelayTrace(onTrace, RelayTraceEvent{
 			Stage:           "second_exit",
 			Direction:       relayDirectionFromStage(secondExit.stage),
@@ -402,9 +412,10 @@ func Relay(
 			Error:           relayErrorString(exitErr),
 		})
 		return result, &RelayExit{
-			Stage:           stage,
-			Err:             exitErr,
-			WroteDownstream: combinedWroteDownstream,
+			Stage:                 stage,
+			Err:                   exitErr,
+			WroteDownstream:       combinedWroteDownstream,
+			SemanticOutputStarted: combinedSemanticOutputStarted,
 		}
 	}
 	if firstExit.graceful && (!hasSecondExit || secondExit.graceful) {
@@ -425,9 +436,10 @@ func Relay(
 			Error:           relayErrorString(firstExit.err),
 		})
 		return result, &RelayExit{
-			Stage:           firstExit.stage,
-			Err:             firstExit.err,
-			WroteDownstream: combinedWroteDownstream,
+			Stage:                 firstExit.stage,
+			Err:                   firstExit.err,
+			WroteDownstream:       combinedWroteDownstream,
+			SemanticOutputStarted: combinedSemanticOutputStarted,
 		}
 	}
 	if hasSecondExit && !secondExit.graceful {
@@ -439,9 +451,10 @@ func Relay(
 			Error:           relayErrorString(secondExit.err),
 		})
 		return result, &RelayExit{
-			Stage:           secondExit.stage,
-			Err:             secondExit.err,
-			WroteDownstream: combinedWroteDownstream,
+			Stage:                 secondExit.stage,
+			Err:                   secondExit.err,
+			WroteDownstream:       combinedWroteDownstream,
+			SemanticOutputStarted: combinedSemanticOutputStarted,
 		}
 	}
 	if options.FirstMessageSent {
@@ -539,7 +552,7 @@ func runUpstreamToClient(
 	runUpstreamToClientWithResponseModel(
 		ctx, upstreamConn, writeClient, startAt, nowFn, state,
 		onUsageParseFailure, nil, onTurnComplete, beforeWriteClient,
-		beforeClientWrite, afterClientWrite, afterWriteClient,
+		beforeClientWrite, afterClientWrite, nil, nil, afterWriteClient,
 		dropDownstreamWrites, forwardedFrames, droppedFrames, markActivity,
 		onTrace, exitCh,
 	)
@@ -558,6 +571,8 @@ func runUpstreamToClientWithResponseModel(
 	beforeWriteClient func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error,
 	beforeClientWrite func(msgType coderws.MessageType, payload []byte),
 	afterClientWrite func(msgType coderws.MessageType, payload []byte, writeErr error),
+	onSemanticOutput func(eventType string, payload []byte),
+	onUsageObserved func(),
 	afterWriteClient func(msgType coderws.MessageType, payload []byte),
 	dropDownstreamWrites *atomic.Bool,
 	forwardedFrames *atomic.Int64,
@@ -567,6 +582,8 @@ func runUpstreamToClientWithResponseModel(
 	exitCh chan<- relayExitSignal,
 ) {
 	wroteDownstream := false
+	semanticOutputStarted := false
+	terminalDelivered := false
 	for {
 		msgType, payload, err := upstreamConn.ReadFrame(ctx)
 		if err != nil {
@@ -576,7 +593,7 @@ func runUpstreamToClientWithResponseModel(
 			// the upstream has started a Responses turn, success still requires a
 			// terminal protocol event. Treat an early 1000/EOF as a relay failure so
 			// the adapter does not report relay_completed with an active turn.
-			if graceful && openAIWSRelayActiveTurnID(state) != "" {
+			if graceful && !terminalDelivered && openAIWSRelayActiveTurnID(state) != "" {
 				graceful = false
 				err = errors.New("upstream websocket closed before terminal event: " + err.Error())
 			}
@@ -588,10 +605,11 @@ func runUpstreamToClientWithResponseModel(
 				WroteDownstream: wroteDownstream,
 			})
 			exitCh <- relayExitSignal{
-				stage:           "read_upstream",
-				err:             err,
-				graceful:        graceful,
-				wroteDownstream: wroteDownstream,
+				stage:                 "read_upstream",
+				err:                   err,
+				graceful:              graceful,
+				wroteDownstream:       wroteDownstream,
+				semanticOutputStarted: semanticOutputStarted,
 			}
 			return
 		}
@@ -617,9 +635,19 @@ func runUpstreamToClientWithResponseModel(
 		observedEvent := observedUpstreamEvent{}
 		switch msgType {
 		case coderws.MessageText:
+			usageKnownBefore := state != nil && state.usageKnown
 			observedEvent = observeUpstreamMessageWithResponseModel(state, payload, startAt, nowFn, onUsageParseFailure, onResponseModel)
+			if !usageKnownBefore && state != nil && state.usageKnown && onUsageObserved != nil {
+				onUsageObserved()
+			}
 		case coderws.MessageBinary:
 			// binary frame 直接透传，不进入 JSON 观测路径（避免无效解析开销）。
+		}
+		if !semanticOutputStarted && isRelaySemanticOutputEvent(observedEvent.eventType) {
+			semanticOutputStarted = true
+			if onSemanticOutput != nil {
+				onSemanticOutput(observedEvent.eventType, payload)
+			}
 		}
 		emitTurnComplete(onTurnComplete, state, observedEvent)
 		if dropDownstreamWrites != nil && dropDownstreamWrites.Load() {
@@ -664,6 +692,9 @@ func runUpstreamToClientWithResponseModel(
 			return
 		}
 		wroteDownstream = true
+		if observedEvent.terminal {
+			terminalDelivered = true
+		}
 		if afterWriteClient != nil {
 			afterWriteClient(msgType, payload)
 		}
@@ -672,6 +703,14 @@ func runUpstreamToClientWithResponseModel(
 		}
 		markActivity()
 	}
+}
+
+func isRelaySemanticOutputEvent(eventType string) bool {
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" || eventType == "error" || isTerminalEvent(eventType) {
+		return false
+	}
+	return eventType != "response.created" && eventType != "response.in_progress"
 }
 
 func runIdleWatchdog(
@@ -1152,6 +1191,7 @@ func parseUsageAndAccumulate(
 		// 解析失败时不做部分字段累加，避免计费 usage 出现“半有效”状态。
 		return Usage{}
 	}
+	state.usageKnown = true
 	reasoningTokens := usageResult.Get("output_tokens_details.reasoning_tokens").Int()
 	if reasoningTokens == 0 {
 		reasoningTokens = usageResult.Get("completion_tokens_details.reasoning_tokens").Int()
@@ -1269,6 +1309,7 @@ func enrichResult(result *RelayResult, state *relayState, duration time.Duration
 	result.ResponseModelConflict = state.responseConflict
 	result.ResponseServiceTier = state.lastResponseServiceTier
 	result.Usage = state.usage
+	result.UsageKnown = state.usageKnown
 	result.RequestID = state.lastResponseID
 	result.TerminalEventType = state.terminalEventType
 	result.FirstTokenMs = state.firstTokenMs

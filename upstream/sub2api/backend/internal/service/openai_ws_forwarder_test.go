@@ -167,6 +167,24 @@ func TestOpenAIWSPayloadTransientStatus_Explicit529IsNotModelTransient(t *testin
 	require.Zero(t, openAIWSPayloadTransientStatus(payload))
 }
 
+func TestOpenAIWSResponseFailedShouldFailoverForPreOutput5xx(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		message string
+		want    bool
+	}{
+		{name: "explicit 502", payload: `{"type":"response.failed","response":{"error":{"status_code":502,"message":"bad gateway"}}}`, message: "bad gateway", want: true},
+		{name: "server error code", payload: `{"type":"response.failed","response":{"error":{"code":"server_error"}}}`, message: "upstream failed", want: true},
+		{name: "request error", payload: `{"type":"response.failed","response":{"error":{"status_code":400}}}`, message: "bad request", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, openAIWSResponseFailedShouldFailover([]byte(tt.payload), tt.message))
+		})
+	}
+}
+
 func TestOpenAIWSDial5xxRecordsModelTransient(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)

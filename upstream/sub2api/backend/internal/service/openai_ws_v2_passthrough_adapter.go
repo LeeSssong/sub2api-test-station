@@ -1285,6 +1285,12 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					return nil
 				}
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(payload)
+				// A provider response.failed carrying a concrete 5xx before any
+				// semantic output is safe to replay on another account. Keep it out
+				// of the client stream so the handler can run normal failover.
+				if eventType == "response.failed" && !wroteDownstream && openAIWSResponseFailedShouldFailover(payload, errMsgRaw) {
+					return s.newOpenAIStreamFailoverError(c, account, true, handshakeHeaders.Get("x-request-id"), payload, errMsgRaw, handshakeHeaders)
+				}
 				isPreOutputRateLimit := eventType == "error" && !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw)
 				if (eventType == "error" || eventType == "response.failed") && !failureAccountSideEffectsApplied && !isPreOutputRateLimit {
 					failureAccountSideEffectsApplied = s.handleOpenAIWSFailureAccountSideEffects(ctx, account, capturedSessionModel, handshakeHeaders, payload)

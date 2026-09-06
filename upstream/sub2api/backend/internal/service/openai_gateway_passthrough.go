@@ -1676,6 +1676,11 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		headers = responseHeaders[0].Clone()
 	}
 	statusCode, shouldDisable := s.handleOpenAIStreamTerminalAccountSideEffects(c, account, payload, message, headers)
+	if account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey && s.rateLimitService != nil && statusCode >= http.StatusInternalServerError && statusCode <= 599 {
+		// Reuse the native rolling health breaker so repeated WS 5xx become
+		// administrator-visible temp_unschedulable state with manual recovery.
+		s.rateLimitService.ObserveOpenAIAPIKeyHealthFailure(context.Background(), account, &UpstreamFailoverError{StatusCode: statusCode, ResponseBody: payload})
+	}
 	// 流内 failed 事件承载于 HTTP 200；使用事件的语义状态更新账号健康，
 	// 再由 failover 引擎按 StatusCode/RetryableOnSameAccount 决定恢复策略。
 	message = s.recordOpenAIStreamUpstreamError(c, account, passthrough, upstreamRequestID, "failover", payload, message)

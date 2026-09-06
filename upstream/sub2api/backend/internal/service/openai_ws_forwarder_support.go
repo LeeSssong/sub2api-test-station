@@ -308,6 +308,11 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 	}
 }
 
+func openAIWSResponseFailedShouldFailover(payload []byte, message string) bool {
+	status := openAIStreamFailureStatus(payload, message)
+	return status >= http.StatusInternalServerError && status <= 599
+}
+
 func (s *OpenAIGatewayService) handleOpenAIWSTerminalTransientFailure(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) string {
 	eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
 	terminalEvent := normalizeOpenAIWSTerminalEvent(eventType)
@@ -355,6 +360,12 @@ func (s *OpenAIGatewayService) handleOpenAIWSFailureAccountSideEffects(ctx conte
 		return false
 	}
 	s.handleOpenAIAccountUpstreamError(ctx, account, status, headers, payload, canonicalModel)
+	if account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey && s.rateLimitService != nil && status >= http.StatusInternalServerError && status <= 599 {
+		// Feed repeated WS 5xx into the native account health breaker. The
+		// breaker owns the rolling threshold, admin-visible cooldown, and
+		// manual ClearTempUnschedulable recovery path.
+		s.rateLimitService.ObserveOpenAIAPIKeyHealthFailure(ctx, account, &UpstreamFailoverError{StatusCode: status, ResponseBody: payload})
+	}
 	return true
 }
 

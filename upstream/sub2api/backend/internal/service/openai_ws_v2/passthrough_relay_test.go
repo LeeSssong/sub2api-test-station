@@ -326,7 +326,7 @@ func TestRelay_UpstreamNormalCloseBeforeTerminalIsFailure(t *testing.T) {
 			},
 			{
 				msgType: coderws.MessageText,
-				payload: []byte(`{"type":"response.in_progress","response":{"id":"resp_incomplete","status":"in_progress"}}`),
+				payload: []byte(`{"type":"response.in_progress","response":{"id":"resp_incomplete","status":"in_progress"},"usage":{"input_tokens":9}}`),
 			},
 		}, true),
 		err: coderws.CloseError{Code: coderws.StatusNormalClosure},
@@ -342,8 +342,36 @@ func TestRelay_UpstreamNormalCloseBeforeTerminalIsFailure(t *testing.T) {
 	require.False(t, relayExit.Graceful)
 	require.True(t, relayExit.WroteDownstream)
 	require.ErrorContains(t, relayExit.Err, "upstream websocket closed before terminal event")
+	require.True(t, result.UsageKnown, "usage observed before transport close must make replay unsafe")
 	require.Empty(t, result.TerminalEventType)
 	require.Len(t, clientConn.Writes(), 2)
+}
+
+func TestRelay_UpstreamCloseAfterDeliveredTerminalIsSuccess(t *testing.T) {
+	t.Parallel()
+
+	clientConn := newPassthroughTestFrameConn(nil, false)
+	upstreamConn := &eofReplacementFrameConn{
+		FrameConn: newPassthroughTestFrameConn([]passthroughTestFrame{
+			{
+				msgType: coderws.MessageText,
+				payload: []byte(`{"type":"response.completed","response":{"id":"resp_done","usage":{"input_tokens":1,"output_tokens":1}}}`),
+			},
+		}, true),
+		err: coderws.CloseError{Code: coderws.StatusNormalClosure},
+	}
+
+	result, relayExit := Relay(
+		context.Background(),
+		clientConn,
+		upstreamConn,
+		[]byte(`{"type":"response.create","model":"gpt-5.6-sol","input":[]}`),
+		RelayOptions{},
+	)
+
+	require.Nil(t, relayExit)
+	require.Equal(t, "response.completed", result.TerminalEventType)
+	require.Len(t, clientConn.Writes(), 1)
 }
 
 func TestRelay_ClientDisconnect(t *testing.T) {

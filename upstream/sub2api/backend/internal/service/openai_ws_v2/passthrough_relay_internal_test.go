@@ -325,6 +325,18 @@ func TestParseUsageAndEnrichCoverage(t *testing.T) {
 	enrichResult(nil, state, 0)
 }
 
+func TestParseUsageAndEnrichMarksUsageKnownForAnyValidUsageObject(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{}
+	parseUsageAndAccumulate(state, []byte(`{"type":"response.in_progress","usage":{"input_tokens":9}}`), "response.in_progress", nil)
+	require.True(t, state.usageKnown)
+
+	result := &RelayResult{}
+	enrichResult(result, state, 0)
+	require.True(t, result.UsageKnown)
+}
+
 func TestParseUsageAndAccumulateIncludesIndependentReasoningTokens(t *testing.T) {
 	t.Parallel()
 

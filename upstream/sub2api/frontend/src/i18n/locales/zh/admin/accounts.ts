@@ -233,7 +233,6 @@ export default {
         registrationSource: '来源：NewAPI 请求日志自动登记',
         registrationFirstAt: '首次登记：{value}',
         registrationLastAt: '最近成功更新：{value}',
-        manualEditMayBeOverwritten: '该倍率由 NewAPI 请求日志自动登记；手动修改会在下一次每日成功刷新时被覆盖。'
       },
       activeProbe: {
         title: '自动主动探测',

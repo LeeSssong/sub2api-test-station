@@ -337,7 +337,6 @@ export default {
         registrationSource: 'Source: automatically registered from NewAPI request logs',
         registrationFirstAt: 'First registered: {value}',
         registrationLastAt: 'Last successful update: {value}',
-        manualEditMayBeOverwritten: 'This rate was registered from NewAPI request logs; manual changes may be overwritten by the next successful daily refresh.'
       },
       activeProbe: {
         title: 'Automatic active probes',

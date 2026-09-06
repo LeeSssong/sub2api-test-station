@@ -31,12 +31,12 @@ describe('HybridPerformanceGroupCard', () => {
 
     expect(wrapper.get('[data-test="ttft-p95"]').text()).toBe('11.20 s')
     expect(wrapper.get('[data-test="latency-p95"]').text()).toBe('14.13 s')
-    expect(wrapper.get('[data-test="cache-hit-rate"]').text()).toBe('40.0%')
+    expect(wrapper.find('[data-test="cache-hit-rate"]').exists()).toBe(false)
   })
 
-  it('shows an explicit empty cache metric when there are no successful real requests', () => {
+  it('keeps the cache metric hidden even when its value is empty', () => {
     const wrapper = mount(HybridPerformanceGroupCard, { props: { group: { ...group, cache_hit_rate: null } } })
-    expect(wrapper.get('[data-test="cache-hit-rate"]').text()).toBe('--')
+    expect(wrapper.find('[data-test="cache-hit-rate"]').exists()).toBe(false)
   })
 
   it('keeps the center percentage static while the ring only breathes', () => {

@@ -562,7 +562,9 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 	completed := 0
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Type != AccountTypeAPIKey || account.Status != StatusActive || !account.Schedulable || !account.ActiveProbeEnabled() || !account.ModelDetectionEnabled() || !accountActiveProbeEnabledByGroups(account) {
+		// Scheduled model/fingerprint detection is independent from connection
+		// probing. Only its own account switch controls this queue.
+		if !accountScheduledModelDetectionEligible(account) {
 			continue
 		}
 		models, err := s.modelsForAccount(ctx, account)
@@ -601,6 +603,11 @@ func (s *AccountModelDetectionService) RunDueSlots(ctx context.Context) (int, er
 		}
 	}
 	return completed, nil
+}
+
+func accountScheduledModelDetectionEligible(account *Account) bool {
+	return account != nil && account.Type == AccountTypeAPIKey && account.Status == StatusActive &&
+		account.Schedulable && account.ModelDetectionEnabled()
 }
 
 func (s *AccountModelDetectionService) RunQueued(ctx context.Context) (int, error) {

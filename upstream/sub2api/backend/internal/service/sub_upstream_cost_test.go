@@ -268,6 +268,8 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 	baseAccount := &Account{
 		Type: AccountTypeAPIKey,
 		Extra: map[string]any{
+			UpstreamBillingProbeEnabledExtraKey:    true,
+			UpstreamBillingRateSyncEnabledExtraKey: true,
 			AccountMonitorBalanceExtraKey: AccountMonitorBalance{
 				Version: AccountMonitorBalanceVersion,
 				Source:  AccountMonitorBalanceSourceNewAPI,
@@ -297,7 +299,7 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 		{name: "eligible exact successful NewAPI usage", usage: baseUsage, record: baseRecord, want: true},
 		{name: "unsupported probe identity accepted with exact log", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
 			Type:  AccountTypeAPIKey,
-			Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}},
+			Extra: map[string]any{UpstreamBillingProbeEnabledExtraKey: true, UpstreamBillingRateSyncEnabledExtraKey: true, UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}},
 		}}, record: baseRecord, want: true},
 		{name: "usage not persisted", usage: &UsageLog{RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: baseAccount}, record: baseRecord},
 		{name: "missing upstream id", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, Account: baseAccount}, record: baseRecord},
@@ -305,6 +307,15 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 		{name: "refund rejected", usage: baseUsage, record: &newAPIUpstreamUsageRecord{Type: 6, RequestID: baseRecord.RequestID, UpstreamRequestID: upstreamID, GroupRatio: baseRecord.GroupRatio}},
 		{name: "oauth rejected", usage: baseUsage, record: baseRecord, want: true},
 		{name: "native declaration wins", usage: baseUsage, record: baseRecord, want: true},
+		{name: "manual multiplier is never overwritten", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
+			Type: AccountTypeAPIKey,
+			Extra: map[string]any{
+				"rate_multiplier_mode":                 "manual",
+				UpstreamBillingProbeEnabledExtraKey:    true,
+				UpstreamBillingRateSyncEnabledExtraKey: true,
+				AccountMonitorBalanceExtraKey:          AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK},
+			},
+		}}, record: baseRecord, want: false},
 	}
 	tests[5].usage = &UsageLog{ID: baseUsage.ID, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{Type: AccountTypeOAuth, Extra: baseAccount.Extra}}
 	tests[5].want = false

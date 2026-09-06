@@ -72,7 +72,7 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')
     expect(wrapper.get('[data-test="native-priority-metric"]').text()).toContain('1')
     expect(wrapper.get('[data-test="upstream-multiplier-metric"]').text()).toContain('0.12×')
-    expect(wrapper.findAll('[data-test="real-request-bar"]').length).toBe(24)
+    expect(wrapper.findAll('[data-timeline-point]').length).toBe(24)
     expect(wrapper.get('[data-test="account-info"]').text()).toContain('账号详情')
     expect(wrapper.get('[data-test="account-more"]').text()).toContain('账号操作')
   })
@@ -170,8 +170,8 @@ describe('AccountMonitorCard R2', () => {
       status: 'insufficient',
       recent: { status: 'insufficient', juice_status: 'pass', fingerprint_status: 'unclear' },
     } } })
-    expect(wrapper.get('[data-test="model-detection-juice-result"]').text()).toContain('Juice 结果：通过')
-    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('模型结果：证据不明确')
+    expect(wrapper.get('[data-test="model-detection-juice-result"]').text()).toContain('模型结论：通过')
+    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('指纹结论：检测未完成')
     expect(wrapper.get('[data-test="model-detection-status-row"]').text()).not.toContain('检测失败')
   })
 
@@ -181,7 +181,8 @@ describe('AccountMonitorCard R2', () => {
       status: 'normal',
       recent: { status: 'normal', juice_status: 'pass', fingerprint_status: 'strong_match', fingerprint_candidate: 'gpt-5.6-terra' },
     } } })
-    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('模型结果：强烈指向 Terra')
+    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('指纹结论：')
+    expect(wrapper.get('[data-test="model-detection-fingerprint-result"]').text()).toContain('gpt-5.6-terra')
   })
 
   it('places the native connection model selector beside detection results and automation toggles', async () => {
@@ -196,13 +197,17 @@ describe('AccountMonitorCard R2', () => {
           { id: 'gpt-5.6-sol', supported: true, selected: true },
           { id: 'gpt-5.6-terra', supported: true, selected: false },
         ],
-        detection_models: [],
+        detection_models: [
+          { id: 'gpt-5.6-sol', supported: true, selected: true },
+          { id: 'gpt-5.6-terra', supported: true, selected: false },
+        ],
       },
       onSaveModelDetectionModels: save,
     })
 
     const section = wrapper.get('[data-test="model-detection-section"]')
     const select = section.get('[data-test="connection-probe-model-select"]')
+    expect(section.get('[data-test="model-detection-model-select"]').exists()).toBe(true)
     expect(section.get('[data-test="auto-probe-toggle"]').exists()).toBe(true)
     expect(section.get('[data-test="auto-model-detection-toggle"]').exists()).toBe(true)
     await select.setValue('gpt-5.6-terra')
@@ -262,7 +267,7 @@ describe('AccountMonitorCard R2', () => {
     expect(mountCard({ rankingScope: 'group' }).get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')
   })
 
-  it('does not render fake gray bars when no request buckets exist', () => {
+  it('uses the V3 no-data bucket when no request exists', () => {
     const wrapper = mountCard({
       account: {
         ...account,
@@ -273,7 +278,8 @@ describe('AccountMonitorCard R2', () => {
       },
     })
 
-    expect(wrapper.findAll('[data-test="real-request-bar"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-timeline-point]')).toHaveLength(1)
+    expect(wrapper.get('[data-timeline-point]').attributes('data-timeline-point-state')).toBe('no-data')
     expect(wrapper.get('[data-test="timeline-section"]').text()).toContain('近期请求')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
@@ -298,13 +304,12 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('1/1')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('真实')
     expect(wrapper.get('[data-test="timeline-section"]').text()).not.toContain('探测')
-    expect(wrapper.get('[data-test="real-request-bar"]').classes()).toContain('bg-emerald-500')
-    expect(wrapper.get('[data-test="real-request-bar"]').attributes('title')).toBeUndefined()
-    await wrapper.get('.performance-bar-wrap').trigger('mouseenter')
-    expect(wrapper.get('[data-test="real-request-tooltip"]').text()).toBe('900ms')
+    expect(wrapper.get('[data-timeline-point]').classes()).toContain('bg-emerald-400')
+    await wrapper.get('[data-timeline-point]').trigger('mouseenter')
+    expect(wrapper.get('[data-timeline-tooltip]').text()).toContain('900 ms')
   })
 
-  it('keeps a single request bar at the same fixed width as a populated timeline', () => {
+  it('uses the responsive V3 timeline track for a single request', () => {
     const wrapper = mountCard({
       account: {
         ...account,
@@ -315,11 +320,8 @@ describe('AccountMonitorCard R2', () => {
       },
     })
 
-    const barWrapStyle = getComputedStyle(wrapper.get('.performance-bar-wrap').element)
-    const barStyle = getComputedStyle(wrapper.get('[data-test="real-request-bar"]').element)
-    expect(barWrapStyle.flexGrow).toBe('0')
-    expect(barWrapStyle.width).toBe('8px')
-    expect(barStyle.width).toBe('100%')
+    expect(wrapper.get('[data-timeline-root]').attributes('data-timeline-orientation')).toBe('vertical-bars')
+    expect(wrapper.get('[data-timeline-track]').attributes('style')).toContain('--timeline-count: 1')
   })
 
   it('keeps manual model detection and account action entry points', async () => {
@@ -336,7 +338,7 @@ describe('AccountMonitorCard R2', () => {
     await wrapper.get('[data-test="account-more"]').trigger('click')
     await wrapper.get('[data-test="upstream-multiplier-metric"] button').trigger('click')
 
-    expect(detect).toHaveBeenCalledWith(278)
+    expect(detect).toHaveBeenCalledWith(278, expect.objectContaining({ detectionModel: 'gpt-5.6-sol' }))
     expect(info).toHaveBeenCalledWith(account)
     expect(edit).toHaveBeenCalledWith(account)
     expect(more).toHaveBeenCalledWith(account, expect.any(MouseEvent))
@@ -354,7 +356,7 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="account-actions"] [data-test="account-delete"]').classes()).toContain('sr-only')
   })
 
-  it('uses the approved 10000 ms latency boundary after failure precedence', () => {
+  it('uses the V3 availability colors with failure precedence', () => {
     const wrapper = mountCard({
       account: {
         ...account,
@@ -365,10 +367,10 @@ describe('AccountMonitorCard R2', () => {
         ],
       },
     })
-    const bars = wrapper.findAll('[data-test="real-request-bar"]')
-    expect(bars[0].classes()).toContain('bg-emerald-500')
-    expect(bars[1].classes()).toContain('bg-amber-400')
-    expect(bars[2].classes()).toContain('bg-red-500')
+    const bars = wrapper.findAll('[data-timeline-point]')
+    expect(bars[0].classes()).toContain('bg-emerald-400')
+    expect(bars[1].classes()).toContain('bg-emerald-400')
+    expect(bars[2].classes()).toContain('bg-red-400')
   })
 
   it('renders the mobile-safe card structure', () => {

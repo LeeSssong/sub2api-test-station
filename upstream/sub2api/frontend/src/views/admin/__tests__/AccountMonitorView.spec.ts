@@ -148,7 +148,7 @@ const AccountMonitorCardStub = defineComponent({
       <button data-test="account-more" type="button" @click="$emit('accountMore', account, $event)">more</button>
       <button data-test="model-open" type="button" @click="$emit('editConnectionProbeModel', account)">models</button>
       <button data-test="model-save" type="button" @click="$emit('saveModelDetectionModels', account.account_id, { connectionModel: 'gpt-5.6-sol', detectionModel: 'gpt-5.6-sol' })">save models</button>
-      <button data-test="model-detect" type="button" @click="$emit('detectModelDetection', account.account_id)">detect</button>
+      <button data-test="model-detect" type="button" @click="$emit('detectModelDetection', account.account_id, { connectionModel: 'gpt-5.6-terra', detectionModel: 'gpt-5.6-sol' })">detect</button>
     </article>
   `,
 })
@@ -1156,6 +1156,7 @@ describe('admin account monitor view V3', () => {
 
     await card.get('[data-test="model-detect"]').trigger('click')
     await flushPromises()
+    expect(saveModelDetectionModels).toHaveBeenLastCalledWith(10, { connection_probe_model: 'gpt-5.6-terra', model_detection_model: 'gpt-5.6-sol' })
     expect(enqueueModelDetection).toHaveBeenCalledWith(10)
   })
 })

@@ -220,7 +220,7 @@ describe('AccountModelDetectionHistoryPanel', () => {
     const wrapper = mount(AccountModelDetectionHistoryPanel, { props: { show: true, account } })
     await flushPromises()
     const text = wrapper.get('[data-test="detection-history-panel"]').text()
-    expect(text).toContain('未取得证据')
+    expect(text).toContain('上游请求均未成功')
     expect(text).not.toContain('0/49')
   })
 })

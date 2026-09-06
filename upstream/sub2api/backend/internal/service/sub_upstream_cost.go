@@ -469,6 +469,14 @@ func newAPIRateMultiplierRegistrationEligible(usage *UsageLog, record *newAPIUps
 		record == nil || record.GroupRatio == nil || record.GroupRatioError != nil || record.Type == 6 {
 		return false
 	}
+	// Manual mode is the native operator-owned multiplier. Passive NewAPI
+	// observations may still be retained as evidence, but must never overwrite it.
+	if mode, _ := usage.Account.Extra["rate_multiplier_mode"].(string); mode == "manual" {
+		return false
+	}
+	if !upstreamBillingRateSyncEnabled(usage.Account) {
+		return false
+	}
 	if snapshot := decodeUpstreamBillingProbeSnapshot(usage.Account.Extra); snapshot != nil &&
 		snapshot.Status == UpstreamBillingProbeStatusOK {
 		return false

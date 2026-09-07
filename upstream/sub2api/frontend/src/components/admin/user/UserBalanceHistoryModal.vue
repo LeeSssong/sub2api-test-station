@@ -41,9 +41,6 @@
             <template v-if="user.notes">{{ t('admin.users.notes') }}: {{ user.notes }}</template>
             <template v-else>&nbsp;</template>
           </p>
-          <p class="ml-4 flex-shrink-0 text-xs text-gray-500 dark:text-dark-400">
-            {{ t('admin.users.refundableCashBalance') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">{{ quotaSummary ? `¥${formatBalance(refundableCashBalance)}` : '—' }}</span>
-          </p>
         </div>
       </div>
 
@@ -233,11 +230,6 @@ const quotaSummary = ref<QuotaSummary | null>(null)
 const refundMode = ref<'accounting' | 'channel' | null>(null)
 const refundOrders = ref<PaymentOrder[]>([])
 const refundLoading = ref(false)
-
-const refundableCashBalance = computed(() => {
-  if (!quotaSummary.value) return 0
-  return Math.max(0, Math.min(Number(quotaSummary.value.cash_balance_cny), Number(quotaSummary.value.paid_quota_balance_usd)))
-})
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
 

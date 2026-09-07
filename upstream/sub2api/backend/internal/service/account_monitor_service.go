@@ -2614,7 +2614,16 @@ type accountMonitorBalanceRecoveryRepository interface {
 
 func accountBalanceSnapshotHealthy(account *Account) bool {
 	snapshot := decodeAccountMonitorBalance(account.Extra)
-	return snapshot != nil && snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD >= 5
+	if snapshot == nil {
+		return false
+	}
+	if snapshot.Source == AccountMonitorBalanceSourceNewAPI && snapshot.Status == AccountMonitorBalanceStatusUnsupported {
+		return true
+	}
+	if snapshot.Source == AccountMonitorBalanceSourceNewAPI {
+		return snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD > 0
+	}
+	return snapshot.Status == AccountMonitorBalanceStatusOK && snapshot.ValueUSD != nil && *snapshot.ValueUSD >= 5
 }
 
 func isDeterministicBalanceTempReason(reason string) bool {

@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,22 @@ func TestDecodeNewAPIBalanceUSDNormalizesQuotaUnits(t *testing.T) {
 	}
 	if math.Abs(got-1.2) > 1e-9 {
 		t.Fatalf("decodeNewAPIBalanceUSD() = %v, want 1.2", got)
+	}
+}
+
+func TestDecodeNewAPIQuotaBalanceDistinguishesUnlimitedQuota(t *testing.T) {
+	got, err := decodeNewAPIQuotaBalance([]byte(`{"data":{"total_available":0,"unlimited_quota":true}}`), 500000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.UnlimitedQuota || got.ValueUSD != 0 {
+		t.Fatalf("quota balance = %#v, want unlimited zero-valued quota", got)
+	}
+}
+
+func TestDecodeNewAPIQuotaBalanceRejectsRateLimitedResponseAsNoBalance(t *testing.T) {
+	if _, err := decodeNewAPIQuotaBalance([]byte(`{"error":{"code":"rate_limited_global"}}`), 500000); err == nil {
+		t.Fatal("rate-limited response unexpectedly decoded as a balance")
 	}
 }
 
@@ -202,6 +219,60 @@ func TestRefreshBalanceSelectsExactlyOneSourceFromDeclaration(t *testing.T) {
 				t.Fatalf("balance paths = %#v, want %#v", upstream.paths, tt.wantPaths)
 			}
 		})
+	}
+}
+
+func TestRefreshNewAPIZeroBalanceUsesNativeTempUnschedulable(t *testing.T) {
+	now := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
+	account := &Account{ID: 44, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Credentials: map[string]any{"api_key": "sk-test", "base_url": "http://balance.example"},
+		Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}}
+	baseRepo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	repo := &accountMultiplierRepoStub{upstreamBillingProbeAccountRepo: baseRepo}
+	upstream := &accountMonitorBalanceHTTPStub{responses: map[string]string{
+		"/api/status":       `{"data":{"quota_per_unit":500000}}`,
+		"/api/usage/token/": `{"data":{"total_available":0,"unlimited_quota":false}}`,
+	}}
+	svc := NewAccountMultiplierService(repo, &AccountTestService{
+		accountRepo: repo, httpUpstream: upstream,
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false, AllowInsecureHTTP: true}}},
+	}, nil)
+	svc.now = func() time.Time { return now }
+
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{RefreshBalance: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.tempUnschedulableCalls) != 1 || repo.tempUnschedulableCalls[0].id != account.ID {
+		t.Fatalf("temp unschedulable calls = %#v", repo.tempUnschedulableCalls)
+	}
+	if !strings.Contains(repo.tempUnschedulableCalls[0].reason, `"failure_class":"balance_exhausted"`) {
+		t.Fatalf("reason = %q", repo.tempUnschedulableCalls[0].reason)
+	}
+}
+
+func TestRefreshNewAPIUnlimitedQuotaDoesNotUseZeroBalanceHandling(t *testing.T) {
+	now := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC)
+	account := &Account{ID: 45, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+		Status: StatusActive, Credentials: map[string]any{"api_key": "sk-test", "base_url": "http://balance.example"},
+		Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}}
+	baseRepo := &upstreamBillingProbeAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	repo := &accountMultiplierRepoStub{upstreamBillingProbeAccountRepo: baseRepo}
+	upstream := &accountMonitorBalanceHTTPStub{responses: map[string]string{
+		"/api/status":       `{"data":{"quota_per_unit":500000}}`,
+		"/api/usage/token/": `{"data":{"total_available":0,"unlimited_quota":true}}`,
+	}}
+	svc := NewAccountMultiplierService(repo, &AccountTestService{
+		accountRepo: repo, httpUpstream: upstream,
+		cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false, AllowInsecureHTTP: true}}},
+	}, nil)
+	svc.now = func() time.Time { return now }
+
+	if err := svc.Refresh(context.Background(), account, AccountMonitorRefreshOptions{RefreshBalance: true}); err != nil {
+		t.Fatal(err)
+	}
+	got := decodeAccountMonitorBalance(account.Extra)
+	if got == nil || got.Status != AccountMonitorBalanceStatusUnsupported || len(repo.tempUnschedulableCalls) != 0 {
+		t.Fatalf("unlimited quota result=%#v temp calls=%#v", got, repo.tempUnschedulableCalls)
 	}
 }
 

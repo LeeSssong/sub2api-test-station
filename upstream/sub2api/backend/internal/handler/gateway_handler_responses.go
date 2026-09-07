@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -83,7 +84,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.responsesErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.responsesErrorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 	reqStream, ok := parseOpenAICompatibleStream(body)
@@ -368,11 +370,17 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 // responsesErrorResponse writes an error in OpenAI Responses API format.
 func (h *GatewayHandler) responsesErrorResponse(c *gin.Context, status int, code, message string) {
+	err := gin.H{
+		"code":    code,
+		"message": message,
+	}
+	if code == "unsupported_model" {
+		for key, value := range unsupportedModelResponseFields(c) {
+			err[key] = value
+		}
+	}
 	c.JSON(status, gin.H{
-		"error": gin.H{
-			"code":    code,
-			"message": message,
-		},
+		"error": err,
 	})
 }
 
@@ -386,6 +394,15 @@ func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastEr
 		statusCode = lastErr.StatusCode
 	}
 	status, code, message := statusCode, "server_error", "All available accounts exhausted"
+	if lastErr != nil && service.ClassifyOpenAINotFound(lastErr.StatusCode, lastErr.ResponseBody).Kind == service.OpenAINotFoundModel {
+		status = http.StatusBadRequest
+		code = "unsupported_model"
+		model := strings.TrimSpace(c.GetString(opsModelKey))
+		if model == "" {
+			model = "当前请求模型"
+		}
+		message = fmt.Sprintf("当前分组没有可用账号支持模型 %q，请切换模型后重试", model)
+	}
 	if lastErr != nil && lastErr.IsCredentialFailure() {
 		status, message = credentialFailoverClientResponse(lastErr)
 	} else if lastErr != nil && lastErr.IsOpenAICapacityShed() && strings.TrimSpace(lastErr.ClientMessage) != "" {

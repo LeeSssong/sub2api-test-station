@@ -594,7 +594,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.errorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
@@ -1662,7 +1663,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.anthropicErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(c, apiKey, body)
@@ -2323,12 +2325,18 @@ func resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel 
 // anthropicErrorResponse writes an error in Anthropic Messages API format.
 func (h *OpenAIGatewayHandler) anthropicErrorResponse(c *gin.Context, status int, errType, message string) {
 	projected := projectNativeUserErrorForContext(c, status, errType, "", message)
+	err := gin.H{
+		"type":    projected.Type,
+		"message": projected.Message,
+	}
+	if errType == "unsupported_model" {
+		for key, value := range unsupportedModelResponseFields(c) {
+			err[key] = value
+		}
+	}
 	c.JSON(status, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    projected.Type,
-			"message": projected.Message,
-		},
+		"type":  "error",
+		"error": err,
 	})
 }
 
@@ -4123,11 +4131,17 @@ func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType
 		}
 	}
 	projected := projectNativeUserErrorForContext(c, status, errType, "", message)
+	err := gin.H{
+		"type":    projected.Type,
+		"message": projected.Message,
+	}
+	if errType == "unsupported_model" {
+		for key, value := range unsupportedModelResponseFields(c) {
+			err[key] = value
+		}
+	}
 	c.JSON(status, gin.H{
-		"error": gin.H{
-			"type":    projected.Type,
-			"message": projected.Message,
-		},
+		"error": err,
 	})
 }
 

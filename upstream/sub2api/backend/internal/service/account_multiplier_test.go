@@ -139,6 +139,20 @@ func TestAccountMultiplierRefreshContinuesBalanceAfterDeclarationFailure(t *test
 
 type accountMultiplierRepoStub struct {
 	*upstreamBillingProbeAccountRepo
+	tempUnschedulableCalls []struct {
+		id     int64
+		until  time.Time
+		reason string
+	}
+}
+
+func (r *accountMultiplierRepoStub) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
+	r.tempUnschedulableCalls = append(r.tempUnschedulableCalls, struct {
+		id     int64
+		until  time.Time
+		reason string
+	}{id: id, until: until, reason: reason})
+	return nil
 }
 
 func (r *accountMultiplierRepoStub) UpdateAccountMonitorBalance(

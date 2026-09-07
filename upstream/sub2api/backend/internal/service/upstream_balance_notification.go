@@ -107,7 +107,7 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.
 		switch {
 		case value == 0:
 			state = UpstreamBalanceStateZero
-		case value < 5:
+		case value < 5 && !allNewAPIAccounts(members):
 			state = UpstreamBalanceStateLow
 		}
 		result = append(result, UpstreamBalanceEvaluation{
@@ -119,6 +119,18 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.
 		})
 	}
 	return result, nil
+}
+
+func allNewAPIAccounts(accounts []UpstreamBalanceAccount) bool {
+	if len(accounts) == 0 {
+		return false
+	}
+	for _, account := range accounts {
+		if account.Snapshot == nil || account.Snapshot.Source != AccountMonitorBalanceSourceNewAPI {
+			return false
+		}
+	}
+	return true
 }
 
 func validNotificationSnapshotForAccount(snapshot *AccountMonitorBalance, account UpstreamBalanceAccount, now time.Time) bool {

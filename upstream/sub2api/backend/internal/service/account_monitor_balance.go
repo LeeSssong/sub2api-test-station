@@ -58,6 +58,12 @@ type AccountMonitorBalance struct {
 	CredentialFingerprint string     `json:"credential_fingerprint,omitempty"`
 }
 
+type newAPIQuotaBalance struct {
+	ValueUSD       float64
+	UnlimitedQuota bool
+	ExplicitZero   bool
+}
+
 type accountMonitorBalanceWriter interface {
 	UpdateAccountMonitorBalance(context.Context, *Account, *AccountMonitorBalance) error
 }
@@ -87,14 +93,15 @@ func (s *AccountMultiplierService) refreshBalance(
 	now := s.currentTime().UTC()
 	previous := decodeAccountMonitorBalance(account.Extra)
 	var (
-		snapshot *AccountMonitorBalance
-		err      error
+		snapshot  *AccountMonitorBalance
+		err       error
+		noBalance bool
 	)
 	switch {
 	case declaration != nil && declaration.Status == UpstreamBillingProbeStatusOK:
 		snapshot, err = s.readSub2APIBalance(ctx, account, now)
 	case declaration != nil && declaration.Status == UpstreamBillingProbeStatusUnsupported:
-		snapshot, err = s.readNewAPIBalance(ctx, account, now)
+		snapshot, noBalance, err = s.readNewAPIBalance(ctx, account, now)
 	default:
 		err = errors.New("balance source is unavailable until billing declaration is resolved")
 	}
@@ -103,6 +110,11 @@ func (s *AccountMultiplierService) refreshBalance(
 	}
 	if persistErr := s.persistBalance(ctx, account, snapshot); persistErr != nil {
 		return persistErr
+	}
+	if err == nil && noBalance {
+		if setErr := s.setNewAPIBalanceExhausted(ctx, account); setErr != nil {
+			return setErr
+		}
 	}
 	return err
 }
@@ -131,24 +143,31 @@ func (s *AccountMultiplierService) readNewAPIBalance(
 	ctx context.Context,
 	account *Account,
 	now time.Time,
-) (*AccountMonitorBalance, error) {
+) (*AccountMonitorBalance, bool, error) {
 	baseURL, apiKey, proxyURL, err := s.accountMonitorBalanceRequestIdentity(account)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	status, err := s.readNewAPIQuotaStatus(ctx, account, baseURL, apiKey, proxyURL)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	body, err := s.doJSONRequest(ctx, account, http.MethodGet, buildNewAPIEndpointURL(baseURL, "/api/usage/token/"), apiKey, proxyURL, nil)
 	if err != nil {
-		return nil, err
+		if isExplicitBalanceExhaustionError(err) {
+			return successfulAccountMonitorBalance(0, AccountMonitorBalanceSourceNewAPI, now,
+				accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey())), true, nil
+		}
+		return nil, false, err
 	}
-	value, err := decodeNewAPIBalanceUSD(body, status.QuotaPerUnit)
+	quota, err := decodeNewAPIQuotaBalance(body, status.QuotaPerUnit)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return successfulAccountMonitorBalance(value, AccountMonitorBalanceSourceNewAPI, now, accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey())), nil
+	if quota.UnlimitedQuota {
+		return unsupportedAccountMonitorBalance(AccountMonitorBalanceSourceNewAPI, now, accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey())), false, nil
+	}
+	return successfulAccountMonitorBalance(quota.ValueUSD, AccountMonitorBalanceSourceNewAPI, now, accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey())), quota.ExplicitZero, nil
 }
 
 func (s *AccountMultiplierService) accountMonitorBalanceRequestIdentity(account *Account) (string, string, string, error) {
@@ -214,21 +233,68 @@ func decodeSub2APIBalanceUSD(body []byte) (float64, error) {
 }
 
 func decodeNewAPIBalanceUSD(body []byte, quotaPerUnit float64) (float64, error) {
+	quota, err := decodeNewAPIQuotaBalance(body, quotaPerUnit)
+	if err != nil {
+		return 0, err
+	}
+	return quota.ValueUSD, nil
+}
+
+func decodeNewAPIQuotaBalance(body []byte, quotaPerUnit float64) (newAPIQuotaBalance, error) {
 	if quotaPerUnit <= 0 || math.IsNaN(quotaPerUnit) || math.IsInf(quotaPerUnit, 0) {
-		return 0, errors.New("New API quota_per_unit is invalid")
+		return newAPIQuotaBalance{}, errors.New("New API quota_per_unit is invalid")
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return newAPIQuotaBalance{}, err
+	}
+	if data, ok := envelope["data"].(map[string]any); ok {
+		envelope = data
+	}
+	if unlimited, ok := envelope["unlimited_quota"].(bool); ok && unlimited {
+		return newAPIQuotaBalance{UnlimitedQuota: true}, nil
 	}
 	totalAvailable, err := decodeNewAPINumber(body, "total_available")
 	if err != nil || totalAvailable < 0 {
 		if explicitBalanceUnavailableBody(body) {
-			return 0, errExplicitBalanceUnavailable
+			return newAPIQuotaBalance{}, errExplicitBalanceUnavailable
 		}
-		return 0, errors.New("New API total_available is unavailable")
+		return newAPIQuotaBalance{}, errors.New("New API total_available is unavailable")
 	}
 	value := totalAvailable / quotaPerUnit
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-		return 0, errors.New("New API balance is invalid")
+		return newAPIQuotaBalance{}, errors.New("New API balance is invalid")
 	}
-	return value, nil
+	return newAPIQuotaBalance{ValueUSD: value, ExplicitZero: totalAvailable == 0}, nil
+}
+
+func unsupportedAccountMonitorBalance(source string, now time.Time, credentialFingerprint string) *AccountMonitorBalance {
+	attemptedAt := now.UTC()
+	return &AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Source: source,
+		Status: AccountMonitorBalanceStatusUnsupported, ObservedAt: &attemptedAt,
+		LastAttemptAt: &attemptedAt, CredentialFingerprint: credentialFingerprint}
+}
+
+func (s *AccountMultiplierService) setNewAPIBalanceExhausted(ctx context.Context, account *Account) error {
+	if s == nil || s.accountRepo == nil || account == nil {
+		return ErrUpstreamBillingProbeUnavailable
+	}
+	decision := DeterministicFailureDecision{Classified: true, FailureClass: deterministicBalanceClass,
+		Scope: deterministicAccountScope, EvidenceCode: "newapi_balance_exhausted", RecoveryPolicy: deterministicProbePolicy}
+	now := s.currentTime()
+	reason := buildDeterministicFailureReason(decision, "NewAPI balance exhausted", now)
+	return s.accountRepo.SetTempUnschedulable(ctx, account.ID, now.Add(deterministicBalanceIsolationDuration(nil)), reason)
+}
+
+func isExplicitBalanceExhaustionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var httpErr *accountMonitorHTTPError
+	if errors.As(err, &httpErr) {
+		return explicitBalanceUnavailableBody([]byte(httpErr.body))
+	}
+	return errors.Is(err, errExplicitBalanceUnavailable)
 }
 
 func decodeAccountMonitorBalance(extra map[string]any) *AccountMonitorBalance {

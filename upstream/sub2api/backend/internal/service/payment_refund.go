@@ -63,18 +63,21 @@ func (s *PaymentService) AdminAccountingRefund(ctx context.Context, orderID, ope
 	if err != nil {
 		return nil, err
 	}
-	var consumed string
-	if err := scanQuotaOne(ctx, tx.Client(), `SELECT COALESCE(SUM(consumed_paid_quota_usd),0)::text FROM user_quota_grants WHERE payment_order_id=$1`, []any{orderID}, &consumed); err != nil {
+	var paidBalance string
+	if err := scanQuotaOne(ctx, tx.Client(), `SELECT paid_quota_balance_usd::text FROM user_wallets WHERE user_id=$1 FOR UPDATE`, []any{userID}, &paidBalance); err != nil {
 		return nil, err
 	}
-	consumedD, err := decimal.NewFromString(consumed)
+	paidBalanceD, err := decimal.NewFromString(paidBalance)
 	if err != nil {
 		return nil, err
 	}
 	refundD := decimal.NewFromFloat(amount)
-	remaining := paidD.Sub(refundedD).Sub(consumedD)
+	remaining := paidD.Sub(refundedD)
 	if refundD.GreaterThan(remaining) {
 		return nil, fmt.Errorf("admin accounting refund exceeds remaining paid quota")
+	}
+	if refundD.GreaterThan(paidBalanceD) {
+		return nil, fmt.Errorf("admin accounting refund exceeds current paid quota balance")
 	}
 	key := "admin-accounting-refund:" + tradeNo
 	if _, err := tx.Client().ExecContext(ctx, `INSERT INTO user_quota_adjustments (user_id,adjustment_type,payment_order_id,reserved_allocations,applied_allocations,refund_amount,refund_currency,refund_method,refund_trade_no,provider_state,requested_paid_quota_usd,applied_paid_quota_usd,applied_gift_quota_usd,shortfall_paid_quota_usd,force_refund,actor_type,reason,status,idempotency_key,operator_user_id,adjusted_at) VALUES ($1,'refund_recovery',$2,'[]'::jsonb,'[]'::jsonb,$3,'CNY','admin_accounting',$4,'succeeded',$5,$5,0,0,false,'admin',$6,'completed',$7,NOW())`, userID, orderID, refundD.StringFixed(8), tradeNo, refundD.StringFixed(8), reason, key); err != nil {
@@ -82,7 +85,7 @@ func (s *PaymentService) AdminAccountingRefund(ctx context.Context, orderID, ope
 	}
 	newRefunded := refundedD.Add(refundD)
 	newStatus := OrderStatusPartiallyRefunded
-	if newRefunded.Add(consumedD).GreaterThanOrEqual(paidD) {
+	if newRefunded.GreaterThanOrEqual(paidD) {
 		newStatus = OrderStatusRefunded
 	}
 	if _, err := tx.Client().ExecContext(ctx, `UPDATE payment_orders SET refunded_paid_quota_usd=$1,status=$2,refund_amount=refund_amount+$3,refund_reason=$4,refund_at=NOW(),quota_accounting_status='confirmed',updated_at=NOW() WHERE id=$5`, newRefunded.StringFixed(8), newStatus, refundD.StringFixed(8), reason, orderID); err != nil {

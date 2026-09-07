@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -38,6 +39,7 @@ type UserHandler struct {
 	userService           *service.UserService
 	settingService        *service.SettingService // step-up 功能开关
 	quotaWallet           service.QuotaWalletService
+	quotaAccounting       *service.QuotaAccountingService
 	entClient             *dbent.Client
 }
 
@@ -71,6 +73,7 @@ func NewUserHandler(
 	}
 	if len(entClients) > 0 {
 		h.entClient = entClients[0]
+		h.quotaAccounting = service.NewQuotaAccountingService(entClients[0])
 	}
 	return h
 }
@@ -93,6 +96,12 @@ func ProvideUserHandler(
 		h.SetQuotaWalletService(wallets[0])
 	}
 	return h
+}
+
+func (h *UserHandler) SetQuotaAccountingService(svc *service.QuotaAccountingService) {
+	if h != nil {
+		h.quotaAccounting = svc
+	}
 }
 
 // CreateUserRequest represents admin create user request
@@ -567,18 +576,44 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 	var result service.QuotaMutationResult
 	if req.RecordType == service.QuotaRecordRecharge {
 		rechargeKey := "admin-recharge:" + strings.TrimSpace(req.PaymentTradeNo)
-		var order *dbent.PaymentOrder
-		if h.entClient != nil && h.userService != nil {
-			order, err = h.prepareAdminRechargeOrder(c.Request.Context(), userID, actor, req, rechargeKey)
-			if err != nil {
-				response.ErrorFrom(c, err)
+		if h.entClient == nil && h.quotaAccounting == nil {
+			result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: rechargeKey, ReferenceType: "admin_recharge", ReferenceID: strings.TrimSpace(req.PaymentTradeNo), Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+		} else if h.entClient == nil || h.userService == nil || h.quotaAccounting == nil {
+			response.InternalError(c, "admin recharge accounting service not available")
+			return
+		} else {
+			order, orderErr := h.prepareAdminRechargeOrder(c.Request.Context(), userID, actor, req, rechargeKey)
+			if orderErr != nil {
+				response.ErrorFrom(c, orderErr)
 				return
 			}
-		}
-		result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: rechargeKey, ReferenceType: "admin_recharge", ReferenceID: strings.TrimSpace(req.PaymentTradeNo), Note: strings.TrimSpace(req.Note), OperatorID: actorID})
-		if err == nil && order != nil {
+			grant, grantErr := h.quotaAccounting.CreatePaymentOrderGrant(c.Request.Context(), userID, order.ID, order.PaidQuotaUsd, order.GiftQuotaUsd, rechargeKey, strings.TrimSpace(req.Note))
+			if grantErr != nil {
+				now := time.Now()
+				_, markErr := h.entClient.PaymentOrder.UpdateOneID(order.ID).
+					SetStatus(service.OrderStatusFailed).
+					SetQuotaAccountingStatus("failed").
+					SetFailedAt(now).
+					SetFailedReason("admin recharge accounting failed; retry with the same transaction number").
+					Save(c.Request.Context())
+				if markErr != nil {
+					response.ErrorFrom(c, infraerrors.InternalServer("ADMIN_RECHARGE_ACCOUNTING_FAILED", "admin recharge accounting failed; no balance was changed"))
+					return
+				}
+				response.ErrorFrom(c, infraerrors.InternalServer("ADMIN_RECHARGE_ACCOUNTING_FAILED", "admin recharge accounting failed; no balance was changed"))
+				return
+			}
 			now := time.Now()
-			_, err = h.entClient.PaymentOrder.UpdateOneID(order.ID).SetStatus(service.OrderStatusCompleted).SetQuotaAccountingStatus("confirmed").SetPaidAt(now).SetCompletedAt(now).SetOperatorRechargedAt(now).Save(c.Request.Context())
+			if _, err = h.entClient.PaymentOrder.UpdateOneID(order.ID).SetStatus(service.OrderStatusCompleted).SetQuotaAccountingStatus("confirmed").SetPaidAt(now).SetCompletedAt(now).SetOperatorRechargedAt(now).Save(c.Request.Context()); err != nil {
+				response.ErrorFrom(c, infraerrors.InternalServer("ADMIN_RECHARGE_FINALIZE_FAILED", "admin recharge finalization failed; please retry with the same transaction number"))
+				return
+			}
+			summary, summaryErr := h.quotaWallet.GetSummary(c.Request.Context(), userID)
+			if summaryErr != nil {
+				response.ErrorFrom(c, summaryErr)
+				return
+			}
+			result = service.QuotaMutationResult{LedgerEntryID: grant.GrantID, Idempotent: grant.Idempotent, Summary: summary}
 		}
 	} else {
 		if req.GiftQuotaUSD != 0 {
@@ -607,7 +642,7 @@ func (h *UserHandler) prepareAdminRechargeOrder(ctx context.Context, userID, act
 	existing, err := h.entClient.PaymentOrder.Query().Where(paymentorder.PaymentTypeEQ("admin_recharge"), paymentorder.PaymentTradeNoEQ(tradeNo)).Only(ctx)
 	if err == nil {
 		if existing.UserID != userID || !decimal.NewFromFloat(existing.PayAmount).Equal(decimal.NewFromFloat(req.AmountCNY)) || !existing.GiftQuotaUsd.Equal(decimal.NewFromFloat(req.GiftQuotaUSD)) {
-			return nil, fmt.Errorf("admin recharge transaction number already exists")
+			return nil, infraerrors.Conflict("ADMIN_RECHARGE_TRADE_DUPLICATE", "admin recharge transaction number already exists")
 		}
 		return existing, nil
 	}

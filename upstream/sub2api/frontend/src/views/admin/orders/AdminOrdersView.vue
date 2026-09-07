@@ -49,10 +49,6 @@
               <Icon name="refresh" size="sm" :class="refundQueryingIds.has(row.id) ? 'animate-spin' : ''" />
               {{ t('payment.admin.queryRefundStatus') }}
             </button>
-            <button v-else-if="(row.status === 'COMPLETED' || row.status === 'PARTIALLY_REFUNDED') && row.payment_type === 'admin_recharge'" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20">
-              <Icon name="dollar" size="sm" />
-              {{ t('payment.admin.accountingRefund') }}
-            </button>
             <button v-else-if="row.status === 'COMPLETED' || row.status === 'PARTIALLY_REFUNDED'" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
               <Icon name="dollar" size="sm" />
               {{ t('payment.admin.paymentChannelRefund') }}
@@ -119,7 +115,7 @@
       </div>
     </BaseDialog>
 
-    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" :require-force="refundRequireForce" :warning="refundWarning" :accounting="selectedOrder?.payment_type === 'admin_recharge'" @confirm="handleRefund" @cancel="closeRefundDialog" />
+    <AdminRefundDialog :show="showRefundDialog" :order="selectedOrder" :submitting="refundSubmitting" :require-force="refundRequireForce" :warning="refundWarning" @confirm="handleRefund" @cancel="closeRefundDialog" />
   </AppLayout>
 </template>
 
@@ -215,7 +211,6 @@ const paymentTypeFilterOptions = computed(() => [
   { value: 'wxpay', label: t('payment.methods.wxpay') },
   { value: 'stripe', label: t('payment.methods.stripe') },
   { value: 'airwallex', label: t('payment.methods.airwallex') },
-  { value: 'admin_recharge', label: t('payment.methods.admin_recharge') },
 ])
 
 const orderTypeFilterOptions = computed(() => [
@@ -267,9 +262,7 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
   if (!selectedOrder.value) return
   refundSubmitting.value = true
   try {
-    const res = selectedOrder.value.payment_type === 'admin_recharge'
-      ? await adminPaymentAPI.accountingRefund(selectedOrder.value.id, { amount: data.amount, refund_trade_no: data.refund_trade_no || '', reason: data.reason })
-      : await adminPaymentAPI.refundOrder(selectedOrder.value.id, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
+    const res = await adminPaymentAPI.refundOrder(selectedOrder.value.id, { amount: data.amount, reason: data.reason, deduct_balance: data.deduct_balance, force: data.force })
     if (res.data.success) {
       appStore.showSuccess(t('payment.admin.refundSuccess'))
       closeRefundDialog()

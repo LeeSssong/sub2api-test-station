@@ -1,7 +1,7 @@
 <template>
   <BaseDialog
     :show="show"
-    :title="props.accounting ? t('payment.admin.accountingRefund') : t('payment.admin.refundOrder')"
+    :title="t('payment.admin.refundOrder')"
     width="normal"
     @close="emit('cancel')"
   >
@@ -48,7 +48,7 @@
       </div>
 
       <!-- Deduct Balance -->
-      <div v-if="!props.accounting">
+      <div>
         <div class="flex items-center gap-2">
           <input
             id="deduct-balance"
@@ -89,12 +89,6 @@
         >
           {{ t('payment.admin.noDeduction') }}
         </div>
-      </div>
-
-      <div v-if="props.accounting">
-        <label class="input-label">{{ t('payment.admin.refundTradeNo') }}</label>
-        <input v-model="form.refund_trade_no" class="input" type="text" maxlength="128" required autocomplete="off" />
-        <p class="mt-1 text-xs text-gray-500">{{ t('payment.admin.accountingRefundHint') }}</p>
       </div>
 
       <!-- Refund Amount -->
@@ -162,7 +156,7 @@
           :disabled="submitting || form.amount <= 0 || (requireForce && !form.force)"
           class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 dark:focus:ring-offset-dark-800"
         >
-          {{ submitting ? t('common.processing') : props.accounting ? t('payment.admin.confirmAccountingRefund') : t('payment.admin.confirmRefund') }}
+          {{ submitting ? t('common.processing') : t('payment.admin.confirmRefund') }}
         </button>
       </div>
     </template>
@@ -186,7 +180,6 @@ const props = defineProps<{
   userBalance?: number | null
   requireForce?: boolean
   warning?: string
-  accounting?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -217,7 +210,6 @@ const actuallyRefunded = computed(() => {
 
 const maxRefundable = computed(() => {
   if (!props.order) return 0
-  if (props.accounting) return Math.max(0, Number(props.order.paid_quota_usd ?? props.order.amount) - Number(props.order.refunded_paid_quota_usd ?? 0))
   return props.order.amount - actuallyRefunded.value
 })
 
@@ -235,7 +227,7 @@ watch(() => props.show, (val) => {
       form.amount = maxRefundable.value
     }
     form.reason = props.order.refund_request_reason || ''
-    form.deduct_balance = !props.accounting
+    form.deduct_balance = true
     form.force = false
     form.refund_trade_no = ''
   }
@@ -248,7 +240,6 @@ function formatDateTime(dateStr: string): string {
 function handleSubmit() {
   if (form.amount <= 0 || form.amount > maxRefundable.value) return
   if (props.requireForce && !form.force) return
-  if (props.accounting && !form.refund_trade_no.trim()) return
   emit('confirm', { ...form, refund_trade_no: form.refund_trade_no.trim() })
 }
 </script>

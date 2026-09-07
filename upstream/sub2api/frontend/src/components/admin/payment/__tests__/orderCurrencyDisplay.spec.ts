@@ -161,6 +161,5 @@ describe('admin order currency display', () => {
     expect(totalIndex).toBeGreaterThan(text.indexOf('payment.orders.payAmount'))
     expect(paidIndex).toBeGreaterThan(totalIndex)
     expect(giftIndex).toBeGreaterThan(paidIndex)
-    expect(text).toContain('payment.methods.admin_recharge')
   })
 })

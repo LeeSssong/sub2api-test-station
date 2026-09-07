@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -83,7 +84,8 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.chatCompletionsErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 	reqStream, ok := parseOpenAICompatibleStream(body)
@@ -380,11 +382,17 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 
 // chatCompletionsErrorResponse writes an error in OpenAI Chat Completions format.
 func (h *GatewayHandler) chatCompletionsErrorResponse(c *gin.Context, status int, errType, message string) {
+	err := gin.H{
+		"type":    errType,
+		"message": message,
+	}
+	if errType == "unsupported_model" {
+		for key, value := range unsupportedModelResponseFields(c) {
+			err[key] = value
+		}
+	}
 	c.JSON(status, gin.H{
-		"error": gin.H{
-			"type":    errType,
-			"message": message,
-		},
+		"error": err,
 	})
 }
 
@@ -412,6 +420,14 @@ func (h *GatewayHandler) handleCCFailoverExhausted(c *gin.Context, lastErr *serv
 	statusCode := http.StatusBadGateway
 	if lastErr != nil && lastErr.StatusCode > 0 {
 		statusCode = lastErr.StatusCode
+	}
+	if lastErr != nil && service.ClassifyOpenAINotFound(lastErr.StatusCode, lastErr.ResponseBody).Kind == service.OpenAINotFoundModel {
+		model := strings.TrimSpace(c.GetString(opsModelKey))
+		if model == "" {
+			model = "当前请求模型"
+		}
+		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组没有可用账号支持模型 %q，请切换模型后重试", model))
+		return
 	}
 	if lastErr != nil && service.IsOpenAISilentRefusalErrorBody(lastErr.ResponseBody) {
 		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")

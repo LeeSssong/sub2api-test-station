@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -24,10 +25,10 @@ const (
 // account selection failed with ErrNoAvailableAccounts. Handlers obtain it
 // via classifyNoAccountError and choose between:
 //
-//   - 404 model_not_found — the group has accounts, but none of them are
+//   - 400 unsupported_model — the group has accounts, but none of them are
 //     configured to serve the requested model (config / typo / unsupported
-//     model). Returning 503 here misleads operators and trips reverse-proxy
-//     health checks; 404 lets the client surface the real problem.
+//     model). Returning 503 here misleads operators; 400 lets the client
+//     surface the real problem without treating it as a missing route.
 //
 //   - 503 local_capacity_exhausted — accounts that could serve the model exist but are
 //     temporarily exhausted (rate limit, quota auto-pause, runtime block) OR
@@ -38,7 +39,31 @@ type noAccountErrorClassification struct {
 	Status        int
 	ErrType       string
 	Message       string
-	ModelNotFound bool // true when this is a 404 model_not_found classification
+	ModelNotFound bool // true when this is a deterministic unsupported-model classification
+}
+
+func unsupportedModelResponseFields(c *gin.Context) gin.H {
+	fields := gin.H{}
+	if c == nil {
+		return fields
+	}
+	if model := strings.TrimSpace(c.GetString(opsModelKey)); model != "" {
+		fields["model"] = model
+	}
+	if c.Request == nil {
+		return fields
+	}
+	if requestID, _ := c.Request.Context().Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
+		fields["request_id"] = strings.TrimSpace(requestID)
+	} else if requestID := strings.TrimSpace(c.Writer.Header().Get("X-Request-ID")); requestID != "" {
+		fields["request_id"] = requestID
+	}
+	if clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
+		fields["client_request_id"] = strings.TrimSpace(clientRequestID)
+	} else if clientRequestID := strings.TrimSpace(c.Writer.Header().Get("X-Client-Request-ID")); clientRequestID != "" {
+		fields["client_request_id"] = clientRequestID
+	}
+	return fields
 }
 
 var selectionModelRateLimitedPattern = regexp.MustCompile(`(?:model_rate_limited|rate_limited)=(\d+)`)
@@ -49,7 +74,7 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 	if err == nil {
 		return fallback
 	}
-	// A 404 model_not_found fallback is authoritative and must not be downgraded
+	// An unsupported_model fallback is authoritative and must not be downgraded
 	// to a rate-limit verdict. classifyNoAccountError only reaches it through
 	// DiagnoseModelAvailabilityForPlatform, a dedicated database query over
 	// persistent eligibility (active + schedulable + model_mapping) that already
@@ -81,7 +106,7 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 	}
 }
 
-// classifyNoAccountError decides between 404 model_not_found and 503
+// classifyNoAccountError decides between 400 unsupported_model and 503
 // api_error for "no available accounts" failures.
 //
 // The classifier intentionally does not consume the original error: the
@@ -139,9 +164,9 @@ func classifyNoAccountError(
 	}
 	if result.HasAccountsInPool && !result.HasModelSupport {
 		return noAccountErrorClassification{
-			Status:        http.StatusNotFound,
-			ErrType:       "model_not_found",
-			Message:       fmt.Sprintf("Model %q is not supported by any configured account in this group", displayModel),
+			Status:        http.StatusBadRequest,
+			ErrType:       "unsupported_model",
+			Message:       fmt.Sprintf("当前分组没有可用账号支持模型 %q，请切换模型后重试", displayModel),
 			ModelNotFound: true,
 		}
 	}

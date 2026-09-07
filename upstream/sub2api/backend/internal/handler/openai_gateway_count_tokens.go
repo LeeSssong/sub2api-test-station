@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,7 +66,8 @@ func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.errorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 
@@ -243,7 +245,8 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.anthropicErrorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.anthropicErrorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 	routingModel := service.NormalizeOpenAICompatRequestedModel(reqModel)

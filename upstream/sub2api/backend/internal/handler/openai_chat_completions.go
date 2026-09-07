@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -82,7 +83,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
-		h.errorResponse(c, http.StatusNotFound, "model_not_found", "The requested model is not available in this group")
+		setOpsRequestContext(c, reqModel, false)
+		h.errorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
 	}
 	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {

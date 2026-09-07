@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -112,15 +113,15 @@ func TestClassifyNoAccountError_EmptyModel_Falls503(t *testing.T) {
 	require.Empty(t, fd.calls)
 }
 
-func TestClassifyNoAccountError_ModelNotSupported_Returns404(t *testing.T) {
+func TestClassifyNoAccountError_ModelNotSupported_ReturnsUnsupportedModel400(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(42)}
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5.1-codex-mini", "gpt-5.1-codex-mini", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusNotFound, cls.Status)
-	require.Equal(t, "model_not_found", cls.ErrType)
+	require.Equal(t, http.StatusBadRequest, cls.Status)
+	require.Equal(t, "unsupported_model", cls.ErrType)
 	require.True(t, cls.ModelNotFound)
 	require.Contains(t, cls.Message, "gpt-5.1-codex-mini", "message must surface the requested model")
 
@@ -176,6 +177,18 @@ func TestLunaUnavailableProtocolContract_ResponsesReturnsStableCodeAndGuidance(t
 	require.JSONEq(t, `{"error":{"code":"local_capacity_exhausted","message":"本站暂不支持gpt-5.6-luna，请切换模型重试"}}`, w.Body.String())
 }
 
+func TestUnsupportedModelResponseIncludesCorrelationMetadata(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	c.Set(opsModelKey, "gpt-5.5")
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.RequestID, "req-server-123"))
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.ClientRequestID, "req-client-456"))
+
+	(&GatewayHandler{}).responsesErrorResponse(c, http.StatusBadRequest, "unsupported_model", "当前分组不支持模型 gpt-5.5")
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.JSONEq(t, `{"error":{"code":"unsupported_model","message":"当前分组不支持模型 gpt-5.5","model":"gpt-5.5","request_id":"req-server-123","client_request_id":"req-client-456"}}`, w.Body.String())
+}
+
 func TestClassifyOpenAICompatibleNoAccountError_GrokUsesGrokPlatform(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: false}}
@@ -190,8 +203,8 @@ func TestClassifyOpenAICompatibleNoAccountError_GrokUsesGrokPlatform(t *testing.
 
 	cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, fd, apiKey, "grok-4.5", "grok-4.5")
 
-	require.Equal(t, http.StatusNotFound, cls.Status)
-	require.Equal(t, "model_not_found", cls.ErrType)
+	require.Equal(t, http.StatusBadRequest, cls.Status)
+	require.Equal(t, "unsupported_model", cls.ErrType)
 	require.True(t, cls.ModelNotFound)
 	require.Len(t, fd.calls, 1)
 	require.Equal(t, service.PlatformGrok, fd.calls[0].Platform)
@@ -331,7 +344,7 @@ func TestClassifyNoAccountError_FromGin_NilContextStillSafe(t *testing.T) {
 
 	cls := classifyNoAccountErrorFromGin(nil, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusNotFound, cls.Status, "even with a nil gin context the classifier must still run and yield a coherent response")
+	require.Equal(t, http.StatusBadRequest, cls.Status, "even with a nil gin context the classifier must still run and yield a coherent response")
 	require.True(t, cls.ModelNotFound)
 	require.False(t, service.HasOpsClientBusinessLimited(nil))
 	require.Empty(t, service.OpsClientBusinessLimitedReason(nil))
@@ -347,8 +360,8 @@ func TestClassifyNoAccountError_FromGin_NilContextStillSafe(t *testing.T) {
 // 重试并吞掉 body（Codex 只显示 "exceeded retry limit"），恰好丢掉唯一说明真实原因的信息。
 func TestClassifySelectionFailureError_ModelNotFoundIsNotOverriddenByRateLimited(t *testing.T) {
 	modelNotFound := noAccountErrorClassification{
-		Status:        http.StatusNotFound,
-		ErrType:       "model_not_found",
+		Status:        http.StatusBadRequest,
+		ErrType:       "unsupported_model",
 		Message:       `Model "gpt-5.3-codex" is not supported by any configured account in this group`,
 		ModelNotFound: true,
 	}
@@ -379,8 +392,8 @@ func TestClassifySelectionFailureError_CallSiteChainKeepsModelNotFoundAttributio
 		cls,
 	)
 
-	require.Equal(t, http.StatusNotFound, cls.Status)
-	require.Equal(t, "model_not_found", cls.ErrType)
+	require.Equal(t, http.StatusBadRequest, cls.Status)
+	require.Equal(t, "unsupported_model", cls.ErrType)
 	require.True(t, cls.ModelNotFound)
 	require.Contains(t, cls.Message, "gpt-5.3-codex")
 	require.True(t, service.HasOpsClientBusinessLimited(c))

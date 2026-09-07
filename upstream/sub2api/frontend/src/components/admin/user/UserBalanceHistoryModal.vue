@@ -77,7 +77,6 @@
           </svg>
           {{ t('admin.users.withdraw') }}
         </button>
-        <button v-if="!hideActions" class="rounded-lg border border-amber-200 px-3 py-2 text-sm text-amber-700" @click="loadRefundOrders('accounting')">{{ t('admin.users.accountingRefund') }}</button>
         <button v-if="!hideActions" class="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700" @click="loadRefundOrders('channel')">{{ t('admin.users.paymentChannelRefund') }}</button>
       </div>
 
@@ -258,16 +257,15 @@ watch(() => props.show, (v) => {
   }
 })
 
-const loadRefundOrders = async (mode: 'accounting' | 'channel') => {
+const loadRefundOrders = async (mode: 'channel') => {
   if (!props.user) return
   refundMode.value = mode
   refundLoading.value = true
   try {
-    const result = await adminPaymentAPI.getOrders({ user_id: props.user.id, payment_type: mode === 'accounting' ? 'admin_recharge' : undefined, page: 1, page_size: 100 })
+    const result = await adminPaymentAPI.getOrders({ user_id: props.user.id, page: 1, page_size: 100 })
     refundOrders.value = (result.data.items || []).filter((order) => {
       const active = order.status === 'COMPLETED' || order.status === 'PARTIALLY_REFUNDED'
-      if (mode === 'accounting') return active && order.payment_type === 'admin_recharge'
-      return active && order.payment_type !== 'admin_recharge' && Boolean(order.provider_instance_id)
+      return active && Boolean(order.provider_instance_id)
     })
   } finally {
     refundLoading.value = false

@@ -11,10 +11,8 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -549,24 +547,13 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	if req.RecordType != service.QuotaRecordRecharge && req.RecordType != service.QuotaRecordRefund {
-		response.BadRequest(c, "record_type must be recharge or refund")
+	if req.RecordType != service.QuotaRecordRefund {
+		response.BadRequest(c, "quota ledger only supports refunds")
 		return
 	}
 	if req.AmountCNY < 0 || req.GiftQuotaUSD < 0 {
 		response.BadRequest(c, "amounts must not be negative")
 		return
-	}
-	if req.RecordType == service.QuotaRecordRecharge {
-		tradeNo := strings.TrimSpace(req.PaymentTradeNo)
-		if tradeNo == "" {
-			response.BadRequest(c, "payment_trade_no is required for admin recharge")
-			return
-		}
-		if err := service.ValidateAdminRechargeInput(&service.AdminRechargeInput{UserID: userID, OperatorUserID: getAdminIDFromContext(c), Amount: decimal.NewFromFloat(req.AmountCNY), GiftQuota: decimal.NewFromFloat(req.GiftQuotaUSD), PaymentTradeNo: tradeNo, Note: strings.TrimSpace(req.Note)}); err != nil {
-			response.BadRequest(c, "invalid admin recharge")
-			return
-		}
 	}
 	actor := getAdminIDFromContext(c)
 	var actorID *int64
@@ -574,54 +561,11 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 		actorID = &actor
 	}
 	var result service.QuotaMutationResult
-	if req.RecordType == service.QuotaRecordRecharge {
-		rechargeKey := "admin-recharge:" + strings.TrimSpace(req.PaymentTradeNo)
-		if h.entClient == nil && h.quotaAccounting == nil {
-			result, err = h.quotaWallet.Recharge(c.Request.Context(), service.RechargeInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), GiftQuotaUSD: decimal.NewFromFloat(req.GiftQuotaUSD), IdempotencyKey: rechargeKey, ReferenceType: "admin_recharge", ReferenceID: strings.TrimSpace(req.PaymentTradeNo), Note: strings.TrimSpace(req.Note), OperatorID: actorID})
-		} else if h.entClient == nil || h.userService == nil || h.quotaAccounting == nil {
-			response.InternalError(c, "admin recharge accounting service not available")
-			return
-		} else {
-			order, orderErr := h.prepareAdminRechargeOrder(c.Request.Context(), userID, actor, req, rechargeKey)
-			if orderErr != nil {
-				response.ErrorFrom(c, orderErr)
-				return
-			}
-			grant, grantErr := h.quotaAccounting.CreatePaymentOrderGrant(c.Request.Context(), userID, order.ID, order.PaidQuotaUsd, order.GiftQuotaUsd, rechargeKey, strings.TrimSpace(req.Note))
-			if grantErr != nil {
-				now := time.Now()
-				_, markErr := h.entClient.PaymentOrder.UpdateOneID(order.ID).
-					SetStatus(service.OrderStatusFailed).
-					SetQuotaAccountingStatus("failed").
-					SetFailedAt(now).
-					SetFailedReason("admin recharge accounting failed; retry with the same transaction number").
-					Save(c.Request.Context())
-				if markErr != nil {
-					response.ErrorFrom(c, infraerrors.InternalServer("ADMIN_RECHARGE_ACCOUNTING_FAILED", "admin recharge accounting failed; no balance was changed"))
-					return
-				}
-				response.ErrorFrom(c, infraerrors.InternalServer("ADMIN_RECHARGE_ACCOUNTING_FAILED", "admin recharge accounting failed; no balance was changed"))
-				return
-			}
-			now := time.Now()
-			if _, err = h.entClient.PaymentOrder.UpdateOneID(order.ID).SetStatus(service.OrderStatusCompleted).SetQuotaAccountingStatus("confirmed").SetPaidAt(now).SetCompletedAt(now).SetOperatorRechargedAt(now).Save(c.Request.Context()); err != nil {
-				response.ErrorFrom(c, infraerrors.InternalServer("ADMIN_RECHARGE_FINALIZE_FAILED", "admin recharge finalization failed; please retry with the same transaction number"))
-				return
-			}
-			summary, summaryErr := h.quotaWallet.GetSummary(c.Request.Context(), userID)
-			if summaryErr != nil {
-				response.ErrorFrom(c, summaryErr)
-				return
-			}
-			result = service.QuotaMutationResult{LedgerEntryID: grant.GrantID, Idempotent: grant.Idempotent, Summary: summary}
-		}
-	} else {
-		if req.GiftQuotaUSD != 0 {
-			response.BadRequest(c, "gift_quota_usd is only valid for recharge")
-			return
-		}
-		result, err = h.quotaWallet.Refund(c.Request.Context(), service.RefundInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), IdempotencyKey: key, ReferenceType: "admin_manual", Note: strings.TrimSpace(req.Note), OperatorID: actorID})
+	if req.GiftQuotaUSD != 0 || strings.TrimSpace(req.PaymentTradeNo) != "" {
+		response.BadRequest(c, "recharge fields are not supported")
+		return
 	}
+	result, err = h.quotaWallet.Refund(c.Request.Context(), service.RefundInput{UserID: userID, AmountCNY: decimal.NewFromFloat(req.AmountCNY), IdempotencyKey: key, ReferenceType: "admin_manual", Note: strings.TrimSpace(req.Note), OperatorID: actorID})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -632,56 +576,6 @@ func (h *UserHandler) CreateQuotaLedgerEntry(c *gin.Context) {
 		}
 	}
 	response.Success(c, gin.H{"ledger_entry_id": result.LedgerEntryID, "idempotent": result.Idempotent, "summary": quotaSummaryDTO(result.Summary)})
-}
-
-func (h *UserHandler) prepareAdminRechargeOrder(ctx context.Context, userID, actorID int64, req QuotaLedgerMutationRequest, key string) (*dbent.PaymentOrder, error) {
-	if h.entClient == nil || h.userService == nil {
-		return nil, fmt.Errorf("admin recharge order service not available")
-	}
-	tradeNo := strings.TrimSpace(req.PaymentTradeNo)
-	existing, err := h.entClient.PaymentOrder.Query().Where(paymentorder.PaymentTypeEQ("admin_recharge"), paymentorder.PaymentTradeNoEQ(tradeNo)).Only(ctx)
-	if err == nil {
-		if existing.UserID != userID || !decimal.NewFromFloat(existing.PayAmount).Equal(decimal.NewFromFloat(req.AmountCNY)) || !existing.GiftQuotaUsd.Equal(decimal.NewFromFloat(req.GiftQuotaUSD)) {
-			return nil, infraerrors.Conflict("ADMIN_RECHARGE_TRADE_DUPLICATE", "admin recharge transaction number already exists")
-		}
-		return existing, nil
-	}
-	if !dbent.IsNotFound(err) {
-		return nil, err
-	}
-	user, err := h.userService.GetByID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	paid := decimal.NewFromFloat(req.AmountCNY)
-	gift := decimal.NewFromFloat(req.GiftQuotaUSD)
-	total := paid.Add(gift)
-	now := time.Now()
-	outTradeNo := fmt.Sprintf("admin_%d_%d", userID, now.UnixNano())
-	return h.entClient.PaymentOrder.Create().
-		SetUserID(userID).
-		SetUserEmail(user.Email).
-		SetUserName(user.Username).
-		SetAmount(req.AmountCNY).
-		SetPayAmount(req.AmountCNY).
-		SetFeeRate(0).
-		SetPaidQuotaUsd(paid).
-		SetGiftQuotaUsd(gift).
-		SetTotalQuotaUsd(total).
-		SetQuotaRuleSnapshot(map[string]any{"source": "admin_recharge", "idempotency_key": key}).
-		SetQuotaAccountingStatus("pending").
-		SetOperatorUserID(actorID).
-		SetOperatorNote(strings.TrimSpace(req.Note)).
-		SetRechargeCode("").
-		SetOutTradeNo(outTradeNo).
-		SetPaymentType("admin_recharge").
-		SetPaymentTradeNo(tradeNo).
-		SetOrderType("balance").
-		SetStatus(service.OrderStatusPending).
-		SetExpiresAt(now.Add(24 * time.Hour)).
-		SetClientIP("admin").
-		SetSrcHost("admin").
-		Save(ctx)
 }
 
 // GetQuotaLedger lists sanitized quota entries for an administrator.

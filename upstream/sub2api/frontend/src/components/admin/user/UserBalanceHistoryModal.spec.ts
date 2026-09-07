@@ -11,7 +11,10 @@ vi.mock('@/api/admin', () => ({
   adminAPI: { users: { getUserBalanceHistory, getUserQuotaLedger, getUserQuotaSummary } },
 }))
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', () => ({
+  createI18n: () => ({ global: { t: (key: string) => key } }),
+  useI18n: () => ({ t: (key: string) => key }),
+}))
 vi.mock('@/utils/format', () => ({ formatDateTime: (value: string) => value }))
 
 import UserBalanceHistoryModal from './UserBalanceHistoryModal.vue'
@@ -29,7 +32,6 @@ describe('UserBalanceHistoryModal', () => {
     getUserBalanceHistory.mockResolvedValue({ items: [], total: 0, total_recharged: 0 })
     getUserQuotaLedger.mockResolvedValue({ items: [], total: 0 })
     getUserQuotaSummary.mockResolvedValue({
-      cash_balance_cny: '20.00000000',
       paid_quota_balance_usd: '18.84689040',
       gift_quota_balance_usd: '0.00000000',
       total_quota_balance_usd: '18.84689040',
@@ -43,7 +45,6 @@ describe('UserBalanceHistoryModal', () => {
     })
 
     await wrapper.setProps({ show: true })
-
     await flushPromises()
 
     expect(getUserQuotaSummary).toHaveBeenCalledWith(37)
@@ -51,12 +52,11 @@ describe('UserBalanceHistoryModal', () => {
     expect(wrapper.text()).not.toContain('$0.33')
   })
 
-  it('caps refundable cash at non-negative paid quota', async () => {
+  it('does not render a cash refund balance from the quota summary', async () => {
     getUserQuotaSummary.mockResolvedValue({
-      cash_balance_cny: '50.00000000',
-      paid_quota_balance_usd: '-0.01097834',
-      gift_quota_balance_usd: '0.00000000',
-      total_quota_balance_usd: '-0.01097834',
+      paid_quota_balance_usd: '18.84689040',
+      gift_quota_balance_usd: '2.00000000',
+      total_quota_balance_usd: '20.84689040',
     })
 
     const wrapper = shallowMount(UserBalanceHistoryModal, {
@@ -67,7 +67,6 @@ describe('UserBalanceHistoryModal', () => {
     await wrapper.setProps({ show: true })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('¥0.00')
-    expect(wrapper.text()).not.toContain('¥50.00')
+    expect(wrapper.text()).not.toContain('refundableCashBalance')
   })
 })

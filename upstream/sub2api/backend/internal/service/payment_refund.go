@@ -19,6 +19,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
+	"github.com/Wei-Shaw/sub2api/internal/quota/accounting"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/shopspring/decimal"
@@ -63,26 +64,69 @@ func (s *PaymentService) AdminAccountingRefund(ctx context.Context, orderID, ope
 	if err != nil {
 		return nil, err
 	}
-	var consumed string
-	if err := scanQuotaOne(ctx, tx.Client(), `SELECT COALESCE(SUM(consumed_paid_quota_usd),0)::text FROM user_quota_grants WHERE payment_order_id=$1`, []any{orderID}, &consumed); err != nil {
+	var paidBalance string
+	if err := scanQuotaOne(ctx, tx.Client(), `SELECT paid_quota_balance_usd::text FROM user_wallets WHERE user_id=$1 FOR UPDATE`, []any{userID}, &paidBalance); err != nil {
 		return nil, err
 	}
-	consumedD, err := decimal.NewFromString(consumed)
+	paidBalanceD, err := decimal.NewFromString(paidBalance)
 	if err != nil {
 		return nil, err
 	}
 	refundD := decimal.NewFromFloat(amount)
-	remaining := paidD.Sub(refundedD).Sub(consumedD)
+	remaining := paidD.Sub(refundedD)
 	if refundD.GreaterThan(remaining) {
 		return nil, fmt.Errorf("admin accounting refund exceeds remaining paid quota")
 	}
-	key := "admin-accounting-refund:" + tradeNo
-	if _, err := tx.Client().ExecContext(ctx, `INSERT INTO user_quota_adjustments (user_id,adjustment_type,payment_order_id,reserved_allocations,applied_allocations,refund_amount,refund_currency,refund_method,refund_trade_no,provider_state,requested_paid_quota_usd,applied_paid_quota_usd,applied_gift_quota_usd,shortfall_paid_quota_usd,force_refund,actor_type,reason,status,idempotency_key,operator_user_id,adjusted_at) VALUES ($1,'refund_recovery',$2,'[]'::jsonb,'[]'::jsonb,$3,'CNY','admin_accounting',$4,'succeeded',$5,$5,0,0,false,'admin',$6,'completed',$7,NOW())`, userID, orderID, refundD.StringFixed(8), tradeNo, refundD.StringFixed(8), reason, key); err != nil {
+	if refundD.GreaterThan(paidBalanceD) {
+		return nil, fmt.Errorf("admin accounting refund exceeds current paid quota balance")
+	}
+	rows, err := tx.Client().QueryContext(ctx, `SELECT id,grant_type,paid_quota_usd::text,consumed_paid_quota_usd::text,refunded_paid_quota_usd::text,reserved_paid_quota_usd::text,legacy_debt_offset_paid_quota_usd::text FROM user_quota_grants WHERE user_id=$1 AND payment_order_id=$2 AND paid_quota_usd > refunded_paid_quota_usd + consumed_paid_quota_usd + reserved_paid_quota_usd ORDER BY granted_at ASC,id ASC FOR UPDATE`, userID, orderID)
+	if err != nil {
 		return nil, err
+	}
+	grants := make([]accounting.Grant, 0)
+	for rows.Next() {
+		var id int64
+		var grantType, grantPaid, consumed, grantRefunded, reserved, debtOffset string
+		if err := rows.Scan(&id, &grantType, &grantPaid, &consumed, &grantRefunded, &reserved, &debtOffset); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		parsed := make([]decimal.Decimal, 5)
+		for i, raw := range []string{grantPaid, consumed, grantRefunded, reserved, debtOffset} {
+			parsed[i], err = decimal.NewFromString(raw)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+		}
+		grants = append(grants, accounting.Grant{ID: id, Type: grantType, Paid: parsed[0], ConsumedPaid: parsed[1], RefundedPaid: parsed[2], ReservedPaid: parsed[3], DebtOffsetPaid: parsed[4]})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	allocation, err := accounting.AllocatePaidRefund(grants, refundD)
+	if err != nil {
+		return nil, err
+	}
+	appliedAllocations, err := json.Marshal(allocation.Allocations)
+	if err != nil {
+		return nil, err
+	}
+	key := "admin-accounting-refund:" + tradeNo
+	if _, err := tx.Client().ExecContext(ctx, `INSERT INTO user_quota_adjustments (user_id,adjustment_type,payment_order_id,reserved_allocations,applied_allocations,refund_amount,refund_currency,refund_method,refund_trade_no,provider_state,requested_paid_quota_usd,applied_paid_quota_usd,applied_gift_quota_usd,shortfall_paid_quota_usd,force_refund,actor_type,reason,status,idempotency_key,operator_user_id,adjusted_at) VALUES ($1,'refund_recovery',$2,'[]'::jsonb,$3,$4,'CNY','admin_accounting',$5,'succeeded',$6,$6,0,0,false,'admin',$7,'completed',$8,$9,NOW())`, userID, orderID, appliedAllocations, refundD.StringFixed(8), tradeNo, refundD.StringFixed(8), reason, key, operatorID); err != nil {
+		return nil, err
+	}
+	for _, item := range allocation.Allocations {
+		if _, err := tx.Client().ExecContext(ctx, `UPDATE user_quota_grants SET refunded_paid_quota_usd=refunded_paid_quota_usd+$1 WHERE id=$2 AND user_id=$3`, item.Quota.StringFixed(8), item.GrantID, userID); err != nil {
+			return nil, err
+		}
 	}
 	newRefunded := refundedD.Add(refundD)
 	newStatus := OrderStatusPartiallyRefunded
-	if newRefunded.Add(consumedD).GreaterThanOrEqual(paidD) {
+	if newRefunded.GreaterThanOrEqual(paidD) {
 		newStatus = OrderStatusRefunded
 	}
 	if _, err := tx.Client().ExecContext(ctx, `UPDATE payment_orders SET refunded_paid_quota_usd=$1,status=$2,refund_amount=refund_amount+$3,refund_reason=$4,refund_at=NOW(),quota_accounting_status='confirmed',updated_at=NOW() WHERE id=$5`, newRefunded.StringFixed(8), newStatus, refundD.StringFixed(8), reason, orderID); err != nil {

@@ -62,6 +62,25 @@ func TestEvaluateUpstreamBaseURLBalanceUsesLatestValidSnapshot(t *testing.T) {
 	}
 }
 
+func TestEvaluateUpstreamBaseURLBalanceSkipsNewAPILowQuota(t *testing.T) {
+	now := time.Date(2026, 9, 7, 1, 0, 0, 0, time.UTC)
+	value := 2.5
+	fingerprint := accountMonitorBalanceCredentialFingerprint("newapi-key")
+	result, err := EvaluateUpstreamBaseURLBalance([]UpstreamBalanceAccount{{
+		AccountID: 1, Name: "newapi", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+		BaseURL: "https://newapi.example", CredentialFingerprint: fingerprint,
+		Snapshot: &AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Source: AccountMonitorBalanceSourceNewAPI,
+			Status: AccountMonitorBalanceStatusOK, ValueUSD: &value, ObservedAt: timePtr(now.Add(-time.Minute)),
+			CredentialFingerprint: fingerprint},
+	}}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 0 {
+		t.Fatalf("NewAPI low quota produced alert evaluation: %#v", result)
+	}
+}
+
 func TestEvaluateUpstreamBaseURLBalanceSkipsAmbiguousScope(t *testing.T) {
 	now := time.Date(2026, 8, 31, 2, 0, 0, 0, time.UTC)
 	zero := 0.0

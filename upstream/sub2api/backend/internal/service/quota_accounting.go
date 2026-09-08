@@ -57,6 +57,26 @@ type GiftDeductionResult struct {
 	Idempotent   bool
 }
 
+// GrantGift is the narrow adapter used by the admin service. It keeps the
+// administrator path on the existing quota-accounting transaction.
+func (s *QuotaAccountingService) GrantGift(ctx context.Context, userID, operatorID int64, amount float64, idempotencyKey, note string) error {
+	_, err := s.CreateAdminGiftGrant(ctx, userID, operatorID, decimal.NewFromFloat(amount), idempotencyKey, note)
+	return err
+}
+
+// DeductGift is the narrow adapter used by the admin service. The underlying
+// implementation is gift-only and atomically fails when gift quota is short.
+func (s *QuotaAccountingService) DeductGift(ctx context.Context, userID, operatorID int64, amount float64, idempotencyKey, note string) error {
+	_, err := s.CreateAdminGiftDeduction(ctx, GiftDeductionInput{
+		UserID:         userID,
+		OperatorUserID: operatorID,
+		AmountUSD:      decimal.NewFromFloat(amount),
+		IdempotencyKey: idempotencyKey,
+		Reason:         note,
+	})
+	return err
+}
+
 // ApplyRefundAdjustment records a completed paid-quota recovery after the
 // external provider has confirmed the refund. It is idempotent and updates
 // grant counters, wallet projection, and the payment-order quota summary in

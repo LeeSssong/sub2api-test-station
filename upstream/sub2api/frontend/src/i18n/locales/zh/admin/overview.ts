@@ -641,6 +641,8 @@ export default {
       giftAmount: '赠送额度',
       deductAmount: '扣除额度',
       deductAllGift: '全部赠送额度',
+      adminGiftBalance: '余额赠送（管理员）',
+      adminGiftDeduction: '余额扣除（管理员）',
       giftQuota: '赠送额度',
       refundGiftClears: '账务退款只扣充值额度，赠送额度不变。',
       accountingRefund: '账务退款',

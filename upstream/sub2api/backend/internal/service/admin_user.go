@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shopspring/decimal"
 )
 
 // User management implementations
@@ -505,24 +507,28 @@ func (s *adminServiceImpl) BatchUpdateLimits(ctx context.Context, userIDs []int6
 	return affected, nil
 }
 
-func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error) {
-	// 余额调整必须走原子接口：先读后整行写回会把并发的计费扣款覆盖掉。
-	var (
-		change BalanceChange
-		err    error
-	)
+func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, operatorID int64, idempotencyKey string) (*User, error) {
+	if balance <= 0 || math.IsNaN(balance) || math.IsInf(balance, 0) {
+		return nil, fmt.Errorf("balance amount must be a finite positive number")
+	}
+	if operatorID <= 0 || strings.TrimSpace(idempotencyKey) == "" {
+		return nil, fmt.Errorf("administrator identity and idempotency key are required")
+	}
+	if s.quotaAdjuster == nil {
+		return nil, ErrQuotaAccountingUnavailable
+	}
+
+	var err error
 	switch operation {
-	case "set":
-		change, err = s.userRepo.SetBalance(ctx, userID, balance)
 	case "add":
-		change, err = s.userRepo.AdjustBalance(ctx, userID, balance)
+		err = s.quotaAdjuster.GrantGift(ctx, userID, operatorID, balance, idempotencyKey, notes)
 	case "subtract":
-		change, err = s.userRepo.AdjustBalance(ctx, userID, -balance)
+		err = s.quotaAdjuster.DeductGift(ctx, userID, operatorID, balance, idempotencyKey, notes)
 	default:
 		return nil, fmt.Errorf("unsupported balance operation: %q", operation)
 	}
 	if errors.Is(err, ErrBalanceNegative) {
-		return nil, fmt.Errorf("balance cannot be negative, current balance: %.2f, requested operation would result in: %.2f", change.Old, change.New)
+		return nil, fmt.Errorf("gift quota is insufficient: %w", err)
 	}
 	if err != nil {
 		return nil, err
@@ -532,13 +538,9 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	if err != nil {
 		return nil, err
 	}
-
-	balanceDiff := change.New - change.Old
-	if s.authCacheInvalidator != nil && balanceDiff != 0 {
+	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
-	s.tryAccrueAffiliateRebateForAdminRecharge(ctx, userID, operation, balance)
-
 	if s.billingCacheService != nil {
 		go func() {
 			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -548,30 +550,6 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 			}
 		}()
 	}
-
-	if balanceDiff != 0 {
-		code, err := GenerateRedeemCode()
-		if err != nil {
-			logger.LegacyPrintf("service.admin", "failed to generate adjustment redeem code: %v", err)
-			return user, nil
-		}
-
-		adjustmentRecord := &RedeemCode{
-			Code:   code,
-			Type:   AdjustmentTypeAdminBalance,
-			Value:  balanceDiff,
-			Status: StatusUsed,
-			UsedBy: &user.ID,
-			Notes:  notes,
-		}
-		now := time.Now()
-		adjustmentRecord.UsedAt = &now
-
-		if err := s.redeemCodeRepo.Create(ctx, adjustmentRecord); err != nil {
-			logger.LegacyPrintf("service.admin", "failed to create balance adjustment redeem code: %v", err)
-		}
-	}
-
 	return user, nil
 }
 
@@ -702,6 +680,9 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 		}
 		return codes, total, totalRecharged, nil
 	}
+	if s.entClient != nil {
+		return s.listUnifiedBalanceHistory(ctx, userID, params, codeType)
+	}
 
 	if codeType == "" {
 		return s.getAllUserBalanceHistory(ctx, userID, params)
@@ -718,6 +699,155 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 		return nil, 0, 0, err
 	}
 	return codes, total, totalRecharged, nil
+}
+
+const unifiedBalanceHistoryCTE = `
+WITH history AS (
+    SELECT rc.id,
+           rc.code,
+           CASE WHEN po.id IS NOT NULL THEN 'balance' ELSE rc.type END AS type,
+           CASE WHEN po.id IS NOT NULL THEN 'payment_order' ELSE 'redeem_code' END AS source,
+           rc.value,
+           CASE
+             WHEN g.id IS NOT NULL THEN g.paid_quota_usd
+             WHEN po.id IS NOT NULL THEN po.paid_quota_usd
+             WHEN rc.paid_quota_usd > 0 THEN rc.paid_quota_usd
+             WHEN rc.type = 'balance' THEN rc.value::numeric
+             ELSE 0::numeric
+           END AS paid_quota_delta_usd,
+           CASE
+             WHEN g.id IS NOT NULL THEN g.gift_quota_usd
+             WHEN po.id IS NOT NULL THEN po.gift_quota_usd
+             ELSE rc.gift_quota_usd
+           END AS gift_quota_delta_usd,
+           rc.status,
+           rc.used_by,
+           rc.used_at,
+           rc.created_at,
+           COALESCE(rc.used_at, rc.created_at) AS event_at,
+           rc.notes,
+           rc.group_id,
+           rc.validity_days
+    FROM redeem_codes rc
+    LEFT JOIN payment_orders po
+      ON po.recharge_code = rc.code AND po.user_id = rc.used_by
+    LEFT JOIN LATERAL (
+      SELECT id, paid_quota_usd, gift_quota_usd
+      FROM user_quota_grants
+      WHERE redeem_code_id = rc.id AND grant_type = 'redeem_code'
+      ORDER BY id DESC
+      LIMIT 1
+    ) g ON TRUE
+    WHERE rc.used_by = $1 AND rc.type <> 'admin_balance'
+
+    UNION ALL
+
+    SELECT g.id,
+           'ADMIN-GIFT-' || g.id,
+           'admin_gift',
+           'admin_gift',
+           g.gift_quota_usd::double precision,
+           0::numeric,
+           g.gift_quota_usd,
+           'used',
+           g.user_id,
+           NULL::timestamptz,
+           g.granted_at,
+           g.granted_at,
+           g.note,
+           NULL::bigint,
+           0
+    FROM user_quota_grants g
+    WHERE g.user_id = $1 AND g.grant_type = 'admin_gift'
+
+    UNION ALL
+
+    SELECT -a.id,
+           'ADMIN-GIFT-DEDUCTION-' || a.id,
+           'admin_gift_deduction',
+           'admin_gift_deduction',
+           -a.applied_gift_quota_usd::double precision,
+           0::numeric,
+           -a.applied_gift_quota_usd,
+           a.status,
+           a.user_id,
+           NULL::timestamptz,
+           COALESCE(a.adjusted_at, a.created_at),
+           COALESCE(a.adjusted_at, a.created_at),
+           a.reason,
+           NULL::bigint,
+           0
+    FROM user_quota_adjustments a
+    WHERE a.user_id = $1 AND a.adjustment_type = 'admin_gift_deduction'
+)
+`
+
+func (s *adminServiceImpl) listUnifiedBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]RedeemCode, int64, float64, error) {
+	if s == nil || s.entClient == nil || userID <= 0 {
+		return nil, 0, 0, nil
+	}
+	filter := ""
+	if codeType != "" {
+		filter = " WHERE type = $2"
+	}
+
+	countArgs := []any{userID}
+	if codeType != "" {
+		countArgs = append(countArgs, codeType)
+	}
+	var total int64
+	var paidTotal string
+	countQuery := unifiedBalanceHistoryCTE + "SELECT COUNT(*), COALESCE(SUM(paid_quota_delta_usd), 0)::text FROM history" + filter
+	if err := scanQuotaOne(ctx, s.entClient, countQuery, countArgs, &total, &paidTotal); err != nil {
+		return nil, 0, 0, err
+	}
+	paidTotalD, err := decimal.NewFromString(paidTotal)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	rowsArgs := append([]any{}, countArgs...)
+	rowsArgs = append(rowsArgs, params.Offset(), params.Limit())
+	rowsQuery := unifiedBalanceHistoryCTE + `SELECT id,code,type,source,value,
+       paid_quota_delta_usd::text,gift_quota_delta_usd::text,status,used_by,used_at,created_at,event_at,notes,group_id,validity_days
+FROM history` + filter + ` ORDER BY event_at DESC, id DESC OFFSET $` + fmt.Sprint(len(rowsArgs)-1) + ` LIMIT $` + fmt.Sprint(len(rowsArgs))
+	rows, err := s.entClient.QueryContext(ctx, rowsQuery, rowsArgs...)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]RedeemCode, 0, params.Limit())
+	for rows.Next() {
+		var item RedeemCode
+		var usedBy int64
+		var notes sql.NullString
+		var usedAtTime sql.NullTime
+		var groupIDValue sql.NullInt64
+		var createdAt, eventAt time.Time
+		if err := rows.Scan(&item.ID, &item.Code, &item.Type, &item.Source, &item.Value,
+			&item.PaidQuotaDeltaUSD, &item.GiftQuotaDeltaUSD, &item.Status, &usedBy, &usedAtTime,
+			&createdAt, &eventAt, &notes, &groupIDValue, &item.ValidityDays); err != nil {
+			return nil, 0, 0, err
+		}
+		item.UsedBy = &usedBy
+		item.CreatedAt = createdAt
+		if usedAtTime.Valid {
+			item.UsedAt = &usedAtTime.Time
+		}
+		if notes.Valid {
+			item.Notes = notes.String
+		}
+		if groupIDValue.Valid {
+			value := groupIDValue.Int64
+			item.GroupID = &value
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, err
+	}
+	return items, total, paidTotalD.InexactFloat64(), nil
 }
 
 func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {

@@ -28,18 +28,20 @@
             </p>
           </div>
           <!-- Keep available, paid, and gift quota visibly separate. -->
-          <div class="grid w-full grid-cols-3 gap-3 text-right sm:w-auto">
-            <div>
+          <div class="w-full text-right sm:w-auto sm:min-w-[15rem]">
+            <div class="quota-summary-available-row">
               <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentSpendableBalance') }}</p>
-              <p class="text-lg font-bold text-gray-900 dark:text-white">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.total_quota_balance_usd))}` : '—' }}</p>
+              <p class="text-xl font-bold text-gray-900 dark:text-white">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.total_quota_balance_usd))}` : '—' }}</p>
             </div>
-            <div>
-              <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.paidQuota') }}</p>
-              <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.paid_quota_balance_usd))}` : '—' }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.giftQuota') }}</p>
-              <p class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.gift_quota_balance_usd))}` : '—' }}</p>
+            <div class="quota-summary-secondary-row mt-2 grid grid-cols-2 gap-4 border-t border-gray-200/60 pt-2 dark:border-dark-600/60">
+              <div>
+                <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.paidQuota') }}</p>
+                <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.paid_quota_balance_usd))}` : '—' }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.giftQuota') }}</p>
+                <p class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.gift_quota_balance_usd))}` : '—' }}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -124,9 +126,13 @@
                 >
                   {{ item.notes.length > 60 ? item.notes.substring(0, 55) + '...' : item.notes }}
                 </p>
-                <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
-                  {{ formatDateTime(item.used_at || item.created_at) }}
-                </p>
+              <p class="mt-0.5 text-xs text-gray-400 dark:text-dark-500">
+                {{ formatDateTime(item.used_at || item.created_at) }}
+              </p>
+              <div v-if="isQuotaHistoryItem(item)" class="mt-1 flex flex-wrap gap-x-4 text-xs text-gray-500 dark:text-dark-400">
+                <span>{{ t('admin.users.paidQuota') }} {{ formatQuotaDelta(item.paid_quota_delta_usd) }}</span>
+                <span>{{ t('admin.users.giftQuota') }} {{ formatQuotaDelta(item.gift_quota_delta_usd) }}</span>
+              </div>
               </div>
             </div>
             <!-- Right: value -->
@@ -205,7 +211,8 @@ const typeOptions = computed(() => [
   { value: '', label: t('admin.users.allTypes') },
   { value: 'balance', label: t('admin.users.typeBalance') },
   { value: 'affiliate_balance', label: t('admin.users.typeAffiliateBalance') },
-  { value: 'admin_balance', label: t('admin.users.typeAdminBalance') },
+  { value: 'admin_gift', label: t('admin.users.adminGiftBalance') },
+  { value: 'admin_gift_deduction', label: t('admin.users.adminGiftDeduction') },
   { value: 'concurrency', label: t('admin.users.typeConcurrency') },
   { value: 'admin_concurrency', label: t('admin.users.typeAdminConcurrency') },
   { value: 'subscription', label: t('admin.users.typeSubscription') }
@@ -261,10 +268,10 @@ const loadHistory = async (page: number) => {
 }
 
 // Helper: check if admin type
-const isAdminType = (type: string) => type === 'admin_balance' || type === 'admin_concurrency'
+const isAdminType = (type: string) => type === 'admin_gift' || type === 'admin_gift_deduction' || type === 'admin_concurrency'
 
 // Helper: check if balance type (includes admin_balance)
-const isBalanceType = (type: string) => type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance'
+const isBalanceType = (type: string) => type === 'balance' || type === 'admin_gift' || type === 'admin_gift_deduction' || type === 'affiliate_balance'
 
 // Helper: check if subscription type
 const isSubscriptionType = (type: string) => type === 'subscription'
@@ -323,7 +330,11 @@ const getItemTitle = (item: BalanceHistoryItem) => {
     case 'affiliate_balance':
       return t('redeem.balanceAddedAffiliate')
     case 'admin_balance':
-      return item.value >= 0 ? t('redeem.balanceAddedAdmin') : t('redeem.balanceDeductedAdmin')
+      return item.value >= 0 ? t('admin.users.adminGiftBalance') : t('admin.users.adminGiftDeduction')
+    case 'admin_gift':
+      return t('admin.users.adminGiftBalance')
+    case 'admin_gift_deduction':
+      return t('admin.users.adminGiftDeduction')
     case 'concurrency':
       return t('redeem.concurrencyAddedRedeem')
     case 'admin_concurrency':
@@ -349,5 +360,14 @@ const formatValue = (item: BalanceHistoryItem) => {
   // concurrency types
   const sign = item.value >= 0 ? '+' : ''
   return `${sign}${item.value}`
+}
+
+const isQuotaHistoryItem = (item: BalanceHistoryItem) =>
+  item.type === 'balance' || item.type === 'admin_gift' || item.type === 'admin_gift_deduction'
+
+const formatQuotaDelta = (value: string | undefined) => {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount === 0) return '$0.00'
+  return `${amount > 0 ? '+' : ''}$${amount.toFixed(2)}`
 }
 </script>

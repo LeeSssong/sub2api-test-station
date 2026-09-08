@@ -29,7 +29,7 @@ type AdminService interface {
 	CreateUser(ctx context.Context, input *CreateUserInput) (*User, error)
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
-	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
+	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string, operatorID int64, idempotencyKey string) (*User, error)
 	BatchUpdateConcurrency(ctx context.Context, userIDs []int64, value int, mode string) (int, error)
 	BatchUpdateLimits(ctx context.Context, userIDs []int64, concurrency, rpmLimit *int) (int, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
@@ -705,6 +705,7 @@ type adminServiceImpl struct {
 	compositeResolver    *CompositeRouteResolver
 	// 分组平台变更后用来失效渠道缓存；可为 nil（缓存会在 TTL 到期后自然重建）
 	channelCacheInvalidator ChannelCacheInvalidator
+	quotaAdjuster           adminGiftQuotaAdjuster
 }
 
 // ChannelCacheInvalidator 失效渠道缓存。
@@ -715,6 +716,14 @@ type ChannelCacheInvalidator interface {
 
 type adminRechargeAffiliateAccruer interface {
 	AccrueInviteRebate(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64) (float64, error)
+}
+
+// adminGiftQuotaAdjuster is the narrow quota-accounting contract needed by
+// administrator gift/deduction actions. It intentionally has no paid-quota
+// operation so the legacy balance endpoint cannot silently change paid quota.
+type adminGiftQuotaAdjuster interface {
+	GrantGift(ctx context.Context, userID, operatorID int64, amount float64, idempotencyKey, note string) error
+	DeductGift(ctx context.Context, userID, operatorID int64, amount float64, idempotencyKey, note string) error
 }
 
 type userGroupRateBatchReader interface {
@@ -771,6 +780,7 @@ func NewAdminService(
 		affiliateService:     affiliateService,
 		compositeRouteRepo:   compositeRouteRepo,
 		compositeResolver:    compositeResolver,
+		quotaAdjuster:        NewQuotaAccountingService(entClient),
 
 		channelCacheInvalidator: channelCacheInvalidator,
 	}

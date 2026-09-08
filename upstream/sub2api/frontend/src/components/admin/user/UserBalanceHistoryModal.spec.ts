@@ -84,4 +84,37 @@ describe('UserBalanceHistoryModal', () => {
       'admin.users.deduct',
     ]))
   })
+
+  it('renders paid and gift quota deltas for quota history items', async () => {
+    getUserBalanceHistory.mockResolvedValue({
+      items: [{
+        id: 1,
+        code: 'ADMIN-GIFT-1',
+        type: 'admin_gift',
+        value: 10,
+        status: 'used',
+        used_by: 37,
+        used_at: '2026-09-09T01:00:00Z',
+        created_at: '2026-09-09T01:00:00Z',
+        notes: '',
+        paid_quota_delta_usd: '0.00000000',
+        gift_quota_delta_usd: '10.00000000',
+      }],
+      total: 1,
+      total_recharged: 0,
+    })
+
+    const wrapper = shallowMount(UserBalanceHistoryModal, {
+      props: { show: false, user },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.users.paidQuota $0.00')
+    expect(wrapper.text()).toContain('admin.users.giftQuota +$10.00')
+    expect(wrapper.text()).toContain('admin.users.adminGiftBalance')
+    expect(wrapper.find('.quota-summary-secondary-row').exists()).toBe(true)
+  })
 })

@@ -423,6 +423,10 @@ type RedeemCode struct {
 	// so users can see why they were charged or credited
 	Notes *string `json:"notes,omitempty"`
 
+	Source            string `json:"source,omitempty"`
+	PaidQuotaDeltaUSD string `json:"paid_quota_delta_usd"`
+	GiftQuotaDeltaUSD string `json:"gift_quota_delta_usd"`
+
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
 }

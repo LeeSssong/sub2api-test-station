@@ -511,6 +511,7 @@ type AccountMonitorAccount struct {
 	ProcurementCostEffectiveAt   *time.Time                               `json:"procurement_cost_effective_at"`
 	ExpiresAt                    *time.Time                               `json:"expires_at"`
 	RequestCount                 int64                                    `json:"request_count"`
+	SuccessCount                 int64                                    `json:"success_count"`
 	ErrorCount                   int64                                    `json:"error_count"`
 	Range                        AccountMonitorRange                      `json:"range,omitempty"`
 	BaseCost                     float64                                  `json:"base_cost"`

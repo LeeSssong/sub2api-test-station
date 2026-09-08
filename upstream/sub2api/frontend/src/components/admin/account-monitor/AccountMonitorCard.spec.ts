@@ -30,6 +30,7 @@ const account = {
   priority: 1,
   group_names: ['GPT-Pro'],
   request_count: 12846,
+  success_count: 12846,
   lifetime_real_request_count: 54231,
   success_rate: 0.9913,
   ttft_p95_ms: 4120,
@@ -292,6 +293,7 @@ describe('AccountMonitorCard R2', () => {
       account: {
         ...account,
         request_count: 1,
+        success_count: 1,
         lifetime_real_request_count: 51,
         real_request_timeline: [{
           start_at: '2026-08-30T00:00:00Z', end_at: '2026-08-30T01:00:00Z',

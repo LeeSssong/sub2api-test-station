@@ -759,7 +759,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 			EstimatedUsableQuotaUSD:    account.EstimatedUsableQuotaUSD,
 			ProcurementCostEffectiveAt: account.ProcurementCostEffectiveAt,
 			ExpiresAt:                  account.ExpiresAt,
-			Range:                      rangeValue, RequestCount: window.RequestCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
+			Range:                      rangeValue, RequestCount: window.RequestCount, SuccessCount: window.SuccessCount, ErrorCount: window.ErrorCount, BaseCost: window.BaseCost,
 			TTFTP95MS: window.TTFTP95MS, LatencyP95MS: window.LatencyP95MS,
 			Timeline: append([]AccountMonitorTimelinePoint{}, timelines[account.ID]...),
 		}
@@ -796,7 +796,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	rows = s.projectGlobalWindowQuality(accounts, rows, windowAggregates, probeAggregates, historicalAggregates, latest, settings, observedAt, globalWeights)
 	applyRealRequestEvidence(rows, windowAggregates, observedAt)
 	rows = s.projectGroupRecommendations(ctx, accounts, rows, recommendationAggregates, latest, groups, settings, observedAt)
-	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, groupReal, probeAggregates, historicalAggregates, latest, settings, since, observedAt)
+	groups = s.projectGroupWindowQuality(ctx, groups, accounts, rows, windowAggregates, latest, settings, since, observedAt)
 	if groupReal != nil {
 		applyGroupProfitabilityByGroup(groups, groupReal)
 	} else {
@@ -1091,7 +1091,7 @@ func (s *AccountMonitorService) projectGlobalWindowQuality(
 			continue
 		}
 		probe := probes[row.AccountID]
-		evidence := accountMonitorWindowEvidence(windows[row.AccountID], probe, latest[row.AccountID], settings, now)
+		evidence := accountMonitorWindowEvidence(windows[row.AccountID], AccountMonitorAggregate{}, latest[row.AccountID], settings, now)
 		row.EvidenceSource = evidence.Source
 		row.SampleCount = evidence.SampleCount
 		row.SuccessSampleCount = evidence.SuccessSampleCount
@@ -1177,9 +1177,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 	groups []AccountMonitorGroup,
 	accounts []Account,
 	rows []AccountMonitorAccount,
-	groupReal map[int64]map[int64]AccountMonitorWindowAggregate,
-	probes map[int64]AccountMonitorAggregate,
-	historicalProbes map[int64]AccountMonitorAggregate,
+	windows map[int64]AccountMonitorWindowAggregate,
 	latest map[int64]AccountMonitorLatest,
 	settings AccountMonitorSettings,
 	windowStart, now time.Time,
@@ -1199,35 +1197,6 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 				memberAccounts = append(memberAccounts, &member)
 			}
 		}
-		groupWindows := map[int64]AccountMonitorWindowAggregate{}
-		groupWindowProvider, hasGroupWindowProvider := s.repo.(AccountMonitorGroupWindowAggregateRepository)
-		groupWindowReadError := false
-		groupWindowResultAvailable := false
-		if groupReal != nil {
-			groupWindows = groupReal[group.ID]
-			if groupWindows == nil {
-				groupWindows = map[int64]AccountMonitorWindowAggregate{}
-			}
-			groupWindowResultAvailable = true
-			hasGroupWindowProvider = true
-		} else if hasGroupWindowProvider && len(members) > 0 {
-			if loaded, loadErr := groupWindowProvider.ListGroupWindowAggregates(ctx, group.ID, members, windowStart, now); loadErr == nil {
-				if loaded != nil {
-					groupWindows = loaded
-					groupWindowResultAvailable = true
-				}
-			} else {
-				groupWindowReadError = true
-			}
-		}
-		groupProbes := probes
-		groupHistoricalProbes := historicalProbes
-		if !hasGroupWindowProvider {
-			// Group quality requires group-scoped request evidence. Do not let
-			// account-scoped probes populate legacy adapters that lack it.
-			groupProbes = nil
-			groupHistoricalProbes = nil
-		}
 		projected := make([]AccountMonitorGroupAccount, 0)
 		for _, account := range accounts {
 			if !accountMonitorAccountInGroup(account, group.ID) {
@@ -1237,25 +1206,11 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			if !ok {
 				continue
 			}
-			window, hasGroupWindow := groupWindows[account.ID]
-			probe := AccountMonitorAggregate{}
-			historicalProbe := AccountMonitorAggregate{}
-			if hasGroupWindow {
-				probe = groupProbes[account.ID]
-				historicalProbe = groupHistoricalProbes[account.ID]
-			}
-			evidence := accountMonitorWindowEvidence(window, probe, latest[account.ID], settings, now)
-			if groupWindowReadError {
-				evidence = accountMonitorUnknownQualityEvidence("read_error")
-			} else if !groupWindowResultAvailable {
-				evidence = accountMonitorUnknownQualityEvidence("missing")
-			} else if !hasGroupWindow {
-				evidence = accountMonitorStaleQualityEvidence()
-			}
+			window := windows[account.ID]
+			evidence := accountMonitorWindowEvidence(window, AccountMonitorAggregate{}, latest[account.ID], settings, now)
 			row := AccountMonitorGroupAccount{AccountMonitorAccount: base, Evidence: evidence}
-			// The embedded base row carries the full-site projection. Clear its
-			// ranking fields before applying this group's evidence so a valid
-			// global score cannot leak into a group row with no group evidence.
+			// Account observations are immutable across group projections. Only
+			// group-specific cost policy and scheduler ranking are recalculated.
 			row.QualityScore = nil
 			row.ScoreBreakdown = nil
 			row.GroupRank = nil
@@ -1278,7 +1233,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.OutputRateSampleCount = evidence.OutputRateSampleCount
 			row.CheckedAt = accountMonitorWindowCheckedAt(latest[account.ID], evidence)
 			row.ManagementState = accountMonitorManagementState(account, now)
-			projectAccountMonitorProbe(&row.AccountMonitorAccount, probe, latest[account.ID], row.Timeline, settings, now, row.ManagementState)
+			projectAccountMonitorProbe(&row.AccountMonitorAccount, AccountMonitorAggregate{}, latest[account.ID], row.Timeline, settings, now, row.ManagementState)
 			projectAccountMonitorWindowState(&row.AccountMonitorAccount, evidence, latest[account.ID])
 			row.ServiceState = accountMonitorLegacyServiceState(row.AvailabilityStatus)
 			row.GroupEligibility = accountMonitorEligibilityEligible
@@ -1289,9 +1244,7 @@ func (s *AccountMonitorService) projectGroupWindowQuality(
 			row.CostScore = accountMonitorCostScore(group.RateMultiplier, cost.EffectiveMultiplier, group.ScoreWeights)
 			scoreEvidence, scoreStatus, scoreEligible := accountMonitorWindowScoreProjection(account, row.ScoreStatus, evidence)
 			if !scoreEligible {
-				if historical := accountMonitorHistoricalEvidence(historicalProbe); historical.SampleCount > 0 {
-					scoreEvidence, scoreStatus, scoreEligible = accountMonitorWindowScoreProjection(account, row.ScoreStatus, historical)
-				}
+				// No group-scoped fallback may replace the account observation stream.
 			}
 			row.ScoreStatus = scoreStatus
 			row.Eligible = scoreEligible && row.GroupEligibility == accountMonitorEligibilityEligible

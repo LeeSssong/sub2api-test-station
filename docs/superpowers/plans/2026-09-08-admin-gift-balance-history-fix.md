@@ -360,7 +360,7 @@ rg -n "\.env|password|token|secret|BEGIN .*PRIVATE KEY|Authorization: Bearer" --
 - [ ] **Step 5: 提交最终交接**
 
 ```bash
-git add docs/handoffs/2026-09-09-admin-gift-balance-history-fix-handoff.md
+git add docs/handoffs/2026-09-08-admin-gift-balance-history-fix-handoff.md
 git commit -m "docs: hand off admin gift balance history fix"
 ```
 

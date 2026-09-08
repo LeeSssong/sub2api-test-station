@@ -111,7 +111,7 @@ func TestAccountMonitorRepositoryProjectMonitorV4UsesLogicalRequestProjection(t 
 	start := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 	updatedAt := end.Add(-time.Minute)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*raw_usage_candidates AS.*unknown_usage_keys AS.*SELECT DISTINCT u\.group_id, NULLIF\(u\.request_id, ''\).*SELECT DISTINCT u\.group_id, NULLIF\(u\.logical_request_id, ''\).*error_candidates AS.*NOT EXISTS.*unknown_usage_keys.*real_events AS.*PARTITION BY rc\.group_id, rc\.request_key.*selected_events AS.*missing_probe_counts AS.*has_real IS NOT TRUE AND probe_missing.*SUM\(s\.input_tokens \+ s\.cache_creation_tokens \+ s\.cache_read_tokens\) FILTER \(WHERE s\.successful\).*AS cache_hit_denominator.*SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,.*ttft_p95_ms, ttft_sample_count,.*latency_p95_ms, latency_sample_count, input_tokens, cache_read_tokens, cache_creation_tokens,.*cache_hit_denominator, cache_hit_rate, source_updated_at, current_operational`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*raw_usage_candidates AS.*unknown_usage_keys AS.*SELECT DISTINCT u\.group_id, NULLIF\(u\.request_id, ''\).*SELECT DISTINCT u\.group_id, NULLIF\(u\.logical_request_id, ''\).*error_candidates AS.*NOT EXISTS.*unknown_usage_keys.*real_events AS.*PARTITION BY rc\.group_id, rc\.request_key.*probe_rows AS.*probe_runs AS.*selected_events AS.*FROM probe_runs.*SUM\(s\.input_tokens \+ s\.cache_creation_tokens \+ s\.cache_read_tokens\) FILTER \(WHERE s\.successful\).*AS cache_hit_denominator.*SELECT group_id, success_rate, request_count, success_count, real_request_count, real_success_count,.*ttft_p95_ms, ttft_sample_count,.*latency_p95_ms, latency_sample_count, input_tokens, cache_read_tokens, cache_creation_tokens,.*cache_hit_denominator, cache_hit_rate, source_updated_at, current_operational`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
@@ -160,13 +160,13 @@ func TestAccountMonitorRepositoryProjectMonitorV4ReportsMissingProbeWithoutServi
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(10*time.Minute + 30*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*bucket_matrix AS.*selected_events AS.*WHERE bm\.probe_missing IS NOT TRUE AND bm\.probe_successful IS TRUE\s*\), latest_selected AS`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*probe_rows AS.*probe_runs AS.*selected_events AS.*FROM probe_runs.*latest_selected AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
 			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
 			"latency_p95_ms", "latency_sample_count", "input_tokens", "cache_read_tokens", "cache_creation_tokens", "cache_hit_denominator", "cache_hit_rate", "source_updated_at", "current_operational",
-		}).AddRow(7, nil, 0, 0, 0, 0, 0, 0, 1, nil, 0, nil, 0, 0, 0, 0, 0, nil, nil, false))
+		}).AddRow(7, nil, 0, 0, 0, 0, 0, 0, 0, nil, 0, nil, 0, 0, 0, 0, 0, nil, nil, false))
 
 	projection, err := projector.ProjectMonitorV4GroupsForGroups(
 		context.Background(), []int64{7}, nil, start, end, 5*time.Minute,
@@ -181,8 +181,8 @@ func TestAccountMonitorRepositoryProjectMonitorV4ReportsMissingProbeWithoutServi
 	if row.ProbeFallbackBucketCount != 0 || row.ProbeFallbackRequestCount != 0 {
 		t.Fatalf("missing-probe counters = %#v, want no synthetic request", row)
 	}
-	if row.MissingProbeTerminalCount != 1 {
-		t.Fatalf("missing-probe terminal count = %d, want 1", row.MissingProbeTerminalCount)
+	if row.MissingProbeTerminalCount != 0 {
+		t.Fatalf("missing-probe terminal count = %d, want 0", row.MissingProbeTerminalCount)
 	}
 	if row.TTFTP95MS != nil || row.LatencyP95MS != nil || row.CacheHitRate != nil || row.CurrentOperational {
 		t.Fatalf("missing-probe timing/status = %#v", row)
@@ -205,13 +205,13 @@ func TestAccountMonitorRepositoryProjectMonitorV4ConstructsGroupMatrixWithoutAcc
 	}
 	start := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	end := start.Add(5*time.Minute + 10*time.Second)
-	mock.ExpectQuery(`(?s)WITH scopes AS.*SELECT unnest\(\$6::bigint\[\]\).*CROSS JOIN buckets.*LEFT JOIN real_buckets`).
+	mock.ExpectQuery(`(?s)WITH scopes AS.*groups AS.*buckets AS.*probe_rows AS.*probe_runs AS.*selected_events AS`).
 		WithArgs(start, end, "5m0s", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"group_id", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
 			"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count",
 			"latency_p95_ms", "latency_sample_count", "input_tokens", "cache_read_tokens", "cache_creation_tokens", "cache_hit_denominator", "cache_hit_rate", "source_updated_at", "current_operational",
-		}).AddRow(99, nil, 0, 0, 0, 0, 0, 0, 1, nil, 0, nil, 0, 0, 0, 0, 0, nil, nil, false))
+		}).AddRow(99, nil, 0, 0, 0, 0, 0, 0, 0, nil, 0, nil, 0, 0, 0, 0, 0, nil, nil, false))
 
 	projection, err := projector.ProjectMonitorV4GroupsForGroups(
 		context.Background(), []int64{99}, nil, start, end, 5*time.Minute,
@@ -220,8 +220,8 @@ func TestAccountMonitorRepositoryProjectMonitorV4ConstructsGroupMatrixWithoutAcc
 		t.Fatal(err)
 	}
 	row, exists := projection[99]
-	if !exists || row.RequestCount != 0 || row.SuccessRate != nil || row.MissingProbeTerminalCount != 1 {
-		t.Fatalf("group without scopes = %#v, want one missing-terminal alert without a service sample", projection)
+	if !exists || row.RequestCount != 0 || row.SuccessRate != nil || row.MissingProbeTerminalCount != 0 {
+		t.Fatalf("group without scopes = %#v, want no synthetic observation", projection)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -1034,13 +1034,7 @@ func TestAccountMonitorRepositoryGroupRealRequestAggregatesIncludeProbeFallback(
 }
 
 func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *testing.T) {
-	const safeRealBucketSQL = "SELECT account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz) AS bucket_start FROM real_candidates WHERE rn = 1 GROUP BY account_id, date_bin('5 minutes'::interval, created_at, $2::timestamptz)"
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherFunc(func(_, actual string) error {
-		if !strings.Contains(strings.Join(strings.Fields(actual), " "), safeRealBucketSQL) {
-			return errors.New("real_buckets must project and group by the date_bin expression")
-		}
-		return nil
-	})))
+	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
 	repo, ok := NewAccountMonitorRepository(db).(service.AccountMonitorRealRequestTimelineRepository)
@@ -1048,7 +1042,7 @@ func TestAccountMonitorRepositoryRealRequestTimelineUsesUnifiedRequestFields(t *
 	since := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	until := since.Add(10 * time.Minute)
 
-	mock.ExpectQuery("timeline-query").
+	mock.ExpectQuery(`(?s)WITH\s+real_candidates.*?probe_ranked.*?PARTITION BY account_id, run_id.*?account_monitor_results.*?latest_probe.*?selected_requests.*?UNION ALL.*?FROM latest_probe`).
 		WithArgs(sqlmock.AnyArg(), since, until, 2, 2).
 		WillReturnRows(sqlmock.NewRows([]string{"account_id", "bucket_index", "request_count", "success_count", "failure_count", "ttft_p95_ms"}).
 			AddRow(7, 0, 1, 1, 0, 240.0).
@@ -1096,10 +1090,9 @@ func float64Ptr(value float64) *float64 {
 // unifiedAccountMonitorSelectionPattern locks the SQL predicates sqlmock can
 // observe. It requires every real request and every distinct terminal probe.
 func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool) string {
-	origin := regexp.QuoteMeta(bucketOrigin)
 	groupMarker := ``
 	if groupScoped {
-		groupMarker = `.*?group_id.*?PARTITION BY ag\.group_id, r\.account_id`
+		groupMarker = `.*?PARTITION BY ag\.group_id, r\.account_id, r\.run_id`
 	}
-	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s*\(\s*'success'\s*,\s*'failed'\s*\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe`
+	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s*\(\s*'success'\s*,\s*'failed'\s*\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe`
 }

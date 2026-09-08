@@ -465,9 +465,7 @@ const callsPanelID = computed(() => `account-calls-${props.account.account_id}`)
 const callsTitle = computed(() => ({ '24h': '24 小时调用', '7d': '7 天调用', '30d': '30 天调用' }[props.selectedRange]))
 const callsSummary = computed(() => `${successfulRequestCount.value}/${formatNumber(props.account.request_count)}`)
 const successfulRequestCount = computed(() => {
-  const total = Number(props.account.request_count) || 0
-  const failures = Number(props.account.error_count ?? (props.account as unknown as { failure_count?: number }).failure_count) || 0
-  return Math.max(0, total - failures)
+	return Math.max(0, Number(props.account.success_count) || 0)
 })
 const successRate = computed(() => {
   if (props.account.success_rate != null && (props.account.sample_count > 0 || props.account.request_count > 0)) return formatPercent(props.account.success_rate)

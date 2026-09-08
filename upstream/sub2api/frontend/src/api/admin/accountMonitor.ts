@@ -282,6 +282,7 @@ export interface AccountMonitorAccount {
   effective_cost_u?: number | null
   effective_cost_status?: string
   request_count: number
+  success_count: number
   lifetime_real_request_count: number
   error_count: number
   range?: AccountMonitorRange

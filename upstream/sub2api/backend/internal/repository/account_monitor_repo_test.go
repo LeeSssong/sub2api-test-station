@@ -536,11 +536,11 @@ func TestAccountMonitorRepositoryProbeLatencyAggregatesUseOnlySuccessfulProbes(t
 	since := time.Date(2026, 8, 6, 8, 0, 0, 0, time.UTC)
 	until := time.Date(2026, 8, 7, 8, 0, 0, 0, time.UTC)
 
-	successOnlyMetrics := `(?s)` +
-		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
+	probeMetrics := `(?s)` +
+		`COUNT\(\*\)::int,\s*` +
 		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
 		`COUNT\(\*\) FILTER \(WHERE status <> 'success'\)::int,\s*` +
-		`COALESCE\(\s*COUNT\(\*\) FILTER \(WHERE status = 'success'\)::double precision /\s*NULLIF\(COUNT\(\*\) FILTER \(WHERE status = 'success'\), 0\),\s*0\s*\),\s*` +
+		`COALESCE\(\s*COUNT\(\*\) FILTER \(WHERE status = 'success'\)::double precision /\s*NULLIF\(COUNT\(\*\), 0\),\s*0\s*\),\s*` +
 		`COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*` +
 		`COUNT\(ttft_ms\) FILTER \(WHERE status = 'success'\)::int,\s*` +
 		`COUNT\(latency_ms\) FILTER \(WHERE status = 'success'\)::int,\s*` +
@@ -549,18 +549,18 @@ func TestAccountMonitorRepositoryProbeLatencyAggregatesUseOnlySuccessfulProbes(t
 		`PERCENTILE_CONT\(0\.50\).*FILTER \(WHERE status = 'success' AND latency_ms IS NOT NULL\),\s*` +
 		`PERCENTILE_CONT\(0\.95\).*FILTER \(WHERE status = 'success' AND latency_ms IS NOT NULL\)`
 
-	mock.ExpectQuery(successOnlyMetrics).
+	mock.ExpectQuery(probeMetrics).
 		WithArgs(sqlmock.AnyArg(), since, until).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"account_id", "sample_count", "success_count", "error_count", "success_rate",
 			"success_sample_count", "ttft_sample_count", "latency_sample_count",
 			"ttft_p50", "ttft_p95", "latency_p50", "latency_p95", "last_checked_at",
-		}).AddRow(7, 1, 1, 1, 1.0, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
+		}).AddRow(7, 2, 1, 1, 0.5, 1, 1, 1, 80.0, 80.0, 200.0, 200.0, until.Add(-time.Minute)))
 	if _, err := repo.ListAggregates(context.Background(), []int64{7}, since, until); err != nil {
 		t.Fatal(err)
 	}
 
-	mock.ExpectQuery(successOnlyMetrics).
+	mock.ExpectQuery(`(?s)COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*COUNT\(\*\) FILTER \(WHERE status = 'success'\)::int,\s*COUNT\(\*\) FILTER \(WHERE status <> 'success'\)::int,\s*COALESCE\(\s*COUNT\(\*\) FILTER \(WHERE status = 'success'\)::double precision /\s*NULLIF\(COUNT\(\*\) FILTER \(WHERE status = 'success'\), 0\)`).
 		WithArgs(sqlmock.AnyArg(), since).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"sample_count", "success_count", "error_count", "success_rate",
@@ -1094,14 +1094,12 @@ func float64Ptr(value float64) *float64 {
 }
 
 // unifiedAccountMonitorSelectionPattern locks the SQL predicates sqlmock can
-// observe. It deliberately permits unrelated projections, but requires the
-// only two sources of selected rows: every real request, or one latest
-// terminal probe from a bucket without a real request.
+// observe. It requires every real request and every distinct terminal probe.
 func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool) string {
 	origin := regexp.QuoteMeta(bucketOrigin)
 	groupMarker := ``
 	if groupScoped {
 		groupMarker = `.*?group_id.*?PARTITION BY ag\.group_id, r\.account_id`
 	}
-	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s*\(\s*'success'\s*,\s*'failed'\s*\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe.*?NOT EXISTS.*?FROM\s+real_buckets`
+	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?real_buckets(?:\s*\([^)]*\))?\s+AS.*?date_bin.*?created_at.*?` + origin + `.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s*\(\s*'success'\s*,\s*'failed'\s*\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe`
 }

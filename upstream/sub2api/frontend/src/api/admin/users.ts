@@ -175,12 +175,15 @@ export async function updateBalance(
   id: number,
   balance: number,
   operation: 'set' | 'add' | 'subtract' = 'set',
-  notes?: string
+  notes?: string,
+  idempotencyKey = createIdempotencyKey()
 ): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, {
     balance,
     operation,
     notes: notes || ''
+  }, {
+    headers: { 'Idempotency-Key': idempotencyKey }
   })
   return data
 }

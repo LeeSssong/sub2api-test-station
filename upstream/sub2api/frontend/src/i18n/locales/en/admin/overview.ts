@@ -634,6 +634,8 @@ export default {
       giftAmount: 'Gift Amount',
       deductAmount: 'Deduct Amount',
       deductAllGift: 'All Gift',
+      adminGiftBalance: 'Balance Gift (Admin)',
+      adminGiftDeduction: 'Balance Deduction (Admin)',
       giftQuota: 'Gift Quota',
       refundGiftClears: 'Accounting refunds reduce recharge quota only; gift quota stays unchanged.',
       withdrawAll: 'All',

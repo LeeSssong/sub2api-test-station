@@ -4,7 +4,7 @@
       <!-- User header: two-row layout with full user info -->
       <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <!-- Row 1: avatar + email/username/created_at (left) + current balance (right) -->
-        <div class="flex items-center gap-3">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30">
             <span class="text-lg font-medium text-primary-700 dark:text-primary-300">
               {{ user.email.charAt(0).toUpperCase() }}
@@ -27,12 +27,20 @@
               {{ t('admin.users.createdAt') }}: {{ formatDateTime(user.created_at) }}
             </p>
           </div>
-          <!-- Current balance: prominent display on the right -->
-          <div class="flex-shrink-0 text-right">
-            <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentSpendableBalance') }}</p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
-              {{ quotaSummary ? `$${formatBalance(Number(quotaSummary.total_quota_balance_usd))}` : '—' }}
-            </p>
+          <!-- Keep available, paid, and gift quota visibly separate. -->
+          <div class="grid w-full grid-cols-3 gap-3 text-right sm:w-auto">
+            <div>
+              <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentSpendableBalance') }}</p>
+              <p class="text-lg font-bold text-gray-900 dark:text-white">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.total_quota_balance_usd))}` : '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.paidQuota') }}</p>
+              <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.paid_quota_balance_usd))}` : '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.giftQuota') }}</p>
+              <p class="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{{ quotaSummary ? `$${formatBalance(Number(quotaSummary.gift_quota_balance_usd))}` : '—' }}</p>
+            </div>
           </div>
         </div>
         <!-- Row 2: notes + total recharged -->
@@ -45,66 +53,36 @@
       </div>
 
       <!-- Type filter + Action buttons -->
-      <div class="flex items-center gap-3">
-        <div class="flex rounded-lg border border-gray-200 p-1 dark:border-dark-600">
-          <button class="rounded px-3 py-1 text-sm" :class="activeTab === 'legacy' ? 'bg-gray-100 dark:bg-dark-700' : ''" @click="activeTab = 'legacy'">{{ t('admin.users.legacyHistory') }}</button>
-          <button class="rounded px-3 py-1 text-sm" :class="activeTab === 'quota' ? 'bg-gray-100 dark:bg-dark-700' : ''" @click="activeTab = 'quota'; loadQuotaLedger(1)">{{ t('admin.users.quotaLedger') }}</button>
-        </div>
+      <div class="flex flex-wrap items-center gap-3">
         <Select
-          v-show="activeTab === 'legacy'"
           v-model="typeFilter"
           :options="typeOptions"
           class="w-56"
           @change="loadHistory(1)"
         />
-        <!-- Deposit button - matches menu style -->
+        <!-- Gift button - matches menu style -->
         <button
           v-if="!hideActions"
-          @click="emit('deposit')"
+          @click="emit('gift')"
           class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
         >
           <Icon name="plus" size="sm" class="text-emerald-500" :stroke-width="2" />
-          {{ t('admin.users.deposit') }}
+          {{ t('admin.users.gift') }}
         </button>
-        <!-- Withdraw button - matches menu style -->
+        <!-- Deduct button - matches menu style -->
         <button
           v-if="!hideActions"
-          @click="emit('withdraw')"
+          @click="emit('deduct')"
           class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
         >
           <svg class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
           </svg>
-          {{ t('admin.users.withdraw') }}
+          {{ t('admin.users.deduct') }}
         </button>
-        <button v-if="!hideActions" class="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700" @click="loadRefundOrders('channel')">{{ t('admin.users.paymentChannelRefund') }}</button>
       </div>
 
-      <div v-if="refundMode" class="rounded-lg border border-gray-200 p-3 dark:border-dark-600">
-        <div class="mb-2 flex items-center justify-between"><span class="text-sm font-medium">{{ refundMode === 'accounting' ? t('admin.users.accountingRefund') : t('admin.users.paymentChannelRefund') }}</span><button class="text-xs text-gray-500" @click="refundMode = null">{{ t('common.close') }}</button></div>
-        <div v-if="refundLoading" class="py-4 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
-        <div v-else-if="refundOrders.length === 0" class="py-4 text-center text-sm text-gray-500">{{ t('admin.users.noRefundableOrders') }}</div>
-        <div v-else class="space-y-2">
-          <button v-for="order in refundOrders" :key="order.id" class="flex w-full items-center justify-between rounded border border-gray-200 p-2 text-left hover:bg-gray-50 dark:border-dark-600 dark:hover:bg-dark-700" @click="emit('refund-order', order)">
-            <span><span class="font-mono text-xs">#{{ order.id }}</span> <span class="ml-2 text-sm">{{ order.out_trade_no }}</span></span><span class="text-sm font-medium">${{ Number(order.paid_quota_usd ?? order.amount).toFixed(2) }}</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Loading -->
-      <div v-if="activeTab === 'quota'" class="space-y-3">
-        <div v-if="quotaLoading" class="py-8 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
-        <div v-else-if="quotaHistory.length === 0" class="py-8 text-center text-sm text-gray-500">{{ t('admin.users.noQuotaLedger') }}</div>
-        <div v-else class="max-h-[28rem] space-y-3 overflow-y-auto">
-          <div v-for="item in quotaHistory" :key="item.id" class="rounded-xl border border-gray-200 p-3 dark:border-dark-600">
-            <div class="flex justify-between text-sm"><span class="font-medium">{{ item.record_type }}</span><span>{{ formatDateTime(item.created_at) }}</span></div>
-            <div class="mt-1 grid grid-cols-3 gap-2 text-xs text-gray-500"><span>¥{{ item.cash_delta_cny }}</span><span>付费 {{ item.paid_quota_delta_usd }}</span><span>赠送 {{ item.gift_quota_delta_usd }}</span></div>
-            <p v-if="item.note" class="mt-1 text-xs text-gray-500">{{ item.note }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="activeTab === 'legacy' && loading" class="flex justify-center py-8">
+      <div v-if="loading" class="flex justify-center py-8">
         <svg class="h-8 w-8 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -112,12 +90,12 @@
       </div>
 
       <!-- Empty state -->
-      <div v-else-if="activeTab === 'legacy' && history.length === 0" class="py-8 text-center">
+      <div v-else-if="history.length === 0" class="py-8 text-center">
         <p class="text-sm text-gray-500">{{ t('admin.users.noBalanceHistory') }}</p>
       </div>
 
       <!-- History list -->
-      <div v-else-if="activeTab === 'legacy'" class="max-h-[28rem] space-y-3 overflow-y-auto">
+      <div v-else class="max-h-[28rem] space-y-3 overflow-y-auto">
         <div
           v-for="item in history"
           :key="item.id"
@@ -174,7 +152,7 @@
       </div>
 
       <!-- Pagination -->
-      <div v-if="activeTab === 'legacy' && totalPages > 1" class="flex items-center justify-center gap-2 pt-2">
+      <div v-if="totalPages > 1" class="flex items-center justify-center gap-2 pt-2">
         <button
           :disabled="currentPage <= 1"
           class="btn btn-secondary px-3 py-1 text-sm"
@@ -200,9 +178,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { adminAPI, type BalanceHistoryItem, type QuotaLedgerEntry, type QuotaSummary } from '@/api/admin'
-import { adminPaymentAPI } from '@/api/admin/payment'
-import type { PaymentOrder } from '@/types/payment'
+import { adminAPI, type BalanceHistoryItem, type QuotaSummary } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -210,7 +186,7 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const props = defineProps<{ show: boolean; user: AdminUser | null; hideActions?: boolean }>()
-const emit = defineEmits(['close', 'deposit', 'withdraw', 'refund-order'])
+const emit = defineEmits(['close', 'gift', 'deduct'])
 const { t } = useI18n()
 
 const history = ref<BalanceHistoryItem[]>([])
@@ -220,15 +196,7 @@ const total = ref(0)
 const totalRecharged = ref(0)
 const pageSize = 15
 const typeFilter = ref('')
-const activeTab = ref<'legacy' | 'quota'>('legacy')
-const quotaHistory = ref<QuotaLedgerEntry[]>([])
-const quotaLoading = ref(false)
-const quotaTotal = ref(0)
-const quotaPage = ref(1)
 const quotaSummary = ref<QuotaSummary | null>(null)
-const refundMode = ref<'accounting' | 'channel' | null>(null)
-const refundOrders = ref<PaymentOrder[]>([])
-const refundLoading = ref(false)
 
 const totalPages = computed(() => Math.ceil(total.value / pageSize) || 1)
 
@@ -247,30 +215,11 @@ const typeOptions = computed(() => [
 watch(() => props.show, (v) => {
   if (v && props.user) {
     typeFilter.value = ''
-    activeTab.value = 'legacy'
-    quotaHistory.value = []
     quotaSummary.value = null
-    refundMode.value = null
-    refundOrders.value = []
     loadHistory(1)
     void loadQuotaSummary()
   }
 })
-
-const loadRefundOrders = async (mode: 'channel') => {
-  if (!props.user) return
-  refundMode.value = mode
-  refundLoading.value = true
-  try {
-    const result = await adminPaymentAPI.getOrders({ user_id: props.user.id, page: 1, page_size: 100 })
-    refundOrders.value = (result.data.items || []).filter((order) => {
-      const active = order.status === 'COMPLETED' || order.status === 'PARTIALLY_REFUNDED'
-      return active && Boolean(order.provider_instance_id)
-    })
-  } finally {
-    refundLoading.value = false
-  }
-}
 
 const loadQuotaSummary = async () => {
   if (!props.user) return
@@ -308,19 +257,6 @@ const loadHistory = async (page: number) => {
     console.error('Failed to load balance history:', error)
   } finally {
     loading.value = false
-  }
-}
-
-const loadQuotaLedger = async (page: number) => {
-  if (!props.user) return
-  quotaLoading.value = true
-  quotaPage.value = page
-  try {
-    const result = await adminAPI.users.getUserQuotaLedger(props.user.id, page, pageSize)
-    quotaHistory.value = result.items
-    quotaTotal.value = result.total
-  } finally {
-    quotaLoading.value = false
   }
 }
 

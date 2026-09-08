@@ -1,14 +1,13 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getUserBalanceHistory, getUserQuotaLedger, getUserQuotaSummary } = vi.hoisted(() => ({
+const { getUserBalanceHistory, getUserQuotaSummary } = vi.hoisted(() => ({
   getUserBalanceHistory: vi.fn(),
-  getUserQuotaLedger: vi.fn(),
   getUserQuotaSummary: vi.fn(),
 }))
 
 vi.mock('@/api/admin', () => ({
-  adminAPI: { users: { getUserBalanceHistory, getUserQuotaLedger, getUserQuotaSummary } },
+  adminAPI: { users: { getUserBalanceHistory, getUserQuotaSummary } },
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -30,7 +29,6 @@ describe('UserBalanceHistoryModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getUserBalanceHistory.mockResolvedValue({ items: [], total: 0, total_recharged: 0 })
-    getUserQuotaLedger.mockResolvedValue({ items: [], total: 0 })
     getUserQuotaSummary.mockResolvedValue({
       paid_quota_balance_usd: '18.84689040',
       gift_quota_balance_usd: '0.00000000',
@@ -68,5 +66,22 @@ describe('UserBalanceHistoryModal', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('refundableCashBalance')
+  })
+
+  it('keeps only balance and concurrency history actions', async () => {
+    const wrapper = shallowMount(UserBalanceHistoryModal, {
+      props: { show: false, user },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('quotaLedger')
+    expect(wrapper.text()).not.toContain('paymentChannelRefund')
+    expect(wrapper.findAll('button').map((button) => button.text())).toEqual(expect.arrayContaining([
+      'admin.users.gift',
+      'admin.users.deduct',
+    ]))
   })
 })

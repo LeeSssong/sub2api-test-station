@@ -46,7 +46,13 @@ const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'a
 const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()
 
 const submitting = ref(false); const summary = ref<QuotaSummary | null>(null); const form = reactive({ amount: 0, giftQuota: 0, paymentTradeNo: '', notes: '' })
-watch(() => props.show, (v) => { if(v) { form.amount = 0; form.giftQuota = 0; form.paymentTradeNo = ''; form.notes = ''; summary.value = null; if (props.user) void loadSummary(props.user.id) } })
+const generateAdminTradeNo = () => {
+  const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 17)
+  const random = globalThis.crypto?.randomUUID?.().replace(/-/g, '').slice(0, 8).toUpperCase()
+    ?? Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, '0')
+  return `ADMIN-${timestamp}-${random}`
+}
+watch(() => props.show, (v) => { if(v) { form.amount = 0; form.giftQuota = 0; form.paymentTradeNo = props.operation === 'add' ? generateAdminTradeNo() : ''; form.notes = ''; summary.value = null; if (props.user) void loadSummary(props.user.id) } })
 const loadSummary = async (id: number) => { try { summary.value = await adminAPI.users.getUserQuotaSummary(id) } catch { summary.value = null } }
 
 const refundableCashBalance = computed(() => {

@@ -116,6 +116,29 @@ describe('UserBalanceModal', () => {
     expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, expect.objectContaining({ payment_trade_no: 'ADMIN-20260904' }))
   })
 
+  it('generates a transaction number so entering only a recharge amount enables confirmation', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    const tradeNoInput = wrapper.find('input[type="text"]')
+    expect(tradeNoInput.element.value).toMatch(/^ADMIN-\d{17}-[A-Z0-9]{8}$/)
+
+    await wrapper.findAll('input[type="number"]')[0].setValue('110')
+    const confirm = wrapper.find('button[type="submit"]')
+    expect(confirm.attributes('disabled')).toBeUndefined()
+
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
+
+    expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, expect.objectContaining({
+      amount_cny: 110,
+      payment_trade_no: tradeNoInput.element.value,
+    }))
+  })
+
   it('shows refreshed quota summary rather than the stale users-list balance', async () => {
     const wrapper = mount(UserBalanceModal, {
       props: { show: false, user: { ...user, balance: 0.33 }, operation: 'add' },

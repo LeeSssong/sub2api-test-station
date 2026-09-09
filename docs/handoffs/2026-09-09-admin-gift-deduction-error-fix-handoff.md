@@ -3,8 +3,8 @@
 - 任务：管理员赠送额度扣除报错修复
 - 基线：`origin/main@02792c02da54a2816a4967cfba4aa4db9c5a07d6`
 - 候选分支：`codex/admin-gift-deduction-error-fix`
-- 根 `main` 合并提交：`e7df39ef20950f4e708ff5bac4638436fa6781a2`
-- 根 `main` tree：`7029154296be02b306d03dcf6fa8fc6e31baa1ec`
+- 根 `main` 合并提交：`b1f56f932f7d38241849094902f5fc113a05db12`
+- 根 `main` tree：`1a6f12985e9fc1fb8bf2ad769b16eb37ed17c9b3`
 - 作者：Codex
 - 时间：2026-09-09
 - 状态：已合入并推送根 `main`，独立测试站已部署，等待管理员功能验收
@@ -45,6 +45,6 @@
 - 生产/测试站数据：未触碰。
 - 凭据：未读取或写入。
 - 主站授权：未取得，未部署。
-- 测试站发布：已执行成功。release `/opt/sub2api-test-station/releases/e7df39ef20950f4e708ff5bac4638436fa6781a2`，image digest `561ea1503064a8e9bfea61a2fcfcbd5fa51cf6f90aecb09313253c19fc1af778`；`/health` 返回 `{"status":"ok"}`，`/readyz` HTTP 200，API/worker/detector/PostgreSQL/Redis/Caddy healthy。
+- 测试站发布：已执行成功。release `/opt/sub2api-test-station/releases/b1f56f932f7d38241849094902f5fc113a05db12`，image digest `fed0f609a051eee6bd6540c240982b1de5516f7d3ef1416f5a0967b4f7cd5039`；`/health` 返回 `{"status":"ok"}`，`/readyz` HTTP 200，API/worker/detector/PostgreSQL/Redis/Caddy healthy。
 - 回滚：切回测试站上一已验证 release；本次无数据迁移，不需要数据回滚。
 - 未验证：尚未进行真实管理员登录态扣除操作；需在测试站先验证“足额扣除成功、赠送额度不足提示、充值额度保持不变、重复请求不重复扣除”。

@@ -528,7 +528,7 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		return nil, fmt.Errorf("unsupported balance operation: %q", operation)
 	}
 	if errors.Is(err, ErrBalanceNegative) {
-		return nil, fmt.Errorf("gift quota is insufficient: %w", err)
+		return nil, ErrGiftQuotaInsufficient
 	}
 	if err != nil {
 		return nil, err

@@ -98,4 +98,29 @@ describe('UserBalanceModal', () => {
     await flushPromises()
     expect(showError).toHaveBeenCalledWith('admin.users.insufficientBalance')
   })
+
+  it('maps backend gift quota insufficiency to the explicit user-facing error', async () => {
+    getUserQuotaSummary.mockResolvedValue({
+      paid_quota_balance_usd: '21.00000000',
+      gift_quota_balance_usd: '3.00000000',
+      total_quota_balance_usd: '24.00000000',
+    })
+    updateBalance.mockRejectedValue({
+      reason: 'GIFT_QUOTA_INSUFFICIENT',
+      message: 'gift quota is insufficient',
+    })
+
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'subtract' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    await wrapper.find('input[type="number"]').setValue('2')
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('admin.users.insufficientGiftQuota')
+  })
 })

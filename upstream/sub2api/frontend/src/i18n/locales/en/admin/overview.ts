@@ -582,6 +582,7 @@ export default {
       concurrencyNonNegative: 'Concurrency cannot be negative; 0 = unlimited',
       amountRequired: 'Please enter a valid amount',
       insufficientBalance: 'Insufficient balance',
+      insufficientGiftQuota: 'Insufficient gift quota; recharge quota cannot be deducted',
       adjustBalance: 'Adjust Balance',
       adjustConcurrency: 'Adjust Concurrency',
       adjustmentAmount: 'Adjustment Amount',

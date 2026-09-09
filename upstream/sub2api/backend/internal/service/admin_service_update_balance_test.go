@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -130,6 +131,7 @@ func TestAdminService_UpdateUserBalance_RejectsGiftDeductionShortfall(t *testing
 
 	_, err := svc.UpdateUserBalance(context.Background(), 7, 6, "subtract", "deduct", 99, "deduct-key")
 	require.ErrorIs(t, err, ErrBalanceNegative)
+	require.Equal(t, "GIFT_QUOTA_INSUFFICIENT", infraerrors.Reason(err))
 	require.Empty(t, adjuster.deductCall)
 	require.Equal(t, 20.0, adjuster.paid)
 	require.Equal(t, 5.0, adjuster.gift)

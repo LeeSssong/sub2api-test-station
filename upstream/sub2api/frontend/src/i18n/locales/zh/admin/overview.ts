@@ -606,6 +606,7 @@ export default {
       concurrencyNonNegative: '并发数不能为负数，0 表示不限制',
       amountRequired: '请输入有效金额',
       insufficientBalance: '余额不足',
+      insufficientGiftQuota: '赠送额度不足，不能扣除充值额度',
       setAllowedGroups: '设置允许分组',
       allowedGroupsHint: '选择此用户可以使用的标准分组。订阅类型分组请在订阅管理中配置。',
       noStandardGroups: '暂无标准分组',

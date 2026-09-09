@@ -148,4 +148,3 @@
   git add docs/handoffs/2026-09-09-admin-gift-deduction-error-fix-handoff.md
   git commit -m "docs: hand off admin gift deduction error fix"
   ```
-

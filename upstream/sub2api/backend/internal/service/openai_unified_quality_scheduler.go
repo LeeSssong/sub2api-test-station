@@ -9,16 +9,27 @@ import (
 
 const openAIAccountScheduleLayerUnifiedQuality = "unified_quality"
 
+const (
+	openAIUnifiedQualityResourceTierSelfOwned = "self_owned"
+	openAIUnifiedQualityResourceTierAPIKey    = "api_key"
+	openAIUnifiedQualityMaturityConfidence    = 0.75
+	openAIUnifiedQualityMaxPrioritySignal     = 15.0
+)
+
 type openAIUnifiedQualityRecheckKey struct{}
 
 // openAIUnifiedQualityCandidate contains only the values that are allowed to
-// affect ordinary text ordering. Capacity, priority, fairness, sticky bonus,
-// and total duration deliberately do not appear in this comparator contract.
+// affect ordinary text ordering. Self-owned ordering uses native priority and
+// load; API-key priority is only a bounded cold-start signal.
 type openAIUnifiedQualityCandidate struct {
 	account             *Account
 	quality             OpenAIQualityBreakdown
 	effectiveU          *float64
 	effectiveCostStatus string
+	resourceTier        string
+	loadInfo            *AccountLoadInfo
+	priority            int
+	coldStart           bool
 }
 
 type openAIProfitPartition struct {
@@ -86,8 +97,29 @@ func isOpenAIUnifiedQualityCandidateBetter(left, right openAIUnifiedQualityCandi
 	if left.account == nil || right.account == nil {
 		return left.account != nil
 	}
-	if left.quality.QualityScore != right.quality.QualityScore {
-		return left.quality.QualityScore > right.quality.QualityScore
+	leftTier, rightTier := left.resourceTier, right.resourceTier
+	if leftTier == "" {
+		leftTier = openAIUnifiedQualityResourceTierAPIKey
+	}
+	if rightTier == "" {
+		rightTier = openAIUnifiedQualityResourceTierAPIKey
+	}
+	if leftTier != rightTier {
+		return leftTier == openAIUnifiedQualityResourceTierSelfOwned
+	}
+	if leftTier == openAIUnifiedQualityResourceTierSelfOwned {
+		if left.priority != right.priority {
+			return left.priority < right.priority
+		}
+		if cmp := compareOpenAIUnifiedQualityLoad(left.loadInfo, right.loadInfo); cmp != 0 {
+			return cmp < 0
+		}
+		return left.account.ID < right.account.ID
+	}
+	leftScore := left.quality.QualityScore + openAIUnifiedQualityCandidatePrioritySignal(left)
+	rightScore := right.quality.QualityScore + openAIUnifiedQualityCandidatePrioritySignal(right)
+	if leftScore != rightScore {
+		return leftScore > rightScore
 	}
 	if left.quality.SuccessScore != right.quality.SuccessScore {
 		return left.quality.SuccessScore > right.quality.SuccessScore
@@ -96,6 +128,66 @@ func isOpenAIUnifiedQualityCandidateBetter(left, right openAIUnifiedQualityCandi
 		return cmp < 0
 	}
 	return left.account.ID < right.account.ID
+}
+
+func openAIUnifiedQualityResourceTierForAccount(account *Account) string {
+	if account != nil && account.IsOpenAIOAuthLike() {
+		return openAIUnifiedQualityResourceTierSelfOwned
+	}
+	return openAIUnifiedQualityResourceTierAPIKey
+}
+
+func openAIUnifiedQualityColdStartPrioritySignal(priority int, confidence float64) float64 {
+	if confidence >= openAIUnifiedQualityMaturityConfidence {
+		return 0
+	}
+	priority = clampInt(priority, 1, 100)
+	strength := 1 - math.Max(0, confidence)/openAIUnifiedQualityMaturityConfidence
+	return ((50 - float64(priority)) / 49) * openAIUnifiedQualityMaxPrioritySignal * strength
+}
+
+func openAIUnifiedQualityCandidatePrioritySignal(candidate openAIUnifiedQualityCandidate) float64 {
+	if candidate.resourceTier != openAIUnifiedQualityResourceTierAPIKey || !candidate.coldStart {
+		return 0
+	}
+	return openAIUnifiedQualityColdStartPrioritySignal(candidate.priority, candidate.quality.Confidence)
+}
+
+func compareOpenAIUnifiedQualityLoad(left, right *AccountLoadInfo) int {
+	leftRate, rightRate := 0, 0
+	leftWaiting, rightWaiting := 0, 0
+	if left != nil {
+		leftRate, leftWaiting = left.LoadRate, left.WaitingCount
+	}
+	if right != nil {
+		rightRate, rightWaiting = right.LoadRate, right.WaitingCount
+	}
+	if leftRate < rightRate {
+		return -1
+	}
+	if leftRate > rightRate {
+		return 1
+	}
+	if leftWaiting < rightWaiting {
+		return -1
+	}
+	if leftWaiting > rightWaiting {
+		return 1
+	}
+	return 0
+}
+
+func selectOpenAIUnifiedQualityResourceTier(candidates []openAIUnifiedQualityCandidate) []openAIUnifiedQualityCandidate {
+	selfOwned := make([]openAIUnifiedQualityCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if openAIUnifiedQualityResourceTierForAccount(candidate.account) == openAIUnifiedQualityResourceTierSelfOwned {
+			selfOwned = append(selfOwned, candidate)
+		}
+	}
+	if len(selfOwned) > 0 {
+		return sortOpenAIUnifiedQualityCandidates(selfOwned)
+	}
+	return sortOpenAIUnifiedQualityCandidates(candidates)
 }
 
 func compareOpenAIUnifiedQualityNullableDesc(left, right *float64) int {
@@ -252,9 +344,13 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 	breakdowns := buildOpenAIQualityBreakdowns(candidateAccounts, snapshot.Accounts, loadMap, s.service.openaiFirstOutputSlow)
 	for i := range qualityCandidates {
 		qualityCandidates[i].quality = breakdowns[qualityCandidates[i].account.ID]
+		qualityCandidates[i].resourceTier = openAIUnifiedQualityResourceTierForAccount(qualityCandidates[i].account)
+		qualityCandidates[i].priority = accountSchedulingPriorityForGroup(qualityCandidates[i].account, req.GroupID)
+		qualityCandidates[i].loadInfo = loadMap[qualityCandidates[i].account.ID]
+		qualityCandidates[i].coldStart = qualityCandidates[i].resourceTier == openAIUnifiedQualityResourceTierAPIKey && qualityCandidates[i].quality.Confidence < openAIUnifiedQualityMaturityConfidence
 	}
 	partition := partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates)
-	ordered := partition.candidates
+	ordered := selectOpenAIUnifiedQualityResourceTier(partition.candidates)
 	if len(ordered) > 0 {
 		decision.QualityScore = ordered[0].quality.QualityScore
 		decision.SuccessScore = ordered[0].quality.SuccessScore

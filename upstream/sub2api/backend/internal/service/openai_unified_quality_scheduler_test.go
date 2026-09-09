@@ -64,6 +64,65 @@ func TestOpenAIUnifiedQualityComparatorIgnoresLegacySchedulingSignals(t *testing
 	require.Equal(t, []int64{10, 20}, unifiedCandidateIDs(ordered))
 }
 
+func TestOpenAIUnifiedQualityResourceTierUsesNativeCredentialSemantics(t *testing.T) {
+	selfOwnedOAuth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	selfOwnedSetupToken := &Account{Platform: PlatformOpenAI, Type: AccountTypeSetupToken}
+	apiKey := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	require.Equal(t, openAIUnifiedQualityResourceTierSelfOwned, openAIUnifiedQualityResourceTierForAccount(selfOwnedOAuth))
+	require.Equal(t, openAIUnifiedQualityResourceTierSelfOwned, openAIUnifiedQualityResourceTierForAccount(selfOwnedSetupToken))
+	require.Equal(t, openAIUnifiedQualityResourceTierAPIKey, openAIUnifiedQualityResourceTierForAccount(apiKey))
+}
+
+func TestOpenAIUnifiedQualitySelfOwnedTierPrecedesAPIKeyAndUsesPriority(t *testing.T) {
+	load := func(rate float64, waiting int) *AccountLoadInfo {
+		return &AccountLoadInfo{LoadRate: rate, WaitingCount: waiting}
+	}
+	selfOwnedSlow := openAIUnifiedQualityCandidate{account: &Account{ID: 1, Type: AccountTypeOAuth, Priority: 1}, resourceTier: openAIUnifiedQualityResourceTierSelfOwned, loadInfo: load(0.9, 2)}
+	selfOwnedFast := openAIUnifiedQualityCandidate{account: &Account{ID: 2, Type: AccountTypeOAuth, Priority: 10}, resourceTier: openAIUnifiedQualityResourceTierSelfOwned, loadInfo: load(0.1, 0)}
+	apiKey := openAIUnifiedQualityCandidate{account: &Account{ID: 3, Type: AccountTypeAPIKey, Priority: 1}, resourceTier: openAIUnifiedQualityResourceTierAPIKey, quality: OpenAIQualityBreakdown{QualityScore: 100, SuccessScore: 100}}
+
+	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{apiKey, selfOwnedFast, selfOwnedSlow})
+	require.Equal(t, []int64{1, 2, 3}, unifiedCandidateIDs(ordered))
+
+	selfOwnedFast.account.Priority = 99
+	ordered = sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{selfOwnedFast, selfOwnedSlow})
+	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
+}
+
+func TestOpenAIUnifiedQualityColdStartPrioritySignalIsBoundedAndDecays(t *testing.T) {
+	for _, priority := range []int{1, 50, 100} {
+		signal := openAIUnifiedQualityColdStartPrioritySignal(priority, 0)
+		require.GreaterOrEqual(t, signal, -openAIUnifiedQualityMaxPrioritySignal)
+		require.LessOrEqual(t, signal, openAIUnifiedQualityMaxPrioritySignal)
+	}
+	require.Equal(t, float64(0), openAIUnifiedQualityColdStartPrioritySignal(50, 0))
+	require.Greater(t, openAIUnifiedQualityColdStartPrioritySignal(1, 0), 0.0)
+	require.Less(t, openAIUnifiedQualityColdStartPrioritySignal(100, 0), 0.0)
+	require.Equal(t, float64(0), openAIUnifiedQualityColdStartPrioritySignal(1, openAIUnifiedQualityMaturityConfidence))
+}
+
+func TestOpenAIUnifiedQualityColdStartPriorityCanLiftUnknownAPIKey(t *testing.T) {
+	unknown := openAIUnifiedQualityCandidate{
+		account:      &Account{ID: 1, Type: AccountTypeAPIKey, Priority: 1},
+		resourceTier: openAIUnifiedQualityResourceTierAPIKey,
+		quality:      OpenAIQualityBreakdown{QualityScore: 50, Confidence: 0},
+		coldStart:    true,
+	}
+	known := openAIUnifiedQualityCandidate{
+		account:      &Account{ID: 2, Type: AccountTypeAPIKey, Priority: 50},
+		resourceTier: openAIUnifiedQualityResourceTierAPIKey,
+		quality:      OpenAIQualityBreakdown{QualityScore: 55, Confidence: 1},
+	}
+	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{known, unknown})
+	require.Equal(t, []int64{1, 2}, unifiedCandidateIDs(ordered))
+
+	unknown.quality = OpenAIQualityBreakdown{QualityScore: 40, Confidence: openAIUnifiedQualityMaturityConfidence}
+	unknown.coldStart = false
+	ordered = sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{known, unknown})
+	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
+}
+
 func TestOpenAIUnifiedQualityCompositePrefersFasterNearPerfectAccount(t *testing.T) {
 	slowPerfect := OpenAIAccountQuality{AccountID: 1, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
 		OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 20, SuccessRate: floatPtr(1), TTFTSampleCount: 20, TTFTP50MS: floatPtr(18000), TTFTP90MS: floatPtr(18000)},

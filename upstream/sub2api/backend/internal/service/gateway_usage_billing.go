@@ -640,12 +640,12 @@ func (s *GatewayService) billingDeps() *billingDeps {
 }
 
 func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) {
-	writeUsageLogBestEffortWithRegistrar(ctx, repo, usageLog, nil, logKey)
+	_ = writeUsageLogBestEffortWithRegistrar(ctx, repo, usageLog, nil, logKey)
 }
 
-func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, registrar UsageCostEvidenceRegisterer, logKey string) {
+func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, registrar UsageCostEvidenceRegisterer, logKey string) bool {
 	if repo == nil || usageLog == nil {
-		return
+		return false
 	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
@@ -666,7 +666,7 @@ func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepo
 			inserted, syncErr := repo.Create(fallbackCtx, usageLog)
 			if syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
-				return
+				return false
 			}
 			result = UsageLogBestEffortResult{Inserted: inserted, UsageLogID: usageLog.ID}
 			registrationCtx = fallbackCtx
@@ -676,7 +676,7 @@ func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepo
 				logger.LegacyPrintf(logKey, "Register usage cost evidence failed: usage_log_id=%d error=%v", result.UsageLogID, err)
 			}
 		}
-		return
+		return true
 	}
 
 	if writer, ok := repo.(usageLogBestEffortWriter); ok {
@@ -694,14 +694,17 @@ func writeUsageLogBestEffortWithRegistrar(ctx context.Context, repo UsageLogRepo
 			}
 			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
+				return false
 			}
 		}
-		return
+		return true
 	}
 
 	if _, err := repo.Create(usageCtx, usageLog); err != nil {
 		logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
+		return false
 	}
+	return true
 }
 
 // recordUsageOpts 内部选项，参数化普通计费与长上下文计费的差异点。

@@ -13,7 +13,7 @@ import (
 // openAIAccountQualityQuery combines successful native usage rows with
 // account-owned failures from the native operations error log. A physical
 // attempt is deduplicated by persisted request identity and assigned to one
-// mutually exclusive scheduling window in the same seven-day scan.
+// mutually exclusive W5/W55 scheduling window in the one-hour scan.
 const openAIAccountQualityQuery = `
 WITH usage_attempts AS (
     SELECT DISTINCT ON (
@@ -95,9 +95,8 @@ physical_attempts AS (
     SELECT
 		a.*,
 		CASE
-			WHEN a.created_at >= $2 - interval '1 hour' THEN 'w1'
-			WHEN a.created_at >= $2 - interval '24 hours' THEN 'w24'
-			ELSE 'w7'
+			WHEN a.created_at >= $2 - interval '5 minutes' THEN 'w5'
+			ELSE 'w55'
 		END AS quality_window
 	FROM all_attempts a
 ),

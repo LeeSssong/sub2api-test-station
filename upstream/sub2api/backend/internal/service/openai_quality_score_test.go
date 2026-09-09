@@ -29,16 +29,14 @@ func TestOpenAIQualityScoreCurvesInterpolateAndClamp(t *testing.T) {
 
 func TestOpenAIQualityConfidenceTransfersToOlderWindowsAndNeutral(t *testing.T) {
 	result := blendOpenAIWindowScores(map[OpenAIQualityWindow]openAIWindowScoreInput{
-		OpenAIQualityWindow1H:  {Score: 100, SampleCount: 10, Target: 20},
-		OpenAIQualityWindow24H: {Score: 80, SampleCount: 50, Target: 100},
-		OpenAIQualityWindow7D:  {Score: 60, SampleCount: 150, Target: 300},
+		OpenAIQualityWindow5M:  {Score: 100, SampleCount: 5, Target: 5},
+		OpenAIQualityWindow55M: {Score: 80, SampleCount: 25, Target: 50},
 	}, 50)
 
-	require.InDelta(t, 73.125, result.Score, .001)
-	require.InDelta(t, .25, result.Windows[OpenAIQualityWindow1H].EffectiveWeight, .001)
-	require.InDelta(t, .275, result.Windows[OpenAIQualityWindow24H].EffectiveWeight, .001)
-	require.InDelta(t, .2375, result.Windows[OpenAIQualityWindow7D].EffectiveWeight, .001)
-	require.InDelta(t, .2375, result.NeutralWeight, .001)
+	require.InDelta(t, 79, result.Score, .001)
+	require.InDelta(t, .4, result.Windows[OpenAIQualityWindow5M].EffectiveWeight, .001)
+	require.InDelta(t, .3, result.Windows[OpenAIQualityWindow55M].EffectiveWeight, .001)
+	require.InDelta(t, .3, result.NeutralWeight, .001)
 }
 
 func TestOpenAIOutputRateAndLiveLoadScores(t *testing.T) {

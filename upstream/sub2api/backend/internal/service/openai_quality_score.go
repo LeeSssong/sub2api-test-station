@@ -5,7 +5,7 @@ import (
 	"sort"
 )
 
-const OpenAIUnifiedQualityScoreVersion = "t122-v1"
+const OpenAIUnifiedQualityScoreVersion = "t139-v1"
 
 const (
 	openAIUnifiedQualitySuccessWeight    = 0.40
@@ -90,8 +90,8 @@ func interpolateOpenAIScore(value float64, points []openAIScorePoint, neutral fl
 }
 
 func blendOpenAIWindowScores(inputs map[OpenAIQualityWindow]openAIWindowScoreInput, neutral float64) openAIBlendedScore {
-	base := map[OpenAIQualityWindow]float64{OpenAIQualityWindow1H: .5, OpenAIQualityWindow24H: .3, OpenAIQualityWindow7D: .2}
-	ordered := []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D}
+	base := map[OpenAIQualityWindow]float64{OpenAIQualityWindow5M: .4, OpenAIQualityWindow55M: .6}
+	ordered := []OpenAIQualityWindow{OpenAIQualityWindow5M, OpenAIQualityWindow55M}
 	result := openAIBlendedScore{Windows: make(map[OpenAIQualityWindow]OpenAIQualityWindowEvidence)}
 	carry := 0.0
 	for _, window := range ordered {
@@ -227,7 +227,7 @@ func calculateOpenAIUnifiedQualityScore(quality OpenAIAccountQuality, load *Acco
 	breakdown.LiveLoadScore = scoreOpenAIUnifiedLiveLoad(load)
 	refreshOpenAIUnifiedQualityScore(&breakdown)
 
-	for _, window := range []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D} {
+	for _, window := range []OpenAIQualityWindow{OpenAIQualityWindow5M, OpenAIQualityWindow55M} {
 		metrics := quality.Windows[window]
 		if breakdown.P50TTFTMS == nil && finiteQualityValue(metrics.TTFTP50MS) {
 			breakdown.P50TTFTMS = floatPointer(*metrics.TTFTP50MS)
@@ -246,9 +246,9 @@ func applyOpenAISlowTTFTEvidence(breakdown *OpenAIQualityBreakdown, view OpenAIF
 	if breakdown == nil || len(view.TTFTLowerBoundsMS) == 0 {
 		return
 	}
-	// Each 60-second observation acts as one bounded W1 sample. It adjusts
+	// Each 60-second observation acts as one bounded recent-window sample. It adjusts
 	// later rank only and cannot make an account ineligible.
-	weight := math.Min(.20, float64(len(view.TTFTLowerBoundsMS))/float64(openAIQualityWindowTarget(OpenAIQualityWindow1H)))
+	weight := math.Min(.20, float64(len(view.TTFTLowerBoundsMS))/float64(openAIQualityWindowTarget(OpenAIQualityWindow5M)))
 	p50 := scoreOpenAITTFT(openAIQualityPercentile(view.TTFTLowerBoundsMS, .50))
 	p90 := scoreOpenAITTFT(openAIQualityPercentile(view.TTFTLowerBoundsMS, .90))
 	breakdown.P50TTFTScore = (1-weight)*breakdown.P50TTFTScore + weight*p50
@@ -268,8 +268,8 @@ func refreshOpenAIUnifiedQualityScore(breakdown *OpenAIQualityBreakdown) {
 }
 
 func blendOpenAIOutputRateEvidence(quality OpenAIAccountQuality) openAIOutputRateEvidence {
-	base := map[OpenAIQualityWindow]float64{OpenAIQualityWindow1H: .5, OpenAIQualityWindow24H: .3, OpenAIQualityWindow7D: .2}
-	ordered := []OpenAIQualityWindow{OpenAIQualityWindow1H, OpenAIQualityWindow24H, OpenAIQualityWindow7D}
+	base := map[OpenAIQualityWindow]float64{OpenAIQualityWindow5M: .4, OpenAIQualityWindow55M: .6}
+	ordered := []OpenAIQualityWindow{OpenAIQualityWindow5M, OpenAIQualityWindow55M}
 	carry, weightedValue, confidence := 0.0, 0.0, 0.0
 	for _, window := range ordered {
 		metrics := quality.Windows[window]
@@ -312,11 +312,11 @@ func buildOpenAIQualityBreakdowns(accounts []*Account, qualities map[int64]OpenA
 
 func openAIQualityWindowTarget(window OpenAIQualityWindow) int64 {
 	switch window {
-	case OpenAIQualityWindow1H:
-		return 20
-	case OpenAIQualityWindow24H:
-		return 100
+	case OpenAIQualityWindow5M:
+		return 5
+	case OpenAIQualityWindow55M:
+		return 50
 	default:
-		return 300
+		return 0
 	}
 }

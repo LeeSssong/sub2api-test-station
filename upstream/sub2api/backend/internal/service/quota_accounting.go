@@ -57,6 +57,15 @@ type GiftDeductionResult struct {
 	Idempotent   bool
 }
 
+const defaultAdminGiftDeductionReason = "管理员扣除赠送额度"
+
+func normalizeAdminGiftDeductionReason(reason string) string {
+	if trimmed := strings.TrimSpace(reason); trimmed != "" {
+		return trimmed
+	}
+	return defaultAdminGiftDeductionReason
+}
+
 // GrantGift is the narrow adapter used by the admin service. It keeps the
 // administrator path on the existing quota-accounting transaction.
 func (s *QuotaAccountingService) GrantGift(ctx context.Context, userID, operatorID int64, amount float64, idempotencyKey, note string) error {
@@ -289,7 +298,8 @@ func (s *QuotaAccountingService) CreateAdminGiftDeduction(ctx context.Context, i
 	if s == nil || s.client == nil {
 		return GiftDeductionResult{}, ErrQuotaAccountingUnavailable
 	}
-	if in.UserID <= 0 || in.OperatorUserID <= 0 || in.AmountUSD.LessThanOrEqual(decimal.Zero) || strings.TrimSpace(in.IdempotencyKey) == "" || strings.TrimSpace(in.Reason) == "" {
+	in.Reason = normalizeAdminGiftDeductionReason(in.Reason)
+	if in.UserID <= 0 || in.OperatorUserID <= 0 || in.AmountUSD.LessThanOrEqual(decimal.Zero) || strings.TrimSpace(in.IdempotencyKey) == "" {
 		return GiftDeductionResult{}, fmt.Errorf("invalid gift deduction")
 	}
 	tx, err := s.client.Tx(ctx)
@@ -366,7 +376,7 @@ func (s *QuotaAccountingService) CreateAdminGiftDeduction(ctx context.Context, i
 	}
 	raw, _ := json.Marshal(allocs)
 	var adjustmentID int64
-	err = scanQuotaOne(ctx, tx.Client(), `INSERT INTO user_quota_adjustments (user_id,adjustment_type,reserved_allocations,applied_allocations,refund_amount,applied_gift_quota_usd,actor_type,reason,status,idempotency_key,operator_user_id,adjusted_at) VALUES ($1,'admin_gift_deduction','[]'::jsonb,$2,0,$3,'admin',$4,'completed',$5,$6,NOW()) RETURNING id`, []any{in.UserID, raw, in.AmountUSD.StringFixed(8), strings.TrimSpace(in.Reason), strings.TrimSpace(in.IdempotencyKey), in.OperatorUserID}, &adjustmentID)
+	err = scanQuotaOne(ctx, tx.Client(), `INSERT INTO user_quota_adjustments (user_id,adjustment_type,reserved_allocations,applied_allocations,refund_amount,applied_gift_quota_usd,actor_type,reason,status,idempotency_key,operator_user_id,adjusted_at) VALUES ($1,'admin_gift_deduction','[]'::jsonb,$2,0,$3,'admin',$4,'completed',$5,$6,NOW()) RETURNING id`, []any{in.UserID, raw, in.AmountUSD.StringFixed(8), in.Reason, strings.TrimSpace(in.IdempotencyKey), in.OperatorUserID}, &adjustmentID)
 	if err != nil {
 		return GiftDeductionResult{}, err
 	}

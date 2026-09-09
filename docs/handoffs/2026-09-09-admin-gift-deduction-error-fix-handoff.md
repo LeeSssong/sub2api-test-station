@@ -1,37 +1,28 @@
 # 管理员赠送额度扣除报错修复交接
 
 - 任务：管理员赠送额度扣除报错修复
-- 基线：`origin/main@02792c02da54a2816a4967cfba4aa4db9c5a07d6`
+- 基线：`origin/main@ac033ebac0515161e80f501d3b2dd9e6f51226b6`
 - 候选分支：`codex/admin-gift-deduction-error-fix`
-- 根 `main` 合并提交：`38ade5cec807cdf18ea85a04afa84481f166d798`
-- 根 `main` tree：`c96628aec1ef26a0d59698cb587a925228a65561`
 - 作者：Codex
 - 时间：2026-09-09
-- 状态：已合入并推送根 `main`，独立测试站已部署，等待管理员功能验收
+- 状态：本地实现完成，待根总控审查；未合入、未推送、未部署
 
 ## 变更
 
-- 新增稳定业务错误码 `GIFT_QUOTA_INSUFFICIENT`，替代扣除失败时不稳定的通用错误文本。
 - 管理员 `subtract` 仍严格调用 gift-only deduction；充值额度不会被扣除。
-- 前端按错误码显示“赠送额度不足，不能扣除充值额度”，其他错误继续显示后端详情或通用兜底。
-- 保留已有 `Idempotency-Key` 自动生成和发送逻辑，避免重复请求和后端幂等校验错误。
+- 空白备注自动使用“管理员扣除赠送额度”，显式备注保留并去除首尾空白，满足账务审计表的非空约束。
+- 保留已有 `GIFT_QUOTA_INSUFFICIENT` 错误码、前端错误提示和 `Idempotency-Key` 逻辑。
 - 未新增迁移、配置或账务事实源。
 
 ## 变更文件
 
-- `upstream/sub2api/backend/internal/service/user_service.go`
-- `upstream/sub2api/backend/internal/service/admin_user.go`
-- `upstream/sub2api/backend/internal/service/admin_service_update_balance_test.go`
-- `upstream/sub2api/frontend/src/components/admin/user/UserBalanceModal.vue`
-- `upstream/sub2api/frontend/src/components/admin/user/UserBalanceModal.spec.ts`
-- `upstream/sub2api/frontend/src/i18n/locales/zh/admin/overview.ts`
-- `upstream/sub2api/frontend/src/i18n/locales/en/admin/overview.ts`
+- `upstream/sub2api/backend/internal/service/quota_accounting.go`
+- `upstream/sub2api/backend/internal/service/quota_accounting_test.go`
 
 ## 测试
 
 - `pnpm vitest run src/api/__tests__/admin.users.spec.ts src/components/admin/user/UserBalanceModal.spec.ts src/components/admin/user/UserBalanceHistoryModal.spec.ts`：14/14 通过。
 - `pnpm typecheck`：通过。
-- `pnpm build`：通过，1095 modules transformed。
 - `go test -tags unit ./internal/service ./internal/handler/admin -run 'Test(AdminService_UpdateUserBalance|QuotaWallet)' -count=1`：通过。
 - `go build ./cmd/server`：通过。
 - `git diff --check`：通过。
@@ -45,6 +36,7 @@
 - 生产/测试站数据：未触碰。
 - 凭据：未读取或写入。
 - 主站授权：未取得，未部署。
-- 测试站发布：已执行成功。release `/opt/sub2api-test-station/releases/38ade5cec807cdf18ea85a04afa84481f166d798`，image digest `a780c0d8c643ab9d11d708ec67f8d653b56af9766b3a71b28c072203d9f40e3f`；`/health` 返回 `{"status":"ok"}`，`/readyz` HTTP 200，API/worker/detector/PostgreSQL/Redis/Caddy healthy。
-- 回滚：切回测试站上一已验证 release；本次无数据迁移，不需要数据回滚。
-- 未验证：尚未进行真实管理员登录态扣除操作；需在测试站先验证“足额扣除成功、赠送额度不足提示、充值额度保持不变、重复请求不重复扣除”。
+- 测试站发布：未执行；当前约束仅允许对独立测试站只读核对，禁止使用旧发布链或直接执行数据清除。
+- 回滚：代码回退到基线 commit；本次无数据迁移，不需要数据回滚。
+- 未验证：尚未进行真实管理员登录态扣除操作；需在允许的测试站发布流程恢复后验证“空备注足额扣除成功、赠送额度不足提示、充值额度保持不变、重复请求不重复扣除”。
+- 数据清除：用户要求清除内部测试用户的非账户数据，但该不可逆操作没有受控清理入口且项目约束禁止直接删除测试站数据，本候选未执行。

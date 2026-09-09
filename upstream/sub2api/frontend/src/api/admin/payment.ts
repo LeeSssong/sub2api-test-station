@@ -120,6 +120,11 @@ export const adminPaymentAPI = {
     return apiClient.post<RefundResult>(`/admin/payment/orders/${id}/refund`, data)
   },
 
+  /** Retry a pending or failed provider refund with the stable order key */
+  retryRefund(id: number) {
+    return apiClient.post<RefundResult>(`/admin/payment/orders/${id}/refund/retry`)
+  },
+
   /** Query and finalize a pending refund */
   queryRefund(id: number) {
     return apiClient.post<RefundResult>(`/admin/payment/orders/${id}/refund/query`)

@@ -37,6 +37,9 @@ var (
 	alipayTradePagePay = func(client *alipay.Client, param alipay.TradePagePay) (*url.URL, error) {
 		return client.TradePagePay(param)
 	}
+	alipayTradeRefund = func(ctx context.Context, client *alipay.Client, param alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		return client.TradeRefund(ctx, param)
+	}
 )
 
 // Alipay implements payment.Provider and payment.CancelableProvider using the smartwalle/alipay SDK.
@@ -338,14 +341,35 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		return nil, err
 	}
 
-	result, err := client.TradeRefund(ctx, alipay.TradeRefund{
+	requestNo := strings.TrimSpace(req.OutRequestNo)
+	if requestNo == "" {
+		requestNo = fmt.Sprintf("%s-refund-%d", req.OrderID, time.Now().UnixNano())
+	}
+	result, err := alipayTradeRefund(ctx, client, alipay.TradeRefund{
 		OutTradeNo:   req.OrderID,
 		RefundAmount: req.Amount,
 		RefundReason: req.Reason,
-		OutRequestNo: fmt.Sprintf("%s-refund-%d", req.OrderID, time.Now().UnixNano()),
+		OutRequestNo: requestNo,
 	})
+	response := &payment.RefundResponse{OutRequestNo: requestNo}
+	if result != nil {
+		response.ProviderCode = string(result.Code)
+		response.ProviderSubCode = result.SubCode
+		response.ProviderMessage = result.Msg
+		response.ProviderSubMessage = result.SubMsg
+		response.ProviderTradeNo = result.TradeNo
+		response.ProviderOutTradeNo = result.OutTradeNo
+		response.ProviderFundChange = result.FundChange
+		response.ProviderRefundFee = result.RefundFee
+	}
 	if err != nil {
-		return nil, fmt.Errorf("alipay TradeRefund: %w", err)
+		return response, fmt.Errorf("alipay TradeRefund: %w", err)
+	}
+	if result == nil {
+		return response, fmt.Errorf("alipay TradeRefund: empty response")
+	}
+	if result.IsFailure() {
+		return response, fmt.Errorf("alipay TradeRefund rejected: code=%s sub_code=%s msg=%s sub_msg=%s", result.Code, result.SubCode, result.Msg, result.SubMsg)
 	}
 
 	refundStatus := payment.ProviderStatusPending
@@ -353,15 +377,13 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		refundStatus = payment.ProviderStatusSuccess
 	}
 
-	refundID := result.TradeNo
+	refundID := response.ProviderTradeNo
 	if refundID == "" {
 		refundID = req.OrderID + alipayRefundSuffix
 	}
-
-	return &payment.RefundResponse{
-		RefundID: refundID,
-		Status:   refundStatus,
-	}, nil
+	response.RefundID = refundID
+	response.Status = refundStatus
+	return response, nil
 }
 
 // CancelPayment closes a pending trade on Alipay.

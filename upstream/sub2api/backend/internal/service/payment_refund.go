@@ -375,15 +375,20 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 	}
 	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
 	resp, err := prov.Refund(ctx, payment.RefundRequest{
-		TradeNo: p.Order.PaymentTradeNo,
-		OrderID: p.Order.OutTradeNo,
-		Amount:  formatGatewayRefundAmount(p.GatewayAmount, p.Order),
-		Reason:  p.Reason,
+		TradeNo:      p.Order.PaymentTradeNo,
+		OrderID:      p.Order.OutTradeNo,
+		Amount:       formatGatewayRefundAmount(p.GatewayAmount, p.Order),
+		Reason:       p.Reason,
+		OutRequestNo: refundRequestNo(p.Order, p.RefundAmount),
 	})
 	finishProviderCall()
+	s.logRefundProviderResult(p, resp, err)
 	if err != nil {
 		if resp != nil && strings.TrimSpace(resp.Status) == payment.ProviderStatusPending {
 			return resp, nil
+		}
+		if resp != nil {
+			return nil, fmt.Errorf("%w (provider_code=%s provider_sub_code=%s provider_msg=%s provider_sub_msg=%s)", err, resp.ProviderCode, resp.ProviderSubCode, resp.ProviderMessage, resp.ProviderSubMessage)
 		}
 		return nil, err
 	}
@@ -391,6 +396,70 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 		return nil, err
 	}
 	return resp, nil
+}
+
+func refundRequestNo(order *dbent.PaymentOrder, amount float64) string {
+	if order == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s-refund-%s", order.OutTradeNo, formatGatewayRefundAmount(amount, order))
+}
+
+func (s *PaymentService) logRefundProviderResult(p *RefundPlan, resp *payment.RefundResponse, callErr error) {
+	if p == nil || p.Order == nil {
+		return
+	}
+	attrs := []any{
+		"order_id", p.Order.ID,
+		"provider_key", p.Order.ProviderKey,
+		"provider_instance_id", psStringValue(p.Order.ProviderInstanceID),
+		"out_trade_no", p.Order.OutTradeNo,
+		"payment_trade_no", p.Order.PaymentTradeNo,
+		"refund_amount", p.RefundAmount,
+		"out_request_no", refundRequestNo(p.Order, p.RefundAmount),
+	}
+	if resp != nil {
+		attrs = append(attrs,
+			"refund_id", resp.RefundID,
+			"provider_status", resp.Status,
+			"provider_code", resp.ProviderCode,
+			"provider_sub_code", resp.ProviderSubCode,
+			"provider_message", resp.ProviderMessage,
+			"provider_sub_message", resp.ProviderSubMessage,
+			"provider_trade_no", resp.ProviderTradeNo,
+			"provider_out_trade_no", resp.ProviderOutTradeNo,
+			"provider_fund_change", resp.ProviderFundChange,
+			"provider_refund_fee", resp.ProviderRefundFee,
+		)
+	}
+	if callErr != nil {
+		attrs = append(attrs, "error", callErr)
+	}
+	slog.Info("payment refund provider result", attrs...)
+}
+
+// RetryRefund reuses the order's original refund amount and reason while
+// sending the same stable provider idempotency key as the original attempt.
+func (s *PaymentService) RetryRefund(ctx context.Context, oid int64) (*RefundResult, error) {
+	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	if err != nil {
+		return nil, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	if o.Status != OrderStatusRefundPending && o.Status != OrderStatusRefundFailed {
+		return nil, infraerrors.BadRequest("INVALID_STATUS", "only pending or failed refunds can be retried")
+	}
+	amount := o.RefundAmount
+	if amount <= 0 {
+		amount = o.Amount
+	}
+	plan, earlyResult, err := s.PrepareRefund(ctx, oid, amount, psStringValue(o.RefundReason), false, true)
+	if err != nil {
+		return nil, err
+	}
+	if earlyResult != nil {
+		return earlyResult, nil
+	}
+	return s.ExecuteRefund(ctx, plan)
 }
 
 func formatGatewayRefundAmount(amount float64, order *dbent.PaymentOrder) string {
@@ -418,7 +487,7 @@ func (s *PaymentService) finishRefund(ctx context.Context, p *RefundPlan, resp *
 	}
 	switch strings.TrimSpace(resp.Status) {
 	case payment.ProviderStatusSuccess, payment.ProviderStatusRefunded:
-		return s.markRefundOk(ctx, p)
+		return s.markRefundOk(ctx, p, resp)
 	case payment.ProviderStatusPending:
 		return s.markRefundPending(ctx, p, resp)
 	default:
@@ -613,7 +682,7 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 	return nil, infraerrors.InternalServer("REFUND_FAILED", psErrMsg(gErr))
 }
 
-func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
+func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan, resp *payment.RefundResponse) (*RefundResult, error) {
 	fs := OrderStatusRefunded
 	if p.RefundAmount < p.Order.Amount {
 		fs = OrderStatusPartiallyRefunded
@@ -623,7 +692,9 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 	if err != nil {
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
-	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	detail := map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force}
+	addRefundProviderDetail(detail, resp)
+	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", detail)
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
 
@@ -685,6 +756,7 @@ func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, r
 		"subDaysRolledBack":   subDaysDeducted,
 		"deductionRollbackOK": rollbackOK,
 	}
+	addRefundProviderDetail(detail, resp)
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_PENDING", "admin", detail)
 
 	warning := "gateway refund is pending confirmation"
@@ -692,6 +764,27 @@ func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, r
 		warning += "; refund deduction rollback failed"
 	}
 	return &RefundResult{Success: false, Warning: warning}, nil
+}
+
+func addRefundProviderDetail(detail map[string]any, resp *payment.RefundResponse) {
+	if detail == nil || resp == nil {
+		return
+	}
+	for key, value := range map[string]string{
+		"outRequestNo":       resp.OutRequestNo,
+		"providerCode":       resp.ProviderCode,
+		"providerSubCode":    resp.ProviderSubCode,
+		"providerMessage":    resp.ProviderMessage,
+		"providerSubMessage": resp.ProviderSubMessage,
+		"providerTradeNo":    resp.ProviderTradeNo,
+		"providerOutTradeNo": resp.ProviderOutTradeNo,
+		"providerFundChange": resp.ProviderFundChange,
+		"providerRefundFee":  resp.ProviderRefundFee,
+	} {
+		if strings.TrimSpace(value) != "" {
+			detail[key] = value
+		}
+	}
 }
 
 func refundResponseID(resp *payment.RefundResponse) string {

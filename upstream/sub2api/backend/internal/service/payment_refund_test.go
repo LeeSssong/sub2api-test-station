@@ -380,6 +380,16 @@ func TestFinishRefundPendingMarksOrderPendingAndRollsBackDeduction(t *testing.T)
 	require.Zero(t, successAudits)
 }
 
+func TestRefundRequestNumberIsStableForSameOrderAndAmount(t *testing.T) {
+	order := &dbent.PaymentOrder{ID: 24, OutTradeNo: "sub2_order", Amount: 1}
+	if got := refundRequestNo(order, 1); got != "sub2_order-refund-1.00" {
+		t.Fatalf("refundRequestNo = %q", got)
+	}
+	if got := refundRequestNo(order, 1); got != refundRequestNo(order, 1) {
+		t.Fatalf("refund request number changed: %q", got)
+	}
+}
+
 func TestFinishRefundSuccessStatusesFinalize(t *testing.T) {
 	for _, status := range []string{payment.ProviderStatusSuccess, payment.ProviderStatusRefunded} {
 		t.Run(status, func(t *testing.T) {

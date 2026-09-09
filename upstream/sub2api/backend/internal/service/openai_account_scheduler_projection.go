@@ -363,16 +363,27 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 					if cost.Status == EffectiveCostStatusReady {
 						u = finiteQualityPointer(cost.U)
 					}
-					qualityCandidates = append(qualityCandidates, openAIUnifiedQualityCandidate{account: account, quality: qualityBreakdowns[account.ID], effectiveU: u, effectiveCostStatus: cost.Status})
+					quality := qualityBreakdowns[account.ID]
+					resourceTier := openAIUnifiedQualityResourceTierForAccount(account)
+					priority := accountSchedulingPriorityForGroup(account, &req.GroupID)
+					qualityCandidates = append(qualityCandidates, openAIUnifiedQualityCandidate{
+						account: account, quality: quality, effectiveU: u, effectiveCostStatus: cost.Status,
+						resourceTier: resourceTier, priority: priority, loadInfo: loads[account.ID],
+						coldStart: resourceTier == openAIUnifiedQualityResourceTierAPIKey && quality.Confidence < openAIUnifiedQualityMaturityConfidence,
+					})
 				}
-				ordered := partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates).candidates
+				ordered := selectOpenAIUnifiedQualityResourceTier(partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates).candidates)
 				result := make([]openAIAccountCandidateScore, 0, len(ordered))
 				for _, candidate := range ordered {
 					loadInfo := loads[candidate.account.ID]
 					if loadInfo == nil {
 						loadInfo = &AccountLoadInfo{AccountID: candidate.account.ID}
 					}
-					result = append(result, openAIAccountCandidateScore{account: candidate.account, loadInfo: loadInfo, loadKnown: loads[candidate.account.ID] != nil, score: candidate.quality.QualityScore})
+					result = append(result, openAIAccountCandidateScore{
+						account: candidate.account, loadInfo: loadInfo, loadKnown: loads[candidate.account.ID] != nil,
+						score:    candidate.quality.QualityScore + openAIUnifiedQualityCandidatePrioritySignal(candidate),
+						priority: candidate.priority, prioritySet: true,
+					})
 				}
 				return result
 			}

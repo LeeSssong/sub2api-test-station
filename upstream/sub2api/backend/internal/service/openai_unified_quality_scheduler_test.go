@@ -125,10 +125,10 @@ func TestOpenAIUnifiedQualityColdStartPriorityCanLiftUnknownAPIKey(t *testing.T)
 
 func TestOpenAIUnifiedQualityCompositePrefersFasterNearPerfectAccount(t *testing.T) {
 	slowPerfect := OpenAIAccountQuality{AccountID: 1, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
-		OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 20, SuccessRate: floatPtr(1), TTFTSampleCount: 20, TTFTP50MS: floatPtr(18000), TTFTP90MS: floatPtr(18000)},
+		OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 20, SuccessRate: floatPtr(1), TTFTSampleCount: 20, TTFTP50MS: floatPtr(18000), TTFTP90MS: floatPtr(18000)},
 	}}
 	fastNearPerfect := OpenAIAccountQuality{AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
-		OpenAIQualityWindow1H: {AttemptCount: 2000, SuccessCount: 1993, SuccessRate: floatPtr(.9965), TTFTSampleCount: 20, TTFTP50MS: floatPtr(4700), TTFTP90MS: floatPtr(4700)},
+		OpenAIQualityWindow5M: {AttemptCount: 2000, SuccessCount: 1993, SuccessRate: floatPtr(.9965), TTFTSampleCount: 20, TTFTP50MS: floatPtr(4700), TTFTP90MS: floatPtr(4700)},
 	}}
 	breakdowns := buildOpenAIQualityBreakdowns([]*Account{{ID: 1, Concurrency: 1}, {ID: 2, Concurrency: 1}}, map[int64]OpenAIAccountQuality{1: slowPerfect, 2: fastNearPerfect}, nil, nil)
 	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{
@@ -146,9 +146,9 @@ func TestOpenAIUnifiedQualitySelectorUsesQualityOrderForOrdinaryText(t *testing.
 		unifiedQualityTestAccount(30, groupID),
 	}
 	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
-		10: {AccountID: 10, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 18, SuccessRate: floatPtr(.9), TTFTSampleCount: 20, TTFTP50MS: floatPtr(900), TTFTP90MS: floatPtr(900)}}},
-		20: {AccountID: 20, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 18, SuccessRate: floatPtr(.9), TTFTSampleCount: 20, TTFTP50MS: floatPtr(100), TTFTP90MS: floatPtr(100)}}},
-		30: {AccountID: 30, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow1H: {AttemptCount: 20, SuccessCount: 16, SuccessRate: floatPtr(.8), TTFTSampleCount: 20, TTFTP50MS: floatPtr(1), TTFTP90MS: floatPtr(1)}}},
+		10: {AccountID: 10, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 18, SuccessRate: floatPtr(.9), TTFTSampleCount: 20, TTFTP50MS: floatPtr(900), TTFTP90MS: floatPtr(900)}}},
+		20: {AccountID: 20, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 18, SuccessRate: floatPtr(.9), TTFTSampleCount: 20, TTFTP50MS: floatPtr(100), TTFTP90MS: floatPtr(100)}}},
+		30: {AccountID: 30, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 16, SuccessRate: floatPtr(.8), TTFTSampleCount: 20, TTFTP50MS: floatPtr(1), TTFTP90MS: floatPtr(1)}}},
 	}}}
 	repo := &schedulerTestOpenAIAccountRepo{accounts: accounts}
 	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality}

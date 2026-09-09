@@ -14,9 +14,8 @@ import (
 type OpenAIQualityWindow string
 
 const (
-	OpenAIQualityWindow1H  OpenAIQualityWindow = "w1"
-	OpenAIQualityWindow24H OpenAIQualityWindow = "w24"
-	OpenAIQualityWindow7D  OpenAIQualityWindow = "w7"
+	OpenAIQualityWindow5M  OpenAIQualityWindow = "w5"
+	OpenAIQualityWindow55M OpenAIQualityWindow = "w55"
 )
 
 type OpenAIQualityWindowMetrics struct {
@@ -62,6 +61,13 @@ type OpenAIAccountQualitySnapshotProvider interface {
 	Snapshot(ctx context.Context) OpenAIAccountQualitySnapshot
 }
 
+// OpenAIAccountQualityRefreshRequester is an optional, non-blocking signal
+// used after a real request has been persisted. It intentionally stays
+// separate from Snapshot so dispatch reads remain cheap and side-effect free.
+type OpenAIAccountQualityRefreshRequester interface {
+	RequestRefresh(ctx context.Context)
+}
+
 type openAIAccountQualitySnapshotProvider struct {
 	repo            OpenAIAccountQualityRepository
 	ttl             time.Duration
@@ -72,6 +78,7 @@ type openAIAccountQualitySnapshotProvider struct {
 	last               OpenAIAccountQualitySnapshot
 	hasLast            bool
 	lastRefreshAttempt time.Time
+	refreshPending     bool
 	refresh            singleflight.Group
 }
 
@@ -103,46 +110,82 @@ func (p *openAIAccountQualitySnapshotProvider) Snapshot(ctx context.Context) Ope
 		return p.staleOrColdStart()
 	}
 
-	value, _, _ := p.refresh.Do("openai-account-quality", func() (any, error) {
-		if snapshot, ok := p.cached(p.now()); ok {
-			return snapshot, nil
+	value, err := p.refreshSnapshot(ctx, false)
+	if err != nil {
+		return p.staleOrColdStart()
+	}
+	if snapshot, ok := value.(OpenAIAccountQualitySnapshot); ok {
+		return snapshot
+	}
+	return p.staleOrColdStart()
+}
+
+func (p *openAIAccountQualitySnapshotProvider) RequestRefresh(ctx context.Context) {
+	if p == nil || p.repo == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.refreshPending {
+		p.mu.Unlock()
+		return
+	}
+	p.refreshPending = true
+	p.mu.Unlock()
+	go func() {
+		defer func() {
+			p.mu.Lock()
+			p.refreshPending = false
+			p.mu.Unlock()
+		}()
+		refreshCtx := context.Background()
+		if ctx != nil {
+			// The caller context belongs to the completed request. Refresh must
+			// outlive that request, so only use it when already detached.
+			refreshCtx = context.Background()
+		}
+		_, _ = p.refreshSnapshot(refreshCtx, true)
+	}()
+}
+
+func (p *openAIAccountQualitySnapshotProvider) refreshSnapshot(ctx context.Context, force bool) (any, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	value, err, _ := p.refresh.Do("openai-account-quality", func() (any, error) {
+		if !force {
+			if snapshot, ok := p.cached(p.now()); ok {
+				return snapshot, nil
+			}
+			if p.refreshThrottled(p.now()) {
+				return p.staleOrColdStart(), nil
+			}
 		}
 		if p.repo == nil {
 			return p.coldStartFailure(), nil
 		}
-
 		end := p.now()
 		p.mu.Lock()
 		p.lastRefreshAttempt = end
 		p.mu.Unlock()
-		start := end.Add(-7 * 24 * time.Hour)
+		start := end.Add(-time.Hour)
 		rows, err := p.repo.ListOpenAIAccountQuality(ctx, start, end)
 		if err != nil {
 			return p.staleOrColdStart(), nil
 		}
 		accounts := make(map[int64]OpenAIAccountQuality, len(rows))
 		for _, row := range rows {
-			if row.AccountID <= 0 {
-				continue
+			if row.AccountID > 0 {
+				accounts[row.AccountID] = row
 			}
-			accounts[row.AccountID] = row
 		}
-		snapshot := OpenAIAccountQualitySnapshot{
-			WindowStart: start,
-			WindowEnd:   end,
-			SnapshotAt:  end,
-			Accounts:    accounts,
-		}
+		snapshot := OpenAIAccountQualitySnapshot{WindowStart: start, WindowEnd: end, SnapshotAt: end, Accounts: accounts}
 		p.mu.Lock()
 		p.last = snapshot
 		p.hasLast = true
 		p.mu.Unlock()
 		return cloneOpenAIAccountQualitySnapshot(snapshot), nil
 	})
-	if snapshot, ok := value.(OpenAIAccountQualitySnapshot); ok {
-		return snapshot
-	}
-	return p.staleOrColdStart()
+	return value, err
 }
 
 func (p *openAIAccountQualitySnapshotProvider) refreshThrottled(now time.Time) bool {

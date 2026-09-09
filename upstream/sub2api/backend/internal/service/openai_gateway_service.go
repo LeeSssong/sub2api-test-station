@@ -619,7 +619,7 @@ func NewOpenAIGatewayService(
 		})
 	}
 	if qualityRepo, ok := usageLogRepo.(OpenAIAccountQualityRepository); ok {
-		svc.openaiQuality = NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(qualityRepo, time.Minute, 5*time.Minute, time.Now)
+		svc.openaiQuality = NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(qualityRepo, 5*time.Minute, 5*time.Minute, time.Now)
 	}
 	if rateLimitService != nil {
 		rateLimitService.SetAccountRuntimeBlocker(svc)
@@ -639,6 +639,15 @@ func (s *OpenAIGatewayService) OpenAIAccountQualitySnapshot(ctx context.Context)
 		return OpenAIAccountQualitySnapshot{Stale: true, Accounts: map[int64]OpenAIAccountQuality{}}
 	}
 	return s.openaiQuality.Snapshot(ctx)
+}
+
+func (s *OpenAIGatewayService) RequestOpenAIAccountQualityRefresh(ctx context.Context) {
+	if s == nil || s.openaiQuality == nil {
+		return
+	}
+	if requester, ok := s.openaiQuality.(OpenAIAccountQualityRefreshRequester); ok {
+		requester.RequestRefresh(ctx)
+	}
 }
 
 func (s *OpenAIGatewayService) BeginOpenAIFirstOutputSlowObservation(ctx context.Context, groupID, accountID int64, attemptID string, startedAt time.Time) context.Context {

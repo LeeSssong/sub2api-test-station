@@ -11,16 +11,20 @@ import (
 )
 
 type openAIAccountQualityRepoStub struct {
-	mu    sync.Mutex
-	rows  []OpenAIAccountQuality
-	err   error
-	calls int
+	mu     sync.Mutex
+	rows   []OpenAIAccountQuality
+	err    error
+	calls  int
+	starts []time.Time
+	ends   []time.Time
 }
 
-func (r *openAIAccountQualityRepoStub) ListOpenAIAccountQuality(context.Context, time.Time, time.Time) ([]OpenAIAccountQuality, error) {
+func (r *openAIAccountQualityRepoStub) ListOpenAIAccountQuality(_ context.Context, start, end time.Time) ([]OpenAIAccountQuality, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
+	r.starts = append(r.starts, start)
+	r.ends = append(r.ends, end)
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -31,6 +35,29 @@ func (r *openAIAccountQualityRepoStub) callCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.calls
+}
+
+func (r *openAIAccountQualityRepoStub) lastBounds() (time.Time, time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.starts) == 0 {
+		return time.Time{}, time.Time{}
+	}
+	return r.starts[len(r.starts)-1], r.ends[len(r.ends)-1]
+}
+
+func TestOpenAIAccountQualitySnapshotProviderUsesOneHourRollingWindow(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	repo := &openAIAccountQualityRepoStub{}
+	provider := NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(repo, 5*time.Minute, 5*time.Minute, func() time.Time { return now })
+
+	snapshot := provider.Snapshot(context.Background())
+	start, end := repo.lastBounds()
+
+	require.Equal(t, now.Add(-time.Hour), start)
+	require.Equal(t, now, end)
+	require.Equal(t, start, snapshot.WindowStart)
+	require.Equal(t, end, snapshot.WindowEnd)
 }
 
 func TestOpenAIAccountQualitySnapshotProviderCachesAndServesStaleData(t *testing.T) {
@@ -86,18 +113,18 @@ func TestOpenAIAccountQualitySnapshotProviderDeepClonesWindowMetrics(t *testing.
 	repo := &openAIAccountQualityRepoStub{rows: []OpenAIAccountQuality{{
 		AccountID: 7,
 		Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
-			OpenAIQualityWindow1H: {AttemptCount: 2},
+			OpenAIQualityWindow5M: {AttemptCount: 2},
 		},
 	}}}
 	provider := NewOpenAIAccountQualitySnapshotProvider(repo, time.Minute, func() time.Time { return now })
 
 	first := provider.Snapshot(context.Background())
-	window := first.Accounts[7].Windows[OpenAIQualityWindow1H]
+	window := first.Accounts[7].Windows[OpenAIQualityWindow5M]
 	window.AttemptCount = 99
-	first.Accounts[7].Windows[OpenAIQualityWindow1H] = window
+	first.Accounts[7].Windows[OpenAIQualityWindow5M] = window
 
 	second := provider.Snapshot(context.Background())
-	require.Equal(t, int64(2), second.Accounts[7].Windows[OpenAIQualityWindow1H].AttemptCount)
+	require.Equal(t, int64(2), second.Accounts[7].Windows[OpenAIQualityWindow5M].AttemptCount)
 }
 
 func TestOpenAIAccountQualitySnapshotProviderThrottlesExpiredRefreshes(t *testing.T) {
@@ -116,4 +143,23 @@ func TestOpenAIAccountQualitySnapshotProviderThrottlesExpiredRefreshes(t *testin
 	third := provider.Snapshot(context.Background())
 	require.False(t, third.Stale)
 	require.Equal(t, 2, repo.callCount(), "the next refresh window may perform one new scan")
+}
+
+func TestOpenAIAccountQualitySnapshotProviderRequestRefreshIsNonBlockingAndCoalesced(t *testing.T) {
+	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	repo := &openAIAccountQualityRepoStub{}
+	repo.rows = []OpenAIAccountQuality{{AccountID: 7, AttemptCount: 1}}
+	provider := NewOpenAIAccountQualitySnapshotProviderWithRefreshInterval(repo, 5*time.Minute, 5*time.Minute, func() time.Time { return now })
+	_ = provider.Snapshot(context.Background())
+
+	// The notification API is intentionally fire-and-forget.
+	requester, ok := provider.(OpenAIAccountQualityRefreshRequester)
+	require.True(t, ok)
+	requester.RequestRefresh(context.Background())
+	requester.RequestRefresh(context.Background())
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && repo.callCount() < 2 {
+		time.Sleep(time.Millisecond)
+	}
+	require.Equal(t, 2, repo.callCount(), "the burst is coalesced with the initial snapshot refresh")
 }

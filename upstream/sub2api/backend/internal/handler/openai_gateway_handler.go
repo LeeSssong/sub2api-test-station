@@ -4079,6 +4079,9 @@ func openAIForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForwa
 	if service.GetOpsCyberPolicy(c) != nil {
 		return true
 	}
+	if inboundIsResponses(c) && strings.Contains(strings.ToLower(c.Writer.Header().Get("Content-Type")), "text/event-stream") {
+		return service.ResponsesStreamTerminalRecorded(c)
+	}
 
 	msg := strings.TrimSpace(err.Error())
 	for _, prefix := range []string{

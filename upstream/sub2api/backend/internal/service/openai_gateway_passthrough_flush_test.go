@@ -127,6 +127,50 @@ func TestOpenAIStreamingPassthroughFlushesAtCompleteEventBoundaries(t *testing.T
 	require.Equal(t, 2, result.usage.OutputTokens)
 }
 
+func TestOpenAIStreamingPassthroughStartsStreamObservation(t *testing.T) {
+	upstream := "event: response.completed\n" +
+		`data: {"type":"response.completed","response":{"id":"resp_observed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}` + "\n\n"
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize},
+	}}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstream)),
+	}
+
+	_, err := svc.handleStreamingResponsePassthrough(
+		context.Background(), resp, c, &Account{ID: 1, Platform: PlatformOpenAI, Name: "observation-test"}, time.Now(), "gpt-5", "gpt-5",
+	)
+
+	require.NoError(t, err)
+	obs := StreamObservationFromContext(c)
+	require.NotNil(t, obs)
+	snapshot := obs.Snapshot()
+	require.Equal(t, "response.completed", snapshot.TerminalEventType)
+	require.True(t, snapshot.SawTerminalEvent)
+}
+
+func TestOpenAIStreamingPassthroughSanitizesSynthesizedFailure(t *testing.T) {
+	upstream := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n" +
+		"event: error\n" +
+		`data: {"type":"error","error":{"code":"server_error","message":"failed request id req_secret at https://internal.invalid/v1"}}` + "\n\n"
+
+	_, recorder, _, err := runPassthroughFlushTest(t, io.NopCloser(strings.NewReader(upstream)), -1)
+
+	require.Error(t, err)
+	body := recorder.Body.String()
+	require.Contains(t, body, "event: response.failed")
+	require.NotContains(t, body, "req_secret")
+	require.NotContains(t, body, "internal.invalid")
+	require.Contains(t, body, "Upstream response failed")
+}
+
 func TestOpenAIStreamingPassthroughKeepsPreamblePendingUntilFirstOutputBoundary(t *testing.T) {
 	preamble := "event: response.created\n" +
 		`data: {"type":"response.created","response":{"id":"resp_pending"}}` + "\n\n" +

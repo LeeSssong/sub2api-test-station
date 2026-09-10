@@ -665,6 +665,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				dataBytes,
 				eventType,
 				openAIStreamClientOutputStarted(c, clientOutputStarted),
+				account,
 			); sanitized {
 				dataBytes = sanitizedData
 				data = string(sanitizedData)
@@ -1864,7 +1865,7 @@ func buildOpenAIResponseFailedSSE(responseID, model string, source []byte, fallb
 	return "event: response.failed\ndata: " + string(payload) + "\n\n"
 }
 
-func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string, clientOutputStarted bool) ([]byte, bool) {
+func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string, clientOutputStarted bool, account *Account) ([]byte, bool) {
 	eventType = strings.TrimSpace(eventType)
 	isFailedEvent := eventType == "response.failed"
 	if (!isFailedEvent && eventType != "error") || len(payload) == 0 || !gjson.ValidBytes(payload) {
@@ -1880,9 +1881,10 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 	// into the Responses stream.
 	clientCode := strings.TrimSpace(gjson.GetBytes(payload, errorPath+".code").String())
 	clientMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(gjson.GetBytes(payload, errorPath+".message").String()))
+	nativePassthrough := openAINativeErrorPassthroughAllowed(account, payload, errorPath)
 	lowerMessage := strings.ToLower(clientMessage)
 	sensitiveMessage := clientMessage == "" || strings.Contains(lowerMessage, "request id") || strings.Contains(lowerMessage, "ray id") || strings.Contains(lowerMessage, "http://") || strings.Contains(lowerMessage, "https://")
-	if sensitiveMessage {
+	if sensitiveMessage || (account != nil && account.IsOpenAIPassthroughEnabled() && !nativePassthrough) {
 		clientCode = "upstream_unavailable"
 		clientMessage = "Upstream response failed"
 	}
@@ -1895,8 +1897,10 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 	// 容量降载码对 Codex CLI 是致命错误；事件既然要写给客户端（failover 已不可用），
 	// 就改写为客户端可重试的错误码。error 帧与 response.failed 都要改：上游降载
 	// 总是先推 error 帧再收 failed，两帧携带同一个错误。
-	if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(updated); changed {
-		updated = rewritten
+	if !nativePassthrough {
+		if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(updated); changed {
+			updated = rewritten
+		}
 	}
 	if !isFailedEvent {
 		return updated, !bytes.Equal(updated, payload)
@@ -1939,6 +1943,24 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 		updated = next
 	}
 	return updated, !bytes.Equal(updated, payload)
+}
+
+// openAINativeErrorPassthroughAllowed is deliberately code-based and account-scoped.
+// The account switch only permits the small set of stable OpenAI error classes that
+// clients can act on; it does not turn arbitrary upstream/vendor payloads into a
+// trusted response. Sensitive messages are still rejected by the caller above.
+func openAINativeErrorPassthroughAllowed(account *Account, payload []byte, errorPath string) bool {
+	if account == nil || !account.IsOpenAIPassthroughEnabled() || len(payload) == 0 {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, errorPath+".code").String()))
+	errType := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, errorPath+".type").String()))
+	switch code {
+	case "server_is_overloaded", "slow_down", "rate_limit_exceeded", "model_not_found", "model_unavailable", "model_not_available", "model_not_supported", "unsupported_model", "invalid_model":
+		return true
+	default:
+		return errType == "rate_limit_error" && code == "rate_limit_exceeded"
+	}
 }
 
 func (s *OpenAIGatewayService) writeOpenAINonStreamingProtocolError(resp *http.Response, c *gin.Context, message string) error {

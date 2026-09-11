@@ -336,7 +336,7 @@ var ProviderSet = wire.NewSet(
 	// Admin handlers
 	ProvideDashboardHandler,
 	admin.ProvideUserHandler,
-	admin.NewGroupHandler,
+	admin.NewGroupHandlerWithConfig,
 	admin.ProvideAccountHandler,
 	admin.NewAnnouncementHandler,
 	admin.NewDataManagementHandler,

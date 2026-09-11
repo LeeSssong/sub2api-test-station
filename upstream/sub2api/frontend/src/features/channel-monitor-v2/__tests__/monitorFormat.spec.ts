@@ -15,6 +15,7 @@ import {
   monitorReadiness,
   scoreToBand,
   tokensPerSecondFromTpm,
+  ttftDisplayState,
 } from '../monitorFormat'
 import type { MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 
@@ -149,6 +150,21 @@ describe('monitorFormat accuracy', () => {
         score: 42,
       }),
     ).toBe('scored')
+  it('keeps missing first-token samples neutral instead of critical', () => {
+    const health: MonitorHealth = {
+      overall: 'healthy',
+      error_rate: 'healthy',
+      ttft: 'critical',
+      cache: 'healthy',
+      score: 90,
+      error_rate_score: 100,
+      ttft_score: null,
+      cache_score: 100,
+      minimum_sample: 20,
+    }
+    expect(healthScoreClass(health, 'ttft', 200)).toBe('health-unknown')
+    expect(ttftDisplayState('critical', { p50_ms: null, sample_count: 0 })).toBe('unknown')
+    expect(ttftDisplayState('healthy', { p50_ms: 400, sample_count: 20 })).toBe('healthy')
   })
 
   it('formats privacy-safe latency lines with avg/p50/p90', () => {

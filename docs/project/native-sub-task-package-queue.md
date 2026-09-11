@@ -1,6 +1,6 @@
 # 原生 Sub 小步发布任务包队列
 
-**官方 v0.2.4 增量同步（2026-09-12）：** 状态 `INTEGRATING`。用户要求保留现有定制内容并以增量方式更新官方最新稳定版，达到可推送/可部署状态后停止等待用户指令；本轮不推送、不部署、不通过页面验收。目标 `v0.2.4` 的 source commit 为 `5de5e2bed035d43591a2e10e51f420ef6a84eb98`，annotated tag object 为 `d681d0798064ee0ffff376d19687d12f09fe600f`，发布时间 `2026-09-09T06:43:55Z`。当前根 `main` 已先快进纳入 T140 `16c75aafd48475312987dcf2b4ebe39dd6bc2d48`；后续按 `ops/merge-sub2api-release.sh` 的官方历史合并流程处理，人工保留定制语义。官方更新例外下不运行额外功能测试、回归、类型检查或独立构建验证；只保留导入脚本自身的冲突/版本/来源门禁。独立验收站和主站只做 SSH/宿主状态只读核对，不复制任何数据、凭据或运行卷；`.worktrees/openai-responses-stream-observability` 为保护 worktree，保持原样。
+**官方 v0.2.4 增量同步（2026-09-12）：** 状态 `INTEGRATING`（本地已达到可推送/可部署状态，等待用户指令）。目标 `v0.2.4` 的 source commit 为 `5de5e2bed035d43591a2e10e51f420ef6a84eb98`，annotated tag object 为 `d681d0798064ee0ffff376d19687d12f09fe600f`，发布时间 `2026-09-09T06:43:55Z`。根 `main` 已先纳入 T140 `16c75aafd48475312987dcf2b4ebe39dd6bc2d48`，再快进纳入官方增量提交 `c47bbf985a58a8c5b0e809ba80d84452e8f9ec5a`、tree `0b6c404e68ea8f8b460f09af5bb979cc146eb4bb`；496 个文件变更，新增迁移 235/236/237，并保留星桥定制语义及 T140 的账号级倍率写入与原生 `unsupported` 后 NewAPI 兜底。官方更新例外下未运行功能测试、回归、类型检查或独立构建验证；冲突标记、人工冲突 Go 文件语法格式、版本/来源、敏感路径和 `git diff --check` 已核对。当前未推送、未执行发布预检、未构建部署制品、未部署；独立验收站和主站仅做 SSH/宿主状态只读核对，不复制任何数据、凭据或运行卷；`.worktrees/openai-responses-stream-observability` 为保护 worktree，保持原样。
 
 **T140 NewAPI 请求 ID 自动识别与原生倍率优先兜底（2026-09-12）：** 状态 `INTEGRATING`。候选提交 `16c75aafd48475312987dcf2b4ebe39dd6bc2d48` 已快进合入当前根 `main`，尚未推送或部署；显式请求头配置优先，自动识别 `X-Oneapi-Request-Id`，倍率写入仍按账号 ID，且仅在原生倍率探测明确 `unsupported` 时启用 NewAPI 兜底。
 

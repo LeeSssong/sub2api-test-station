@@ -477,8 +477,8 @@ func newAPIRateMultiplierRegistrationEligible(usage *UsageLog, record *newAPIUps
 	if !upstreamBillingRateSyncEnabled(usage.Account) {
 		return false
 	}
-	if snapshot := decodeUpstreamBillingProbeSnapshot(usage.Account.Extra); snapshot != nil &&
-		snapshot.Status == UpstreamBillingProbeStatusOK {
+	snapshot := decodeUpstreamBillingProbeSnapshot(usage.Account.Extra)
+	if snapshot == nil || snapshot.Status != UpstreamBillingProbeStatusUnsupported {
 		return false
 	}
 	if !newAPIRateRegistrationIdentity(usage.Account) {

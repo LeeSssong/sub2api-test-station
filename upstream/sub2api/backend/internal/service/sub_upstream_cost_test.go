@@ -270,6 +270,9 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 		Extra: map[string]any{
 			UpstreamBillingProbeEnabledExtraKey:    true,
 			UpstreamBillingRateSyncEnabledExtraKey: true,
+			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{
+				Status: UpstreamBillingProbeStatusUnsupported,
+			},
 			AccountMonitorBalanceExtraKey: AccountMonitorBalance{
 				Version: AccountMonitorBalanceVersion,
 				Source:  AccountMonitorBalanceSourceNewAPI,
@@ -301,6 +304,20 @@ func TestNewAPIUsageRecordEligibilityRequiresExactSuccessfulNewAPIUsage(t *testi
 			Type:  AccountTypeAPIKey,
 			Extra: map[string]any{UpstreamBillingProbeEnabledExtraKey: true, UpstreamBillingRateSyncEnabledExtraKey: true, UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}},
 		}}, record: baseRecord, want: true},
+		{name: "NewAPI balance identity without native unsupported is blocked", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
+			Type: AccountTypeAPIKey,
+			Extra: map[string]any{
+				UpstreamBillingRateSyncEnabledExtraKey: true,
+				AccountMonitorBalanceExtraKey:          AccountMonitorBalance{Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK},
+			},
+		}}, record: baseRecord, want: false},
+		{name: "native probe failure does not authorize NewAPI fallback", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: &Account{
+			Type: AccountTypeAPIKey,
+			Extra: map[string]any{
+				UpstreamBillingRateSyncEnabledExtraKey: true,
+				UpstreamBillingProbeExtraKey:           UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusFailed},
+			},
+		}}, record: baseRecord, want: false},
 		{name: "usage not persisted", usage: &UsageLog{RequestID: baseUsage.RequestID, UpstreamRequestID: &upstreamID, Account: baseAccount}, record: baseRecord},
 		{name: "missing upstream id", usage: &UsageLog{ID: 101, RequestID: baseUsage.RequestID, Account: baseAccount}, record: baseRecord},
 		{name: "fuzzy match rejected", usage: &UsageLog{ID: 101, RequestID: "different", UpstreamRequestID: newAPIStringPtr("different-upstream"), Account: baseAccount}, record: baseRecord},

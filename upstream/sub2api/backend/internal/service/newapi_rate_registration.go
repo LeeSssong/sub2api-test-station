@@ -95,5 +95,9 @@ func beijingRefreshDate(now time.Time) (string, error) {
 }
 
 func newAPIRateRegistrationUsageCandidate(usage *UsageLog) bool {
-	return usage != nil && usage.ID > 0 && usage.Account != nil && strings.TrimSpace(usage.UpstreamRequestIDOrEmpty()) != "" && newAPIRateRegistrationIdentity(usage.Account)
+	if usage == nil || usage.ID <= 0 || usage.Account == nil || strings.TrimSpace(usage.UpstreamRequestIDOrEmpty()) == "" {
+		return false
+	}
+	snapshot := decodeUpstreamBillingProbeSnapshot(usage.Account.Extra)
+	return snapshot != nil && snapshot.Status == UpstreamBillingProbeStatusUnsupported && newAPIRateRegistrationIdentity(usage.Account)
 }

@@ -227,6 +227,29 @@ func TestUsageCostEvidenceRegistrarReusesNewAPILogForRateRegistration(t *testing
 	require.InDelta(t, 0.17, rateRepo.completed[0].GroupRatio, 1e-9)
 }
 
+func TestUsageCostEvidenceRegistrarDoesNotRegisterNewAPIRateWhenNativeBillingIsAvailable(t *testing.T) {
+	upstreamID := "provider-native-first"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
+		ID: 198, RequestID: "local-native-first", UpstreamRequestID: &upstreamID, ActualCost: 0.3, CreatedAt: time.Now(),
+		Account: &Account{ID: 198, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: map[string]any{
+			UpstreamBillingProbeExtraKey:  UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusOK},
+			AccountMonitorBalanceExtraKey: AccountMonitorBalance{Source: AccountMonitorBalanceSourceNewAPI, Status: AccountMonitorBalanceStatusOK},
+		}},
+	}}
+	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}
+	rateRepo := &newAPIRateRefreshRepoStub{claimed: true}
+	registrar := enabledUsageCostEvidenceRegistrar(usageRepo, evidenceRepo)
+	registrar.SetNewAPIRateRefreshRepository(rateRepo)
+
+	require.NoError(t, registrar.RegisterOnce(context.Background(), 198))
+	require.Empty(t, rateRepo.completed)
+}
+
 func TestUsageCostEvidenceRegistrarPreservesNewAPILookupFailureReasonWithoutSecondLookup(t *testing.T) {
 	upstreamID := "provider-newapi-failure"
 	logRequests := 0

@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"unicode/utf8"
 
@@ -13,18 +14,48 @@ import (
 // 未指定时不记录上游请求标识。
 const AccountExtraUpstreamRequestIDHeader = "upstream_request_id_header"
 
+const automaticOneAPIRequestIDHeader = "X-Oneapi-Request-Id"
+
 const (
 	maxUpstreamRequestIDHeaderNameLen = 64
 	// maxUsageUpstreamRequestIDLen 与 usage_logs.upstream_request_id VARCHAR(128) 对齐。
 	maxUsageUpstreamRequestIDLen = 128
 )
 
-// UpstreamRequestIDHeaderName 返回账户指定的上游请求标识头名，未指定时为空串。
+// UpstreamRequestIDHeaderName 返回账户指定或自动识别的上游请求标识头名。
 func UpstreamRequestIDHeaderName(account *Account) string {
 	if account == nil {
 		return ""
 	}
-	return strings.TrimSpace(account.GetExtraString(AccountExtraUpstreamRequestIDHeader))
+	if name := strings.TrimSpace(account.GetExtraString(AccountExtraUpstreamRequestIDHeader)); name != "" {
+		return name
+	}
+	if isAutomaticOneAPIRequestIDEligible(account) {
+		return automaticOneAPIRequestIDHeader
+	}
+	return ""
+}
+
+func isAutomaticOneAPIRequestIDEligible(account *Account) bool {
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
+		return false
+	}
+	return isCustomOpenAIBaseURL(account) || newAPIRateRegistrationIdentity(account)
+}
+
+func isCustomOpenAIBaseURL(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	raw := strings.TrimSpace(account.GetCredential("base_url"))
+	if raw == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return false
+	}
+	return !strings.EqualFold(u.Hostname(), "api.openai.com")
 }
 
 // UpstreamRequestIDFromHeaders 从直接上游的响应头解析请求标识。

@@ -44,6 +44,76 @@ func TestUpstreamRequestIDFromHeaders_ReadsOnlyConfiguredHeader(t *testing.T) {
 	require.Equal(t, "req_official", UpstreamRequestIDFromHeaders(official, only))
 }
 
+func TestUpstreamRequestIDHeaderNameInfersOneAPIConservatively(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		want    string
+	}{
+		{
+			name:    "custom OpenAI API key base URL",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example/v1"}},
+			want:    "X-Oneapi-Request-Id",
+		},
+		{
+			name:    "trusted NewAPI identity",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{Source: AccountMonitorBalanceSourceNewAPI}}},
+			want:    "X-Oneapi-Request-Id",
+		},
+		{
+			name:    "native probe unsupported",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported}}},
+			want:    "X-Oneapi-Request-Id",
+		},
+		{
+			name:    "official OpenAI base URL",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com/v1"}},
+		},
+		{
+			name:    "empty base URL",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		},
+		{
+			name:    "OpenAI OAuth",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"base_url": "https://relay.example/v1"}},
+		},
+		{
+			name:    "non OpenAI platform",
+			account: &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example/v1"}},
+		},
+		{
+			name:    "invalid base URL",
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "://bad"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, UpstreamRequestIDHeaderName(tt.account))
+		})
+	}
+}
+
+func TestUpstreamRequestIDHeaderNameExplicitConfigurationWinsOverInference(t *testing.T) {
+	account := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://relay.example/v1"},
+		Extra:       map[string]any{AccountExtraUpstreamRequestIDHeader: "X-Custom-Request-Id"},
+	}
+	require.Equal(t, "X-Custom-Request-Id", UpstreamRequestIDHeaderName(account))
+}
+
+func TestUpstreamRequestIDFromHeadersUsesInferredOneAPIHeader(t *testing.T) {
+	account := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://relay.example/v1"},
+	}
+	h := http.Header{}
+	h.Set("X-Oneapi-Request-Id", " oneapi-inferred ")
+	require.Equal(t, "oneapi-inferred", UpstreamRequestIDFromHeaders(account, h))
+}
+
 func TestUsageUpstreamRequestIDPtr(t *testing.T) {
 	account := &Account{Extra: map[string]any{AccountExtraUpstreamRequestIDHeader: "X-Request-ID"}}
 	h := http.Header{}

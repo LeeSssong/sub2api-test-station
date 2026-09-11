@@ -370,9 +370,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 // responsesErrorResponse writes an error in OpenAI Responses API format.
 func (h *GatewayHandler) responsesErrorResponse(c *gin.Context, status int, code, message string) {
+	projected := projectNativeUserErrorForContext(c, status, code, "", message)
 	err := gin.H{
-		"code":    code,
-		"message": message,
+		"code":    projected.Type,
+		"message": projected.Message,
 	}
 	if code == "unsupported_model" {
 		for key, value := range unsupportedModelResponseFields(c) {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -1338,7 +1339,8 @@ func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamReque
 	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "openai-client-stable-123")
 	err := svc.RecordUsage(ctx, &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
-			RequestID: "upstream-openai-456",
+			RequestID:       "upstream-openai-456",
+			UpstreamHeaders: http.Header{"X-Request-Id": []string{"upstream-openai-456"}},
 			Usage: OpenAIUsage{
 				InputTokens:  8,
 				OutputTokens: 4,
@@ -1346,9 +1348,11 @@ func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamReque
 			Model:    "gpt-5.1",
 			Duration: time.Second,
 		},
-		APIKey:  &APIKey{ID: 10049},
-		User:    &User{ID: 20049},
-		Account: &Account{ID: 30049},
+		APIKey: &APIKey{ID: 10049},
+		User:   &User{ID: 20049},
+		Account: &Account{ID: 30049, Extra: map[string]any{
+			AccountExtraUpstreamRequestIDHeader: "x-request-id",
+		}},
 	})
 
 	require.NoError(t, err)

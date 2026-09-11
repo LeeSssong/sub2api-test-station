@@ -1407,6 +1407,9 @@ func writeGrokModelsList(c *gin.Context, modelIDs []string) {
 				{Value: "medium", Label: "Medium"},
 				{Value: "high", Label: "High", Default: true},
 			}
+			if service.GrokSupportsXHighReasoningEffort(modelID) {
+				item.ReasoningEfforts = append(item.ReasoningEfforts, grokReasoningEffortOption{Value: "xhigh", Label: "xHigh"})
+			}
 		}
 		models = append(models, item)
 	}
@@ -1454,8 +1457,14 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 }
 
 func customModelsListSource(platform string, availableModels, fallbackModels []string) []string {
-	if platform == service.PlatformAnthropic && len(availableModels) > 0 {
-		return mergeModelIDs(availableModels, fallbackModels)
+	if platform == service.PlatformAnthropic {
+		antigravityClaude := make([]string, 0)
+		for _, model := range antigravity.DefaultModels() {
+			if strings.HasPrefix(strings.ToLower(model.ID), "claude-") {
+				antigravityClaude = append(antigravityClaude, model.ID)
+			}
+		}
+		return mergeModelIDs(mergeModelIDs(availableModels, fallbackModels), antigravityClaude)
 	}
 	return availableModels
 }
@@ -1536,14 +1545,11 @@ func defaultModelIDsForPlatform(platform string) []string {
 		}
 		return ids
 	case service.PlatformAnthropic:
-		ids := make([]string, 0, len(claude.DefaultModels)+len(antigravity.DefaultModels()))
+		ids := make([]string, 0, len(claude.DefaultModels))
 		for _, model := range claude.DefaultModels {
 			ids = append(ids, model.ID)
 		}
-		for _, model := range antigravity.DefaultModels() {
-			ids = append(ids, model.ID)
-		}
-		return mergeModelIDs(ids, nil)
+		return ids
 	case service.PlatformGrok:
 		return xai.DefaultModelIDs()
 	case service.PlatformComposite:

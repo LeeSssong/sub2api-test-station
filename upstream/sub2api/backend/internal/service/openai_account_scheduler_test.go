@@ -274,18 +274,24 @@ func (s *openAIAdvancedSchedulerSettingRepoStub) Delete(context.Context, string)
 }
 
 func newOpenAIAdvancedSchedulerRateLimitService(enabled string, values ...string) *RateLimitService {
-	resetOpenAIAdvancedSchedulerSettingCacheForTest()
-	repo := &openAIAdvancedSchedulerSettingRepoStub{
-		values: map[string]string{},
-	}
+	settings := map[string]string{}
 	if enabled != "" {
-		repo.values[openAIAdvancedSchedulerSettingKey] = enabled
+		settings[openAIAdvancedSchedulerSettingKey] = enabled
 	}
 	if len(values) > 0 && values[0] != "" {
-		repo.values[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled] = values[0]
+		settings[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled] = values[0]
 	}
 	if len(values) > 1 && values[1] != "" {
-		repo.values[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled] = values[1]
+		settings[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled] = values[1]
+	}
+	return newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(settings)
+}
+
+func newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(values map[string]string) *RateLimitService {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	repo := &openAIAdvancedSchedulerSettingRepoStub{values: make(map[string]string, len(values))}
+	for key, value := range values {
+		repo.values[key] = value
 	}
 	return &RateLimitService{
 		settingService: NewSettingService(repo, &config.Config{}),
@@ -1354,9 +1360,10 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_StickyWeightedPreviousR
 	require.NoError(t, err)
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
-	require.Equal(t, int64(37112), selection.Account.ID)
+	// 可移动表示 previous_response_id 不再硬绑定，但加权调度仍可偏好原账号。
+	require.Equal(t, int64(37111), selection.Account.ID)
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
-	require.False(t, decision.StickyPreviousHit)
+	require.True(t, decision.StickyPreviousHit)
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}
@@ -2760,10 +2767,14 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_SubscriptionPriorityDis
 		},
 	}
 	svc := &OpenAIGatewayService{
-		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
-		cache:              &schedulerTestGatewayCache{},
-		cfg:                newSchedulerTestSubscriptionPriorityConfig(),
-		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true", "", "false"),
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:       &schedulerTestGatewayCache{},
+		cfg:         newSchedulerTestSubscriptionPriorityConfig(),
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(map[string]string{
+			openAIAdvancedSchedulerSettingKey:                            "true",
+			SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled: "false",
+			SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode:           OpenAISchedulerCandidatePoolModeTopK,
+		}),
 		concurrencyService: NewConcurrencyService(concurrencyCache),
 	}
 
@@ -3193,10 +3204,13 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceTopKFallback
 	}
 
 	svc := &OpenAIGatewayService{
-		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
-		cache:              &schedulerTestGatewayCache{},
-		cfg:                cfg,
-		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:       &schedulerTestGatewayCache{},
+		cfg:         cfg,
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(map[string]string{
+			openAIAdvancedSchedulerSettingKey:                  "true",
+			SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode: OpenAISchedulerCandidatePoolModeTopK,
+		}),
 		concurrencyService: NewConcurrencyService(concurrencyCache),
 	}
 
@@ -3513,10 +3527,13 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceDistributesA
 		},
 	}
 	svc := &OpenAIGatewayService{
-		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
-		cache:              &schedulerTestGatewayCache{sessionBindings: map[string]int64{}},
-		cfg:                cfg,
-		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:       &schedulerTestGatewayCache{sessionBindings: map[string]int64{}},
+		cfg:         cfg,
+		rateLimitService: newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(map[string]string{
+			openAIAdvancedSchedulerSettingKey:                  "true",
+			SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode: OpenAISchedulerCandidatePoolModeTopK,
+		}),
 		concurrencyService: NewConcurrencyService(concurrencyCache),
 	}
 

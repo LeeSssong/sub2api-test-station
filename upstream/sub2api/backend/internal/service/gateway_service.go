@@ -976,6 +976,9 @@ func NewGatewayService(
 	if len(wallets) > 0 {
 		svc.quotaWallet = wallets[0]
 	}
+	if svc.compositeResolver != nil {
+		svc.compositeResolver.SetModelOwnershipResolver(svc.resolveCompositeModelOwnership)
+	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
 		svc.userGroupRateCache,
@@ -1593,6 +1596,60 @@ func (s *GatewayService) GetSchedulablePlatforms(ctx context.Context, groupID *i
 	return platforms
 }
 
+// resolveCompositeModelOwnership finds the concrete provider platform that
+// exposes an exact account-level model alias in a composite group. Wildcard
+// mappings and empty targets are intentionally ignored; aliases exposed by
+// multiple provider platforms fail closed as ambiguous.
+func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, groupID int64, model string) (CompositeModelOwnership, error) {
+	if s == nil || s.accountRepo == nil || groupID <= 0 || strings.TrimSpace(model) == "" {
+		return CompositeModelOwnership{}, nil
+	}
+	cacheKey := strconv.FormatInt(groupID, 10) + "|ownership|" + strings.TrimSpace(model)
+	if s.modelsListCache != nil {
+		if cached, found := s.modelsListCache.Get(cacheKey); found {
+			if ownership, ok := cached.(CompositeModelOwnership); ok {
+				return ownership, nil
+			}
+		}
+	}
+	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
+	if err != nil {
+		return CompositeModelOwnership{}, err
+	}
+	wanted := strings.TrimSpace(model)
+	platforms := make(map[string]struct{})
+	for _, account := range accounts {
+		mapping := account.GetModelMapping()
+		if target, ok := mapping[wanted]; ok && strings.TrimSpace(target) != "" {
+			platform := strings.TrimSpace(account.Platform)
+			if platform != "" {
+				platforms[platform] = struct{}{}
+			}
+		}
+	}
+	if len(platforms) != 1 {
+		if len(platforms) > 1 {
+			ownership := CompositeModelOwnership{Ambiguous: true}
+			if s.modelsListCache != nil {
+				s.modelsListCache.Set(cacheKey, ownership, s.modelsListCacheTTL)
+			}
+			return ownership, nil
+		}
+		if s.modelsListCache != nil {
+			s.modelsListCache.Set(cacheKey, CompositeModelOwnership{}, s.modelsListCacheTTL)
+		}
+		return CompositeModelOwnership{}, nil
+	}
+	for platform := range platforms {
+		ownership := CompositeModelOwnership{TargetPlatform: platform, Matched: true}
+		if s.modelsListCache != nil {
+			s.modelsListCache.Set(cacheKey, ownership, s.modelsListCacheTTL)
+		}
+		return ownership, nil
+	}
+	return CompositeModelOwnership{}, nil
+}
+
 func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform string) {
 	if s == nil || s.modelsListCache == nil {
 		return
@@ -1602,11 +1659,21 @@ func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform
 	// 完整匹配时精准失效；否则按维度批量失效。
 	if groupID != nil && normalizedPlatform != "" {
 		s.modelsListCache.Delete(modelsListCacheKey(groupID, normalizedPlatform))
+		ownershipPrefix := strconv.FormatInt(*groupID, 10) + "|ownership|"
+		for key := range s.modelsListCache.Items() {
+			if strings.HasPrefix(key, ownershipPrefix) {
+				s.modelsListCache.Delete(key)
+			}
+		}
 		return
 	}
 
 	targetGroup := derefGroupID(groupID)
 	for key := range s.modelsListCache.Items() {
+		if groupID != nil && strings.HasPrefix(key, strconv.FormatInt(targetGroup, 10)+"|ownership|") {
+			s.modelsListCache.Delete(key)
+			continue
+		}
 		parts := strings.SplitN(key, "|", 2)
 		if len(parts) != 2 {
 			continue

@@ -6,18 +6,24 @@ const (
 	accountMonitorQualityFreshnessFresh   = "fresh"
 	accountMonitorQualityFreshnessStale   = "stale"
 	accountMonitorQualityFreshnessUnknown = "unknown"
+	accountMonitorQualitySourceReal       = "real_request"
+	accountMonitorQualitySourceProbe      = "monitor_probe"
+	accountMonitorQualitySourceHybrid     = "hybrid"
 	accountMonitorQualitySourceUnified    = "unified"
 	accountMonitorQualitySourceUnknown    = "unknown"
 )
 
-// fuseAccountMonitorQualityEvidence projects the repository-selected request
-// stream. Repository selection already applies the five-minute real/probe
-// fallback, so service code must not add probe aggregates a second time.
-func fuseAccountMonitorQualityEvidence(window AccountMonitorWindowAggregate, _ AccountMonitorAggregate, _ AccountMonitorLatest, settings AccountMonitorSettings, now time.Time) AccountMonitorQualityEvidence {
+// fuseAccountMonitorQualityEvidence preserves compatibility for repositories
+// that still return real requests and probes separately. Callers backed by the
+// unified request repository pass an empty probe aggregate.
+func fuseAccountMonitorQualityEvidence(real AccountMonitorWindowAggregate, probe AccountMonitorAggregate, latest AccountMonitorLatest, settings AccountMonitorSettings, now time.Time) AccountMonitorQualityEvidence {
 	now = now.UTC()
-	samples := clampNonNegativeInt64(window.RequestCount)
-	successes := clampCount(window.SuccessCount, samples)
-	observedAt := accountMonitorWindowObservedAt(window)
+	realSamples := clampNonNegativeInt64(real.RequestCount)
+	probeSamples := clampNonNegativeInt(probe.SampleCount)
+	realSuccesses := clampCount(real.SuccessCount, realSamples)
+	probeSuccesses := clampCount(int64(legacyAggregateSuccessSamples(probe)), int64(probeSamples))
+	realAt := accountMonitorWindowObservedAt(real)
+	probeAt := accountMonitorProbeObservedAt(probe, latest)
 	ttl := time.Duration(settings.IntervalSeconds*2) * time.Second
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
@@ -25,30 +31,64 @@ func fuseAccountMonitorQualityEvidence(window AccountMonitorWindowAggregate, _ A
 	// Legacy window aggregate adapters do not always carry MAX(created_at).
 	// Their rows are still scoped to the requested current window, but the
 	// absence of a timestamp must not be exposed as an invented observation.
-	if samples == 0 {
-		return accountMonitorUnknownQualityEvidenceWithFreshness("missing", false)
+	realAvailable := realSamples > 0
+	probeAvailable := probeSamples > 0
+	realFresh := realAvailable && (realAt.IsZero() || isAccountMonitorEvidenceFresh(realAt, now, ttl))
+	probeFresh := probeAvailable && isAccountMonitorEvidenceFresh(probeAt, now, ttl)
+	if !realAvailable && !probeAvailable {
+		return accountMonitorUnknownQualityEvidence("missing")
 	}
-	stale := observedAt.IsZero() || !isAccountMonitorEvidenceFresh(observedAt, now, ttl)
+	useReal, useProbe := realFresh, probeFresh
+	freshness := accountMonitorQualityFreshnessFresh
+	if !useReal && !useProbe {
+		useReal, useProbe = realAvailable, probeAvailable
+		freshness = accountMonitorQualityFreshnessStale
+	}
+
 	evidence := AccountMonitorQualityEvidence{
-		Source: accountMonitorQualitySourceUnified, Known: true,
-		Freshness: accountMonitorQualityFreshnessFresh, ObservedAt: observedAt,
-		SampleCount: int(samples), SuccessSampleCount: int(successes),
-		SuccessRate: float64(successes) / float64(samples),
+		Known: true, Freshness: freshness,
+		ObservedAt: latestEvidenceTime(realAt, probeAt),
 	}
-	if stale {
-		evidence.Freshness = accountMonitorQualityFreshnessStale
+	if useReal {
+		evidence.RealRequestSamples = int(realSamples)
+		evidence.SampleCount += int(realSamples)
+		evidence.SuccessSampleCount += int(realSuccesses)
 	}
-	if window.TTFTSampleCount > 0 && window.TTFTP50MS != nil {
-		evidence.TTFTSampleCount = window.TTFTSampleCount
-		evidence.TTFTP50MS = window.TTFTP50MS
+	if useProbe {
+		evidence.ProbeSamples = probeSamples
+		evidence.SampleCount += probeSamples
+		evidence.SuccessSampleCount += int(probeSuccesses)
 	}
-	if window.LatencySampleCount > 0 && window.LatencyP95MS != nil {
-		evidence.LatencySampleCount = window.LatencySampleCount
-		evidence.LatencyP95MS = window.LatencyP95MS
+	switch {
+	case useReal && useProbe:
+		evidence.Source = accountMonitorQualitySourceHybrid
+	case useReal:
+		evidence.Source = accountMonitorQualitySourceReal
+	case useProbe:
+		evidence.Source = accountMonitorQualitySourceProbe
 	}
-	if window.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(window.OutputRateTokensPerSecond) {
-		evidence.OutputRateTokensPerSecond = window.OutputRateTokensPerSecond
-		evidence.OutputRateSampleCount = window.OutputRateSampleCount
+	if evidence.SampleCount > 0 {
+		evidence.RealRequestWeight = float64(evidence.RealRequestSamples) / float64(evidence.SampleCount)
+		evidence.ProbeWeight = float64(evidence.ProbeSamples) / float64(evidence.SampleCount)
+		evidence.SuccessRate = float64(evidence.SuccessSampleCount) / float64(evidence.SampleCount)
+	}
+	if useReal && real.TTFTSampleCount > 0 && real.TTFTP50MS != nil {
+		evidence.TTFTSampleCount = real.TTFTSampleCount
+		evidence.TTFTP50MS = real.TTFTP50MS
+	} else if useProbe && !useReal {
+		evidence.TTFTSampleCount = probe.TTFTSampleCount
+		evidence.TTFTP50MS = probe.TTFTP50MS
+	}
+	if useReal && real.LatencySampleCount > 0 && real.LatencyP95MS != nil {
+		evidence.LatencySampleCount = real.LatencySampleCount
+		evidence.LatencyP95MS = real.LatencyP95MS
+	} else if useProbe && !useReal {
+		evidence.LatencySampleCount = probe.LatencySampleCount
+		evidence.LatencyP95MS = probe.LatencyP95MS
+	}
+	if useReal && real.OutputRateSampleCount > 0 && validAccountMonitorOutputRate(real.OutputRateTokensPerSecond) {
+		evidence.OutputRateTokensPerSecond = real.OutputRateTokensPerSecond
+		evidence.OutputRateSampleCount = real.OutputRateSampleCount
 	}
 	return evidence
 }

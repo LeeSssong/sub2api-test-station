@@ -34,9 +34,8 @@ func TestSanitizeOpenAINativePassthroughPreservesCapacityError(t *testing.T) {
 
 	got, changed := sanitizeOpenAIResponseFailedEventForClient(payload, "response.failed", false, account)
 
-	require.True(t, changed)
-	require.Contains(t, string(got), `"code":"server_is_overloaded"`)
-	require.Contains(t, string(got), `"message":"The model is currently overloaded. Please try again later."`)
+	require.False(t, changed)
+	require.JSONEq(t, string(payload), string(got))
 	require.NotContains(t, string(got), `"output"`)
 }
 
@@ -56,9 +55,8 @@ func TestSanitizeOpenAINativePassthroughPreservesRateLimitError(t *testing.T) {
 
 	got, changed := sanitizeOpenAIResponseFailedEventForClient(payload, "response.failed", false, account)
 
-	require.True(t, changed)
-	require.Contains(t, string(got), `"code":"rate_limit_exceeded"`)
-	require.Contains(t, string(got), `"message":"Rate limit reached for the model."`)
+	require.False(t, changed)
+	require.JSONEq(t, string(payload), string(got))
 }
 
 func TestSanitizeOpenAINativePassthroughStillSanitizesUnknownProviderError(t *testing.T) {

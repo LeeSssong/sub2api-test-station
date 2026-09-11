@@ -382,9 +382,10 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 
 // chatCompletionsErrorResponse writes an error in OpenAI Chat Completions format.
 func (h *GatewayHandler) chatCompletionsErrorResponse(c *gin.Context, status int, errType, message string) {
+	projected := projectNativeUserErrorForContext(c, status, errType, "", message)
 	err := gin.H{
-		"type":    errType,
-		"message": message,
+		"type":    projected.Type,
+		"message": projected.Message,
 	}
 	if errType == "unsupported_model" {
 		for key, value := range unsupportedModelResponseFields(c) {

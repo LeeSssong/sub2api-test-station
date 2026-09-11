@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -144,8 +145,10 @@ func TestFetchCodexModelsManifestForGroupKeepsStaleAggregateAfterRefreshFailure(
 	for key, entry := range s.codexModelsManifestCache.entries {
 		if strings.HasPrefix(key, "group:") {
 			entry.expiresAt = time.Now().Add(-time.Second)
-			s.codexModelsManifestCache.entries[key] = entry
+		} else {
+			entry.staleUntil = time.Now().Add(-time.Second)
 		}
+		s.codexModelsManifestCache.entries[key] = entry
 	}
 	s.codexModelsManifestCache.mu.Unlock()
 
@@ -500,7 +503,7 @@ func TestFetchCodexModelsManifestNotModified(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotIfNoneMatch = r.Header.Get("If-None-Match")
 		w.Header().Set("ETag", `W/"abc123"`)
-		w.WriteHeader(http.StatusNotModified)
+		_, _ = w.Write([]byte(`{"models":[]}`))
 	}))
 	defer server.Close()
 
@@ -516,8 +519,8 @@ func TestFetchCodexModelsManifestNotModified(t *testing.T) {
 	if !manifest.NotModified {
 		t.Error("expected NotModified to be true")
 	}
-	if gotIfNoneMatch != `W/"abc123"` {
-		t.Errorf("if-none-match header: got %q", gotIfNoneMatch)
+	if gotIfNoneMatch != "" {
+		t.Errorf("cold shared refresh inherited caller if-none-match: got %q", gotIfNoneMatch)
 	}
 }
 
@@ -635,9 +638,7 @@ func TestFetchCodexModelsManifestAPIKeyConvertsStandardOpenAIModelList(t *testin
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
 	}
-	if got, want := string(manifest.Body), `{"models":[{"slug":"gpt-5.6"},{"slug":"gpt-5.6-codex"}]}`; got != want {
-		t.Errorf("converted body: got %q, want %q", got, want)
-	}
+	assertCompleteConvertedCodexModels(t, manifest.Body, []string{"gpt-5.6", "gpt-5.6-codex"})
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 	require.Equal(t, `W/"openai-list"`, manifest.upstreamETag)
 }
@@ -715,14 +716,15 @@ func TestFetchCodexModelsManifestOAuthPreservesResponsesLite(t *testing.T) {
 
 func TestConvertOpenAIModelListToCodexManifest(t *testing.T) {
 	tests := []struct {
-		name string
-		body string
-		want string
+		name      string
+		body      string
+		want      string
+		wantSlugs []string
 	}{
 		{
-			name: "standard list",
-			body: `{"object":"list","data":[{"id":"m-1"},{"id":"m-2"}]}`,
-			want: `{"models":[{"slug":"m-1"},{"slug":"m-2"}]}`,
+			name:      "standard list",
+			body:      `{"object":"list","data":[{"id":"m-1"},{"id":"m-2"}]}`,
+			wantSlugs: []string{"m-1", "m-2"},
 		},
 		{
 			name: "codex manifest unchanged",
@@ -758,10 +760,33 @@ func TestConvertOpenAIModelListToCodexManifest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := string(convertOpenAIModelListToCodexManifest([]byte(tt.body))); got != tt.want {
+			gotBody := convertOpenAIModelListToCodexManifest([]byte(tt.body))
+			if len(tt.wantSlugs) > 0 {
+				assertCompleteConvertedCodexModels(t, gotBody, tt.wantSlugs)
+				return
+			}
+			if got := string(gotBody); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func assertCompleteConvertedCodexModels(t *testing.T, body []byte, wantSlugs []string) {
+	t.Helper()
+	var envelope struct {
+		Models []configuredCodexModelDescriptor `json:"models"`
+	}
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	require.Len(t, envelope.Models, len(wantSlugs))
+	for i, wantSlug := range wantSlugs {
+		model := envelope.Models[i]
+		require.Equal(t, wantSlug, model.Slug)
+		require.NotEmpty(t, model.DisplayName)
+		require.NotEmpty(t, model.Description)
+		require.NotEmpty(t, model.ShellType)
+		require.NotEmpty(t, model.InputModalities)
+		require.Greater(t, model.ContextWindow, int64(0))
 	}
 }
 
@@ -1135,22 +1160,25 @@ func TestFetchCodexModelsManifestAPIKeyCacheBoundsEntriesAndBodySize(t *testing.
 		t.Fatalf("body-size bounded cache calls: got %d, want 3", got)
 	}
 
-	for i := int64(10); i < 75; i++ {
+	firstID := int64(10)
+	lastID := firstID + int64(codexModelsManifestCacheMaxEntries)
+	for i := firstID; i <= lastID; i++ {
 		account := newCodexModelsAPIKeyTestAccount("https://bounded.example")
 		account.ID = i
 		fetch(account)
 	}
 	last := newCodexModelsAPIKeyTestAccount("https://bounded.example")
-	last.ID = 74
+	last.ID = lastID
 	fetch(last)
-	if got := calls.Load(); got != 68 {
-		t.Fatalf("most recent cache entry was not retained: calls=%d, want 68", got)
+	wantBeforeEvictedFetch := int32(3 + codexModelsManifestCacheMaxEntries + 1)
+	if got := calls.Load(); got != wantBeforeEvictedFetch {
+		t.Fatalf("most recent cache entry was not retained: calls=%d, want %d", got, wantBeforeEvictedFetch)
 	}
 	first := newCodexModelsAPIKeyTestAccount("https://bounded.example")
-	first.ID = 10
+	first.ID = firstID
 	fetch(first)
-	if got := calls.Load(); got != 69 {
-		t.Errorf("oldest cache entry was not evicted: calls=%d, want 69", got)
+	if got, want := calls.Load(), wantBeforeEvictedFetch+1; got != want {
+		t.Errorf("oldest cache entry was not evicted: calls=%d, want %d", got, want)
 	}
 }
 

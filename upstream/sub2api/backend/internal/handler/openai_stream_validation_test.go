@@ -79,7 +79,7 @@ func TestOpenAICompatibleHandlersRejectInvalidStreamFieldType(t *testing.T) {
 			tt.run(c)
 
 			require.Equal(t, http.StatusBadRequest, rec.Code)
-			require.Equal(t, invalidStreamFieldTypeMessage, gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+			require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 			require.Contains(t, rec.Body.String(), "invalid_request_error")
 		})
 	}
@@ -119,7 +119,7 @@ func TestGatewayOpenAICompatibleHandlersAllowBooleanStreamToContinue(t *testing.
 			tt.run(c)
 
 			require.Equal(t, http.StatusForbidden, rec.Code)
-			require.Contains(t, rec.Body.String(), "This group is restricted to Claude Code clients")
+			require.Equal(t, "当前模型或分组不可用，请调整后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 		})
 	}
 }

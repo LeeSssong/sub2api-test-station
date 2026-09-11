@@ -1621,7 +1621,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfitWit
 		if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 			return nil
 		}
-		if s.isOpenAIAccountRequestRuntimeBlockedWithLease(account, requestedModel, lease) {
+		if openAIForcedAccountFromContext(ctx) != account.ID && s.isOpenAIAccountRequestRuntimeBlockedWithLease(account, requestedModel, lease) {
 			return nil
 		}
 		if s.isOpenAIProxyStreamQuarantined(ctx, account) {
@@ -1646,7 +1646,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfitWit
 	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedWithLease(latest, requestedModel, lease) {
+	if openAIForcedAccountFromContext(ctx) != latest.ID && s.isOpenAIAccountRequestRuntimeBlockedWithLease(latest, requestedModel, lease) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, latest) {

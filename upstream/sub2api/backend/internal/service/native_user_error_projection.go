@@ -63,7 +63,7 @@ func ProjectNativeUserError(input NativeUserErrorInput) NativeUserErrorProjectio
 		} else {
 			result.Message = "服务暂时异常，请稍后重试。"
 		}
-	case containsAnyNativeErrorMarker(text, "insufficient balance", "余额不足"):
+	case containsAnyNativeErrorMarker(text, "insufficient balance", "insufficient_balance", "余额不足"):
 		result.Message = "余额不足，请充值后重试。"
 	case containsAnyNativeErrorMarker(text, "subscription", "quota", "usage limit", "额度", "限额"):
 		result.Message = "额度或订阅不可用，请检查当前套餐后重试。"

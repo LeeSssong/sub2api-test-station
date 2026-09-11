@@ -108,8 +108,15 @@ func isOpenAIUnifiedQualityCandidateBetter(left, right openAIUnifiedQualityCandi
 		return leftTier == openAIUnifiedQualityResourceTierSelfOwned
 	}
 	if leftTier == openAIUnifiedQualityResourceTierSelfOwned {
-		if left.priority != right.priority {
-			return left.priority < right.priority
+		leftPriority, rightPriority := left.priority, right.priority
+		if leftPriority <= 0 {
+			leftPriority = left.account.Priority
+		}
+		if rightPriority <= 0 {
+			rightPriority = right.account.Priority
+		}
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
 		}
 		if cmp := compareOpenAIUnifiedQualityLoad(left.loadInfo, right.loadInfo); cmp != 0 {
 			return cmp < 0
@@ -143,7 +150,8 @@ func openAIUnifiedQualityColdStartPrioritySignal(priority int, confidence float6
 	}
 	priority = clampInt(priority, 1, 100)
 	strength := 1 - math.Max(0, confidence)/openAIUnifiedQualityMaturityConfidence
-	return ((50 - float64(priority)) / 49) * openAIUnifiedQualityMaxPrioritySignal * strength
+	signal := ((50 - float64(priority)) / 49) * openAIUnifiedQualityMaxPrioritySignal * strength
+	return math.Max(-openAIUnifiedQualityMaxPrioritySignal, math.Min(openAIUnifiedQualityMaxPrioritySignal, signal))
 }
 
 func openAIUnifiedQualityCandidatePrioritySignal(candidate openAIUnifiedQualityCandidate) float64 {

@@ -1854,7 +1854,7 @@ func projectAccountMonitorWindowState(
 	row.Stale = !evidence.Known || evidence.Freshness != accountMonitorQualityFreshnessFresh || evidence.SampleCount == 0
 	if row.Stale {
 		row.AvailabilityStatus = accountMonitorAvailabilityStale
-	} else if accountMonitorFatalProbeError(latest) {
+	} else if accountMonitorFatalProbeError(latest) || (row.ManagementState == accountMonitorManagementPaused && accountMonitorHTTPFailure(latest)) {
 		row.AvailabilityStatus = accountMonitorAvailabilityUnavailable
 	} else if evidence.SuccessSampleCount == evidence.SampleCount {
 		row.AvailabilityStatus = accountMonitorAvailabilityNormal

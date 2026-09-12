@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -202,6 +203,133 @@ func TestOpenAIUnifiedQualitySelectorUsesQualityOrderForOrdinaryText(t *testing.
 	selection.ReleaseFunc()
 }
 
+func TestOpenAIUnifiedQualitySelectorUsesColdStartPriorityInCombinedAPIKeyScore(t *testing.T) {
+	groupID := int64(11)
+	priorityOne := unifiedQualityTestAccount(1, groupID)
+	priorityOne.Priority = 1
+	peer := unifiedQualityTestAccount(2, groupID)
+	peer.Priority = 50
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{peer, priorityOne}}
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
+		1: {AccountID: 1},
+		2: {AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 20, SuccessRate: floatPtr(1), TTFTSampleCount: 20, TTFTP50MS: floatPtr(9000), TTFTP90MS: floatPtr(9000)},
+		}},
+	}}}
+	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality, cfg: unifiedQualityPriorityTestConfig()}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	selection, decision, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), selection.Account.ID)
+	require.Equal(t, []int64{1, 2}, decision.CandidateAccountIDs)
+	require.InDelta(t, 70, decision.SelectedPrioritySignal, 0.000001)
+	require.InDelta(t, 50, decision.SelectedColdStartPrioritySignal, 0.000001)
+	require.InDelta(t, 20, decision.SelectedDailyPrioritySignal, 0.000001)
+	selection.ReleaseFunc()
+}
+
+func TestOpenAIUnifiedQualitySelectorAppliesDailyPriorityToMatureAPIKey(t *testing.T) {
+	groupID := int64(11)
+	priorityOne := unifiedQualityTestAccount(1, groupID)
+	priorityOne.Priority = 1
+	peer := unifiedQualityTestAccount(2, groupID)
+	peer.Priority = 50
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{peer, priorityOne}}
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
+		1: {AccountID: 1, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow5M:  {AttemptCount: 1000, SuccessCount: 1000, SuccessRate: floatPtr(1), TTFTSampleCount: 100, TTFTP50MS: floatPtr(9000), TTFTP90MS: floatPtr(9000)},
+			OpenAIQualityWindow55M: {AttemptCount: 1000, SuccessCount: 1000, SuccessRate: floatPtr(1), TTFTSampleCount: 100, TTFTP50MS: floatPtr(9000), TTFTP90MS: floatPtr(9000)},
+		}},
+		2: {AccountID: 2},
+	}}}
+	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality, cfg: unifiedQualityPriorityTestConfig()}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	selection, decision, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), selection.Account.ID)
+	require.InDelta(t, 20, decision.SelectedPrioritySignal, 0.000001)
+	require.Zero(t, decision.SelectedColdStartPrioritySignal)
+	require.InDelta(t, 20, decision.SelectedDailyPrioritySignal, 0.000001)
+	selection.ReleaseFunc()
+}
+
+func TestOpenAIUnifiedQualitySelectorLetsMateriallyBetterPriority50Win(t *testing.T) {
+	groupID := int64(11)
+	priorityOne := unifiedQualityTestAccount(1, groupID)
+	priorityOne.Priority = 1
+	peer := unifiedQualityTestAccount(2, groupID)
+	peer.Priority = 50
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{priorityOne, peer}}
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
+		1: {AccountID: 1, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 0, SuccessRate: floatPtr(0), TTFTSampleCount: 20, TTFTP50MS: floatPtr(60000), TTFTP90MS: floatPtr(60000)},
+		}},
+		2: {AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow5M:  {AttemptCount: 100, SuccessCount: 100, SuccessRate: floatPtr(1), TTFTSampleCount: 100, TTFTP50MS: floatPtr(2000), TTFTP90MS: floatPtr(2000)},
+			OpenAIQualityWindow55M: {AttemptCount: 1000, SuccessCount: 1000, SuccessRate: floatPtr(1), TTFTSampleCount: 100, TTFTP50MS: floatPtr(2000), TTFTP90MS: floatPtr(2000)},
+		}},
+	}}}
+	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality, cfg: unifiedQualityPriorityTestConfig()}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	selection, _, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), selection.Account.ID)
+	selection.ReleaseFunc()
+}
+
+func TestOpenAIUnifiedQualitySelectorUsesGroupPriorityForSignals(t *testing.T) {
+	groupID := int64(11)
+	groupPriority := unifiedQualityTestAccount(1, groupID)
+	groupPriority.Priority = 100
+	groupPriority.AccountGroups = []AccountGroup{{AccountID: 1, GroupID: groupID, Priority: 1}}
+	globalPriority := unifiedQualityTestAccount(2, groupID)
+	globalPriority.Priority = 1
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{globalPriority, groupPriority}}
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{1: {AccountID: 1}, 2: {AccountID: 2}}}}
+	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality, cfg: unifiedQualityPriorityTestConfig()}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	selection, decision, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), selection.Account.ID)
+	require.InDelta(t, 70, decision.SelectedPrioritySignal, 0.000001)
+	selection.ReleaseFunc()
+}
+
+func TestOpenAIUnifiedQualitySelectorExcludesRuntimeBlockedPriorityOne(t *testing.T) {
+	groupID := int64(11)
+	blocked := unifiedQualityTestAccount(1, groupID)
+	blocked.Priority = 1
+	healthy := unifiedQualityTestAccount(2, groupID)
+	healthy.Priority = 50
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{blocked, healthy}}
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{1: {AccountID: 1}, 2: {AccountID: 2}}}}
+	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality}
+	service.recordOpenAIAccountModelTransientFailure(&blocked, "gpt-5.4", time.Now())
+	service.recordOpenAIAccountModelTransientFailure(&blocked, "gpt-5.4", time.Now())
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	selection, decision, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), selection.Account.ID)
+	require.Contains(t, decision.ExcludedAccountIDs, int64(1))
+	require.Equal(t, 1, decision.ExcludeReasons["runtime_blocked"])
+	selection.ReleaseFunc()
+}
+
 func TestOpenAIUnifiedQualitySelectorBypassesQualityProviderForImages(t *testing.T) {
 	groupID := int64(11)
 	quality := &recordingOpenAIQualityProvider{}
@@ -342,4 +470,11 @@ func TestOpenAIUnifiedQualitySelectorRechecksLiveCostAfterSlot(t *testing.T) {
 func unifiedQualityTestAccount(id, groupID int64) Account {
 	rate := 0.1
 	return Account{ID: id, Name: "quality", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, RateMultiplier: &rate, GroupIDs: []int64{groupID}, CreatedAt: time.Now()}
+}
+
+func unifiedQualityPriorityTestConfig() *config.Config {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = 50
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 20
+	return cfg
 }

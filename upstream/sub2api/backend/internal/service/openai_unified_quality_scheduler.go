@@ -30,7 +30,7 @@ type openAIUnifiedQualityRecheckKey struct{}
 
 // openAIUnifiedQualityCandidate contains only the values that are allowed to
 // affect ordinary text ordering. Self-owned ordering uses native priority and
-// load; API-key priority is only a bounded cold-start signal.
+// load; API-key priority contributes only bounded cold-start and daily signals.
 type openAIUnifiedQualityCandidate struct {
 	account                 *Account
 	quality                 OpenAIQualityBreakdown
@@ -42,6 +42,7 @@ type openAIUnifiedQualityCandidate struct {
 	coldStart               bool
 	coldStartPrioritySignal float64
 	dailyPrioritySignal     float64
+	prioritySignalsResolved bool
 }
 
 type openAIProfitPartition struct {
@@ -188,10 +189,26 @@ func finiteOpenAIUnifiedQualityPriorityCap(max float64) bool {
 }
 
 func openAIUnifiedQualityCandidatePrioritySignal(candidate openAIUnifiedQualityCandidate) float64 {
-	if candidate.resourceTier != openAIUnifiedQualityResourceTierAPIKey || !candidate.coldStart {
+	if candidate.resourceTier != openAIUnifiedQualityResourceTierAPIKey {
 		return 0
 	}
+	if candidate.prioritySignalsResolved {
+		return candidate.coldStartPrioritySignal + candidate.dailyPrioritySignal
+	}
+	// Preserve direct callers that construct the pre-T3 candidate shape.
 	return openAIUnifiedQualityColdStartPrioritySignal(candidate.priority, candidate.quality.Confidence)
+}
+
+func applyOpenAIUnifiedQualityPrioritySignals(candidate *openAIUnifiedQualityCandidate, caps openAIUnifiedQualityPriorityCaps) {
+	if candidate == nil || candidate.account == nil || candidate.resourceTier != openAIUnifiedQualityResourceTierAPIKey {
+		return
+	}
+	candidate.coldStartPrioritySignal = 0
+	if candidate.coldStart {
+		candidate.coldStartPrioritySignal = openAIUnifiedQualityColdStartPrioritySignalWithCap(candidate.priority, candidate.quality.Confidence, caps.ColdStartMax)
+	}
+	candidate.dailyPrioritySignal = openAIUnifiedQualityDailyPrioritySignal(candidate.priority, caps.DailyMax)
+	candidate.prioritySignalsResolved = true
 }
 
 func compareOpenAIUnifiedQualityLoad(left, right *AccountLoadInfo) int {
@@ -300,6 +317,14 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 	if s == nil || s.service == nil {
 		return nil, decision, ErrNoAvailableAccounts
 	}
+	if req.unifiedQualityPriorityCaps == nil {
+		groupID := int64(0)
+		if req.GroupID != nil {
+			groupID = *req.GroupID
+		}
+		caps := s.service.openAIUnifiedQualityPriorityCapsForRequest(ctx, groupID)
+		req.unifiedQualityPriorityCaps = &caps
+	}
 	accounts, err := s.service.listSchedulableAccounts(ctx, req.GroupID, PlatformOpenAI)
 	if err != nil {
 		return nil, decision, err
@@ -389,6 +414,7 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 		qualityCandidates[i].priority = accountSchedulingPriorityForGroup(qualityCandidates[i].account, req.GroupID)
 		qualityCandidates[i].loadInfo = loadMap[qualityCandidates[i].account.ID]
 		qualityCandidates[i].coldStart = qualityCandidates[i].resourceTier == openAIUnifiedQualityResourceTierAPIKey && qualityCandidates[i].quality.Confidence < openAIUnifiedQualityMaturityConfidence
+		applyOpenAIUnifiedQualityPrioritySignals(&qualityCandidates[i], *req.unifiedQualityPriorityCaps)
 	}
 	partition := partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates)
 	ordered := selectOpenAIUnifiedQualityResourceTier(partition.candidates)
@@ -398,6 +424,10 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 		decision.FirstOutputScore = ordered[0].quality.FirstOutputScore
 		decision.OutputRateScore = ordered[0].quality.OutputRateScore
 		decision.LiveLoadScore = ordered[0].quality.LiveLoadScore
+		decision.SelectedPriority = ordered[0].priority
+		decision.SelectedPrioritySignal = openAIUnifiedQualityCandidatePrioritySignal(ordered[0])
+		decision.SelectedColdStartPrioritySignal = ordered[0].coldStartPrioritySignal
+		decision.SelectedDailyPrioritySignal = ordered[0].dailyPrioritySignal
 		decision.FirstOutputSlowCount = ordered[0].quality.FirstOutputSlowCount
 		decision.SlowEvidenceReplaced = ordered[0].quality.SlowEvidenceReplaced
 		if len(ordered) > 1 {
@@ -473,6 +503,10 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 		}
 		decision.SelectedAccountID = fresh.ID
 		decision.SelectedAccountType = fresh.Type
+		decision.SelectedPriority = candidate.priority
+		decision.SelectedPrioritySignal = openAIUnifiedQualityCandidatePrioritySignal(candidate)
+		decision.SelectedColdStartPrioritySignal = candidate.coldStartPrioritySignal
+		decision.SelectedDailyPrioritySignal = candidate.dailyPrioritySignal
 		decision.SelectedRank = rank + 1
 		selection := &AccountSelectionResult{Account: fresh, Acquired: true, ReleaseFunc: release, profitBypass: partition.bypass, unifiedQuality: true}
 		return attachSelectionProfitGate(ctx, selection), decision, nil
@@ -481,6 +515,10 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 		cfg := s.service.schedulingConfig()
 		decision.SelectedAccountID = waitCandidate.account.ID
 		decision.SelectedAccountType = waitCandidate.account.Type
+		decision.SelectedPriority = waitCandidate.priority
+		decision.SelectedPrioritySignal = openAIUnifiedQualityCandidatePrioritySignal(*waitCandidate)
+		decision.SelectedColdStartPrioritySignal = waitCandidate.coldStartPrioritySignal
+		decision.SelectedDailyPrioritySignal = waitCandidate.dailyPrioritySignal
 		decision.SelectedRank = waitRank
 		selection := &AccountSelectionResult{
 			Account: waitCandidate.account,

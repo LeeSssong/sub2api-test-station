@@ -104,6 +104,9 @@ type OpenAIAccountScheduleRequest struct {
 	halfOpenProbe   bool
 	halfOpenLease   *openAIAccountModelHalfOpenLease
 	decisionDetails *openAIAccountScheduleDecisionDetails
+	// Resolved once at the start of a unified-quality selection and reused by
+	// request-local rechecks.
+	unifiedQualityPriorityCaps *openAIUnifiedQualityPriorityCaps
 }
 
 type openAIAccountScheduleDecisionDetails struct {
@@ -159,30 +162,34 @@ func openAIForcedAccountFromContext(ctx context.Context) int64 {
 }
 
 type OpenAIAccountScheduleDecision struct {
-	Layer                 string
-	StickyPreviousHit     bool
-	StickySessionHit      bool
-	CandidateCount        int
-	TopK                  int
-	LatencyMs             int64
-	LoadSkew              float64
-	SelectedAccountID     int64
-	SelectedRank          int
-	SelectedAccountType   string
-	EligibleCount         int
-	EffectiveTopK         int
-	MinimumScoreThreshold float64
-	SelectionLayer        string
-	UnifiedQuality        bool
-	StickyKept            bool
-	StickyEscapeReason    string
-	TTFTReportEligible    bool
-	CandidateAccountIDs   []int64
-	ExcludedAccountIDs    []int64
-	ExcludeReasons        map[string]int
-	ProfitMode            string
-	ProfitBypass          bool
-	ProfitBypassReason    string
+	Layer                           string
+	StickyPreviousHit               bool
+	StickySessionHit                bool
+	CandidateCount                  int
+	TopK                            int
+	LatencyMs                       int64
+	LoadSkew                        float64
+	SelectedAccountID               int64
+	SelectedRank                    int
+	SelectedAccountType             string
+	SelectedPriority                int
+	SelectedPrioritySignal          float64
+	SelectedColdStartPrioritySignal float64
+	SelectedDailyPrioritySignal     float64
+	EligibleCount                   int
+	EffectiveTopK                   int
+	MinimumScoreThreshold           float64
+	SelectionLayer                  string
+	UnifiedQuality                  bool
+	StickyKept                      bool
+	StickyEscapeReason              string
+	TTFTReportEligible              bool
+	CandidateAccountIDs             []int64
+	ExcludedAccountIDs              []int64
+	ExcludeReasons                  map[string]int
+	ProfitMode                      string
+	ProfitBypass                    bool
+	ProfitBypassReason              string
 	// T96 unified-quality observability fields. They are additive and do not
 	// participate in account ordering.
 	ImageIntent          bool

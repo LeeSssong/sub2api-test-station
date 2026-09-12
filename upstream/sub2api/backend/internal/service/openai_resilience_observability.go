@@ -82,33 +82,37 @@ type OpenAIResilienceEvent struct {
 	FinalOutcome          string
 	// Unified-quality scheduling details. These fields are intentionally
 	// non-sensitive and remain in the existing bounded process-local ledger.
-	SelectedAccountID    int64
-	SelectedRank         int
-	UnifiedQuality       bool
-	ImageIntent          bool
-	QualityWindowEnd     time.Time
-	QualityScore         float64
-	SuccessScore         float64
-	FirstOutputScore     float64
-	OutputRateScore      float64
-	LiveLoadScore        float64
-	FirstOutputSlowCount int
-	SlowEvidenceReplaced bool
-	QualityScoreGap      float64
-	QualitySnapshotStale bool
-	ProfitMode           string
-	ProfitBypass         bool
-	ProfitBypassReason   string
-	RuntimeRetryBudget   int
-	ExtraRetryCount      int
-	ExtraUsed            int
-	SwitchCount          int
-	SafeToReplay         bool
-	StopReason           string
-	NativeSlotWaitMs     int64
-	RoutingMs            int64
-	UpstreamTTFTMs       int64
-	TotalMs              int64
+	SelectedAccountID       int64
+	SelectedRank            int
+	SelectedPriority        int
+	SelectedPrioritySignal  float64
+	ColdStartPrioritySignal float64
+	DailyPrioritySignal     float64
+	UnifiedQuality          bool
+	ImageIntent             bool
+	QualityWindowEnd        time.Time
+	QualityScore            float64
+	SuccessScore            float64
+	FirstOutputScore        float64
+	OutputRateScore         float64
+	LiveLoadScore           float64
+	FirstOutputSlowCount    int
+	SlowEvidenceReplaced    bool
+	QualityScoreGap         float64
+	QualitySnapshotStale    bool
+	ProfitMode              string
+	ProfitBypass            bool
+	ProfitBypassReason      string
+	RuntimeRetryBudget      int
+	ExtraRetryCount         int
+	ExtraUsed               int
+	SwitchCount             int
+	SafeToReplay            bool
+	StopReason              string
+	NativeSlotWaitMs        int64
+	RoutingMs               int64
+	UpstreamTTFTMs          int64
+	TotalMs                 int64
 }
 
 type openAIResilienceCacheModeContextKey struct{}
@@ -204,7 +208,10 @@ func RecordOpenAISchedulerSelection(ctx context.Context, platform string, groupI
 		CandidateAccountIDs: decision.CandidateAccountIDs, ExcludedAccountIDs: decision.ExcludedAccountIDs,
 		ExcludeReasons: decision.ExcludeReasons, HealthState: decision.HealthState, CooldownUntil: decision.CooldownUntil,
 		SelectedAccountID: decision.SelectedAccountID, SelectedRank: decision.SelectedRank,
-		UnifiedQuality: decision.UnifiedQuality, ImageIntent: decision.ImageIntent,
+		SelectedPriority: decision.SelectedPriority, SelectedPrioritySignal: decision.SelectedPrioritySignal,
+		ColdStartPrioritySignal: decision.SelectedColdStartPrioritySignal,
+		DailyPrioritySignal:     decision.SelectedDailyPrioritySignal,
+		UnifiedQuality:          decision.UnifiedQuality, ImageIntent: decision.ImageIntent,
 		QualityWindowEnd: decision.QualityWindowEnd, QualitySnapshotStale: decision.QualitySnapshotStale,
 		QualityScore: decision.QualityScore, SuccessScore: decision.SuccessScore, FirstOutputScore: decision.FirstOutputScore,
 		OutputRateScore: decision.OutputRateScore, LiveLoadScore: decision.LiveLoadScore, FirstOutputSlowCount: decision.FirstOutputSlowCount,

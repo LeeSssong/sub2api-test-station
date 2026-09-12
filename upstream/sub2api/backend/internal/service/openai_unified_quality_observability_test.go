@@ -30,29 +30,33 @@ func TestRecordOpenAISchedulerSelectionProjectsUnifiedQualityDecision(t *testing
 	})
 
 	RecordOpenAISchedulerSelection(ctx, PlatformOpenAI, &groupID, OpenAIAccountScheduleDecision{
-		SelectionLayer:       openAIAccountScheduleLayerUnifiedQuality,
-		SelectedAccountID:    42,
-		SelectedRank:         2,
-		UnifiedQuality:       true,
-		ImageIntent:          false,
-		CandidateAccountIDs:  []int64{7, 42, 99},
-		ExcludedAccountIDs:   []int64{3},
-		QualityWindowEnd:     windowEnd,
-		QualitySnapshotStale: true,
-		ProfitMode:           "native",
-		ProfitBypass:         true,
-		ProfitBypassReason:   "margin_below",
-		ExtraRetryCount:      2,
-		ExtraUsed:            1,
-		SwitchCount:          1,
-		SafeToReplay:         true,
-		SwitchAllowed:        true,
-		SwitchBlockReason:    "",
-		StopReason:           "",
-		NativeSlotWaitMs:     12,
-		RoutingMs:            34,
-		UpstreamTTFTMs:       56,
-		TotalMs:              78,
+		SelectionLayer:                  openAIAccountScheduleLayerUnifiedQuality,
+		SelectedAccountID:               42,
+		SelectedRank:                    2,
+		SelectedPriority:                1,
+		SelectedPrioritySignal:          70,
+		SelectedColdStartPrioritySignal: 50,
+		SelectedDailyPrioritySignal:     20,
+		UnifiedQuality:                  true,
+		ImageIntent:                     false,
+		CandidateAccountIDs:             []int64{7, 42, 99},
+		ExcludedAccountIDs:              []int64{3},
+		QualityWindowEnd:                windowEnd,
+		QualitySnapshotStale:            true,
+		ProfitMode:                      "native",
+		ProfitBypass:                    true,
+		ProfitBypassReason:              "margin_below",
+		ExtraRetryCount:                 2,
+		ExtraUsed:                       1,
+		SwitchCount:                     1,
+		SafeToReplay:                    true,
+		SwitchAllowed:                   true,
+		SwitchBlockReason:               "",
+		StopReason:                      "",
+		NativeSlotWaitMs:                12,
+		RoutingMs:                       34,
+		UpstreamTTFTMs:                  56,
+		TotalMs:                         78,
 	})
 
 	events := openAIResilienceEventsForWindow(windowEnd.Add(-time.Minute), windowEnd.Add(time.Minute), PlatformOpenAI, &groupID)
@@ -62,6 +66,10 @@ func TestRecordOpenAISchedulerSelectionProjectsUnifiedQualityDecision(t *testing
 	require.Equal(t, "logical-1:1", event.AttemptID)
 	require.Equal(t, int64(42), event.SelectedAccountID)
 	require.Equal(t, 2, event.SelectedRank)
+	require.Equal(t, 1, event.SelectedPriority)
+	require.Equal(t, 70.0, event.SelectedPrioritySignal)
+	require.Equal(t, 50.0, event.ColdStartPrioritySignal)
+	require.Equal(t, 20.0, event.DailyPrioritySignal)
 	require.True(t, event.UnifiedQuality)
 	require.Equal(t, windowEnd, event.QualityWindowEnd)
 	require.True(t, event.QualitySnapshotStale)

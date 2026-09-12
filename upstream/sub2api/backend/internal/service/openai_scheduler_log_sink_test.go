@@ -53,10 +53,14 @@ func TestOpenAISchedulerLogSinkFlushesEventAsControlledDecisionSnapshot(t *testi
 		At: time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC), Name: OpenAIEventSchedulerSelection,
 		CorrelationID: "logical-1", AttemptID: "attempt-1", AttemptNumber: 1, AccountID: 7,
 		CandidateAccountIDs: []int64{7, 8}, ExcludeReasons: map[string]int{"cooldown": 2},
+		SelectedPriority: 42, ColdStartPrioritySignal: 30, DailyPrioritySignal: 12,
 	})
 	require.NoError(t, sink.Flush(context.Background()))
 	require.Len(t, writer.inputs, 1)
 	require.Equal(t, "logical-1", writer.inputs[0].LogicalRequestID)
 	require.Equal(t, OpenAISchedulerAlgorithmVersion, writer.inputs[0].AlgorithmVersion)
 	require.Contains(t, writer.inputs[0].DecisionJSON, "candidate_account_ids")
+	require.Contains(t, writer.inputs[0].DecisionJSON, "selected_priority")
+	require.Contains(t, writer.inputs[0].DecisionJSON, "cold_start_priority_signal")
+	require.Contains(t, writer.inputs[0].DecisionJSON, "daily_priority_signal")
 }

@@ -213,7 +213,9 @@ func TestUsageCostEvidenceRegistrarReusesNewAPILogForRateRegistration(t *testing
 	usageRepo := &subUpstreamCostUsageRepoStub{record: &UsageLog{
 		ID: 196, RequestID: "local-newapi-rate-1", UpstreamRequestID: &upstreamID, ActualCost: 0.3, CreatedAt: time.Now(),
 		Account: &Account{ID: 196, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": server.URL, "api_key": "secret"}, Extra: map[string]any{
-			UpstreamBillingProbeExtraKey: UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
+			UpstreamBillingProbeEnabledExtraKey:    true,
+			UpstreamBillingRateSyncEnabledExtraKey: true,
+			UpstreamBillingProbeExtraKey:           UpstreamBillingProbeSnapshot{Status: UpstreamBillingProbeStatusUnsupported},
 		}},
 	}}
 	evidenceRepo := &usageCostEvidenceRepoStub{inserted: true}

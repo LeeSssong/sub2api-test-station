@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestParseLiveCallRequestMultipartPreservesSession(t *testing.T) {
@@ -102,7 +103,7 @@ func TestLiveAttestationErrorIsExplicit(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	require.Contains(t, recorder.Body.String(), "Sub2API runs on macOS")
+	require.Equal(t, "服务暂时异常，请稍后重试。", gjson.GetBytes(recorder.Body.Bytes(), "error.message").String())
 }
 
 func jsonPathString(t *testing.T, raw json.RawMessage, keys ...string) string {

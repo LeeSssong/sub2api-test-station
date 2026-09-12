@@ -38,6 +38,9 @@ func (a *Account) IsSchedulableForModelWithContext(ctx context.Context, requeste
 	if a == nil {
 		return false
 	}
+	if openAIForcedAccountFromContext(ctx) == a.ID {
+		return a.isSchedulableForForcedOpenAIRetry()
+	}
 	if !a.IsSchedulable() {
 		return false
 	}
@@ -49,6 +52,20 @@ func (a *Account) IsSchedulableForModelWithContext(ctx context.Context, requeste
 		return false
 	}
 	return true
+}
+
+func (a *Account) isSchedulableForForcedOpenAIRetry() bool {
+	if a == nil || !a.IsActive() || !a.Schedulable {
+		return false
+	}
+	now := time.Now()
+	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !now.Before(*a.ExpiresAt) {
+		return false
+	}
+	if a.TempUnschedulableUntil != nil && now.Before(*a.TempUnschedulableUntil) {
+		return false
+	}
+	return !a.IsAPIKeyOrBedrock() || !a.IsQuotaExceeded()
 }
 
 // GetRateLimitRemainingTime 获取限流剩余时间（模型级限流）

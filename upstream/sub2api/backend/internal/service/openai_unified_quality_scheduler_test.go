@@ -75,11 +75,11 @@ func TestOpenAIUnifiedQualityResourceTierUsesNativeCredentialSemantics(t *testin
 }
 
 func TestOpenAIUnifiedQualitySelfOwnedTierPrecedesAPIKeyAndUsesPriority(t *testing.T) {
-	load := func(rate float64, waiting int) *AccountLoadInfo {
+	load := func(rate int, waiting int) *AccountLoadInfo {
 		return &AccountLoadInfo{LoadRate: rate, WaitingCount: waiting}
 	}
-	selfOwnedSlow := openAIUnifiedQualityCandidate{account: &Account{ID: 1, Type: AccountTypeOAuth, Priority: 1}, resourceTier: openAIUnifiedQualityResourceTierSelfOwned, loadInfo: load(0.9, 2)}
-	selfOwnedFast := openAIUnifiedQualityCandidate{account: &Account{ID: 2, Type: AccountTypeOAuth, Priority: 10}, resourceTier: openAIUnifiedQualityResourceTierSelfOwned, loadInfo: load(0.1, 0)}
+	selfOwnedSlow := openAIUnifiedQualityCandidate{account: &Account{ID: 1, Type: AccountTypeOAuth, Priority: 1}, resourceTier: openAIUnifiedQualityResourceTierSelfOwned, loadInfo: load(90, 2)}
+	selfOwnedFast := openAIUnifiedQualityCandidate{account: &Account{ID: 2, Type: AccountTypeOAuth, Priority: 10}, resourceTier: openAIUnifiedQualityResourceTierSelfOwned, loadInfo: load(10, 0)}
 	apiKey := openAIUnifiedQualityCandidate{account: &Account{ID: 3, Type: AccountTypeAPIKey, Priority: 1}, resourceTier: openAIUnifiedQualityResourceTierAPIKey, quality: OpenAIQualityBreakdown{QualityScore: 100, SuccessScore: 100}}
 
 	ordered := sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{apiKey, selfOwnedFast, selfOwnedSlow})
@@ -87,7 +87,7 @@ func TestOpenAIUnifiedQualitySelfOwnedTierPrecedesAPIKeyAndUsesPriority(t *testi
 
 	selfOwnedFast.account.Priority = 99
 	ordered = sortOpenAIUnifiedQualityCandidates([]openAIUnifiedQualityCandidate{selfOwnedFast, selfOwnedSlow})
-	require.Equal(t, []int64{2, 1}, unifiedCandidateIDs(ordered))
+	require.Equal(t, []int64{1, 2}, unifiedCandidateIDs(ordered))
 }
 
 func TestOpenAIUnifiedQualityColdStartPrioritySignalIsBoundedAndDecays(t *testing.T) {

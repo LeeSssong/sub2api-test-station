@@ -1109,12 +1109,16 @@ func (s *GatewayService) calculateRecordUsageCost(
 	multiplier float64,
 	imageMultiplier float64,
 	pricingAt time.Time,
-	opts *recordUsageOpts,
+	opts ...*recordUsageOpts,
 ) *CostBreakdown {
+	var usageOpts *recordUsageOpts
+	if len(opts) > 0 {
+		usageOpts = opts[0]
+	}
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
 	if result.ImageCount > 0 {
 		if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil && resolved.Mode == BillingModeToken {
-			return s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, opts)
+			return s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, usageOpts)
 		}
 		return s.calculateImageCost(ctx, result, apiKey, billingModel, imageMultiplier)
 	}
@@ -1138,7 +1142,7 @@ func (s *GatewayService) calculateRecordUsageCost(
 	}
 
 	// Token 计费；SearchCount 为叠加 surcharge（不替代 token）。
-	tokenCost := s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, opts)
+	tokenCost := s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, usageOpts)
 	if result.SearchCount > 0 {
 		price := groupSearchPricePer1kFromAPIKey(apiKey)
 		if price != nil && *price == 0 {
@@ -1154,6 +1158,12 @@ func (s *GatewayService) calculateRecordUsageCost(
 		}
 	}
 	return tokenCost
+}
+
+func groupBillsOpenAIFastAtStandard(apiKey *APIKey, account *Account, serviceTier string) bool {
+	return apiKey != nil && apiKey.Group != nil && apiKey.Group.FreeOpenAIFast &&
+		account != nil && account.Platform == PlatformOpenAI &&
+		strings.EqualFold(strings.TrimSpace(serviceTier), OpenAIFastTierPriority)
 }
 
 // compositeBillableModel 决定 composite 分组请求的计费模型：来源覆盖把计费模型

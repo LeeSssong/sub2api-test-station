@@ -45,5 +45,5 @@ func TestOpenAIGatewayHandlerImages_DisabledGroupRejectsBeforeScheduling(t *test
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Contains(t, rec.Body.String(), service.ImageGenerationPermissionMessage())
+	require.Equal(t, "当前模型或分组不可用，请调整后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 }

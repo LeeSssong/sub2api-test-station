@@ -83,7 +83,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
-	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+	if !isGroupModelAllowed(apiKey.Group, reqModel) {
 		setOpsRequestContext(c, reqModel, false)
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return
@@ -382,9 +382,10 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 
 // chatCompletionsErrorResponse writes an error in OpenAI Chat Completions format.
 func (h *GatewayHandler) chatCompletionsErrorResponse(c *gin.Context, status int, errType, message string) {
+	projected := projectNativeUserErrorForContext(c, status, errType, "", message)
 	err := gin.H{
-		"type":    errType,
-		"message": message,
+		"type":    projected.Type,
+		"message": projected.Message,
 	}
 	if errType == "unsupported_model" {
 		for key, value := range unsupportedModelResponseFields(c) {

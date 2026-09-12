@@ -595,7 +595,6 @@ func runUpstreamToClientWithResponseModel(
 ) {
 	wroteDownstream := false
 	semanticOutputStarted := false
-	terminalDelivered := false
 	for {
 		msgType, payload, err := upstreamConn.ReadFrame(ctx)
 		if err != nil {
@@ -651,6 +650,10 @@ func runUpstreamToClientWithResponseModel(
 		observedEvent := observedUpstreamEvent{}
 		switch msgType {
 		case coderws.MessageText:
+			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
+			if shouldFinalizePendingBareError(state, payload, eventType) {
+				emitTurnComplete(onTurnComplete, state, finalizePendingBareError(state, nowFn()))
+			}
 			usageKnownBefore := state != nil && state.usageKnown
 			observedEvent = observeUpstreamMessageWithResponseModel(state, payload, startAt, nowFn, onUsageParseFailure, onResponseModel)
 			if !usageKnownBefore && state != nil && state.usageKnown && onUsageObserved != nil {
@@ -715,9 +718,6 @@ func runUpstreamToClientWithResponseModel(
 			return
 		}
 		wroteDownstream = true
-		if observedEvent.terminal {
-			terminalDelivered = true
-		}
 		if state != nil {
 			state.turnWroteDownstream.Store(true)
 		}
@@ -1000,6 +1000,7 @@ func emitTurnComplete(
 		StartedAt:             observed.startedAt,
 		Duration:              observed.duration,
 		FirstTokenMs:          openAIWSRelayCloneIntPtr(observed.firstToken),
+		ResponseServiceTier:   observed.responseServiceTier,
 	})
 }
 

@@ -14,6 +14,7 @@ func TestProjectNativeUserErrorCategories(t *testing.T) {
 		want  string
 	}{
 		{"local balance", NativeUserErrorInput{Status: 403, Type: "billing_error", Message: "Insufficient balance"}, "余额不足，请充值后重试。"},
+		{"local balance code", NativeUserErrorInput{Status: 403, Type: "billing_error", Code: "INSUFFICIENT_BALANCE"}, "余额不足，请充值后重试。"},
 		{"local subscription", NativeUserErrorInput{Status: 403, Type: "subscription_error", Message: "No active subscription found for this group"}, "额度或订阅不可用，请检查当前套餐后重试。"},
 		{"authentication", NativeUserErrorInput{Status: 401, Type: "authentication_error", Message: "Invalid API key"}, "认证失败，请检查 API Key 后重试。"},
 		{"rate", NativeUserErrorInput{Status: 429, Type: "rate_limit_error", Message: "Concurrency limit exceeded"}, "请求过于频繁，请稍后重试或降低并发。"},

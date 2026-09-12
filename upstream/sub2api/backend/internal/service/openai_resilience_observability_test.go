@@ -166,7 +166,7 @@ func TestRecordOpenAIAccountModelFailureRecordsDimensionedOutcome(t *testing.T) 
 		At: at, Platform: PlatformOpenAI, GroupID: &groupID, CorrelationID: "request-schema",
 		Name: OpenAIEventAccountModelSoftFailure, AccountID: 91, CanonicalModel: "gpt-5.5",
 		AttemptID: "request-schema:2", AttemptNumber: 2, StatusCode: 502, OutputStarted: true,
-		UsageProduced: true, FailureStreak: 1, CacheMode: "failover_after_failure", Outcome: "failure",
+		UsageProduced: true, FailureStreak: 1, CacheMode: "failover_after_failure", HealthState: "degraded", Outcome: "failure",
 	}, events[0])
 }
 

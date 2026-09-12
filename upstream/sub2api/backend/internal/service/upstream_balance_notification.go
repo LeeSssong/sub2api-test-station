@@ -103,11 +103,17 @@ func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.
 			continue
 		}
 		value := *latest.ValueUSD
+		// NewAPI balance snapshots below the low-balance threshold are not
+		// actionable for this notification path. Keep real zero balances
+		// visible because they represent an exhausted upstream account.
+		if value > 0 && value < 5 && allNewAPIAccounts(members) {
+			continue
+		}
 		state := UpstreamBalanceStateHealthy
 		switch {
 		case value == 0:
 			state = UpstreamBalanceStateZero
-		case value < 5 && !allNewAPIAccounts(members):
+		case value < 5:
 			state = UpstreamBalanceStateLow
 		}
 		result = append(result, UpstreamBalanceEvaluation{

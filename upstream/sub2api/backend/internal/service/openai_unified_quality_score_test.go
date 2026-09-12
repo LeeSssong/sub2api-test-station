@@ -51,7 +51,7 @@ func TestOpenAIUnifiedQualityScoreUsesRecentFiveMinuteAndFiftyFiveMinuteWindows(
 
 	got := calculateOpenAIUnifiedQualityScore(quality, nil, nil, 19)
 	require.Less(t, got.SuccessScore, 50.0, "the older 55-minute evidence must influence the score")
-	require.Less(t, got.P50TTFTScore, 50.0, "the older 55-minute evidence must influence the score")
+	require.InDelta(t, 52, got.P50TTFTScore, .001, "the 40/60 window blend must include the older 55-minute evidence")
 }
 
 // Production break caught: treating an unavailable quality snapshot as a

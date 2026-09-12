@@ -516,7 +516,7 @@ func TestAccountMonitorListWindowIgnoresPersistedGlobalScoreWeightsForPrimaryOrd
 	}
 }
 
-func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScoped(t *testing.T) {
+func TestAccountMonitorListWindowKeepsAccountQualityEvidenceAndSchedulerRanksGroupScoped(t *testing.T) {
 	rate := 1.0
 	now := time.Now().UTC()
 	accounts := []Account{
@@ -580,14 +580,14 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 	if err != nil {
 		t.Fatalf("ListWindow() error = %v", err)
 	}
-	if len(scheduler.calls) != 2 || len(repo.groupWindowAggregateCalls) != 2 {
+	if len(scheduler.calls) != 2 || len(repo.groupWindowAggregateCalls) != 0 {
 		t.Fatalf("projection calls = %d, group window calls = %d", len(scheduler.calls), len(repo.groupWindowAggregateCalls))
 	}
-	if !scheduler.calls[0].RequirePrivacySet || !reflect.DeepEqual(scheduler.calls[0].QualityOrder, []int64{1, 2}) || !reflect.DeepEqual(scheduler.calls[1].QualityOrder, []int64{3, 1}) {
+	if !scheduler.calls[0].RequirePrivacySet || !reflect.DeepEqual(scheduler.calls[0].QualityOrder, []int64{1, 2}) || !reflect.DeepEqual(scheduler.calls[1].QualityOrder, []int64{1, 3}) {
 		t.Fatalf("scheduler projection context = %#v", scheduler.calls)
 	}
-	if !scheduler.calls[0].SnapshotAt.Equal(page.ObservedAt) || !repo.groupWindowAggregateCalls[0].until.Equal(page.ObservedAt) || !repo.groupWindowAggregateCalls[1].until.Equal(page.ObservedAt) {
-		t.Fatalf("snapshot timestamps drifted: page=%s scheduler=%s group_until=%s/%s", page.ObservedAt, scheduler.calls[0].SnapshotAt, repo.groupWindowAggregateCalls[0].until, repo.groupWindowAggregateCalls[1].until)
+	if !scheduler.calls[0].SnapshotAt.Equal(page.ObservedAt) {
+		t.Fatalf("snapshot timestamps drifted: page=%s scheduler=%s", page.ObservedAt, scheduler.calls[0].SnapshotAt)
 	}
 	byGroup := make(map[int64]AccountMonitorGroup)
 	for _, group := range page.Groups {
@@ -595,11 +595,11 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 	}
 	sharedSeven := findAccountMonitorGroupAccount(t, byGroup[7].Accounts, 1)
 	sharedEight := findAccountMonitorGroupAccount(t, byGroup[8].Accounts, 1)
-	if sharedSeven.Evidence.TTFTP50MS == nil || sharedEight.Evidence.TTFTP50MS == nil || *sharedSeven.Evidence.TTFTP50MS == *sharedEight.Evidence.TTFTP50MS || sharedSeven.Evidence.LatencyP95MS == nil || sharedEight.Evidence.LatencyP95MS == nil || *sharedSeven.Evidence.LatencyP95MS == *sharedEight.Evidence.LatencyP95MS {
-		t.Fatalf("shared account evidence was not group-scoped: seven=%#v eight=%#v", sharedSeven.Evidence, sharedEight.Evidence)
+	if sharedSeven.Evidence.TTFTP50MS == nil || sharedEight.Evidence.TTFTP50MS == nil || *sharedSeven.Evidence.TTFTP50MS != *sharedEight.Evidence.TTFTP50MS || sharedSeven.Evidence.LatencyP95MS == nil || sharedEight.Evidence.LatencyP95MS == nil || *sharedSeven.Evidence.LatencyP95MS != *sharedEight.Evidence.LatencyP95MS {
+		t.Fatalf("shared account evidence drifted across group projections: seven=%#v eight=%#v", sharedSeven.Evidence, sharedEight.Evidence)
 	}
-	if sharedSeven.QualityRank == nil || sharedEight.QualityRank == nil || *sharedSeven.QualityRank == *sharedEight.QualityRank {
-		t.Fatalf("shared account quality ranks = %#v and %#v, want different group ranks", sharedSeven.QualityRank, sharedEight.QualityRank)
+	if sharedSeven.QualityRank == nil || sharedEight.QualityRank == nil || *sharedSeven.QualityRank != *sharedEight.QualityRank {
+		t.Fatalf("shared account quality ranks = %#v and %#v, want the same account-level rank", sharedSeven.QualityRank, sharedEight.QualityRank)
 	}
 	if sharedSeven.SchedulerRank == nil || *sharedSeven.SchedulerRank != 1 || sharedEight.SchedulerRank == nil || *sharedEight.SchedulerRank != 2 {
 		t.Fatalf("shared account scheduler ranks = %#v and %#v", sharedSeven.SchedulerRank, sharedEight.SchedulerRank)
@@ -620,9 +620,6 @@ func TestAccountMonitorListWindowKeepsQualityEvidenceAndSchedulerRanksGroupScope
 	global := findAccountMonitorAccount(t, page.Accounts, 1)
 	if global.SchedulerRank != nil || global.QualityScore == nil {
 		t.Fatalf("full-site row did not project global quality rank: %#v", global)
-	}
-	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{4, 1, 3, 2}) {
-		t.Fatalf("full-site scheduler order = %v", got)
 	}
 }
 
@@ -652,7 +649,7 @@ func TestAccountMonitorListWindowKeepsUnifiedGroupProbeSuccessRate(t *testing.T)
 	}
 }
 
-func TestAccountMonitorListWindowDoesNotLeakGlobalQualityIntoLegacyGroupRows(t *testing.T) {
+func TestAccountMonitorListWindowProjectsAccountQualityIntoLegacyGroupRows(t *testing.T) {
 	rate := 1.0
 	now := time.Now().UTC()
 	accounts := []Account{{ID: 1, Name: "shared", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}}}
@@ -680,8 +677,8 @@ func TestAccountMonitorListWindowDoesNotLeakGlobalQualityIntoLegacyGroupRows(t *
 		t.Fatalf("ListWindow() error = %v", err)
 	}
 	row := findAccountMonitorGroupAccount(t, page.Groups[0].Accounts, 1)
-	if row.Evidence.SampleCount != 0 || row.QualityScore != nil || row.QualityRank != nil || row.QualityExplanation != nil {
-		t.Fatalf("legacy group row leaked global quality evidence: %#v", row)
+	if row.Evidence.Source != accountMonitorQualitySourceReal || row.Evidence.SampleCount != 3 || row.QualityScore == nil || row.QualityRank == nil || row.QualityExplanation == nil {
+		t.Fatalf("legacy group row did not reuse account-level quality evidence: %#v", row)
 	}
 }
 
@@ -742,12 +739,12 @@ func TestAccountMonitorListWindowSeparatesGroupRequestsFromProbeEvidence(t *test
 	if rows[101].QualityRank == nil {
 		t.Fatalf("account with one real probe and group requests should remain rankable: %#v", rows[101])
 	}
-	if rows[102].Evidence.Source != "stale" || rows[102].Evidence.SampleCount != 0 || rows[102].QualityRank != nil || rows[102].QualityScore != nil {
-		t.Fatalf("request-only group traffic bypassed the probe gate: %#v", rows[102])
+	if rows[102].Evidence.Source != accountMonitorQualitySourceReal || rows[102].Evidence.SampleCount != 100 || rows[102].QualityRank == nil || rows[102].QualityScore == nil {
+		t.Fatalf("request-only group traffic did not become account-level evidence: %#v", rows[102])
 	}
 }
 
-func TestAccountMonitorListWindowDoesNotUseAccountScopedEvidenceWhenGroupWindowProviderReturnsNil(t *testing.T) {
+func TestAccountMonitorListWindowUsesAccountScopedEvidenceWhenGroupWindowProviderReturnsNil(t *testing.T) {
 	rate := 1.0
 	now := time.Now().UTC()
 	account := Account{ID: 104, Name: "group-window-unavailable", Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, RateMultiplier: &rate, GroupIDs: []int64{7}}
@@ -765,8 +762,8 @@ func TestAccountMonitorListWindowDoesNotUseAccountScopedEvidenceWhenGroupWindowP
 		t.Fatal(err)
 	}
 	row := findAccountMonitorGroupAccount(t, page.Groups[0].Accounts, account.ID)
-	if row.Evidence.SampleCount != 0 || row.Evidence.Source != "unknown" || row.QualityScore != nil || row.QualityRank != nil {
-		t.Fatalf("group row used account-scoped evidence after nil group-window projection: %#v", row)
+	if row.Evidence.SampleCount != 10 || row.Evidence.Source != accountMonitorQualitySourceReal || row.QualityScore == nil || row.QualityRank == nil {
+		t.Fatalf("group row did not use account-scoped evidence after nil group-window projection: %#v", row)
 	}
 }
 
@@ -1083,8 +1080,8 @@ func TestAccountMonitorListWindowRetainsSchedulableUnavailableAndStaleNativeScor
 	}
 	byGroup := accountMonitorGroupRowsByID(page.Groups[0].Accounts)
 	for _, id := range []int64{501, 502} {
-		if row := byGroup[id]; row.QualityScore != nil || row.GroupRank != nil || row.Eligible || row.Evidence.Source != "stale" {
-			t.Fatalf("group account %d used account-scoped evidence without a group-window projection: %#v", id, row)
+		if row := byGroup[id]; row.QualityScore != nil || row.GroupRank != nil || row.Eligible || row.Evidence.Source != accountMonitorQualitySourceUnknown {
+			t.Fatalf("group account %d unexpectedly scored without selected-window observations: %#v", id, row)
 		}
 	}
 	for _, id := range []int64{503, 504} {
@@ -2470,7 +2467,7 @@ func TestAccountMonitorListWindowUsesFixedSevenDayProbeEvidenceForRecommendation
 			{ID: 2, Name: "GPT-测试分组", Status: StatusActive, RateMultiplier: 1},
 		},
 		aggregateResults: []map[int64]AccountMonitorAggregate{{201: day24}, {201: day7}},
-		windowAggregates: map[int64]AccountMonitorWindowAggregate{201: {RequestCount: 4}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{201: {RequestCount: 4, SuccessCount: 4, SuccessRate: 1}},
 		latest:           map[int64]AccountMonitorLatest{201: {Status: "success", CheckedAt: now}},
 	}
 
@@ -2482,7 +2479,7 @@ func TestAccountMonitorListWindowUsesFixedSevenDayProbeEvidenceForRecommendation
 		t.Fatalf("aggregate calls = %#v, want requested 24h plus fixed 7d recommendation window", repo.aggregateCalls)
 	}
 	row := page.Accounts[0]
-	if row.ProbeSuccessRate != day24.SuccessRate || row.SampleCount != day24.SampleCount+4 || row.EvidenceSource != "hybrid" {
+	if row.ProbeSuccessRate != day24.SuccessRate || row.SampleCount != 4 || row.EvidenceSource != "real_request" {
 		t.Fatalf("existing 24h metrics changed: probe_success=%.2f samples=%d source=%s", row.ProbeSuccessRate, row.SampleCount, row.EvidenceSource)
 	}
 	if row.GroupRecommendation == nil || row.GroupRecommendation.Target != AccountMonitorGroupRecommendationTargetPro {
@@ -2829,8 +2826,8 @@ func TestAccountMonitorWindowEvidenceCombinesRealRequestsAndProbes(t *testing.T)
 	realOnly := accountMonitorWindowEvidence(
 		AccountMonitorWindowAggregate{RequestCount: 3, SuccessCount: 2, SuccessRate: 2.0 / 3.0, LastObservedAt: &now}, AccountMonitorAggregate{}, AccountMonitorLatest{}, settings, now,
 	)
-	if realOnly.Source != "stale" || realOnly.SampleCount != 0 || realOnly.SuccessSampleCount != 0 {
-		t.Fatalf("real request evidence without a fresh probe should remain gated: %#v", realOnly)
+	if realOnly.Source != accountMonitorQualitySourceReal || realOnly.SampleCount != 3 || realOnly.SuccessSampleCount != 2 {
+		t.Fatalf("real request evidence should remain independently usable: %#v", realOnly)
 	}
 }
 
@@ -2913,7 +2910,7 @@ func TestAccountMonitorQualityEvidenceOutputRateJSONCompatibilityAndExplanationL
 	}
 }
 
-func TestFuseAccountMonitorQualityEvidenceUsesSampleProportionalWeightsAndUnknownSemantics(t *testing.T) {
+func TestFuseAccountMonitorQualityEvidenceUsesSampleProportionalWeightsAndFreshnessSemantics(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	settings := AccountMonitorSettings{IntervalSeconds: 300}
 	probeAt := now.Add(-time.Minute)
@@ -2955,9 +2952,9 @@ func TestFuseAccountMonitorQualityEvidenceUsesSampleProportionalWeightsAndUnknow
 			wantSource: "hybrid", wantFresh: "fresh", wantSamples: 5, wantRealWt: .2, wantProbeWt: .8, wantRate: .2, wantKnown: true,
 		},
 		{
-			name:       "stale evidence is unknown",
+			name:       "stale evidence remains displayable",
 			real:       AccountMonitorWindowAggregate{RequestCount: 5, SuccessCount: 5, LastObservedAt: &staleAt},
-			wantSource: "unknown", wantFresh: "stale", wantSamples: 0, wantKnown: false, wantReason: "stale",
+			wantSource: "real_request", wantFresh: "stale", wantSamples: 5, wantRealWt: 1, wantRate: 1, wantKnown: true,
 		},
 	}
 
@@ -3001,7 +2998,7 @@ func TestAccountMonitorQualityEvidenceDoesNotIntroduceModelDimension(t *testing.
 	}
 }
 
-func TestAccountMonitorWindowStateIgnoresRealRequestsAndUsesProbeTime(t *testing.T) {
+func TestAccountMonitorWindowStateUsesRealRequestsAndProbeFallback(t *testing.T) {
 	now := time.Now().UTC()
 	observedAt := now.Add(-5 * time.Minute)
 	latestCheckedAt := now.Add(-time.Minute)
@@ -3045,32 +3042,38 @@ func TestAccountMonitorWindowStateIgnoresRealRequestsAndUsesProbeTime(t *testing
 	for _, row := range page.Accounts {
 		globalByID[row.AccountID] = row
 	}
-	for _, accountID := range []int64{118, 119, 120} {
+	for _, accountID := range []int64{118, 119} {
 		row := globalByID[accountID]
-		if row.ServiceState != accountMonitorServicePending || row.MonitorBucket != accountMonitorServicePending || row.Eligible || row.GroupRank != nil {
-			t.Fatalf("global request-only account %d = %#v, want pending and unranked", accountID, row)
+		if row.EvidenceSource != accountMonitorQualitySourceReal || row.ServiceState != accountMonitorServiceAvailable || row.MonitorBucket != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+			t.Fatalf("global request-only account %d = %#v, want real-request evidence and ranking", accountID, row)
 		}
 	}
-	if row := globalByID[121]; row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
-		t.Fatalf("global probe fallback account = %#v, want existing latest-probe success behavior", row)
+	if row := globalByID[120]; row.EvidenceSource != accountMonitorQualitySourceReal || row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil {
+		t.Fatalf("global failed request account = %#v, want real-request failure without ranking", row)
+	}
+	if row := globalByID[121]; row.EvidenceSource != accountMonitorQualitySourceReal || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("global unified account observation = %#v, want real-request evidence and ranking", row)
 	}
 
 	groupByID := make(map[int64]AccountMonitorGroupAccount, len(page.Groups[0].Accounts))
 	for _, row := range page.Groups[0].Accounts {
 		groupByID[row.AccountID] = row
 	}
-	for _, accountID := range []int64{118, 119, 120} {
+	for _, accountID := range []int64{118, 119} {
 		row := groupByID[accountID]
-		if row.ServiceState != accountMonitorServicePending || row.MonitorBucket != accountMonitorServicePending || row.Eligible || row.GroupRank != nil {
-			t.Fatalf("group request-only account %d = %#v, want pending and unranked", accountID, row)
+		if row.Evidence.Source != accountMonitorQualitySourceReal || row.ServiceState != accountMonitorServiceAvailable || row.MonitorBucket != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+			t.Fatalf("group account observation %d = %#v, want account-level evidence and ranking", accountID, row)
 		}
 	}
-	if row := groupByID[121]; row.Evidence.Source != "hybrid" || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
-		t.Fatalf("group probe fallback account = %#v, want hybrid and available", row)
+	if row := groupByID[120]; row.Evidence.Source != accountMonitorQualitySourceReal || row.ServiceState != accountMonitorServiceUnavailable || row.Eligible || row.GroupRank != nil {
+		t.Fatalf("group failed account observation = %#v, want failed evidence without ranking", row)
+	}
+	if row := groupByID[121]; row.Evidence.Source != accountMonitorQualitySourceReal || row.ServiceState != accountMonitorServiceAvailable || !row.Eligible || row.GroupRank == nil {
+		t.Fatalf("group probe fallback account = %#v, want group real-request evidence and available", row)
 	}
 }
 
-func TestAccountMonitorWindowEvidenceWithoutProbesIsStale(t *testing.T) {
+func TestAccountMonitorWindowEvidenceWithoutProbesUsesSelectedWindow(t *testing.T) {
 	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 	latestCheckedAt := now.Add(-time.Minute)
 	evidence := accountMonitorWindowEvidence(
@@ -3080,11 +3083,11 @@ func TestAccountMonitorWindowEvidenceWithoutProbesIsStale(t *testing.T) {
 		AccountMonitorSettings{IntervalSeconds: 300},
 		now,
 	)
-	if evidence.Source != "unknown" || evidence.SuccessSampleCount != 0 {
-		t.Fatalf("missing probe aggregate evidence = %#v, want unknown", evidence)
+	if evidence.Source != accountMonitorQualitySourceReal || evidence.SampleCount != 3 || evidence.SuccessSampleCount != 0 || !evidence.Known {
+		t.Fatalf("selected-window evidence = %#v, want real-request evidence", evidence)
 	}
-	if !evidence.ObservedAt.IsZero() {
-		t.Fatalf("missing selected window observed_at = %s, want zero", evidence.ObservedAt)
+	if !evidence.ObservedAt.Equal(latestCheckedAt) {
+		t.Fatalf("selected window observed_at = %s, want latest fallback %s", evidence.ObservedAt, latestCheckedAt)
 	}
 }
 
@@ -3096,7 +3099,7 @@ func TestAccountMonitorWindowWithoutProbeSamplesStaysPending(t *testing.T) {
 	_ = now
 }
 
-func TestAccountMonitorWindowThresholdQualifiedRealRequestsIgnoreAbsentLatestInGlobalAndGroupProjections(t *testing.T) {
+func TestAccountMonitorWindowStaleRealRequestsRemainVisibleAndRankSuccessfulAccounts(t *testing.T) {
 	now := time.Now().UTC()
 	observedAt := now.Add(-time.Hour)
 	rate := 0.5
@@ -3122,8 +3125,8 @@ func TestAccountMonitorWindowThresholdQualifiedRealRequestsIgnoreAbsentLatestInG
 	for _, row := range page.Accounts {
 		globalByID[row.AccountID] = row
 	}
-	if row := globalByID[201]; row.ServiceState != accountMonitorServicePending || row.Eligible || row.GroupRank != nil || row.Latest != nil {
-		t.Fatalf("global request-only success = %#v, want pending and unranked without probe", row)
+	if row := globalByID[201]; row.ServiceState != accountMonitorServicePending || !row.Eligible || row.GroupRank == nil || row.Latest != nil || row.EvidenceSource != accountMonitorQualitySourceReal {
+		t.Fatalf("global stale success = %#v, want visible stale score without latest probe", row)
 	}
 	if row := globalByID[202]; row.ServiceState != accountMonitorServicePending || row.Eligible || row.GroupRank != nil || row.Latest != nil {
 		t.Fatalf("global request-only failure = %#v, want pending and unranked without probe", row)
@@ -3133,15 +3136,15 @@ func TestAccountMonitorWindowThresholdQualifiedRealRequestsIgnoreAbsentLatestInG
 	for _, row := range page.Groups[0].Accounts {
 		groupByID[row.AccountID] = row
 	}
-	if row := groupByID[201]; row.ServiceState != accountMonitorServicePending || row.Eligible || row.GroupRank != nil || row.Latest != nil {
-		t.Fatalf("group request-only success = %#v, want pending and unranked without probe", row)
+	if row := groupByID[201]; row.ServiceState != accountMonitorServicePending || !row.Eligible || row.GroupRank == nil || row.Latest != nil || row.Evidence.Source != accountMonitorQualitySourceReal {
+		t.Fatalf("group stale success = %#v, want account-level stale score without latest probe", row)
 	}
 	if row := groupByID[202]; row.ServiceState != accountMonitorServicePending || row.Eligible || row.GroupRank != nil || row.Latest != nil {
 		t.Fatalf("group request-only failure = %#v, want pending and unranked without probe", row)
 	}
 }
 
-func TestAccountMonitorWindowSubthresholdRealRequestsKeepLatestProbeGateInGlobalAndGroupProjections(t *testing.T) {
+func TestAccountMonitorWindowStaleSparseRealRequestsRetainScoreDespiteLatestProbeFailure(t *testing.T) {
 	now := time.Now().UTC()
 	observedAt := now.Add(-time.Hour)
 	rate := 0.5
@@ -3161,11 +3164,11 @@ func TestAccountMonitorWindowSubthresholdRealRequestsKeepLatestProbeGateInGlobal
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row := page.Accounts[0]; row.ServiceState != accountMonitorServicePending || row.Eligible || row.GroupRank != nil || row.LatestStatus != "failed" {
-		t.Fatalf("global request-only success = %#v, want pending and unranked", row)
+	if row := page.Accounts[0]; row.ServiceState != accountMonitorServicePending || !row.Eligible || row.GroupRank == nil || row.LatestStatus != "failed" || row.EvidenceSource != accountMonitorQualitySourceReal {
+		t.Fatalf("global sparse stale success = %#v, want retained selected-window score", row)
 	}
-	if row := page.Groups[0].Accounts[0]; row.ServiceState != accountMonitorServicePending || row.Eligible || row.GroupRank != nil || row.LatestStatus != "failed" {
-		t.Fatalf("group request-only success = %#v, want pending and unranked", row)
+	if row := page.Groups[0].Accounts[0]; row.ServiceState != accountMonitorServicePending || !row.Eligible || row.GroupRank == nil || row.LatestStatus != "failed" || row.Evidence.Source != accountMonitorQualitySourceReal {
+		t.Fatalf("group sparse stale success = %#v, want retained account-level score", row)
 	}
 }
 
@@ -3744,6 +3747,11 @@ func TestAccountMonitorPausedProbeProjectionScoresRanksAndKeepsNoEvidencePending
 	repo := &accountMonitorRepoStub{
 		settings: AccountMonitorSettings{IntervalSeconds: 300},
 		groups:   []AccountMonitorGroup{{ID: 7, Name: "public", RateMultiplier: 1, CustomerVisible: true}},
+		windowAggregates: map[int64]AccountMonitorWindowAggregate{
+			401: {RequestCount: 8, SuccessCount: 8, SuccessRate: 1, LastObservedAt: &now},
+			402: {RequestCount: 8, ErrorCount: 8, SuccessRate: 0, LastObservedAt: &now},
+			404: {RequestCount: 8, SuccessCount: 8, SuccessRate: 1, LastObservedAt: &now},
+		},
 		aggregates: map[int64]AccountMonitorAggregate{
 			401: {SampleCount: 8, SuccessCount: 8, SuccessSampleCount: 8, SuccessRate: 1, LastCheckedAt: &now},
 			402: {SampleCount: 8, ErrorCount: 8, LastCheckedAt: &now},
@@ -3974,11 +3982,11 @@ func TestAccountMonitorWindowScoreBreakdownSumsToRoundedQualityScore(t *testing.
 		t.Fatal(err)
 	}
 	row := page.Accounts[0]
-	if row.EvidenceSource != "unified" {
-		t.Fatalf("evidence source = %q, want unified", row.EvidenceSource)
+	if row.EvidenceSource != accountMonitorQualitySourceReal {
+		t.Fatalf("evidence source = %q, want real_request", row.EvidenceSource)
 	}
-	if row.RequestCount != 96 || row.SuccessRate != 1 {
-		t.Fatalf("request disclosure/quality = request_count %d success_rate %v, want 96 and selected-window rate", row.RequestCount, row.SuccessRate)
+	if row.RequestCount != 96 || row.SampleCount != 96 || row.SuccessSampleCount != 96 || row.SuccessRate != 1 {
+		t.Fatalf("request disclosure/quality = request_count %d samples %d successes %d success_rate %v, want selected-window evidence", row.RequestCount, row.SampleCount, row.SuccessSampleCount, row.SuccessRate)
 	}
 	if row.QualityScore == nil {
 		t.Fatal("quality score is nil")

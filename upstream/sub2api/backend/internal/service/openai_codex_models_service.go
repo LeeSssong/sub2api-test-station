@@ -1535,6 +1535,11 @@ type openAIModelsRequest struct {
 	standardModelsList bool
 }
 
+type codexModelsManifestCandidate struct {
+	accountID int64
+	manifest  *OpenAIModelsResponse
+}
+
 type openAIModelsCacheEntry struct {
 	manifest   *OpenAIModelsResponse
 	order      uint64
@@ -1753,7 +1758,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 // all persistently eligible OpenAI accounts in a group. Each account is still
 // fetched through the single-account path so its authentication and upstream
 // compatibility behavior remain unchanged.
-func (s *OpenAIGatewayService) FetchCodexModelsManifestForGroup(ctx context.Context, groupID int64, clientVersion, ifNoneMatch string) (*CodexModelsManifest, error) {
+func (s *OpenAIGatewayService) FetchCodexModelsManifestForGroup(ctx context.Context, groupID int64, clientVersion, ifNoneMatch string) (*OpenAIModelsResponse, error) {
 	if s == nil || s.accountRepo == nil {
 		return nil, infraerrors.New(http.StatusServiceUnavailable, "OPENAI_CODEX_MODELS_NO_ACCOUNTS", "No available OpenAI accounts")
 	}
@@ -1776,17 +1781,17 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifestForGroup(ctx context.Cont
 	})
 
 	cacheKey := buildCodexModelsGroupManifestCacheKey(groupID, clientVersion, accounts)
-	cached, state := s.codexModelsManifestCache.get(cacheKey, time.Now())
-	if state == codexModelsManifestCacheFresh {
-		return codexModelsManifestForClient(cached, ifNoneMatch), nil
+	cached, state := s.openAIModelsCache.get(cacheKey, time.Now())
+	if state == openAIModelsCacheFresh {
+		return openAIModelsResponseForClient(cached, ifNoneMatch), nil
 	}
 	refreshCtx := ctx
-	if state == codexModelsManifestCacheStale {
+	if state == openAIModelsCacheStale {
 		refreshCtx = context.Background()
 	}
 	resultCh := s.refreshCodexModelsManifestForGroup(cacheKey, accounts, clientVersion, refreshCtx)
-	if state == codexModelsManifestCacheStale {
-		return codexModelsManifestForClient(cached, ifNoneMatch), nil
+	if state == openAIModelsCacheStale {
+		return openAIModelsResponseForClient(cached, ifNoneMatch), nil
 	}
 	select {
 	case <-ctx.Done():
@@ -1795,29 +1800,29 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifestForGroup(ctx context.Cont
 		if result.Err != nil {
 			return nil, result.Err
 		}
-		manifest, ok := result.Val.(*CodexModelsManifest)
+		manifest, ok := result.Val.(*OpenAIModelsResponse)
 		if !ok || manifest == nil {
 			return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_REQUEST_FAILED", "invalid shared Codex models manifest result")
 		}
-		return codexModelsManifestForClient(manifest, ifNoneMatch), nil
+		return openAIModelsResponseForClient(manifest, ifNoneMatch), nil
 	}
 }
 
 func (s *OpenAIGatewayService) refreshCodexModelsManifestForGroup(cacheKey string, accounts []Account, clientVersion string, fetchCtx context.Context) <-chan singleflight.Result {
-	return s.codexModelsManifestCache.refresh.DoChan(cacheKey, func() (any, error) {
+	return s.openAIModelsCache.refresh.DoChan(cacheKey, func() (any, error) {
 		manifest, err := s.fetchCodexModelsManifestForAccounts(fetchCtx, accounts, clientVersion)
 		if err != nil {
 			return nil, err
 		}
-		s.codexModelsManifestCache.set(cacheKey, manifest, time.Now())
+		s.openAIModelsCache.set(cacheKey, manifest, time.Now())
 		return manifest, nil
 	})
 }
 
-func (s *OpenAIGatewayService) fetchCodexModelsManifestForAccounts(ctx context.Context, accounts []Account, clientVersion string) (*CodexModelsManifest, error) {
+func (s *OpenAIGatewayService) fetchCodexModelsManifestForAccounts(ctx context.Context, accounts []Account, clientVersion string) (*OpenAIModelsResponse, error) {
 	type result struct {
 		accountID int64
-		manifest  *CodexModelsManifest
+		manifest  *OpenAIModelsResponse
 		err       error
 	}
 	results := make(chan result, len(accounts))
@@ -2264,7 +2269,7 @@ func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Accou
 	return converted
 }
 
-func aggregateCodexModelsManifests(candidates []codexModelsManifestCandidate) (*CodexModelsManifest, error) {
+func aggregateCodexModelsManifests(candidates []codexModelsManifestCandidate) (*OpenAIModelsResponse, error) {
 	if len(candidates) == 0 {
 		return nil, errors.New("no successful Codex models manifests")
 	}
@@ -2333,7 +2338,7 @@ func aggregateCodexModelsManifests(candidates []codexModelsManifestCandidate) (*
 	if err != nil {
 		return nil, fmt.Errorf("encode aggregated Codex manifest: %w", err)
 	}
-	return &CodexModelsManifest{Body: body, ETag: codexModelsManifestBodyETag(body)}, nil
+	return &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}, nil
 }
 
 // completeAPIKeyCodexModelsManifestMetadata fills fields omitted by standard
@@ -2685,6 +2690,29 @@ func buildOpenAIModelsCacheKey(request openAIModelsRequest) string {
 		}
 	}
 	return fmt.Sprintf("%x", hasher.Sum(nil))
+}
+
+func buildCodexModelsGroupManifestCacheKey(groupID int64, clientVersion string, accounts []Account) string {
+	hasher := sha256.New()
+	_, _ = fmt.Fprintf(hasher, "group\n%d\n%s\n", groupID, clientVersion)
+	ordered := append([]Account(nil), accounts...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	for _, account := range ordered {
+		credentials, err := json.Marshal(account.Credentials)
+		if err != nil {
+			credentials = []byte(fmt.Sprintf("%v", account.Credentials))
+		}
+		_, _ = fmt.Fprintf(hasher, "%d\n%s\n%s\n%d\n", account.ID, account.Type, account.Platform, account.UpdatedAt.UnixNano())
+		_, _ = hasher.Write(credentials)
+		_, _ = hasher.Write([]byte{'\n'})
+		if account.ProxyID != nil {
+			_, _ = fmt.Fprintf(hasher, "proxy:%d\n", *account.ProxyID)
+		}
+		if account.ParentAccountID != nil {
+			_, _ = fmt.Fprintf(hasher, "parent:%d\n", *account.ParentAccountID)
+		}
+	}
+	return fmt.Sprintf("group:%x", hasher.Sum(nil))
 }
 
 func cloneOpenAIModelsResponse(manifest *OpenAIModelsResponse) *OpenAIModelsResponse {

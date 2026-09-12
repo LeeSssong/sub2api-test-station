@@ -733,7 +733,7 @@ func TestOpenAIRecoverResponsesPanic_WritesFallbackResponse(t *testing.T) {
 	errorObj, ok := parsed["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "upstream_error", errorObj["type"])
-	assert.Equal(t, "Upstream request failed", errorObj["message"])
+	assert.Equal(t, "服务暂时异常，请稍后重试。", errorObj["message"])
 }
 
 func TestOpenAIRecoverResponsesPanic_NoPanicNoWrite(t *testing.T) {
@@ -825,7 +825,7 @@ func TestOpenAIEnsureResponsesDependencies(t *testing.T) {
 		errorObj, exists := parsed["error"].(map[string]any)
 		require.True(t, exists)
 		assert.Equal(t, "api_error", errorObj["type"])
-		assert.Equal(t, "Service temporarily unavailable", errorObj["message"])
+		assert.Equal(t, "服务暂时异常，请稍后重试。", errorObj["message"])
 	})
 
 	t.Run("already_written_response_not_overridden", func(t *testing.T) {
@@ -944,7 +944,7 @@ func TestOpenAIGatewayMessagesDispatchGateAllowsGrokGroups(t *testing.T) {
 
 		require.Equal(t, http.StatusForbidden, rec.Code)
 		require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-		require.Contains(t, rec.Body.String(), "This group does not allow /v1/messages dispatch")
+		require.Equal(t, "当前模型或分组不可用，请调整后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 	})
 
 	t.Run("grok_group_without_dispatch_flag_reaches_gateway_dependencies", func(t *testing.T) {
@@ -1041,7 +1041,7 @@ func TestOpenAIResponses_MissingDependencies_ReturnsServiceUnavailable(t *testin
 	errorObj, ok := parsed["error"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "api_error", errorObj["type"])
-	assert.Equal(t, "Service temporarily unavailable", errorObj["message"])
+	assert.Equal(t, "服务暂时异常，请稍后重试。", errorObj["message"])
 }
 
 func TestOpenAIResponses_SetsClientTransportHTTP(t *testing.T) {
@@ -1084,7 +1084,7 @@ func TestOpenAIResponses_RejectsMessageIDAsPreviousResponseID(t *testing.T) {
 	h.Responses(c)
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "previous_response_id must be a response.id")
+	require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.Get(w.Body.String(), "error.message").String())
 }
 
 func TestOpenAIResponses_AcceptsHTTPContinuationPreviousResponseIDBeforeRouting(t *testing.T) {
@@ -1140,7 +1140,7 @@ func TestOpenAIResponses_RejectsHTTPContinuationOwnedByAnotherUser(t *testing.T)
 	h.Responses(c)
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "previous_response_id is not available for this user")
+	require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.Get(w.Body.String(), "error.message").String())
 }
 
 func TestOpenAIResponses_RejectsUnownedHTTPContinuation(t *testing.T) {
@@ -1161,7 +1161,7 @@ func TestOpenAIResponses_RejectsUnownedHTTPContinuation(t *testing.T) {
 	h.Responses(c)
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "previous_response_id is not available for this user")
+	require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.Get(w.Body.String(), "error.message").String())
 }
 
 func TestOpenAIResponses_FunctionCallOutputHTTPGuidanceDoesNotSuggestPreviousResponseReuse(t *testing.T) {
@@ -1189,7 +1189,7 @@ func TestOpenAIResponses_FunctionCallOutputHTTPGuidanceDoesNotSuggestPreviousRes
 	h.Responses(c)
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), "Responses WebSocket v2")
+	require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.Get(w.Body.String(), "error.message").String())
 	require.NotContains(t, w.Body.String(), "reuse previous_response_id")
 }
 
@@ -2102,6 +2102,10 @@ type openAIWSFailoverHandlerAccountRepoStub struct {
 	rateLimitedIDs []int64
 }
 
+func (s *openAIWSFailoverHandlerAccountRepoStub) ListByGroup(_ context.Context, _ int64) ([]service.Account, error) {
+	return append([]service.Account(nil), s.accounts...), nil
+}
+
 type openAIHTTPPassthroughFailoverUpstream struct {
 	service.HTTPUpstream
 	mu         sync.Mutex
@@ -2445,7 +2449,7 @@ func TestOpenAIResponses_APIKeyPassthroughPool5xxRetriesThenExhaustsMaxSwitches(
 	require.Equal(t, []int64{9910, 9910, 9911}, calls[:3])
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Equal(t, "upstream_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Equal(t, "Upstream service temporarily unavailable", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+	require.Equal(t, "服务暂时异常，请稍后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 }
 
 func TestOpenAIMessages_TransientFailureRetriesOnceThenFailsOver(t *testing.T) {
@@ -2906,7 +2910,7 @@ func TestOpenAIResponses_APIKeyPassthroughSSERateLimitUsesConfiguredPoolRetry(t 
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, "1", rec.Header().Get("Retry-After"))
 	require.Equal(t, "rate_limit_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
-	require.Equal(t, "Upstream rate limit exceeded, please retry later", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
+	require.Equal(t, "服务暂时繁忙，请稍后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 }
 
 func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T) {
@@ -3637,6 +3641,19 @@ data: {"type":"response.failed","error":{"message":"This content was flagged"}}
 		reported := openAIForwardErrorAlreadyCommunicated(c, before, errors.New("stream read error: unexpected EOF"))
 
 		require.False(t, reported)
+	})
+
+	t.Run("bare Responses error after write still needs a legal terminal fallback", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		before := c.Writer.Size()
+		_, _ = c.Writer.WriteString("event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"server_error\",\"message\":\"upstream failed\"}}\n\n")
+
+		reported := openAIForwardErrorAlreadyCommunicated(c, before, errors.New("upstream response failed: upstream failed"))
+
+		require.False(t, reported, "bare event:error is not a Responses terminal event")
 	})
 
 	// H-2: cyber_policy 命中且响应已写出时，即便 err 前缀不在白名单（非流式 400 cyber

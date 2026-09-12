@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	coderws "github.com/coder/websocket"
@@ -27,20 +29,29 @@ type stagedPassthroughFrame struct {
 type stagedPassthroughConn struct {
 	frames    chan stagedPassthroughFrame
 	writes    chan []byte
+	failures  chan error
 	closed    chan struct{}
 	closeOnce sync.Once
 }
 
 func newStagedPassthroughConn() *stagedPassthroughConn {
 	return &stagedPassthroughConn{
-		frames: make(chan stagedPassthroughFrame, 4),
-		writes: make(chan []byte, 4),
-		closed: make(chan struct{}),
+		frames:   make(chan stagedPassthroughFrame, 4),
+		writes:   make(chan []byte, 4),
+		failures: make(chan error, 1),
+		closed:   make(chan struct{}),
 	}
 }
 
 func (c *stagedPassthroughConn) Send(payload string) {
 	c.frames <- stagedPassthroughFrame{messageType: coderws.MessageText, payload: []byte(payload)}
+}
+
+func (c *stagedPassthroughConn) Fail(err error) {
+	select {
+	case c.failures <- err:
+	default:
+	}
 }
 
 func (c *stagedPassthroughConn) WriteJSON(context.Context, any) error { return nil }
@@ -61,6 +72,8 @@ func (c *stagedPassthroughConn) ReadFrame(ctx context.Context) (coderws.MessageT
 		return coderws.MessageText, nil, ctx.Err()
 	case <-c.closed:
 		return coderws.MessageText, nil, errOpenAIWSConnClosed
+	case err := <-c.failures:
+		return coderws.MessageText, nil, err
 	case frame := <-c.frames:
 		return frame.messageType, append([]byte(nil), frame.payload...), nil
 	}
@@ -189,6 +202,49 @@ func startPassthroughLifecycleServer(
 		// The production handler sends an application close frame before the
 		// deferred CloseNow tears down the transport. Mirror that boundary here
 		// so lifecycle assertions observe the same client-facing contract.
+		var closeErr *OpenAIWSClientCloseError
+		if errors.As(proxyErr, &closeErr) {
+			_ = conn.Close(closeErr.StatusCode(), closeErr.Reason())
+		}
+		serverErr <- proxyErr
+	}))
+	return server, serverErr
+}
+
+func startPassthroughLifecycleServerWithHooks(
+	t *testing.T,
+	controlCtx context.Context,
+	svc *OpenAIGatewayService,
+	account *Account,
+	hooksForContext func(*gin.Context) *OpenAIWSIngressHooks,
+) (*httptest.Server, <-chan error) {
+	t.Helper()
+	serverErr := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		msgType, firstMessage, err := ReadOpenAIWSClientMessage(controlCtx, conn, 3*time.Second, coderws.StatusPolicyViolation, "missing first response.create message")
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		if msgType != coderws.MessageText {
+			serverErr <- errors.New("first message was not text")
+			return
+		}
+
+		recorder := httptest.NewRecorder()
+		ginCtx, _ := gin.CreateTestContext(recorder)
+		req := r.Clone(controlCtx)
+		req.Header = req.Header.Clone()
+		ginCtx.Request = req
+		hooks := hooksForContext(ginCtx)
+		proxyErr := svc.ProxyResponsesWebSocketFromClient(controlCtx, ginCtx, conn, account, "sk-test", firstMessage, hooks)
 		var closeErr *OpenAIWSClientCloseError
 		if errors.As(proxyErr, &closeErr) {
 			_ = conn.Close(closeErr.StatusCode(), closeErr.Reason())
@@ -352,7 +408,7 @@ func TestPassthroughLifecycle_NonCyberFailureKeepsAccountSideEffects(t *testing.
 	defer cancelControl(context.Canceled)
 	upstream := newStagedPassthroughConn()
 	upstream.Send(`{"type":"response.failed","response":{"id":"resp_non_cyber","error":{"type":"authentication_error","code":"invalid_api_key","status_code":401,"message":"credential rejected"},"usage":{"input_tokens":3,"output_tokens":1}}}`)
-	repo := &openAIStream403AccountRepo{}
+	repo := &openAIAuthPolicyAccountRepo{}
 	svc := newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream)
 	svc.rateLimitService = NewRateLimitService(repo, nil, svc.cfg, nil, nil)
 	account := passthroughLifecycleAccount()
@@ -382,7 +438,8 @@ func TestPassthroughLifecycle_NonCyberFailureKeepsAccountSideEffects(t *testing.
 	case <-time.After(3 * time.Second):
 		t.Fatal("non-cyber terminal event did not complete its turn")
 	}
-	require.Equal(t, 1, repo.setErrorCalls, "non-cyber credential failure must retain account failure side effects")
+	require.Equal(t, 1, repo.tempCalls, "API-key credential failure must temporarily isolate the account")
+	require.Zero(t, repo.setErrorCalls, "API-key credential failure must not permanently disable the account")
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
 	select {
@@ -398,7 +455,7 @@ func TestPassthroughLifecycle_CyberSkipsFailureAccountSideEffects(t *testing.T) 
 	defer cancelControl(context.Canceled)
 	upstream := newStagedPassthroughConn()
 	upstream.Send(`{"type":"response.failed","response":{"id":"resp_cyber_auth","error":{"type":"authentication_error","code":"cyber_policy","status_code":401,"message":"request blocked"}}}`)
-	repo := &openAIStream403AccountRepo{}
+	repo := &openAIAuthPolicyAccountRepo{}
 	svc := newPassthroughLifecycleService(passthroughLifecycleConfig(), upstream)
 	svc.rateLimitService = NewRateLimitService(repo, nil, svc.cfg, nil, nil)
 	account := passthroughLifecycleAccount()

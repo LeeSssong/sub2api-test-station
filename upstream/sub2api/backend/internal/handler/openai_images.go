@@ -85,7 +85,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if !service.GroupAllowsOpenAIModel(apiKey.Group, clientRequestModel) {
+	if !isGroupModelAllowed(apiKey.Group, clientRequestModel) {
 		setOpsRequestContext(c, clientRequestModel, parsed.Stream)
 		h.errorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", clientRequestModel))
 		return

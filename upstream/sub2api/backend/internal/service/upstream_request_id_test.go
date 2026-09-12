@@ -57,7 +57,7 @@ func TestUpstreamRequestIDHeaderNameInfersOneAPIConservatively(t *testing.T) {
 		},
 		{
 			name:    "trusted NewAPI identity",
-			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{Source: AccountMonitorBalanceSourceNewAPI}}},
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK, Source: AccountMonitorBalanceSourceNewAPI}}},
 			want:    "X-Oneapi-Request-Id",
 		},
 		{

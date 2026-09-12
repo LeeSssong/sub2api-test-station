@@ -13,6 +13,26 @@ import (
 )
 
 const streamObservationKey = "openai_stream_observation"
+const responsesStreamTerminalKey = "openai_responses_stream_terminal"
+
+// MarkResponsesStreamTerminal records that the service wrote a legal
+// Responses terminal event. Handlers use this marker to distinguish a
+// protocol-complete failure from a bare event:error frame.
+func MarkResponsesStreamTerminal(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	c.Set(responsesStreamTerminalKey, true)
+}
+
+func ResponsesStreamTerminalRecorded(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	value, ok := c.Get(responsesStreamTerminalKey)
+	terminal, _ := value.(bool)
+	return ok && terminal
+}
 
 func BeginStreamObservation(c *gin.Context, model, mappedModel, platform string, account *Account) *StreamObservation {
 	if c == nil {

@@ -1424,7 +1424,7 @@ func TestAPIKeyAuthRejectsExhaustedBalance(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "Insufficient account balance")
+	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "余额不足，请充值后重试。")
 }
 
 func TestAPIKeyAuthOpenAIQuotaErrorFormat(t *testing.T) {

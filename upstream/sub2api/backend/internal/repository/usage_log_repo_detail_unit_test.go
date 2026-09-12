@@ -34,11 +34,13 @@ func TestUsageLogRepositoryGetByID加载详情所需摘要关系(t *testing.T) {
 		"ALTER TABLE usage_logs ADD COLUMN openai_ws_mode boolean NOT NULL DEFAULT false",
 		"ALTER TABLE usage_logs ADD COLUMN service_tier text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN reasoning_effort text NULL",
+		"ALTER TABLE usage_logs ADD COLUMN requested_reasoning_effort text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN inbound_endpoint text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN upstream_endpoint text NULL",
 		"ALTER TABLE usage_logs ADD COLUMN account_stats_cost real NULL",
 		"ALTER TABLE usage_logs ADD COLUMN account_cost real NULL",
 		"ALTER TABLE usage_logs ADD COLUMN session_id text NULL",
+		"ALTER TABLE usage_logs ADD COLUMN native_compaction_v2 boolean NOT NULL DEFAULT false",
 	} {
 		_, err = db.Exec(statement)
 		require.NoError(t, err)

@@ -30,8 +30,8 @@ func TestOpenAIStreamingForwarderSourceWiringSupplement(t *testing.T) {
 		{"gateway_forward_as_chat_completions.go", "notifyOpenAIFirstSemanticOutput(ctx)"},
 		{"openai_gateway_chat_completions_raw.go", "notifyOpenAIFirstSemanticOutput(ctx)"},
 		{"openai_gateway_cc_pipeline.go", "notifyOpenAIFirstSemanticOutput(ctx)"},
-		{"openai_gateway_messages_chat_fallback.go", "s.scanCCStream(ctx,"},
-		{"openai_gateway_responses_chat_fallback.go", "s.scanCCStream(ctx,"},
+		{"openai_gateway_messages_chat_fallback.go", "s.scanCCStream(c,"},
+		{"openai_gateway_responses_chat_fallback.go", "s.scanCCStream(c,"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

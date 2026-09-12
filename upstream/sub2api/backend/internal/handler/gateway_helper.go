@@ -18,6 +18,10 @@ import (
 
 const gatewayStreamHeartbeatBytesKey = "gateway_stream_heartbeat_bytes"
 
+func isGroupModelAllowed(group *service.Group, model string) bool {
+	return group == nil || !group.ModelAllowlistEnabled() || group.ModelAllowlist.Allows(model)
+}
+
 func recordGatewayStreamHeartbeat(c *gin.Context, written int) {
 	if c == nil || written <= 0 {
 		return

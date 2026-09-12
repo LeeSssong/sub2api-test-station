@@ -31,11 +31,11 @@ func TestCodexModelsManifestAggregationMergesDeterministically(t *testing.T) {
 	candidates := []codexModelsManifestCandidate{
 		{
 			accountID: 20,
-			manifest:  &CodexModelsManifest{Body: []byte(`{"models":[{"slug":"gpt-5.6","display_name":"GPT 5.6"},{"slug":"shared","source":"second"}],"metadata":{"version":1}}`)},
+			manifest:  &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"gpt-5.6","display_name":"GPT 5.6"},{"slug":"shared","source":"second"}],"metadata":{"version":1}}`)},
 		},
 		{
 			accountID: 10,
-			manifest:  &CodexModelsManifest{Body: []byte(`{"models":[{"slug":"gpt-5.5","display_name":"GPT 5.5"},{"slug":"shared","source":"first"}],"metadata":{"version":1}}`)},
+			manifest:  &OpenAIModelsResponse{Body: []byte(`{"models":[{"slug":"gpt-5.5","display_name":"GPT 5.5"},{"slug":"shared","source":"first"}],"metadata":{"version":1}}`)},
 		},
 	}
 
@@ -126,14 +126,12 @@ func TestFetchCodexModelsManifestForGroupKeepsStaleAggregateAfterRefreshFailure(
 	require.NoError(t, err)
 	require.JSONEq(t, `{"models":[{"slug":"old"}]}`, string(initial.Body))
 
-	s.codexModelsManifestCache.mu.Lock()
-	for key, entry := range s.codexModelsManifestCache.entries {
-		if strings.HasPrefix(key, "group:") {
-			entry.expiresAt = time.Now().Add(-time.Second)
-			s.codexModelsManifestCache.entries[key] = entry
-		}
+	s.openAIModelsCache.mu.Lock()
+	for key, entry := range s.openAIModelsCache.entries {
+		entry.expiresAt = time.Now().Add(-time.Second)
+		s.openAIModelsCache.entries[key] = entry
 	}
-	s.codexModelsManifestCache.mu.Unlock()
+	s.openAIModelsCache.mu.Unlock()
 
 	stale, err := s.FetchCodexModelsManifestForGroup(context.Background(), 42, "0.145.0", "")
 	require.NoError(t, err)

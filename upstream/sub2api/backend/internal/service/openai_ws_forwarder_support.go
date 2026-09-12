@@ -308,8 +308,8 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 	}
 }
 
-func openAIWSResponseFailedShouldFailover(payload []byte, message string) bool {
-	status := openAIStreamFailureStatus(payload, message)
+func openAIWSResponseFailedShouldFailover(payload []byte, _ string) bool {
+	status := openAIWSPayloadTransientStatus(payload)
 	return status >= http.StatusInternalServerError && status <= 599
 }
 

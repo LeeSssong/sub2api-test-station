@@ -246,6 +246,11 @@ func TestHandleErrorResponse_NonDeterministicStatusesKeepGeneric502(t *testing.T
 				c, newOpenAIUpstreamErrorTestAccount(), nil,
 			)
 			require.Error(t, err)
+			if tc.name == "not_found" {
+				var failoverErr *UpstreamFailoverError
+				require.True(t, errors.As(err, &failoverErr))
+				return
+			}
 			if tc.name == "forbidden" {
 				var failoverErr *UpstreamFailoverError
 				require.False(t, errors.As(err, &failoverErr))

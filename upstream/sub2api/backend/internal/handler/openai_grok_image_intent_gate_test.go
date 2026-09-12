@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestOpenAIGatewayHandlerResponses_GrokPassiveImageToolDeclarationBypassesPermissionGate(t *testing.T) {
@@ -62,7 +63,7 @@ func TestOpenAIGatewayHandlerResponses_ImagePermissionHardSignalsStillRejected(t
 			rec := runOpenAIResponsesImagePermissionGateTest(t, tt.platform, tt.body)
 
 			require.Equal(t, http.StatusForbidden, rec.Code)
-			require.Contains(t, rec.Body.String(), service.ImageGenerationPermissionMessage())
+			require.Equal(t, "当前模型或分组不可用，请调整后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String())
 		})
 	}
 }

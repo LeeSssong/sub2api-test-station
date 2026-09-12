@@ -55,6 +55,7 @@ func TestChannelMonitorUpdateRejectsProviderGroupMismatch(t *testing.T) {
 		ID:              13,
 		Provider:        MonitorProviderOpenAI,
 		APIMode:         MonitorAPIModeResponses,
+		Endpoint:        "https://api.openai.com",
 		PrimaryModel:    "gpt-5.6-sol",
 		GroupName:       "GPT-PLUS-内测",
 		GroupID:         &groupID,
@@ -84,6 +85,7 @@ func TestChannelMonitorUpdateCanonicalizesStableGroupName(t *testing.T) {
 		ID:              13,
 		Provider:        MonitorProviderOpenAI,
 		APIMode:         MonitorAPIModeResponses,
+		Endpoint:        "https://api.openai.com",
 		PrimaryModel:    "gpt-5.6-sol",
 		IntervalSeconds: 60,
 	}}
@@ -111,6 +113,7 @@ func TestChannelMonitorUpdateCanonicalizesStableGroupName(t *testing.T) {
 func TestApplyMonitorUpdateClearGroupClearsLegacyNameAtomically(t *testing.T) {
 	groupID := int64(16)
 	existing := &ChannelMonitor{
+		Endpoint:  "https://api.openai.com",
 		GroupID:   &groupID,
 		GroupName: "GPT-PLUS-内测",
 	}

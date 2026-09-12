@@ -92,6 +92,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // video_duration_seconds
 			sqlmock.AnyArg(), // service_tier
 			sqlmock.AnyArg(), // reasoning_effort
+			sqlmock.AnyArg(), // requested_reasoning_effort
 			sqlmock.AnyArg(), // inbound_endpoint
 			sqlmock.AnyArg(), // upstream_endpoint
 			log.CacheTTLOverridden,
@@ -108,6 +109,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // usage_completeness
 			sqlmock.AnyArg(), // reconciliation_required
 			sqlmock.AnyArg(), // unsafe_to_replay
+			sqlmock.AnyArg(), // native_compaction_v2
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
@@ -193,6 +195,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
 			log.CacheTTLOverridden,
 			log.LongContextBillingApplied,
 			sqlmock.AnyArg(), // channel_id
@@ -207,6 +210,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // usage_completeness
 			sqlmock.AnyArg(), // reconciliation_required
 			sqlmock.AnyArg(), // unsafe_to_replay
+			sqlmock.AnyArg(), // native_compaction_v2
 			createdAt,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
@@ -284,19 +288,19 @@ func TestPrepareUsageLogInsert_AccountCostWiring(t *testing.T) {
 		CreatedAt:   time.Date(2025, 1, 5, 12, 0, 0, 0, time.UTC),
 	})
 
-	require.Equal(t, &accountCost, prepared.args[len(prepared.args)-8], "account_cost must precede session and reconciliation metadata")
+	require.Equal(t, &accountCost, prepared.args[len(prepared.args)-9], "account_cost must precede session and reconciliation metadata")
 	batchQuery, batchArgs := buildUsageLogBatchInsertQuery(
 		[]string{usageLogBatchKey(prepared.requestID, 2)},
 		map[string]usageLogInsertPrepared{usageLogBatchKey(prepared.requestID, 2): prepared},
 	)
 	require.Contains(t, batchQuery, "account_cost")
 	require.Len(t, batchArgs, len(prepared.args)+1)
-	require.Equal(t, &accountCost, batchArgs[1+(len(prepared.args)-8)], "batch account_cost must follow account_stats_cost")
+	require.Equal(t, &accountCost, batchArgs[1+(len(prepared.args)-9)], "batch account_cost must follow account_stats_cost")
 
 	bestEffortQuery, bestEffortArgs := buildUsageLogBestEffortInsertQuery([]usageLogInsertPrepared{prepared})
 	require.Contains(t, bestEffortQuery, "account_cost")
 	require.Len(t, bestEffortArgs, len(prepared.args))
-	require.Equal(t, &accountCost, bestEffortArgs[len(prepared.args)-8], "best-effort account_cost must follow account_stats_cost")
+	require.Equal(t, &accountCost, bestEffortArgs[len(prepared.args)-9], "best-effort account_cost must follow account_stats_cost")
 }
 
 func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
@@ -847,15 +851,24 @@ type usageLogScannerStub struct {
 }
 
 func (s usageLogScannerStub) Scan(dest ...any) error {
-	if len(dest) != len(s.values) {
-		return fmt.Errorf("scan arg count mismatch: got %d want %d", len(dest), len(s.values))
+	values := append([]any(nil), s.values...)
+	// Keep older fixture rows readable while the production projection carries
+	// actual_response_model and native_compaction_v2.
+	if len(values) == len(dest)-2 {
+		values = append(values[:51], append([]any{sql.NullString{}}, values[51:]...)...)
+		values = append(values[:len(values)-1], append([]any{false}, values[len(values)-1:]...)...)
+	} else if len(values) == len(dest)-1 {
+		values = append(values[:len(values)-1], append([]any{false}, values[len(values)-1:]...)...)
+	}
+	if len(dest) != len(values) {
+		return fmt.Errorf("scan arg count mismatch: got %d want %d", len(dest), len(values))
 	}
 	for i := range dest {
 		dv := reflect.ValueOf(dest[i])
 		if dv.Kind() != reflect.Pointer {
 			return fmt.Errorf("dest[%d] is not pointer", i)
 		}
-		dv.Elem().Set(reflect.ValueOf(s.values[i]))
+		dv.Elem().Set(reflect.ValueOf(values[i]))
 	}
 	return nil
 }

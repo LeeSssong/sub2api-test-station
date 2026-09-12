@@ -476,7 +476,7 @@ func (s *openAIAccountRuntimeStats) qualityGateEvidenceAt(groupID, accountID int
 		AccountMonitorSettings{IntervalSeconds: AccountMonitorDefaultIntervalSeconds},
 		now,
 	)
-	if ttl > 0 && fused.Freshness == accountMonitorQualityFreshnessFresh && !isAccountMonitorEvidenceFresh(observedAt, now.UTC(), ttl) {
+	if ttl > 0 && !isAccountMonitorEvidenceFresh(observedAt, now.UTC(), ttl) {
 		fused = accountMonitorUnknownQualityEvidenceWithFreshness("stale", true)
 	}
 	return openAIQualityGateEvidence{
@@ -794,7 +794,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return selection, decision, nil
 		}
 		if stickyEscapeReason != "" {
-			req.PreserveStickyBinding = true
+			req.PreserveStickyBinding = req.PreserveStickyBinding || shouldPreserveOpenAIStickyBindingOnEscape(stickyEscapeReason)
 			decision.StickyEscapeReason = stickyEscapeReason
 			// A quality/concurrency escape must be sticky-safe for the whole
 			// logical request: carry the escaped account into the load-balanced
@@ -868,6 +868,15 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	return selection, decision, nil
 }
 
+func shouldPreserveOpenAIStickyBindingOnEscape(reason string) bool {
+	switch reason {
+	case "ttft", "error_rate", "concurrency", "shared_cooldown":
+		return true
+	default:
+		return false
+	}
+}
+
 func cloneStringIntMap(in map[string]int) map[string]int {
 	if len(in) == 0 {
 		return nil
@@ -881,7 +890,7 @@ func cloneStringIntMap(in map[string]int) map[string]int {
 
 func (s *defaultOpenAIAccountScheduler) selectForcedAccount(ctx context.Context, req OpenAIAccountScheduleRequest) (*AccountSelectionResult, error) {
 	account, err := s.service.getSchedulableAccount(ctx, req.ForcedAccountID)
-	if err != nil || account == nil || !account.IsSchedulable() ||
+	if err != nil || account == nil || !account.isSchedulableForForcedOpenAIRetry() ||
 		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() ||
 		!s.isAccountRequestCompatible(ctx, account, req) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
 		return nil, nil
@@ -922,14 +931,19 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 			return nil, "excluded", nil
 		}
 	}
+	clearStickyBinding := func() {
+		if !req.PreserveStickyBinding {
+			_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		}
+	}
 
 	account, err := s.service.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "deterministic_health", nil
 	}
 	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "deterministic_health", nil
 	}
 	if s.service.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) {
@@ -950,29 +964,29 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, "capability", nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "capability", nil
 	}
 	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.GroupID, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
 	if account == nil || !s.service.openAIAccountMatchesSchedulingGroup(account, req.GroupID) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "capability", nil
 	}
 	// Free-tier soft gate: sticky session must not pin an over-quota free OAuth account.
 	// Admin QueryQuota / import probes do not use this path.
 	if account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "capability", nil
 	}
 	// Team+model cool: sticky must not pin a sibling under the same team 429 window.
 	now := time.Now()
 	upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
 	if account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "capability", nil
 	}
 	if account != nil && isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
-		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		clearStickyBinding()
 		return nil, "capability", nil
 	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
@@ -2364,9 +2378,6 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		// shared account: another group may intentionally allow accounts whose
 		// upstream privacy setting has not been confirmed.
 		if schedGroup != nil && schedGroup.RequirePrivacySet && !account.IsPrivacySet() {
-			s.service.BlockAccountScheduling(account, time.Time{}, "privacy_not_set")
-			_ = s.service.accountRepo.SetError(ctx, account.ID,
-				fmt.Sprintf("Privacy not set, required by group [%s]", schedGroup.Name))
 			filterStats.excludeAccount(account.ID, "privacy_not_set")
 			continue
 		}
@@ -2740,7 +2751,7 @@ func (s *defaultOpenAIAccountScheduler) isAccountRequestCompatibleReason(ctx con
 	if account == nil {
 		return false, "account_nil"
 	}
-	if s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedWithLease(account, req.RequestedModel, req.halfOpenLease) {
+	if req.ForcedAccountID != account.ID && s != nil && s.service != nil && s.service.isOpenAIAccountRequestRuntimeBlockedWithLease(account, req.RequestedModel, req.halfOpenLease) {
 		return false, "runtime_blocked"
 	}
 	return s.isAccountRequestCompatibleWithoutRuntimeReason(ctx, account, req)

@@ -77,7 +77,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	if !service.GroupAllowsOpenAIModel(apiKey.Group, reqModel) {
+	if !isGroupModelAllowed(apiKey.Group, reqModel) {
 		setOpsRequestContext(c, reqModel, false)
 		h.errorResponse(c, http.StatusBadRequest, "unsupported_model", fmt.Sprintf("当前分组不支持模型 %q，请切换模型后重试", reqModel))
 		return

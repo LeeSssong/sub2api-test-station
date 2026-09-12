@@ -214,7 +214,15 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if !isGrokVideoUsageResult(result, nil) {
 		ApplyOpenAIImageBillingResolution(result)
 	}
-	logServiceTierBillingDowngrade("service.openai_gateway", account, result.RequestID, ApplyOpenAIServiceTierBillingResolution(account, result))
+	billingAccount := account
+	if account.IsShadow() {
+		resolvedAccount, resolveErr := resolveCredentialAccount(ctx, s.accountRepo, account)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		billingAccount = resolvedAccount
+	}
+	logServiceTierBillingDowngrade("service.openai_gateway", account, result.RequestID, ApplyOpenAIServiceTierBillingResolution(billingAccount, result))
 
 	// OpenAI input_tokens 是总输入，包含缓存读取和缓存写入明细。
 	// 将三类 token 拆成互斥桶，避免缓存写入同时按普通输入和 cache_write 重复计费。
@@ -275,13 +283,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
-	billingAccount := account
-	if account.IsShadow() {
-		billingAccount, err = resolveCredentialAccount(ctx, s.accountRepo, account)
-		if err != nil {
-			return err
-		}
-	}
 	longContextBillingGate := openAILongContextBillingGate(billingAccount)
 	cost, err = s.calculateOpenAIRecordUsageCost(
 		ctx,
@@ -340,6 +341,34 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 				billingModels = responseModels
 				cost = responseCost
 			}
+		}
+	}
+	if groupBillsOpenAIFastAtStandard(apiKey, billingAccount, serviceTier) {
+		standardCost, standardErr := s.calculateOpenAIRecordUsageCost(
+			ctx,
+			result,
+			apiKey,
+			billingModels,
+			multiplier,
+			imageMultiplier,
+			videoMultiplier,
+			baseMultiplier,
+			tokens,
+			"default",
+			longContextBillingGate,
+			pricingAt,
+		)
+		if standardErr == nil && standardCost != nil {
+			// Preserve the Fast list cost for audit/profit reporting, while the
+			// user-facing charge follows the group's free-Fast contract.
+			cost.ActualCost = standardCost.ActualCost
+		} else {
+			logger.L().Warn("openai_usage.free_fast_standard_cost_failed",
+				zap.Strings("billing_models", billingModels),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Int64("account_id", account.ID),
+				zap.Error(standardErr),
+			)
 		}
 	}
 

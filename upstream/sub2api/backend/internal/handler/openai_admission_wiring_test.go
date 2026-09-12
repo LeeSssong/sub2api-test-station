@@ -66,7 +66,7 @@ func TestOpenAIHTTPHandlersApplyGroupModelAdmissionBeforeRouting(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := handlerFunctionSource(t, tt.path, tt.signature)
-			admission := strings.Index(body, "service.GroupAllowsOpenAIModel(")
+			admission := strings.Index(body, "isGroupModelAllowed(")
 			require.GreaterOrEqual(t, admission, 0, "group model admission must be wired")
 			for _, marker := range []string{
 				"SelectAccount",

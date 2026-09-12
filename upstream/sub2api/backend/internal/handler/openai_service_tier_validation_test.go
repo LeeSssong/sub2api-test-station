@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // 非法 service_tier 必须在两个 OpenAI 端点（/v1/responses、/v1/chat/completions）
@@ -73,7 +74,7 @@ func TestOpenAIGatewayHandlerResponses_InvalidServiceTierRejected400(t *testing.
 		})
 		require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", body)
 		require.Contains(t, rec.Body.String(), "invalid_request_error", "body=%s", body)
-		require.Contains(t, rec.Body.String(), "invalid service_tier", "body=%s", body)
+		require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String(), "body=%s", body)
 	}
 }
 
@@ -89,6 +90,6 @@ func TestOpenAIGatewayHandlerChatCompletions_InvalidServiceTierRejected400(t *te
 		})
 		require.Equal(t, http.StatusBadRequest, rec.Code, "body=%s", body)
 		require.Contains(t, rec.Body.String(), "invalid_request_error", "body=%s", body)
-		require.Contains(t, rec.Body.String(), "invalid service_tier", "body=%s", body)
+		require.Equal(t, "请求参数或格式不正确，请检查后重试。", gjson.GetBytes(rec.Body.Bytes(), "error.message").String(), "body=%s", body)
 	}
 }

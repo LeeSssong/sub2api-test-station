@@ -678,8 +678,9 @@ func TestOpenAIGatewayServiceAdvancedSchedulerIgnoresLegacyLowRateSwitch(t *test
 	expensive := upstreamCostTestAccount(2, UpstreamBillingProbeStatusOK, 0.8, now.Add(-time.Minute), 30*time.Minute)
 	expensive.Status, expensive.Schedulable, expensive.Concurrency, expensive.Priority = StatusActive, true, 1, 0
 	settings := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
-		openAIAdvancedSchedulerSettingKey:              "true",
-		SettingKeyOpenAILowUpstreamRatePriorityEnabled: "true",
+		openAIAdvancedSchedulerSettingKey:                  "true",
+		SettingKeyOpenAILowUpstreamRatePriorityEnabled:     "true",
+		SettingKeyOpenAIAdvancedSchedulerCandidatePoolMode: OpenAISchedulerCandidatePoolModeTopK,
 	}}
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.LBTopK = 1

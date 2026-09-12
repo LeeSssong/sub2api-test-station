@@ -857,7 +857,7 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 			extra = CASE
 				-- 凭证整体未变化 ⇒ Ollama 组身份必然未变化；顶层 DISTINCT 守卫防止
 				-- 非 Ollama 账号的无变化持久化误清探测快照或重写 NULL extra。
-				WHEN platform IN ('openai', 'anthropic')
+				WHEN platform IN (`+ollamaCloudUsagePlatformsSQL+`)
 					AND type = 'apikey'
 					AND credentials IS DISTINCT FROM $1::jsonb
 					AND (
@@ -869,7 +869,6 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 					)
 				THEN COALESCE(extra, '{}'::jsonb)
 					- 'upstream_billing_probe'
-					- 'newapi_rate_registration'
 					- 'ollama_cloud_usage_session'
 					- 'ollama_cloud_usage_auto_refresh'
 					- 'ollama_cloud_usage_snapshot'
@@ -3229,7 +3228,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 				extraExpression = "(" + extraExpression + ") - 'ollama_cloud_usage_snapshot'"
 			}
 		}
-		eligibleAccount := "platform IN ('openai', 'anthropic') AND type = 'apikey'"
+		eligibleAccount := "platform IN (" + ollamaCloudUsagePlatformsSQL + ") AND type = 'apikey'"
 		groupIdentityChanged := ""
 		if len(ollamaGroupIdentityChanges) > 0 {
 			groupIdentityChanged = "(" + eligibleAccount + " AND (" + joinClauses(ollamaGroupIdentityChanges, " OR ") + "))"

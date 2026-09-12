@@ -209,63 +209,6 @@ func TestOpenAIHandleStreamingAwareError_ChatCompletionsStreamingKeepsLegacy(t *
 	assert.True(t, strings.HasPrefix(body, "event: error\n"), "got: %q", body)
 }
 
-// Gateway (Anthropic-backed) handler: /v1/responses path also must emit response.failed.
-func TestGatewayHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed(t *testing.T) {
-	c, w := newGinContextForEndpoint(t, EndpointResponses)
-	h := &GatewayHandler{}
-	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "upstream gone", true)
-
-	_, errObj := parseResponsesFailedSSE(t, w.Body.String())
-	assert.Equal(t, "upstream_error", errObj["code"])
-	assert.Equal(t, "服务暂时异常，请稍后重试。", errObj["message"])
-}
-
-func TestGatewayAdmissionError_SynchronousIncludesGatewayCode(t *testing.T) {
-	c, w := newGinContextForEndpoint(t, EndpointMessages)
-	h := &GatewayHandler{}
-	h.handleStreamingAwareErrorWithCode(c, http.StatusTooManyRequests, "rate_limit_error",
-		gatewayQueueFullCode, "Too many pending requests, please retry later", false)
-
-	assert.Equal(t, http.StatusTooManyRequests, w.Code)
-	assert.Equal(t, "error", gjson.GetBytes(w.Body.Bytes(), "type").String())
-	assert.Equal(t, "rate_limit_error", gjson.GetBytes(w.Body.Bytes(), "error.type").String())
-	assert.Equal(t, gatewayQueueFullCode, gjson.GetBytes(w.Body.Bytes(), "error.code").String())
-}
-
-func TestGatewayAdmissionError_MessagesStreamingIncludesGatewayCode(t *testing.T) {
-	c, w := newGinContextForEndpoint(t, EndpointMessages)
-	h := &GatewayHandler{}
-	h.handleStreamingAwareErrorWithCode(c, http.StatusTooManyRequests, "rate_limit_error",
-		gatewayConcurrencyLimitCode, "Concurrency limit exceeded for account, please retry later", true)
-
-	body := w.Body.String()
-	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`))
-	payload := body[strings.Index(body, "{"):]
-	assert.Equal(t, "rate_limit_error", gjson.Get(payload, "error.type").String())
-	assert.Equal(t, gatewayConcurrencyLimitCode, gjson.Get(payload, "error.code").String())
-}
-
-func TestGatewayAdmissionError_BareResponsesFailedIncludesGatewayCode(t *testing.T) {
-	c, w := newGinContextForEndpoint(t, "/responses")
-	h := &GatewayHandler{}
-	h.handleStreamingAwareErrorWithCode(c, http.StatusTooManyRequests, "rate_limit_error",
-		gatewayQueueFullCode, "Too many pending requests, please retry later", true)
-
-	_, errObj := parseResponsesFailedSSE(t, w.Body.String())
-	assert.Equal(t, gatewayQueueFullCode, errObj["code"])
-}
-
-// Gateway handler: /v1/messages preserves the legacy data:{type:error,...} format
-// (Anthropic spec accepts a type:"error" stream event).
-func TestGatewayHandleStreamingAwareError_MessagesStreamingKeepsLegacy(t *testing.T) {
-	c, w := newGinContextForEndpoint(t, EndpointMessages)
-	h := &GatewayHandler{}
-	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
-
-	body := w.Body.String()
-	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`), "got: %q", body)
-}
-
 // 项目里 /responses 注册在多组路由：/v1/responses（gateway）、裸 /responses（top-level）、
 // /backend-api/codex/responses（codex direct）。我们 fix 必须覆盖全部，
 // 否则一些客户端走的路径就不会发 response.failed，照样报 stream closed。
@@ -355,7 +298,6 @@ func TestMapResponsesErrorCode(t *testing.T) {
 		{"custom_thing", "custom_thing"},
 	}
 	for _, tc := range cases {
-		assert.Equal(t, tc.out, mapResponsesErrorCode(tc.in, ""), "in=%q", tc.in)
+		assert.Equal(t, tc.out, mapResponsesErrorCode(tc.in), "in=%q", tc.in)
 	}
-	assert.Equal(t, gatewayQueueFullCode, mapResponsesErrorCode("rate_limit_error", gatewayQueueFullCode))
 }

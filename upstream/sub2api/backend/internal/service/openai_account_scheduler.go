@@ -3148,7 +3148,7 @@ func cloneOpenAIAdvancedSchedulerWeightOverrides(in map[string]float64) map[stri
 }
 
 func normalizeOpenAISchedulerRuntimeGroupPolicies(topK int, overrides map[string]float64, fairness OpenAISchedulerFairnessSettings, raw string) map[int64]OpenAISchedulerGroupPolicy {
-	parsed, err := parseOpenAISchedulerGroupPolicies(raw)
+	parsed, err := parseOpenAISchedulerGroupPolicies(sanitizeOpenAISchedulerRuntimeGroupPolicyCapTypes(raw))
 	if err != nil || len(parsed) == 0 {
 		return map[int64]OpenAISchedulerGroupPolicy{}
 	}

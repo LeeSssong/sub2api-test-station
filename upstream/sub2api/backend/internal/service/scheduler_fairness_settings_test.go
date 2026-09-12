@@ -230,6 +230,11 @@ func TestParseOpenAISchedulerGroupPoliciesLegacyJSONPreservesUnifiedQualityPrior
 	require.Equal(t, 12.25, *policies[10].UnifiedQualityPriorityDailyMax)
 }
 
+func TestParseOpenAISchedulerGroupPoliciesModernJSONRejectsUnknownFields(t *testing.T) {
+	_, err := parseOpenAISchedulerGroupPolicies(`{"10":{"unified_quality_priority_daily_max":12.25,"unexpected":true}}`)
+	require.Error(t, err)
+}
+
 func TestOpenAISchedulerGroupPolicyPriorityCapsRoundTripPreservesOmissionAndNormalizes(t *testing.T) {
 	raw := `{"10":{"unified_quality_priority_cold_start_max":35.5,"unified_quality_priority_daily_max":12.25},"20":{},"30":{"unified_quality_priority_daily_max":12.25}}`
 	policies, err := parseOpenAISchedulerGroupPolicies(raw)

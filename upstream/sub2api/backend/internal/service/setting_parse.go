@@ -1483,6 +1483,44 @@ func parseOpenAISchedulerGroupPolicies(raw string) (map[int64]OpenAISchedulerGro
 	return result, nil
 }
 
+func sanitizeOpenAISchedulerRuntimeGroupPolicyCapTypes(raw string) string {
+	var objects map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &objects); err != nil {
+		return raw
+	}
+	for id, blob := range objects {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(blob, &fields); err != nil {
+			continue
+		}
+		changed := false
+		for _, key := range []string{
+			"unified_quality_priority_cold_start_max",
+			"unified_quality_priority_daily_max",
+		} {
+			value, ok := fields[key]
+			if !ok || string(value) == "null" {
+				continue
+			}
+			var numeric float64
+			if err := json.Unmarshal(value, &numeric); err != nil {
+				delete(fields, key)
+				changed = true
+			}
+		}
+		if changed {
+			if sanitized, err := json.Marshal(fields); err == nil {
+				objects[id] = sanitized
+			}
+		}
+	}
+	sanitized, err := json.Marshal(objects)
+	if err != nil {
+		return raw
+	}
+	return string(sanitized)
+}
+
 func parseOpenAIExtraRetryCount(raw json.RawMessage) (*int, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil

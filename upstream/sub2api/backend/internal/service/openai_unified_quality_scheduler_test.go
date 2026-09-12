@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -100,6 +101,38 @@ func TestOpenAIUnifiedQualityColdStartPrioritySignalIsBoundedAndDecays(t *testin
 	require.Greater(t, openAIUnifiedQualityColdStartPrioritySignal(1, 0), 0.0)
 	require.Less(t, openAIUnifiedQualityColdStartPrioritySignal(100, 0), 0.0)
 	require.Equal(t, float64(0), openAIUnifiedQualityColdStartPrioritySignal(1, openAIUnifiedQualityMaturityConfidence))
+}
+
+func TestOpenAIUnifiedQualityPrioritySignalsUseBoundedCaps(t *testing.T) {
+	caps := openAIUnifiedQualityPriorityCaps{ColdStartMax: 50, DailyMax: 20}
+	tests := []struct {
+		name      string
+		priority  int
+		wantCold  float64
+		wantDaily float64
+	}{
+		{name: "highest priority", priority: 1, wantCold: 50, wantDaily: 20},
+		{name: "neutral priority", priority: 50, wantCold: 0, wantDaily: 0},
+		{name: "lowest priority", priority: 100, wantCold: -50, wantDaily: -20},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.wantCold, openAIUnifiedQualityColdStartPrioritySignalWithCap(tt.priority, 0, caps.ColdStartMax))
+			require.Equal(t, tt.wantDaily, openAIUnifiedQualityDailyPrioritySignal(tt.priority, caps.DailyMax))
+		})
+	}
+}
+
+func TestOpenAIUnifiedQualityColdStartPrioritySignalZerosAtMaturity(t *testing.T) {
+	require.Zero(t, openAIUnifiedQualityColdStartPrioritySignalWithCap(1, openAIUnifiedQualityMaturityConfidence, 50))
+}
+
+func TestOpenAIUnifiedQualityPrioritySignalsRejectInvalidCaps(t *testing.T) {
+	for _, max := range []float64{0, -1, math.NaN(), math.Inf(1)} {
+		require.Zero(t, openAIUnifiedQualityColdStartPrioritySignalWithCap(1, 0, max))
+		require.Zero(t, openAIUnifiedQualityDailyPrioritySignal(1, max))
+	}
 }
 
 func TestOpenAIUnifiedQualityColdStartPriorityCanLiftUnknownAPIKey(t *testing.T) {

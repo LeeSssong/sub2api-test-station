@@ -16,20 +16,27 @@ const (
 	openAIUnifiedQualityMaxPrioritySignal     = 15.0
 )
 
+type openAIUnifiedQualityPriorityCaps struct {
+	ColdStartMax float64
+	DailyMax     float64
+}
+
 type openAIUnifiedQualityRecheckKey struct{}
 
 // openAIUnifiedQualityCandidate contains only the values that are allowed to
 // affect ordinary text ordering. Self-owned ordering uses native priority and
 // load; API-key priority is only a bounded cold-start signal.
 type openAIUnifiedQualityCandidate struct {
-	account             *Account
-	quality             OpenAIQualityBreakdown
-	effectiveU          *float64
-	effectiveCostStatus string
-	resourceTier        string
-	loadInfo            *AccountLoadInfo
-	priority            int
-	coldStart           bool
+	account                 *Account
+	quality                 OpenAIQualityBreakdown
+	effectiveU              *float64
+	effectiveCostStatus     string
+	resourceTier            string
+	loadInfo                *AccountLoadInfo
+	priority                int
+	coldStart               bool
+	coldStartPrioritySignal float64
+	dailyPrioritySignal     float64
 }
 
 type openAIProfitPartition struct {
@@ -145,13 +152,34 @@ func openAIUnifiedQualityResourceTierForAccount(account *Account) string {
 }
 
 func openAIUnifiedQualityColdStartPrioritySignal(priority int, confidence float64) float64 {
+	return openAIUnifiedQualityColdStartPrioritySignalWithCap(priority, confidence, openAIUnifiedQualityMaxPrioritySignal)
+}
+
+func openAIUnifiedQualityColdStartPrioritySignalWithCap(priority int, confidence, max float64) float64 {
+	if !finiteOpenAIUnifiedQualityPriorityCap(max) || !finiteQualityValue(&confidence) {
+		return 0
+	}
 	if confidence >= openAIUnifiedQualityMaturityConfidence {
 		return 0
 	}
 	priority = clampInt(priority, 1, 100)
-	strength := 1 - math.Max(0, confidence)/openAIUnifiedQualityMaturityConfidence
-	signal := ((50 - float64(priority)) / 49) * openAIUnifiedQualityMaxPrioritySignal * strength
-	return math.Max(-openAIUnifiedQualityMaxPrioritySignal, math.Min(openAIUnifiedQualityMaxPrioritySignal, signal))
+	confidence = math.Max(0, confidence)
+	strength := 1 - confidence/openAIUnifiedQualityMaturityConfidence
+	signal := ((50 - float64(priority)) / 49) * max * strength
+	return math.Max(-max, math.Min(max, signal))
+}
+
+func openAIUnifiedQualityDailyPrioritySignal(priority int, max float64) float64 {
+	if !finiteOpenAIUnifiedQualityPriorityCap(max) {
+		return 0
+	}
+	priority = clampInt(priority, 1, 100)
+	signal := ((50 - float64(priority)) / 49) * max
+	return math.Max(-max, math.Min(max, signal))
+}
+
+func finiteOpenAIUnifiedQualityPriorityCap(max float64) bool {
+	return max > 0 && !math.IsNaN(max) && !math.IsInf(max, 0)
 }
 
 func openAIUnifiedQualityCandidatePrioritySignal(candidate openAIUnifiedQualityCandidate) float64 {

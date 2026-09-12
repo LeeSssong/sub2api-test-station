@@ -217,7 +217,7 @@
             />
             <DetailItem
               v-if="detail.long_context_billing_applied"
-              :label="t('admin.accounts.form.longContextBilling')"
+              :label="t('admin.accounts.openai.longContextBilling')"
               :value="t('common.yes')"
             />
             <DetailItem
@@ -323,38 +323,38 @@
               id="usage-detail-stream-diagnostic-heading"
               class="text-sm font-semibold text-gray-900 dark:text-white"
             >
-              {{ t('admin.usage.streamDiagnostic.title') }}
+              {{ t('admin.usageCostDetail.streamDiagnostic.title') }}
             </h4>
             <span v-if="streamDiagnosticLoading" class="text-xs text-gray-500 dark:text-dark-400">
               {{ t('common.loading') }}
             </span>
           </div>
           <div v-if="streamDiagnosticError" class="mt-3 text-sm text-gray-500 dark:text-dark-400">
-            {{ t('admin.usage.streamDiagnostic.unavailable') }}
+            {{ t('admin.usageCostDetail.streamDiagnostic.unavailable') }}
           </div>
           <div v-else-if="streamDiagnostic" class="mt-3 space-y-4">
             <dl class="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
-              <DetailItem :label="t('admin.usage.streamDiagnostic.environment')" :value="displayValue(streamDiagnostic.environment)" />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.slot')" :value="displayValue(streamDiagnostic.entry?.active_slot)" />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.commit')" :value="displayValue(streamDiagnostic.entry?.deployment_commit)" mono />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.container')" :value="displayValue(streamDiagnostic.entry?.container_id)" mono />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.rootCause')" :value="displayValue(streamDiagnostic.final?.root_cause)" />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.errorClass')" :value="displayValue(streamDiagnostic.final?.error_class)" mono />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.failureStage')" :value="displayValue(streamDiagnostic.final?.failure_stage)" mono />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.lastEvent')" :value="displayValue(streamDiagnostic.final?.last_event_type)" mono />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.responseId')" :value="displayValue(streamDiagnostic.final?.response_id)" mono />
-              <DetailItem :label="t('admin.usage.streamDiagnostic.bytes')" :value="formatDiagnosticBytes(streamDiagnostic.final?.bytes_read, streamDiagnostic.final?.response_bytes_forwarded)" numeric />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.environment')" :value="displayValue(streamDiagnostic.environment)" />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.slot')" :value="displayValue(streamDiagnostic.entry?.active_slot)" />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.commit')" :value="displayValue(streamDiagnostic.entry?.deployment_commit)" mono />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.container')" :value="displayValue(streamDiagnostic.entry?.container_id)" mono />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.rootCause')" :value="displayValue(streamDiagnostic.final?.root_cause)" />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.errorClass')" :value="displayValue(streamDiagnostic.final?.error_class)" mono />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.failureStage')" :value="displayValue(streamDiagnostic.final?.failure_stage)" mono />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.lastEvent')" :value="displayValue(streamDiagnostic.final?.last_event_type)" mono />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.responseId')" :value="displayValue(streamDiagnostic.final?.response_id)" mono />
+              <DetailItem :label="t('admin.usageCostDetail.streamDiagnostic.bytes')" :value="formatDiagnosticBytes(streamDiagnostic.final?.bytes_read, streamDiagnostic.final?.response_bytes_forwarded)" numeric />
             </dl>
             <div v-if="streamDiagnostic.final?.error_chain" class="rounded border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900">
-              <div class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.usage.streamDiagnostic.errorChain') }}</div>
+              <div class="text-xs font-medium text-gray-500 dark:text-dark-400">{{ t('admin.usageCostDetail.streamDiagnostic.errorChain') }}</div>
               <pre class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs text-gray-800 dark:text-gray-200">{{ streamDiagnostic.final.error_chain }}</pre>
             </div>
             <div v-if="streamDiagnostic.evidence_missing?.length" class="text-xs text-gray-500 dark:text-dark-400">
-              {{ t('admin.usage.streamDiagnostic.missingEvidence') }}: {{ streamDiagnostic.evidence_missing.join(', ') }}
+              {{ t('admin.usageCostDetail.streamDiagnostic.missingEvidence') }}: {{ streamDiagnostic.evidence_missing.join(', ') }}
             </div>
           </div>
           <div v-else class="mt-3 text-sm text-gray-500 dark:text-dark-400">
-            {{ t('admin.usage.streamDiagnostic.noEvidence') }}
+            {{ t('admin.usageCostDetail.streamDiagnostic.noEvidence') }}
           </div>
         </section>
       </div>

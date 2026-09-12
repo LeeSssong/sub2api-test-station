@@ -70,7 +70,8 @@ export default {
     window: {
       '1h': '1小时',
       '24h': '24小时',
-      '7d': '7天'
+      '7d': '7天',
+      '30d': '30天'
     },
     overall: {
       operational: '运行中',

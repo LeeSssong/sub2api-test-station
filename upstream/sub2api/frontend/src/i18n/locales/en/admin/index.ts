@@ -18,6 +18,10 @@ export default {
   ...audit,
   ...promptAudit,
   ...plugins,
+  settings: {
+    ...settings.settings,
+    openaiExperimentalScheduler: settings.settings.openaiExperimentalScheduler,
+  },
   schedulerLogs: {
     title: 'Scheduler Logs', description: 'Trace why each OpenAI / Codex request selected its account.', range: 'Time range', oneHour: '1 hour', day: '24 hours', week: '7 days',
     incomplete: 'Logs may be incomplete in this window; {count} best-effort events were dropped.', loadFailed: 'Failed to load scheduler logs', detailFailed: 'Failed to load scheduler detail',

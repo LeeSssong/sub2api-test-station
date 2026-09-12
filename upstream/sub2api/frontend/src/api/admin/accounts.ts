@@ -287,9 +287,11 @@ export async function updateProcurementCost(
         procurement_readback_status: 'failed', procurement_message: reason.message,
         procurement_reason: reason.reason, procurement_request_id: reason.metadata?.request_id,
       } as AccountWithProcurementCost
-    }
-    throw reason
-  }
+	  }
+	  throw reason
+	}
+}
+
 export async function getGrokMediaEligibility(id: number): Promise<GrokMediaEligibilityState> {
   const { data } = await apiClient.get<GrokMediaEligibilityState>(
     `/admin/accounts/${id}/grok-media-eligibility`

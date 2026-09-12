@@ -18,6 +18,10 @@ export default {
   ...audit,
   ...promptAudit,
   ...plugins,
+  settings: {
+    ...settings.settings,
+    openaiExperimentalScheduler: settings.settings.openaiExperimentalScheduler,
+  },
   schedulerLogs: {
     title: '调度日志', description: '追溯每个 OpenAI / Codex 请求为何选中当前账号。', range: '时间范围', oneHour: '1 小时', day: '24 小时', week: '7 天',
     incomplete: '该时间范围内日志可能不完整，已丢弃 {count} 条尽力记录。', loadFailed: '加载调度日志失败', detailFailed: '加载调度详情失败',

@@ -236,6 +236,7 @@
       <AccountActionMenu
         :show="accountActionMenu.show"
         :account="selectedNativeAccount"
+        :anchor-rect="null"
         :position="accountActionMenu.position"
         @close="closeAccountMore"
         @test="handleTest"

@@ -4,7 +4,7 @@
 
 - Baseline main: `b9796b108a`
 - Candidate branch: `codex/unified-quality-priority-weight`
-- Commit: `f7d6ce7df7d9d5da35f8577ad54341f98dfd0685`
+- Implementation commit: `597c9768f16b15c7eff0d50dbc51e877bf291c1d`
 - Scope: Task 3 only; Task 1 and Task 2 signal/cap fixes preserved.
 
 ## Behavior

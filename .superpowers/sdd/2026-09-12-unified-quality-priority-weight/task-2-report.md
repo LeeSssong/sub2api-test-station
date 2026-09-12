@@ -11,6 +11,8 @@ Implemented and corrected only Task 2 in `/Users/gongtengxinwen/Documents/sub2ap
 - Added nullable group-policy JSON fields for independent cold-start and daily overrides. Omitted fields remain `nil` and inherit global values.
 - Preserved legacy fairness parsing while retaining both new cap fields when legacy top-level fairness keys are present.
 - Sanitized persisted runtime cap fields per policy and per field before shared policy normalization. Invalid caps are discarded so the affected field falls back without erasing valid caps or other policies.
+- Added runtime-only sanitization for wrong-typed cap JSON values, so a value such as `"bad"` is removed before strict policy decoding while valid fields and sibling policies survive.
+- Kept modern policy parsing strict for unknown fields; only the two known cap keys are eligible for runtime type sanitization.
 - Preserved existing `WeightOverrides` and `LegacyWeightOverrideIgnored` behavior and cached pointer cloning.
 
 ## Changed Files
@@ -44,9 +46,11 @@ Task 2 implementation and corrective changes:
 
 - `cb2d1e898a1d7a3a303409b496ddb713b07eb94f` (`feat: configure unified quality priority caps`)
 - `2a1d1648ff` (`fix: preserve unified quality priority cap settings`) corrective implementation commit
+- `89939e8c466d3633b6d9254adc011b010b508e15` (`fix: isolate malformed persisted scheduler caps`) corrective implementation commit
 
 ## Concerns / Unverified
 
 - Ranking/comparator integration is intentionally not included in Task 2.
 - No migration, deployment, push, or production verification was performed.
 - Runtime persisted settings still retain the existing fail-safe behavior of dropping the entire map when non-cap policy validation fails; this corrective change scopes per-field/per-policy fallback to malformed unified-quality cap values.
+- The wrong-typed-cap recovery is intentionally limited to persisted runtime loading; direct policy parsing continues to reject invalid types and unknown fields.

@@ -1414,6 +1414,8 @@ func normalizeOpenAISchedulerGroupPoliciesForRead(policies map[int64]OpenAISched
 		}
 		policy.QualityGate = normalizeOpenAISchedulerQualityGateForRead(policy.QualityGate)
 		policy.SessionEscape = normalizeOpenAISchedulerSessionEscapeForRead(policy.SessionEscape)
+		policy.UnifiedQualityPriorityColdStartMax = normalizeOpenAIUnifiedQualityPriorityCapForRead(policy.UnifiedQualityPriorityColdStartMax)
+		policy.UnifiedQualityPriorityDailyMax = normalizeOpenAIUnifiedQualityPriorityCapForRead(policy.UnifiedQualityPriorityDailyMax)
 		legacy := normalizeOpenAISchedulerFairnessOverridesForRead(map[int64]OpenAISchedulerFairnessOverride{id: policy.LegacyFairness})[id]
 		policy.LegacyFairness = legacy
 		if policy.Values.TopK != 0 || policy.Values.Priority != 0 || policy.Values.CandidatePoolMode != "" {
@@ -1738,6 +1740,9 @@ func normalizeOpenAISchedulerGroupPoliciesWithPresets(policies map[int64]OpenAIS
 		if policy.SessionEscape != nil && !validateOpenAISchedulerSessionEscapePolicy(*policy.SessionEscape) {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy session escape is invalid")
 		}
+		if err := validateOpenAIUnifiedQualityPriorityCapOverrides(policy); err != nil {
+			return nil, err
+		}
 		markOpenAISchedulerLegacyWeightOverridesIgnored(&policy)
 		if policy.Priority != (OpenAISchedulerBusinessPriority{}) {
 			business, err := parseOpenAISchedulerBusinessPolicy(policy)
@@ -1871,6 +1876,9 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 		if policy.SessionEscape != nil && !validateOpenAISchedulerSessionEscapePolicy(*policy.SessionEscape) {
 			return nil, infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy session escape is invalid")
 		}
+		if err := validateOpenAIUnifiedQualityPriorityCapOverrides(policy); err != nil {
+			return nil, err
+		}
 		markOpenAISchedulerLegacyWeightOverridesIgnored(&policy)
 		if policy.Mode == "" {
 			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
@@ -1930,6 +1938,23 @@ func normalizeOpenAISchedulerGroupPolicies(policies map[int64]OpenAISchedulerGro
 }
 
 var openAISchedulerPolicyWeightKeys = map[string]bool{"priority": true, "load": true, "queue": true, "error_rate": true, "ttft": true, "reset": true, "quota_headroom": true, "upstream_cost": true, "previous_response": true, "session_sticky": true}
+
+func normalizeOpenAIUnifiedQualityPriorityCapForRead(value *float64) *float64 {
+	if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) || *value < 0 {
+		return nil
+	}
+	normalized := *value
+	return &normalized
+}
+
+func validateOpenAIUnifiedQualityPriorityCapOverrides(policy OpenAISchedulerGroupPolicy) error {
+	for _, value := range []*float64{policy.UnifiedQualityPriorityColdStartMax, policy.UnifiedQualityPriorityDailyMax} {
+		if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0) || *value < 0) {
+			return infraerrors.BadRequest("INVALID_OPENAI_SCHEDULER_GROUP_POLICY", "group policy unified quality priority cap is invalid")
+		}
+	}
+	return nil
+}
 
 func openAISchedulerPresetValues(p OpenAISchedulerPreset) OpenAISchedulerPolicyValues {
 	v := OpenAISchedulerPolicyValues{TopK: 7, Priority: 1, Load: 1, Queue: .7, ErrorRate: .8, TTFT: .5, PreviousResponse: 5, SessionSticky: 3, CandidatePoolMode: OpenAISchedulerCandidatePoolModeHybrid, ExplorationRatio: 25, StarvationThresholdSeconds: 21600, FairnessWeight: 3}

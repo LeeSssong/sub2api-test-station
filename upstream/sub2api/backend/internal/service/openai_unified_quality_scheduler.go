@@ -21,6 +21,11 @@ type openAIUnifiedQualityPriorityCaps struct {
 	DailyMax     float64
 }
 
+const (
+	defaultOpenAIUnifiedQualityPriorityColdStartMax = 50.0
+	defaultOpenAIUnifiedQualityPriorityDailyMax     = 20.0
+)
+
 type openAIUnifiedQualityRecheckKey struct{}
 
 // openAIUnifiedQualityCandidate contains only the values that are allowed to

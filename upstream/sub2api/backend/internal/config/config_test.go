@@ -2779,3 +2779,52 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 		t.Fatalf("image stream timeout = %d, want greater than ordinary stream timeout %d", cfg.Gateway.ImageStreamDataIntervalTimeout, cfg.Gateway.StreamDataIntervalTimeout)
 	}
 }
+
+func TestLoad_DefaultUnifiedQualityPriorityCaps(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 50.0, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax)
+	require.Equal(t, 20.0, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax)
+}
+
+func TestValidateConfig_UnifiedQualityPriorityCapsRejectInvalidValues(t *testing.T) {
+	cases := []struct {
+		name  string
+		value func(*Config)
+		want  string
+	}{
+		{
+			name:  "cold start negative",
+			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = -1 },
+			want:  "gateway.openai_ws.unified_quality_priority_cold_start_max",
+		},
+		{
+			name:  "daily negative",
+			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = -1 },
+			want:  "gateway.openai_ws.unified_quality_priority_daily_max",
+		},
+		{
+			name:  "cold start NaN",
+			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = math.NaN() },
+			want:  "gateway.openai_ws.unified_quality_priority_cold_start_max",
+		},
+		{
+			name:  "daily Inf",
+			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = math.Inf(1) },
+			want:  "gateway.openai_ws.unified_quality_priority_daily_max",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			cfg, err := Load()
+			require.NoError(t, err)
+			tt.value(cfg)
+			err = cfg.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.want)
+		})
+	}
+}

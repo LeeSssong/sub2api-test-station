@@ -209,22 +209,24 @@ type OpenAISchedulerCustomPreset struct {
 }
 
 type OpenAISchedulerGroupPolicy struct {
-	Mode                        OpenAISchedulerGroupPolicyMode      `json:"mode,omitempty"`
-	Preset                      OpenAISchedulerPreset               `json:"preset,omitempty"`
-	PresetID                    string                              `json:"preset_id,omitempty"`
-	ExtraRetryCount             *int                                `json:"extra_retry_count,omitempty"`
-	Priority                    OpenAISchedulerBusinessPriority     `json:"priority,omitempty"`
-	Operations                  OpenAISchedulerOperations           `json:"operations,omitempty"`
-	CompiledSnapshot            OpenAISchedulerPolicyValues         `json:"compiled_snapshot,omitempty"`
-	TopK                        *int                                `json:"top_k,omitempty"`
-	WeightOverrides             map[string]float64                  `json:"weight_overrides,omitempty"`
-	LegacyWeightOverrideIgnored bool                                `json:"legacy_weight_override_ignored,omitempty"`
-	IgnoredWeightOverrideKeys   []string                            `json:"ignored_weight_override_keys,omitempty"`
-	Fairness                    *OpenAISchedulerFairnessOverride    `json:"fairness,omitempty"`
-	QualityGate                 *OpenAISchedulerQualityGatePolicy   `json:"quality_gate,omitempty"`
-	SessionEscape               *OpenAISchedulerSessionEscapePolicy `json:"session_escape,omitempty"`
-	Values                      OpenAISchedulerPolicyValues         `json:"-"`
-	LegacyFairness              OpenAISchedulerFairnessOverride     `json:"-"`
+	Mode                               OpenAISchedulerGroupPolicyMode      `json:"mode,omitempty"`
+	Preset                             OpenAISchedulerPreset               `json:"preset,omitempty"`
+	PresetID                           string                              `json:"preset_id,omitempty"`
+	ExtraRetryCount                    *int                                `json:"extra_retry_count,omitempty"`
+	Priority                           OpenAISchedulerBusinessPriority     `json:"priority,omitempty"`
+	Operations                         OpenAISchedulerOperations           `json:"operations,omitempty"`
+	CompiledSnapshot                   OpenAISchedulerPolicyValues         `json:"compiled_snapshot,omitempty"`
+	TopK                               *int                                `json:"top_k,omitempty"`
+	WeightOverrides                    map[string]float64                  `json:"weight_overrides,omitempty"`
+	LegacyWeightOverrideIgnored        bool                                `json:"legacy_weight_override_ignored,omitempty"`
+	IgnoredWeightOverrideKeys          []string                            `json:"ignored_weight_override_keys,omitempty"`
+	Fairness                           *OpenAISchedulerFairnessOverride    `json:"fairness,omitempty"`
+	QualityGate                        *OpenAISchedulerQualityGatePolicy   `json:"quality_gate,omitempty"`
+	SessionEscape                      *OpenAISchedulerSessionEscapePolicy `json:"session_escape,omitempty"`
+	UnifiedQualityPriorityColdStartMax *float64                            `json:"unified_quality_priority_cold_start_max,omitempty"`
+	UnifiedQualityPriorityDailyMax     *float64                            `json:"unified_quality_priority_daily_max,omitempty"`
+	Values                             OpenAISchedulerPolicyValues         `json:"-"`
+	LegacyFairness                     OpenAISchedulerFairnessOverride     `json:"-"`
 }
 
 func (p OpenAISchedulerGroupPolicy) MarshalJSON() ([]byte, error) {

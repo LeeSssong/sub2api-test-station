@@ -220,6 +220,53 @@ func TestNormalizeOpenAISchedulerGroupPoliciesLegacyJSON(t *testing.T) {
 	require.Contains(t, string(encoded), "exploration_ratio")
 }
 
+func TestOpenAISchedulerGroupPolicyPriorityCapsRoundTripPreservesOmissionAndNormalizes(t *testing.T) {
+	raw := `{"10":{"unified_quality_priority_cold_start_max":35.5,"unified_quality_priority_daily_max":12.25},"20":{},"30":{"unified_quality_priority_daily_max":12.25}}`
+	policies, err := parseOpenAISchedulerGroupPolicies(raw)
+	require.NoError(t, err)
+	require.NotNil(t, policies[10].UnifiedQualityPriorityColdStartMax)
+	require.NotNil(t, policies[10].UnifiedQualityPriorityDailyMax)
+	require.Equal(t, 35.5, *policies[10].UnifiedQualityPriorityColdStartMax)
+	require.Equal(t, 12.25, *policies[10].UnifiedQualityPriorityDailyMax)
+	require.Nil(t, policies[20].UnifiedQualityPriorityColdStartMax)
+	require.Nil(t, policies[20].UnifiedQualityPriorityDailyMax)
+	require.Nil(t, policies[30].UnifiedQualityPriorityColdStartMax)
+	require.NotNil(t, policies[30].UnifiedQualityPriorityDailyMax)
+
+	normalized := normalizeOpenAISchedulerGroupPoliciesForRead(policies)
+	require.Equal(t, 35.5, *normalized[10].UnifiedQualityPriorityColdStartMax)
+	require.Equal(t, 12.25, *normalized[10].UnifiedQualityPriorityDailyMax)
+	require.Nil(t, normalized[20].UnifiedQualityPriorityColdStartMax)
+	require.Nil(t, normalized[20].UnifiedQualityPriorityDailyMax)
+	require.Nil(t, normalized[30].UnifiedQualityPriorityColdStartMax)
+	require.Equal(t, 12.25, *normalized[30].UnifiedQualityPriorityDailyMax)
+
+	encoded, err := json.Marshal(normalized)
+	require.NoError(t, err)
+	var roundTrip map[string]map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &roundTrip))
+	require.Equal(t, 35.5, roundTrip["10"]["unified_quality_priority_cold_start_max"])
+	require.Equal(t, 12.25, roundTrip["10"]["unified_quality_priority_daily_max"])
+	require.NotContains(t, roundTrip["20"], "unified_quality_priority_cold_start_max")
+	require.NotContains(t, roundTrip["20"], "unified_quality_priority_daily_max")
+	require.NotContains(t, roundTrip["30"], "unified_quality_priority_cold_start_max")
+	require.Equal(t, 12.25, roundTrip["30"]["unified_quality_priority_daily_max"])
+}
+
+func TestNormalizeOpenAISchedulerGroupPoliciesPriorityCapsRejectInvalidValues(t *testing.T) {
+	negative := -1.0
+	_, err := normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		1: {UnifiedQualityPriorityColdStartMax: &negative},
+	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{1: {}})
+	require.Error(t, err)
+
+	nan := math.NaN()
+	_, err = normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
+		1: {UnifiedQualityPriorityDailyMax: &nan},
+	}, OpenAISchedulerPolicyValues{TopK: 7, Priority: 1}, map[int64]struct{}{1: {}})
+	require.Error(t, err)
+}
+
 func TestNormalizeOpenAISchedulerGroupPoliciesRejectsInvalidPayload(t *testing.T) {
 	_, err := normalizeOpenAISchedulerGroupPolicies(map[int64]OpenAISchedulerGroupPolicy{
 		1: {Mode: OpenAISchedulerGroupPolicyModeFair, Preset: "unknown"},

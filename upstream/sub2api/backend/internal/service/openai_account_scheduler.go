@@ -2985,6 +2985,36 @@ func (s *OpenAIGatewayService) isOpenAIAdvancedSchedulerEnabled(ctx context.Cont
 	return s.openAIAdvancedSchedulerRuntimeSettings(ctx).enabled
 }
 
+func (s *OpenAIGatewayService) openAIUnifiedQualityPriorityCapsForRequest(ctx context.Context, groupID int64) openAIUnifiedQualityPriorityCaps {
+	caps := openAIUnifiedQualityPriorityCaps{
+		ColdStartMax: defaultOpenAIUnifiedQualityPriorityColdStartMax,
+		DailyMax:     defaultOpenAIUnifiedQualityPriorityDailyMax,
+	}
+	if s == nil || s.cfg == nil {
+		return caps
+	}
+	caps.ColdStartMax = safeOpenAIUnifiedQualityPriorityCap(s.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax, caps.ColdStartMax)
+	caps.DailyMax = safeOpenAIUnifiedQualityPriorityCap(s.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax, caps.DailyMax)
+	if groupID <= 0 {
+		return caps
+	}
+	policy := s.openAIAdvancedSchedulerRuntimeSettings(ctx).groupPolicies[groupID]
+	if policy.UnifiedQualityPriorityColdStartMax != nil {
+		caps.ColdStartMax = safeOpenAIUnifiedQualityPriorityCap(*policy.UnifiedQualityPriorityColdStartMax, caps.ColdStartMax)
+	}
+	if policy.UnifiedQualityPriorityDailyMax != nil {
+		caps.DailyMax = safeOpenAIUnifiedQualityPriorityCap(*policy.UnifiedQualityPriorityDailyMax, caps.DailyMax)
+	}
+	return caps
+}
+
+func safeOpenAIUnifiedQualityPriorityCap(value, fallback float64) float64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
+		return fallback
+	}
+	return value
+}
+
 func (s *OpenAIGatewayService) isOpenAILowUpstreamRatePriorityEnabled(ctx context.Context) bool {
 	settings := s.openAIAdvancedSchedulerRuntimeSettings(ctx)
 	return !settings.enabled && settings.lowUpstreamRatePriorityEnabled
@@ -3176,6 +3206,14 @@ func cloneOpenAISchedulerGroupPolicies(in map[int64]OpenAISchedulerGroupPolicy) 
 		if policy.Fairness != nil {
 			fairness := *policy.Fairness
 			policy.Fairness = &fairness
+		}
+		if policy.UnifiedQualityPriorityColdStartMax != nil {
+			value := *policy.UnifiedQualityPriorityColdStartMax
+			policy.UnifiedQualityPriorityColdStartMax = &value
+		}
+		if policy.UnifiedQualityPriorityDailyMax != nil {
+			value := *policy.UnifiedQualityPriorityDailyMax
+			policy.UnifiedQualityPriorityDailyMax = &value
 		}
 		out[id] = policy
 	}

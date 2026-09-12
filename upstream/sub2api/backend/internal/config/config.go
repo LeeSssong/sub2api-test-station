@@ -1415,6 +1415,10 @@ type GatewayOpenAISchedulerConfig struct {
 	AdaptiveTopKScoreGap float64 `mapstructure:"adaptive_top_k_score_gap"`
 	// TTFTReportOnlyEnabled: 是否只记录 TTFT 安全竞争资格，不发起第二请求
 	TTFTReportOnlyEnabled bool `mapstructure:"ttft_report_only_enabled"`
+	// UnifiedQualityPriorityColdStartMax bounds the API-key cold-start priority signal.
+	UnifiedQualityPriorityColdStartMax float64 `mapstructure:"unified_quality_priority_cold_start_max"`
+	// UnifiedQualityPriorityDailyMax bounds the daily API-key priority signal.
+	UnifiedQualityPriorityDailyMax float64 `mapstructure:"unified_quality_priority_daily_max"`
 }
 
 type GatewayOpenAISharedHealthConfig struct {
@@ -1978,6 +1982,11 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate == 0 {
 		cfg.Gateway.OpenAIScheduler.StickyEscapeErrorRate = 0.5
 	}
+	// Unified quality caps are stored under gateway.openai_ws for compatibility
+	// with the scheduler score settings, while the typed fields live with the
+	// scheduler policy configuration.
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = viper.GetFloat64("gateway.openai_ws.unified_quality_priority_cold_start_max")
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = viper.GetFloat64("gateway.openai_ws.unified_quality_priority_daily_max")
 	// Kept as a backstop: setEnvReachableDefaults now registers this key with its
 	// effective default (true), so IsSet always reports true and this branch no
 	// longer fires. It still guards the default if that registration is dropped.
@@ -2607,6 +2616,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.upstream_cost", 0.0)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.previous_response", 5.0)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.session_sticky", 3.0)
+	viper.SetDefault("gateway.openai_ws.unified_quality_priority_cold_start_max", 50.0)
+	viper.SetDefault("gateway.openai_ws.unified_quality_priority_daily_max", 20.0)
 	// OpenAI HTTP upstream protocol strategy
 	viper.SetDefault("gateway.openai_http2.enabled", true)
 	viper.SetDefault("gateway.openai_http2.allow_proxy_fallback_to_http1", true)
@@ -3689,6 +3700,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds < 0 {
 		return fmt.Errorf("gateway.openai_ws.sticky_previous_response_ttl_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax < 0 ||
+		math.IsNaN(c.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax) ||
+		math.IsInf(c.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax, 0) {
+		return fmt.Errorf("gateway.openai_ws.unified_quality_priority_cold_start_max must be non-negative and finite")
+	}
+	if c.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax < 0 ||
+		math.IsNaN(c.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax) ||
+		math.IsInf(c.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax, 0) {
+		return fmt.Errorf("gateway.openai_ws.unified_quality_priority_daily_max must be non-negative and finite")
 	}
 	if c.Gateway.OpenAIHTTP2.FallbackErrorThreshold < 0 {
 		return fmt.Errorf("gateway.openai_http2.fallback_error_threshold must be non-negative")

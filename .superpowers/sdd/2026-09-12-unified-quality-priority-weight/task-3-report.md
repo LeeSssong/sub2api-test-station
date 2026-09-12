@@ -5,6 +5,7 @@
 - Baseline main: `b9796b108a`
 - Candidate branch: `codex/unified-quality-priority-weight`
 - Implementation commit: `597c9768f16b15c7eff0d50dbc51e877bf291c1d`
+- Corrective review commit: `611bb683648c9c10edfda984e005b29f3524d952`
 - Scope: Task 3 only; Task 1 and Task 2 signal/cap fixes preserved.
 
 ## Behavior
@@ -19,6 +20,12 @@
 - Runtime-blocked candidates are excluded before ranking.
 - Decision observability adds finite selected priority, combined signal, cold-start signal, and daily signal fields without sensitive request/account credential data.
 
+## Review Corrections
+
+- Projection now resolves global/group unified-quality caps once per projection request and applies the same cold-start plus daily signals to every API-key candidate before ranking. Traditional projection paths are unchanged.
+- Selected priority observability is populated only after an account is acquired or a wait candidate is selected; terminal acquisition failure no longer reports the first ranked account as selected.
+- The legacy unresolved-candidate fallback remains available only to isolated direct helper callers. Live unified-quality selection and projection resolve all scheduler candidates with request-scoped caps before comparison.
+
 ## Changed Files
 
 - `upstream/sub2api/backend/internal/service/openai_unified_quality_scheduler.go`
@@ -28,11 +35,16 @@
 - `upstream/sub2api/backend/internal/service/openai_unified_quality_scheduler_test.go`
 - `upstream/sub2api/backend/internal/service/openai_unified_quality_observability_test.go`
 - `upstream/sub2api/backend/internal/service/openai_scheduler_log_sink_test.go`
+- `upstream/sub2api/backend/internal/service/openai_account_scheduler_projection.go`
+- `upstream/sub2api/backend/internal/service/openai_account_scheduler_projection_test.go`
+- `upstream/sub2api/backend/internal/service/openai_account_scheduler_test.go`
 
 ## Verification
 
 - RED: `go test ./internal/service -run 'TestOpenAIUnifiedQuality' -count=1` failed before implementation because the new decision/event fields were absent.
+- Review RED: `go test ./internal/service -run 'TestOpenAIUnifiedQualitySelectionClearsPriorityObservabilityWhenAcquisitionFails|TestOpenAIAccountSchedulerProjectionUsesResolvedUnifiedQualityPrioritySignals' -count=1` failed on the pre-correction implementation because failed acquisition retained `SelectedPriority=1`; the strengthened projection regression also targets the old unresolved-signal ranking path.
 - Focused scheduler tests: passed.
+- Corrective focused tests: `go test ./internal/service -run 'TestOpenAIUnifiedQualitySelectionClearsPriorityObservabilityWhenAcquisitionFails|TestOpenAIAccountSchedulerProjectionUsesResolvedUnifiedQualityPrioritySignals' -count=1 -v` passed.
 - Required direct tests: `go test ./internal/config ./internal/service ./internal/repository -run '(OpenAIUnifiedQuality|Scheduler|Settings)' -count=1` passed.
 - Build: `go build ./cmd/server` passed.
 - Formatting and diff check: `gofmt` and `git diff --check` passed.

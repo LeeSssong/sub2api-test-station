@@ -349,7 +349,9 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 	if len(eligible) > 0 {
 		unifiedQuality := s.service != nil && s.service.OpenAIUnifiedQualityEnabled(ctx, platform, false)
 		qualityBreakdowns := map[int64]OpenAIQualityBreakdown{}
+		var unifiedQualityPriorityCaps openAIUnifiedQualityPriorityCaps
 		if unifiedQuality {
+			unifiedQualityPriorityCaps = s.service.openAIUnifiedQualityPriorityCapsForRequest(ctx, req.GroupID)
 			snapshot := s.service.OpenAIAccountQualitySnapshot(ctx)
 			qualityBreakdowns = buildOpenAIQualityBreakdowns(eligible, snapshot.Accounts, req.LoadMap, s.service.openaiFirstOutputSlow)
 		}
@@ -371,6 +373,9 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 						resourceTier: resourceTier, priority: priority, loadInfo: loads[account.ID],
 						coldStart: resourceTier == openAIUnifiedQualityResourceTierAPIKey && quality.Confidence < openAIUnifiedQualityMaturityConfidence,
 					})
+				}
+				for i := range qualityCandidates {
+					applyOpenAIUnifiedQualityPrioritySignals(&qualityCandidates[i], unifiedQualityPriorityCaps)
 				}
 				ordered := selectOpenAIUnifiedQualityResourceTier(partitionOpenAIUnifiedQualityCandidates(ctx, qualityCandidates).candidates)
 				result := make([]openAIAccountCandidateScore, 0, len(ordered))

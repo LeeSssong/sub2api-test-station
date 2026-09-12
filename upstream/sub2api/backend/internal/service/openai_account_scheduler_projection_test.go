@@ -143,6 +143,35 @@ func TestOpenAIAccountSchedulerProjectionAndLivePlanShareEffectivePriorityCompar
 	require.Equal(t, candidateIDs(liveRanked), projectionAccountIDs(projection.Candidates))
 }
 
+func TestOpenAIAccountSchedulerProjectionUsesResolvedUnifiedQualityPrioritySignals(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = 50
+	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 20
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
+		1: {AccountID: 1},
+		2: {AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
+			OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 20, SuccessRate: floatPtr(1), TTFTSampleCount: 20, TTFTP50MS: floatPtr(9000), TTFTP90MS: floatPtr(9000)},
+		}},
+	}}}
+	scheduler.service.openaiQuality = quality
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	priorityOne := projectionTestAccount(1)
+	priorityOne.Priority = 1
+	peer := projectionTestAccount(2)
+	peer.Priority = 50
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: 77, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", SnapshotAt: now,
+		Accounts: []*Account{peer, priorityOne},
+		LoadMap: map[int64]*AccountLoadInfo{
+			1: {AccountID: 1, LoadRate: 100},
+			2: {AccountID: 2, LoadRate: 0},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{1, 2}, projectionAccountIDs(projection.Candidates))
+}
+
 func candidateIDs(candidates []openAIAccountCandidateScore) []int64 {
 	ids := make([]int64, 0, len(candidates))
 	for _, candidate := range candidates {

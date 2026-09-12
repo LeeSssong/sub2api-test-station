@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math"
 	"math/rand"
 	"testing"
@@ -328,6 +329,37 @@ func TestOpenAIUnifiedQualitySelectorExcludesRuntimeBlockedPriorityOne(t *testin
 	require.Contains(t, decision.ExcludedAccountIDs, int64(1))
 	require.Equal(t, 1, decision.ExcludeReasons["runtime_blocked"])
 	selection.ReleaseFunc()
+}
+
+func TestOpenAIUnifiedQualitySelectionClearsPriorityObservabilityWhenAcquisitionFails(t *testing.T) {
+	groupID := int64(11)
+	first := unifiedQualityTestAccount(1, groupID)
+	first.Priority = 1
+	second := unifiedQualityTestAccount(2, groupID)
+	second.Priority = 50
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{first, second}}
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
+		1: {AccountID: 1}, 2: {AccountID: 2},
+	}}}
+	service := &OpenAIGatewayService{
+		accountRepo:        repo,
+		openaiQuality:      quality,
+		cfg:                unifiedQualityPriorityTestConfig(),
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{acquireErr: errors.New("slot unavailable")}),
+	}
+	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
+
+	selection, decision, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4",
+		RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
+	})
+	require.Error(t, err)
+	require.Nil(t, selection)
+	require.Zero(t, decision.SelectedAccountID)
+	require.Zero(t, decision.SelectedPriority)
+	require.Zero(t, decision.SelectedPrioritySignal)
+	require.Zero(t, decision.SelectedColdStartPrioritySignal)
+	require.Zero(t, decision.SelectedDailyPrioritySignal)
 }
 
 func TestOpenAIUnifiedQualitySelectorBypassesQualityProviderForImages(t *testing.T) {

@@ -424,10 +424,6 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 		decision.FirstOutputScore = ordered[0].quality.FirstOutputScore
 		decision.OutputRateScore = ordered[0].quality.OutputRateScore
 		decision.LiveLoadScore = ordered[0].quality.LiveLoadScore
-		decision.SelectedPriority = ordered[0].priority
-		decision.SelectedPrioritySignal = openAIUnifiedQualityCandidatePrioritySignal(ordered[0])
-		decision.SelectedColdStartPrioritySignal = ordered[0].coldStartPrioritySignal
-		decision.SelectedDailyPrioritySignal = ordered[0].dailyPrioritySignal
 		decision.FirstOutputSlowCount = ordered[0].quality.FirstOutputSlowCount
 		decision.SlowEvidenceReplaced = ordered[0].quality.SlowEvidenceReplaced
 		if len(ordered) > 1 {

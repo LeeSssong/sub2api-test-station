@@ -438,6 +438,29 @@ func TestOpenAIGatewayService_UnifiedQualityPriorityCapsForRequestIgnoresMalform
 	require.False(t, math.IsInf(caps.DailyMax, 0))
 }
 
+func TestOpenAIGatewayService_UnifiedQualityPriorityCapsForRequestSanitizesPersistedGroupOverridesPerPolicy(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	repo := &openAIAdvancedSchedulerSettingRepoStub{values: map[string]string{
+		SettingKeyOpenAIAdvancedSchedulerGroupOverrides: `{"7":{"unified_quality_priority_cold_start_max":-1,"unified_quality_priority_daily_max":12},"8":{"unified_quality_priority_cold_start_max":33}}`,
+	}}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = 50
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 20
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		rateLimitService: &RateLimitService{settingService: NewSettingService(repo, cfg)},
+	}
+
+	groupSeven := svc.openAIUnifiedQualityPriorityCapsForRequest(context.Background(), 7)
+	require.Equal(t, 50.0, groupSeven.ColdStartMax)
+	require.Equal(t, 12.0, groupSeven.DailyMax)
+	groupEight := svc.openAIUnifiedQualityPriorityCapsForRequest(context.Background(), 8)
+	require.Equal(t, 33.0, groupEight.ColdStartMax)
+	require.Equal(t, 20.0, groupEight.DailyMax)
+}
+
 func TestOpenAIGatewayService_OpenAIAdvancedSchedulerRuntimeSettings_ClampsLegacyWeights(t *testing.T) {
 	base := config.GatewayOpenAIWSSchedulerScoreWeights{
 		Priority: 1, Load: 2, Queue: 3, ErrorRate: 4, TTFT: 5, Reset: 6,

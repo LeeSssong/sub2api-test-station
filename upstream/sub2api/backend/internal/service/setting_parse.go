@@ -1459,6 +1459,8 @@ func parseOpenAISchedulerGroupPolicies(raw string) (map[int64]OpenAISchedulerGro
 		if isLegacy {
 			policy.Mode = OpenAISchedulerGroupPolicyModeWeightedOverride
 			policy.LegacyFairness = legacy
+			policy.UnifiedQualityPriorityColdStartMax = parseOpenAIUnifiedQualityPriorityCapForRead(rawFields["unified_quality_priority_cold_start_max"])
+			policy.UnifiedQualityPriorityDailyMax = parseOpenAIUnifiedQualityPriorityCapForRead(rawFields["unified_quality_priority_daily_max"])
 			value, err := parseOpenAIExtraRetryCount(rawFields["extra_retry_count"])
 			if err != nil {
 				return nil, err
@@ -1945,6 +1947,17 @@ func normalizeOpenAIUnifiedQualityPriorityCapForRead(value *float64) *float64 {
 	}
 	normalized := *value
 	return &normalized
+}
+
+func parseOpenAIUnifiedQualityPriorityCapForRead(raw json.RawMessage) *float64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var value float64
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil
+	}
+	return &value
 }
 
 func validateOpenAIUnifiedQualityPriorityCapOverrides(policy OpenAISchedulerGroupPolicy) error {

@@ -2788,6 +2788,17 @@ func TestLoad_DefaultUnifiedQualityPriorityCaps(t *testing.T) {
 	require.Equal(t, 20.0, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax)
 }
 
+func TestLoad_ConfiguredUnifiedQualityPriorityCapsUseOpenAISchedulerPath(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	viper.Set("gateway.openai_scheduler.unified_quality_priority_cold_start_max", 37.5)
+	viper.Set("gateway.openai_scheduler.unified_quality_priority_daily_max", 14.25)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 37.5, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax)
+	require.Equal(t, 14.25, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax)
+}
+
 func TestValidateConfig_UnifiedQualityPriorityCapsRejectInvalidValues(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -2797,22 +2808,22 @@ func TestValidateConfig_UnifiedQualityPriorityCapsRejectInvalidValues(t *testing
 		{
 			name:  "cold start negative",
 			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = -1 },
-			want:  "gateway.openai_ws.unified_quality_priority_cold_start_max",
+			want:  "gateway.openai_scheduler.unified_quality_priority_cold_start_max",
 		},
 		{
 			name:  "daily negative",
 			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = -1 },
-			want:  "gateway.openai_ws.unified_quality_priority_daily_max",
+			want:  "gateway.openai_scheduler.unified_quality_priority_daily_max",
 		},
 		{
 			name:  "cold start NaN",
 			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = math.NaN() },
-			want:  "gateway.openai_ws.unified_quality_priority_cold_start_max",
+			want:  "gateway.openai_scheduler.unified_quality_priority_cold_start_max",
 		},
 		{
 			name:  "daily Inf",
 			value: func(cfg *Config) { cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = math.Inf(1) },
-			want:  "gateway.openai_ws.unified_quality_priority_daily_max",
+			want:  "gateway.openai_scheduler.unified_quality_priority_daily_max",
 		},
 	}
 

@@ -3152,6 +3152,10 @@ func normalizeOpenAISchedulerRuntimeGroupPolicies(topK int, overrides map[string
 	if err != nil || len(parsed) == 0 {
 		return map[int64]OpenAISchedulerGroupPolicy{}
 	}
+	// Runtime settings are read from persisted admin values. Drop only malformed
+	// cap fields before validating the rest of each policy so one bad cap cannot
+	// erase valid policies or the other cap on the same policy.
+	parsed = normalizeOpenAISchedulerGroupPoliciesForRead(parsed)
 	global := openAISchedulerPresetValues(OpenAISchedulerPresetBalanced)
 	if topK > 0 {
 		global.TopK = topK

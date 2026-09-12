@@ -220,6 +220,16 @@ func TestNormalizeOpenAISchedulerGroupPoliciesLegacyJSON(t *testing.T) {
 	require.Contains(t, string(encoded), "exploration_ratio")
 }
 
+func TestParseOpenAISchedulerGroupPoliciesLegacyJSONPreservesUnifiedQualityPriorityCaps(t *testing.T) {
+	raw := `{"10":{"candidate_pool_mode":"all_eligible","unified_quality_priority_cold_start_max":35.5,"unified_quality_priority_daily_max":12.25}}`
+	policies, err := parseOpenAISchedulerGroupPolicies(raw)
+	require.NoError(t, err)
+	require.NotNil(t, policies[10].UnifiedQualityPriorityColdStartMax)
+	require.NotNil(t, policies[10].UnifiedQualityPriorityDailyMax)
+	require.Equal(t, 35.5, *policies[10].UnifiedQualityPriorityColdStartMax)
+	require.Equal(t, 12.25, *policies[10].UnifiedQualityPriorityDailyMax)
+}
+
 func TestOpenAISchedulerGroupPolicyPriorityCapsRoundTripPreservesOmissionAndNormalizes(t *testing.T) {
 	raw := `{"10":{"unified_quality_priority_cold_start_max":35.5,"unified_quality_priority_daily_max":12.25},"20":{},"30":{"unified_quality_priority_daily_max":12.25}}`
 	policies, err := parseOpenAISchedulerGroupPolicies(raw)

@@ -179,10 +179,11 @@ type PaymentNotification struct {
 
 // RefundRequest contains the parameters for requesting a refund.
 type RefundRequest struct {
-	TradeNo string
-	OrderID string
-	Amount  string // Refund amount formatted to 2 decimal places
-	Reason  string
+	TradeNo      string
+	OrderID      string
+	Amount       string // Refund amount formatted to 2 decimal places
+	Reason       string
+	OutRequestNo string // Stable provider idempotency key for this refund attempt.
 }
 
 // RefundQueryRequest contains identifiers needed to query a previously
@@ -196,8 +197,17 @@ type RefundQueryRequest struct {
 
 // RefundResponse is returned after a refund request.
 type RefundResponse struct {
-	RefundID string
-	Status   string // "success", "pending", "failed"
+	RefundID           string
+	Status             string // "success", "pending", "failed"
+	OutRequestNo       string
+	ProviderCode       string
+	ProviderSubCode    string
+	ProviderMessage    string
+	ProviderSubMessage string
+	ProviderTradeNo    string
+	ProviderOutTradeNo string
+	ProviderFundChange string
+	ProviderRefundFee  string
 }
 
 // InstanceSelection holds the selected provider instance and its decrypted config.

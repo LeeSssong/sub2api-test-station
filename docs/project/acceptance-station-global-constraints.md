@@ -19,7 +19,7 @@
 - 主站管理员页面：`https://api.xingqiaolab.top/admin/accounts`；该路径继续走主站，不属于验收站
 - 宿主 SSH alias：`sub2api-test-station`（`ubuntu@49.51.203.200:22`）
 - 验收宿主目录：`/opt/sub2api-test-station/`
-- 当前活动 release：由宿主 `/opt/sub2api-test-station/release-state.json` 的 `source_commit/source_tree` 与运行容器 Compose 标签解析；已核对 source commit 为 `3f7d59df5aa6f511c64a8663a8f74b8c2b50b3ed`、tree 为 `e049847dc3aba0296ea4e84a66f5caeda5df9da1`，不得在全局规则中固定旧 release SHA
+- 当前活动 release：由宿主 `/opt/sub2api-test-station/release-state.json` 的 `source_commit/source_tree`、发布记录与运行容器 Compose 标签实时解析；不得在规则文档中固定可能过时的 release SHA
 - Compose 文件：`<active-release>/infra/independent-test-station/compose.yaml`
 - Compose project：`sub2api-test-station`
 - Compose network：`sub2api-test-station-network`
@@ -33,10 +33,10 @@
 
 任何线程需要登录、查看日志、执行验收发布或宿主运维时，使用以下受保护文件；不得把其中的密码、token、私钥、API key、支付密钥、上游 key 或 webhook 写入 Git、规格书、聊天消息、发布证据或普通日志：
 
-- 测试站 SSH 私钥：`/Users/gongtengxinwen/Downloads/test_service.pem`，权限必须为 `0600`
-- 测试站 SSH known_hosts：使用当前 SSH alias 配置的 `/Users/gongtengxinwen/.ssh/known_hosts`；若另设专用文件，必须先确认包含 `49.51.203.200` 的可信 host key
+- 测试站 SSH 私钥：`/Users/awen/.ssh/tencent_lighthouse_seoul_sub2api`，权限必须为 `0600`
+- 测试站 SSH known_hosts：`/Users/awen/.config/sub2api/known_hosts`，权限必须为 `0600`，且必须包含 `49.51.203.200` 的可信 host key
 - 测试站运行 env：服务器 `/opt/sub2api-test-station/.env`，权限必须为 `0600`
-- 旧验收 env：`/Users/gongtengxinwen/.config/sub2api/acceptance-20260827.env`，仅历史兼容，不得用于新独立测试站
+- 旧验收 env：`/Users/awen/.config/sub2api/acceptance-20260827.env`，仅历史参考，不得用于新独立测试站
 
 线程可以读取非敏感配置名和值（站点、目录、project、network、端口、provider 类型），但不得用 `cat`、`env`、`docker inspect` 或日志命令打印完整 env。需要展示时只展示变量名、是否已设置、文件权限和脱敏摘要。
 
@@ -82,9 +82,9 @@ curl --fail --silent --show-error http://49.51.203.200/readyz
 
 旧 `/admin/lab` 历史入口不得作为新站别名；任何仍依赖它的任务必须先改写为新站根入口并重新记录目标 commit/tree。
 
-## 5. 主站发布的两条唯一授权路径
+## 5. 主站发布的三条唯一授权路径
 
-任何线程都不得因为“代码已合并”“本地测试通过”“验收站部署成功”“用户说继续”或其他模糊表述而直接部署主站。主站发布只有以下两种授权语义：
+任何线程都不得因为“代码已合并”“本地测试通过”“验收站部署成功”“用户说继续”或其他模糊表述而直接部署主站。主站发布只有以下三种授权语义：
 
 ### A. 常规路径：测试站验收通过
 
@@ -107,11 +107,11 @@ curl --fail --silent --show-error http://49.51.203.200/readyz
 3. 主站切换成功并完成健康检查后，立即使用**同一 commit**部署或对账验收站。
 4. 在验收站同步完成前，禁止开始下一次主站发布；同步失败必须保留现场、记录失败原因并通知用户，不能宣称“主站与验收站一致”。
 
-除上述 A、B 两类明确授权外，主站发布动作必须停止并等待用户明确指令。尤其是“部署”“上线”“推一下”“继续发布”“合并后处理”等表述，均不自动等价于主站授权。
-
 ### C. 明确不同比验收站的快速路径
 
 用户明确说“快速部署主站，不同步验收站”或语义完全等价时，允许跳过验收站同步。该路径仍必须满足 B 路径的本地最小验证、根 `main` 来源门禁、主站发布链安全/停机门禁、健康检查和回滚保护。发布成功后必须记录：用户的不同步授权、目标 `main` commit/tree、主站宿主记录、健康检查结果，以及“验收站未同步”的明确状态；在下一次主站发布前，发布总控应再次提示当前主站/验收站可能存在版本差异。不得声称主站与验收站一致。
+
+除上述 A、B、C 三类明确授权外，主站发布动作必须停止并等待用户明确指令。尤其是“部署”“上线”“推一下”“继续发布”“合并后处理”等表述，均不自动等价于主站授权。
 
 ## 6. 主站与验收站同步合同
 
@@ -128,10 +128,11 @@ curl --fail --silent --show-error http://49.51.203.200/readyz
 
 - 当前操作目标是验收站还是主站？
 - 当前 commit/tree 是否明确？是否来自根目录干净的 `main`，且与 `origin/main` commit/tree 完全一致？
-- 是否读取了本文件、`AGENTS.md`、`docs/project/native-sub-incremental-delivery-constraints.md` 和任务队列？
-- 若目标是主站，用户授权是否明确匹配 A 或 B？
+- 是否完整读取了本文件，并按任务范围读取了 `AGENTS.md`、增量交付约束相关章节及队列中的当前任务条目？
+- 若目标是主站，用户授权是否明确匹配 A、B 或 C？
 - 若是 A，是否有管理员“测试站验收通过”记录？
 - 若是 B，是否记录紧急原因，并安排主站成功后的同 commit 验收站同步？
+- 若是 C，是否记录不同步授权、双站 commit/tree 和明确版本差异？
 - 是否会触碰主站数据、验收站数据或凭据？是否保持完全隔离？
 - 发布后是否完成健康检查、版本核对、日志/证据脱敏和状态登记？
 

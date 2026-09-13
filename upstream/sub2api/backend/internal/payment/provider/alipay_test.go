@@ -136,6 +136,44 @@ func TestNewAlipay(t *testing.T) {
 	}
 }
 
+func TestAlipayRefundUsesStableRequestNumberAndKeepsResponseFields(t *testing.T) {
+	original := alipayTradeRefund
+	t.Cleanup(func() { alipayTradeRefund = original })
+	alipayTradeRefund = func(_ context.Context, _ *alipay.Client, param alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		if param.OutRequestNo != "sub2_order-refund-1.00" {
+			t.Fatalf("out_request_no = %q", param.OutRequestNo)
+		}
+		return &alipay.TradeRefundRsp{
+			Error:   alipay.Error{Code: alipay.CodeSuccess, Msg: "success", SubCode: "", SubMsg: "ok"},
+			TradeNo: "20260910001", OutTradeNo: "sub2_order", FundChange: "N", RefundFee: "1.00",
+		}, nil
+	}
+	p := &Alipay{client: &alipay.Client{}, config: map[string]string{}}
+	resp, err := p.Refund(context.Background(), payment.RefundRequest{OrderID: "sub2_order", Amount: "1.00", OutRequestNo: "sub2_order-refund-1.00"})
+	if err != nil {
+		t.Fatalf("Refund returned error: %v", err)
+	}
+	if resp.Status != payment.ProviderStatusPending || resp.ProviderFundChange != "N" || resp.ProviderTradeNo != "20260910001" || resp.ProviderRefundFee != "1.00" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestAlipayRefundReturnsProviderFailureInsteadOfPending(t *testing.T) {
+	original := alipayTradeRefund
+	t.Cleanup(func() { alipayTradeRefund = original })
+	alipayTradeRefund = func(_ context.Context, _ *alipay.Client, _ alipay.TradeRefund) (*alipay.TradeRefundRsp, error) {
+		return &alipay.TradeRefundRsp{Error: alipay.Error{Code: "ACQ.SYSTEM_ERROR", SubCode: "ACQ.SYSTEM_ERROR", Msg: "系统错误", SubMsg: "暂时无法处理"}}, nil
+	}
+	p := &Alipay{client: &alipay.Client{}, config: map[string]string{}}
+	resp, err := p.Refund(context.Background(), payment.RefundRequest{OrderID: "sub2_order", Amount: "1.00"})
+	if err == nil || !strings.Contains(err.Error(), "ACQ.SYSTEM_ERROR") {
+		t.Fatalf("Refund error = %v", err)
+	}
+	if resp == nil || resp.ProviderSubCode != "ACQ.SYSTEM_ERROR" || resp.ProviderSubMessage != "暂时无法处理" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
 func TestCreateTradeUsesPagePayForDesktop(t *testing.T) {
 	origPreCreate := alipayTradePreCreate
 	origPagePay := alipayTradePagePay

@@ -1,8 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { createQuotaLedgerEntry, getUserQuotaSummary, showError, showSuccess } = vi.hoisted(() => ({
-  createQuotaLedgerEntry: vi.fn(),
+const { updateBalance, getUserQuotaSummary, showError, showSuccess } = vi.hoisted(() => ({
+  updateBalance: vi.fn(),
   getUserQuotaSummary: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -11,7 +11,7 @@ const { createQuotaLedgerEntry, getUserQuotaSummary, showError, showSuccess } = 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     users: {
-      createQuotaLedgerEntry,
+      updateBalance,
       getUserQuotaSummary,
     },
   },
@@ -41,13 +41,8 @@ const user = {
 describe('UserBalanceModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    createQuotaLedgerEntry.mockResolvedValue({
-      ledger_entry_id: 1,
-      idempotent: false,
-      summary: {},
-    })
+    updateBalance.mockResolvedValue({})
     getUserQuotaSummary.mockResolvedValue({
-      cash_balance_cny: '21.00000000',
       paid_quota_balance_usd: '21.00000000',
       gift_quota_balance_usd: '0.00000000',
       total_quota_balance_usd: '21.00000000',
@@ -163,17 +158,15 @@ describe('UserBalanceModal', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.users.currentSpendableBalance')
-    expect(wrapper.text()).toContain('admin.users.refundableCashBalance')
     expect(wrapper.text()).toContain('admin.users.paidQuota')
     expect(wrapper.text()).toContain('admin.users.giftQuota')
   })
 
-  it('shows only the refundable cash that is backed by non-negative paid quota', async () => {
+  it('limits legacy subtract to the remaining gift quota', async () => {
     getUserQuotaSummary.mockResolvedValue({
-      cash_balance_cny: '50.00000000',
-      paid_quota_balance_usd: '-0.01097834',
-      gift_quota_balance_usd: '0.00000000',
-      total_quota_balance_usd: '-0.01097834',
+      paid_quota_balance_usd: '21.00000000',
+      gift_quota_balance_usd: '3.00000000',
+      total_quota_balance_usd: '24.00000000',
     })
 
     const wrapper = mount(UserBalanceModal, {
@@ -184,8 +177,35 @@ describe('UserBalanceModal', () => {
     await wrapper.setProps({ show: true })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('refundableCashBalance')
-    expect(wrapper.text()).toContain('¥0.00')
-    expect(wrapper.text()).not.toContain('¥50.00000000')
+    const amount = wrapper.findAll('input[type="number"]')[0]
+    await amount.setValue('4')
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
+    expect(showError).toHaveBeenCalledWith('admin.users.insufficientBalance')
+  })
+
+  it('maps backend gift quota insufficiency to the explicit user-facing error', async () => {
+    getUserQuotaSummary.mockResolvedValue({
+      paid_quota_balance_usd: '21.00000000',
+      gift_quota_balance_usd: '3.00000000',
+      total_quota_balance_usd: '24.00000000',
+    })
+    updateBalance.mockRejectedValue({
+      reason: 'GIFT_QUOTA_INSUFFICIENT',
+      message: 'gift quota is insufficient',
+    })
+
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'subtract' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    await wrapper.find('input[type="number"]').setValue('2')
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith('admin.users.insufficientGiftQuota')
   })
 })

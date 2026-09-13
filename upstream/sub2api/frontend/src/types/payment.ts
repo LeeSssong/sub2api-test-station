@@ -106,6 +106,7 @@ export interface PaymentOrder {
   paid_quota_usd?: number
   gift_quota_usd?: number
   total_quota_usd?: number
+  refunded_paid_quota_usd?: number
   operator_user_id?: number
   operator_note?: string
   operator_recharged_at?: string

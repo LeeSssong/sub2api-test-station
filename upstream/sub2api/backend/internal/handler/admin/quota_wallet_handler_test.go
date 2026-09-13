@@ -90,7 +90,7 @@ func TestQuotaWalletHandlerRequiresIdempotencyKey(t *testing.T) {
 	require.Empty(t, fake.called)
 }
 
-func TestQuotaWalletHandlerCreateRechargeDelegatesToCoordinator(t *testing.T) {
+func TestQuotaWalletHandlerRejectsRecharge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &quotaWalletHandlerFake{}
 	h := NewUserHandler(nil, nil, nil, nil, nil, nil, nil)
@@ -103,9 +103,8 @@ func TestQuotaWalletHandlerCreateRechargeDelegatesToCoordinator(t *testing.T) {
 	req.Header.Set("Idempotency-Key", "admin-test-1")
 	resp := httptest.NewRecorder()
 	r.ServeHTTP(resp, req)
-	require.Equal(t, 200, resp.Code)
-	require.Equal(t, service.QuotaRecordRecharge, fake.called)
-	require.Contains(t, resp.Body.String(), `"ledger_entry_id":9`)
+	require.Equal(t, 400, resp.Code)
+	require.Empty(t, fake.called)
 }
 
 func TestQuotaWalletHandlerInvalidatesBalanceCacheAfterLedgerMutation(t *testing.T) {
@@ -116,7 +115,6 @@ func TestQuotaWalletHandlerInvalidatesBalanceCacheAfterLedgerMutation(t *testing
 		recordType string
 		wantCall   string
 	}{
-		{name: "recharge", recordType: service.QuotaRecordRecharge, wantCall: service.QuotaRecordRecharge},
 		{name: "refund", recordType: service.QuotaRecordRefund, wantCall: service.QuotaRecordRefund},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -129,9 +127,6 @@ func TestQuotaWalletHandlerInvalidatesBalanceCacheAfterLedgerMutation(t *testing
 			r.POST("/admin/users/:id/quota-ledger", h.CreateQuotaLedgerEntry)
 
 			body := `{"record_type":"` + tc.recordType + `","amount_cny":5}`
-			if tc.recordType == service.QuotaRecordRecharge {
-				body = `{"record_type":"recharge","amount_cny":5,"payment_trade_no":"T-3","note":"manual"}`
-			}
 			req := httptest.NewRequest("POST", "/admin/users/7/quota-ledger", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Idempotency-Key", "admin-test-"+tc.recordType)

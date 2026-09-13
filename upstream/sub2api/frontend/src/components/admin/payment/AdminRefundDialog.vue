@@ -183,7 +183,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'confirm', data: { amount: number; reason: string; deduct_balance: boolean; force: boolean }): void
+  (e: 'confirm', data: { amount: number; reason: string; deduct_balance: boolean; force: boolean; refund_trade_no?: string }): void
   (e: 'cancel'): void
 }>()
 
@@ -196,6 +196,7 @@ const form = reactive({
   reason: '',
   deduct_balance: true,
   force: false,
+  refund_trade_no: '',
 })
 
 // In REFUND_REQUESTED / REFUND_PENDING status, refund_amount is requested/pending, not actually refunded.
@@ -228,6 +229,7 @@ watch(() => props.show, (val) => {
     form.reason = props.order.refund_request_reason || ''
     form.deduct_balance = true
     form.force = false
+    form.refund_trade_no = ''
   }
 })
 
@@ -238,6 +240,6 @@ function formatDateTime(dateStr: string): string {
 function handleSubmit() {
   if (form.amount <= 0 || form.amount > maxRefundable.value) return
   if (props.requireForce && !form.force) return
-  emit('confirm', { ...form })
+  emit('confirm', { ...form, refund_trade_no: form.refund_trade_no.trim() })
 }
 </script>

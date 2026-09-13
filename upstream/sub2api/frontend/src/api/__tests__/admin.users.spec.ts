@@ -14,6 +14,7 @@ import {
   batchUpdateLimits,
   bindUserAuthIdentity,
   createIdempotencyKey,
+  updateBalance,
   type AdminBindAuthIdentityRequest,
   type AdminBoundAuthIdentity,
   type BatchUpdateUserLimitsRequest,
@@ -151,6 +152,24 @@ describe('admin users api auth identity binding', () => {
 })
 
 describe('admin users quota ledger api', () => {
+  beforeEach(() => {
+    post.mockReset()
+  })
+
+  it('sends an idempotency key for admin balance adjustments', async () => {
+    const response = { id: 7, email: 'user@example.com' }
+    post.mockResolvedValue({ data: response })
+
+    const result = await updateBalance(7, 10, 'add', 'manual gift', 'balance-adjustment-1')
+
+    expect(post).toHaveBeenCalledWith(
+      '/admin/users/7/balance',
+      { balance: 10, operation: 'add', notes: 'manual gift' },
+      { headers: { 'Idempotency-Key': 'balance-adjustment-1' } },
+    )
+    expect(result).toEqual(response)
+  })
+
   it('generates a UUID idempotency key without downlevel optional-call scope errors', () => {
     const originalCrypto = globalThis.crypto
     const randomUUID = vi.fn(() => 'quota-recharge-uuid')

@@ -105,17 +105,25 @@ func TestOpenAIUnifiedQualityColdStartPrioritySignalIsBoundedAndDecays(t *testin
 	require.Equal(t, float64(0), openAIUnifiedQualityColdStartPrioritySignal(1, openAIUnifiedQualityMaturityConfidence))
 }
 
+func TestOpenAIUnifiedQualitySchedulingPriorityUsesAccountField(t *testing.T) {
+	require.Equal(t, 50, openAIUnifiedQualitySchedulingPriority(nil))
+	account := &Account{Priority: 1, AccountGroups: []AccountGroup{{AccountID: 1, GroupID: 11, Priority: 9}}}
+	require.Equal(t, 1, openAIUnifiedQualitySchedulingPriority(account))
+	account.Priority = 100
+	require.Equal(t, 100, openAIUnifiedQualitySchedulingPriority(account))
+}
+
 func TestOpenAIUnifiedQualityPrioritySignalsUseBoundedCaps(t *testing.T) {
-	caps := openAIUnifiedQualityPriorityCaps{ColdStartMax: 50, DailyMax: 20}
+	caps := openAIUnifiedQualityPriorityCaps{ColdStartMax: 50, DailyMax: 50}
 	tests := []struct {
 		name      string
 		priority  int
 		wantCold  float64
 		wantDaily float64
 	}{
-		{name: "highest priority", priority: 1, wantCold: 50, wantDaily: 20},
+		{name: "highest priority", priority: 1, wantCold: 50, wantDaily: 50},
 		{name: "neutral priority", priority: 50, wantCold: 0, wantDaily: 0},
-		{name: "lowest priority", priority: 100, wantCold: -50, wantDaily: -20},
+		{name: "lowest priority", priority: 100, wantCold: -50, wantDaily: -50},
 	}
 
 	for _, tt := range tests {
@@ -226,9 +234,9 @@ func TestOpenAIUnifiedQualitySelectorUsesColdStartPriorityInCombinedAPIKeyScore(
 	require.NoError(t, err)
 	require.Equal(t, int64(1), selection.Account.ID)
 	require.Equal(t, []int64{1, 2}, decision.CandidateAccountIDs)
-	require.InDelta(t, 70, decision.SelectedPrioritySignal, 0.000001)
+	require.InDelta(t, 100, decision.SelectedPrioritySignal, 0.000001)
 	require.InDelta(t, 50, decision.SelectedColdStartPrioritySignal, 0.000001)
-	require.InDelta(t, 20, decision.SelectedDailyPrioritySignal, 0.000001)
+	require.InDelta(t, 50, decision.SelectedDailyPrioritySignal, 0.000001)
 	selection.ReleaseFunc()
 }
 
@@ -254,9 +262,9 @@ func TestOpenAIUnifiedQualitySelectorAppliesDailyPriorityToMatureAPIKey(t *testi
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), selection.Account.ID)
-	require.InDelta(t, 20, decision.SelectedPrioritySignal, 0.000001)
+	require.InDelta(t, 50, decision.SelectedPrioritySignal, 0.000001)
 	require.Zero(t, decision.SelectedColdStartPrioritySignal)
-	require.InDelta(t, 20, decision.SelectedDailyPrioritySignal, 0.000001)
+	require.InDelta(t, 50, decision.SelectedDailyPrioritySignal, 0.000001)
 	selection.ReleaseFunc()
 }
 
@@ -266,10 +274,12 @@ func TestOpenAIUnifiedQualitySelectorLetsMateriallyBetterPriority50Win(t *testin
 	priorityOne.Priority = 1
 	peer := unifiedQualityTestAccount(2, groupID)
 	peer.Priority = 50
+	// Fill W5 and W55 so the 0% account is mature: daily +50 must not beat a healthy peer.
 	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{priorityOne, peer}}
 	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
 		1: {AccountID: 1, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
-			OpenAIQualityWindow5M: {AttemptCount: 20, SuccessCount: 0, SuccessRate: floatPtr(0), TTFTSampleCount: 20, TTFTP50MS: floatPtr(60000), TTFTP90MS: floatPtr(60000)},
+			OpenAIQualityWindow5M:  {AttemptCount: 20, SuccessCount: 0, SuccessRate: floatPtr(0), TTFTSampleCount: 20, TTFTP50MS: floatPtr(60000), TTFTP90MS: floatPtr(60000)},
+			OpenAIQualityWindow55M: {AttemptCount: 1000, SuccessCount: 0, SuccessRate: floatPtr(0), TTFTSampleCount: 100, TTFTP50MS: floatPtr(60000), TTFTP90MS: floatPtr(60000)},
 		}},
 		2: {AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
 			OpenAIQualityWindow5M:  {AttemptCount: 100, SuccessCount: 100, SuccessRate: floatPtr(1), TTFTSampleCount: 100, TTFTP50MS: floatPtr(2000), TTFTP90MS: floatPtr(2000)},
@@ -287,14 +297,15 @@ func TestOpenAIUnifiedQualitySelectorLetsMateriallyBetterPriority50Win(t *testin
 	selection.ReleaseFunc()
 }
 
-func TestOpenAIUnifiedQualitySelectorUsesGroupPriorityForSignals(t *testing.T) {
+func TestOpenAIUnifiedQualitySelectorUsesAccountPriorityOverGroupRowForSignals(t *testing.T) {
 	groupID := int64(11)
-	groupPriority := unifiedQualityTestAccount(1, groupID)
-	groupPriority.Priority = 100
-	groupPriority.AccountGroups = []AccountGroup{{AccountID: 1, GroupID: groupID, Priority: 1}}
-	globalPriority := unifiedQualityTestAccount(2, groupID)
-	globalPriority.Priority = 1
-	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{globalPriority, groupPriority}}
+	groupRowFirst := unifiedQualityTestAccount(1, groupID)
+	groupRowFirst.Priority = 100
+	groupRowFirst.AccountGroups = []AccountGroup{{AccountID: 1, GroupID: groupID, Priority: 1}}
+	cardFirst := unifiedQualityTestAccount(2, groupID)
+	cardFirst.Priority = 1
+	cardFirst.AccountGroups = []AccountGroup{{AccountID: 2, GroupID: groupID, Priority: 100}}
+	repo := &schedulerTestOpenAIAccountRepo{accounts: []Account{groupRowFirst, cardFirst}}
 	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{1: {AccountID: 1}, 2: {AccountID: 2}}}}
 	service := &OpenAIGatewayService{accountRepo: repo, openaiQuality: quality, cfg: unifiedQualityPriorityTestConfig()}
 	scheduler := &defaultOpenAIAccountScheduler{service: service, stats: newOpenAIAccountRuntimeStats()}
@@ -303,8 +314,10 @@ func TestOpenAIUnifiedQualitySelectorUsesGroupPriorityForSignals(t *testing.T) {
 		GroupID: &groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", RequiredTransport: OpenAIUpstreamTransportAny, unifiedQuality: true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, int64(1), selection.Account.ID)
-	require.InDelta(t, 70, decision.SelectedPrioritySignal, 0.000001)
+	require.Equal(t, int64(2), selection.Account.ID)
+	require.InDelta(t, 100, decision.SelectedPrioritySignal, 0.000001)
+	require.InDelta(t, 50, decision.SelectedColdStartPrioritySignal, 0.000001)
+	require.InDelta(t, 50, decision.SelectedDailyPrioritySignal, 0.000001)
 	selection.ReleaseFunc()
 }
 
@@ -507,6 +520,6 @@ func unifiedQualityTestAccount(id, groupID int64) Account {
 func unifiedQualityPriorityTestConfig() *config.Config {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = 50
-	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 20
+	cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 50
 	return cfg
 }

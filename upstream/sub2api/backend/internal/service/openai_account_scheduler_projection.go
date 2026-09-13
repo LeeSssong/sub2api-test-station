@@ -367,7 +367,7 @@ func (s *defaultOpenAIAccountScheduler) Project(ctx context.Context, req OpenAIA
 					}
 					quality := qualityBreakdowns[account.ID]
 					resourceTier := openAIUnifiedQualityResourceTierForAccount(account)
-					priority := accountSchedulingPriorityForGroup(account, &req.GroupID)
+					priority := openAIUnifiedQualitySchedulingPriority(account)
 					qualityCandidates = append(qualityCandidates, openAIUnifiedQualityCandidate{
 						account: account, quality: quality, effectiveU: u, effectiveCostStatus: cost.Status,
 						resourceTier: resourceTier, priority: priority, loadInfo: loads[account.ID],

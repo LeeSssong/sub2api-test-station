@@ -23,14 +23,14 @@ type openAIUnifiedQualityPriorityCaps struct {
 
 const (
 	defaultOpenAIUnifiedQualityPriorityColdStartMax = 50.0
-	defaultOpenAIUnifiedQualityPriorityDailyMax     = 20.0
+	defaultOpenAIUnifiedQualityPriorityDailyMax     = 50.0
 )
 
 type openAIUnifiedQualityRecheckKey struct{}
 
 // openAIUnifiedQualityCandidate contains only the values that are allowed to
 // affect ordinary text ordering. Self-owned ordering uses native priority and
-// load; API-key priority contributes only bounded cold-start and daily signals.
+// load; API-key ranking uses accounts.priority for bounded cold-start and daily signals.
 type openAIUnifiedQualityCandidate struct {
 	account                 *Account
 	quality                 OpenAIQualityBreakdown
@@ -155,6 +155,16 @@ func openAIUnifiedQualityResourceTierForAccount(account *Account) string {
 		return openAIUnifiedQualityResourceTierSelfOwned
 	}
 	return openAIUnifiedQualityResourceTierAPIKey
+}
+
+// openAIUnifiedQualitySchedulingPriority is the card-edited accounts.priority.
+// Unified quality must not read account_groups.priority, which native bind-group
+// APIs rewrite to membership order 1..N.
+func openAIUnifiedQualitySchedulingPriority(account *Account) int {
+	if account == nil {
+		return 50
+	}
+	return account.Priority
 }
 
 func openAIUnifiedQualityColdStartPrioritySignal(priority int, confidence float64) float64 {
@@ -411,7 +421,7 @@ func (s *defaultOpenAIAccountScheduler) selectByUnifiedQualityInternal(ctx conte
 	for i := range qualityCandidates {
 		qualityCandidates[i].quality = breakdowns[qualityCandidates[i].account.ID]
 		qualityCandidates[i].resourceTier = openAIUnifiedQualityResourceTierForAccount(qualityCandidates[i].account)
-		qualityCandidates[i].priority = accountSchedulingPriorityForGroup(qualityCandidates[i].account, req.GroupID)
+		qualityCandidates[i].priority = openAIUnifiedQualitySchedulingPriority(qualityCandidates[i].account)
 		qualityCandidates[i].loadInfo = loadMap[qualityCandidates[i].account.ID]
 		qualityCandidates[i].coldStart = qualityCandidates[i].resourceTier == openAIUnifiedQualityResourceTierAPIKey && qualityCandidates[i].quality.Confidence < openAIUnifiedQualityMaturityConfidence
 		applyOpenAIUnifiedQualityPrioritySignals(&qualityCandidates[i], *req.unifiedQualityPriorityCaps)

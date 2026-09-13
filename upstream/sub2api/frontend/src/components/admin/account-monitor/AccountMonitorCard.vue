@@ -30,6 +30,7 @@
       <div class="monitor-card-body">
         <div class="monitor-card-main">
           <section class="monitor-card-metrics" data-test="key-metrics" aria-label="关键服务指标">
+            <MetricCell data-test="quality-score-metric" tone="quality" label="质量分" :value="qualityScoreMetricLabel" />
             <MetricCell data-test="success-rate-metric" tone="success" label="成功率" :value="successRate" />
             <MetricCell data-test="ttft-metric" tone="ttft" label="TTFT P95" :value="formatMs(account.ttft_p95_ms)" />
             <MetricCell data-test="profit-rate-metric" tone="profit" label="利润率" :value="profitRateLabel" />
@@ -395,6 +396,10 @@ const scoreLabel = computed(() => {
   if (!scoreEligible.value || props.account.quality_score == null || !Number.isFinite(props.account.quality_score)) return '--'
   const value = props.account.score_status === 'capped' ? Math.min(props.account.quality_score, 70) : props.account.quality_score
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(value)
+})
+const qualityScoreMetricLabel = computed(() => {
+  if (props.account.quality_score == null || !Number.isFinite(Number(props.account.quality_score))) return '--'
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }).format(Number(props.account.quality_score))
 })
 const qualityRankValue = computed(() => props.account.quality_rank ?? props.account.group_rank)
 const qualityRanked = computed(() => qualityRankValue.value != null)
@@ -1358,7 +1363,7 @@ const CostMetric = defineComponent({
 .monitor-card-main { min-width: 0; padding: 18px 22px 20px; }
 .monitor-card-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
 }
@@ -1493,7 +1498,7 @@ const CostMetric = defineComponent({
 }
 @media (max-width: 900px) and (min-width: 561px) {
   .monitor-card-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .monitor-card-metrics :deep(.service-metric:nth-child(3)) { border-right: 0; }
+  .monitor-card-metrics :deep(.service-metric:nth-child(3n)) { border-right: 0; }
   .monitor-card-metrics :deep(.service-metric:nth-child(n + 4)) { padding-top: 12px; border-top: 1px solid #203046; }
 }
 @media (max-width: 560px) {

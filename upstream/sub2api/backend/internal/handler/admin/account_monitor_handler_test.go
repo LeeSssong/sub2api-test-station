@@ -686,8 +686,19 @@ func TestAccountMonitorHandlerFullSiteRowsUseBestGroupSchedulerRanking(t *testin
 	if _, ok := row["quality_score"]; !ok {
 		t.Fatalf("full-site row missing quality_score: %s", res.Body.String())
 	}
-	if _, ok := row["scheduler_rank"]; ok {
-		t.Fatalf("full-site row must not expose scheduler rank: %s", res.Body.String())
+	var schedulerRank int
+	if err := json.Unmarshal(row["scheduler_rank"], &schedulerRank); err != nil {
+		t.Fatalf("full-site row missing scheduler rank: %s", res.Body.String())
+	}
+	if schedulerRank != 1 {
+		t.Fatalf("full-site scheduler_rank = %d, want 1 body=%s", schedulerRank, res.Body.String())
+	}
+	var groupName string
+	if err := json.Unmarshal(row["best_scheduler_group_name"], &groupName); err != nil {
+		t.Fatalf("full-site row missing best scheduler group: %s", res.Body.String())
+	}
+	if groupName != "GPT-Pro" {
+		t.Fatalf("best_scheduler_group_name = %q, want GPT-Pro body=%s", groupName, res.Body.String())
 	}
 }
 

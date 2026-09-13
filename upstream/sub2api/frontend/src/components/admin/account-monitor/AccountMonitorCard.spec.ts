@@ -39,6 +39,9 @@ const account = {
   scheduler_explanation: { eligible: true, policy_label: '服务质量优先' },
   scheduler_rank: 2,
   scheduler_rank_total: 12,
+  quality_score: 56.2,
+  score_status: 'eligible',
+  eligible: true,
   model_detection: {
     status: 'normal',
     settings: { account_id: 278, connection_probe_model: 'gpt-5.6-sol', model_detection_model: 'gpt-5.6-sol' },
@@ -63,11 +66,12 @@ function mountCard(overrides: Record<string, unknown> = {}) {
 afterEach(() => document.body.replaceChildren())
 
 describe('AccountMonitorCard R2', () => {
-  it('renders the approved identity, scheduler rank, four metrics, chart and two footer actions', () => {
+  it('renders the approved identity, scheduler rank, quality score metric, chart and two footer actions', () => {
     const wrapper = mountCard()
 
     expect(wrapper.get('[data-test="account-identity"]').text()).toBe('xian-plus #278')
     expect(wrapper.get('[data-test="scheduler-column"]').text()).toContain('第 2 / 12')
+    expect(wrapper.get('[data-test="quality-score-metric"]').text()).toContain('56.2')
     expect(wrapper.get('[data-test="success-rate-metric"]').text()).toContain('99.1%')
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('4120 ms')
     expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')

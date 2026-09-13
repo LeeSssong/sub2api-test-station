@@ -503,8 +503,13 @@ func TestAccountMonitorListWindowIgnoresPersistedGlobalScoreWeightsForPrimaryOrd
 	if err != nil {
 		t.Fatalf("ListWindow() error = %v", err)
 	}
-	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{2, 1}) {
-		t.Fatalf("global quality score order = %v", got)
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID}; !reflect.DeepEqual(got, []int64{1, 2}) {
+		t.Fatalf("global scheduler order without ranks = %v, want account ID order", got)
+	}
+	for _, row := range page.Accounts {
+		if row.SchedulerRank != nil {
+			t.Fatalf("unprojected scheduler rank = %#v", row)
+		}
 	}
 	if page.SchemaVersion != AccountMonitorSchemaVersion {
 		t.Fatalf("schema version changed: %d", page.SchemaVersion)
@@ -618,8 +623,14 @@ func TestAccountMonitorListWindowKeepsAccountQualityEvidenceAndSchedulerRanksGro
 		t.Fatalf("account without evidence fabricated projection: %#v", noEvidence)
 	}
 	global := findAccountMonitorAccount(t, page.Accounts, 1)
-	if global.SchedulerRank != nil || global.QualityScore == nil {
-		t.Fatalf("full-site row did not project global quality rank: %#v", global)
+	if global.SchedulerRank == nil || *global.SchedulerRank != 1 || global.SchedulerRankTotal != 2 || global.BestSchedulerGroupName != "seven" {
+		t.Fatalf("full-site row did not project best group scheduler rank: %#v", global)
+	}
+	if global.QualityScore == nil {
+		t.Fatalf("full-site row dropped quality score metric: %#v", global)
+	}
+	if got := []int64{page.Accounts[0].AccountID, page.Accounts[1].AccountID, page.Accounts[2].AccountID, page.Accounts[3].AccountID}; !reflect.DeepEqual(got, []int64{1, 3, 2, 4}) {
+		t.Fatalf("full-site scheduler order = %v", got)
 	}
 }
 

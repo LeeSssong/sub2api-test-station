@@ -803,7 +803,7 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 		applyGroupProfitability(groups, windowAggregates)
 	}
 	applyGroupSchedulerOrder(groups)
-	applyGlobalQualityOrder(rows, groups)
+	applyGlobalSchedulerOrder(rows, groups)
 	return AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
 		SchemaVersion: AccountMonitorSchemaVersion, Range: rangeValue, ObservedAt: observedAt,
 		Stale: len(rows) == 0 || anyMonitorRowStale(rows), Settings: settings,
@@ -811,16 +811,39 @@ func (s *AccountMonitorService) ListWindow(ctx context.Context, rawRange string)
 	}}, nil
 }
 
-func applyGlobalQualityOrder(rows []AccountMonitorAccount, groups []AccountMonitorGroup) {
+type accountMonitorBestSchedulerRank struct {
+	rank        int
+	rankTotal   int
+	groupID     int64
+	groupName   string
+	explanation *AccountMonitorSchedulerExplanation
+}
+
+func applyGlobalSchedulerOrder(rows []AccountMonitorAccount, groups []AccountMonitorGroup) {
 	qualityByAccount := make(map[int64]*float64)
+	bestByAccount := make(map[int64]accountMonitorBestSchedulerRank)
 	for _, group := range groups {
 		for _, account := range group.Accounts {
-			if account.SchedulerQualityScore == nil {
+			if account.SchedulerQualityScore != nil {
+				if current, exists := qualityByAccount[account.AccountID]; !exists || *account.SchedulerQualityScore > *current {
+					value := *account.SchedulerQualityScore
+					qualityByAccount[account.AccountID] = &value
+				}
+			}
+			if account.SchedulerRank == nil {
 				continue
 			}
-			if current, exists := qualityByAccount[account.AccountID]; !exists || *account.SchedulerQualityScore > *current {
-				value := *account.SchedulerQualityScore
-				qualityByAccount[account.AccountID] = &value
+			candidate := accountMonitorBestSchedulerRank{
+				rank: *account.SchedulerRank, rankTotal: account.SchedulerRankTotal,
+				groupID: group.ID, groupName: group.Name,
+			}
+			if account.SchedulerExplanation != nil {
+				explanation := *account.SchedulerExplanation
+				candidate.explanation = &explanation
+			}
+			current, exists := bestByAccount[account.AccountID]
+			if !exists || candidate.rank < current.rank || (candidate.rank == current.rank && (candidate.rankTotal < current.rankTotal || (candidate.rankTotal == current.rankTotal && candidate.groupID < current.groupID))) {
+				bestByAccount[account.AccountID] = candidate
 			}
 		}
 	}
@@ -828,12 +851,21 @@ func applyGlobalQualityOrder(rows []AccountMonitorAccount, groups []AccountMonit
 		if score, exists := qualityByAccount[rows[i].AccountID]; exists {
 			rows[i].QualityScore = score
 		}
+		if best, exists := bestByAccount[rows[i].AccountID]; exists {
+			rank := best.rank
+			rows[i].SchedulerRank = &rank
+			rows[i].SchedulerRankTotal = best.rankTotal
+			rows[i].BestSchedulerGroupName = best.groupName
+			rows[i].SchedulerExplanation = best.explanation
+			continue
+		}
 		rows[i].SchedulerRank = nil
 		rows[i].SchedulerRankTotal = 0
+		rows[i].BestSchedulerGroupName = ""
 		rows[i].SchedulerExplanation = nil
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
-		left, right := rows[i].QualityScore, rows[j].QualityScore
+		left, right := rows[i].SchedulerRank, rows[j].SchedulerRank
 		if left == nil && right != nil {
 			return false
 		}
@@ -841,7 +873,7 @@ func applyGlobalQualityOrder(rows []AccountMonitorAccount, groups []AccountMonit
 			return true
 		}
 		if left != nil && right != nil && *left != *right {
-			return *left > *right
+			return *left < *right
 		}
 		return rows[i].AccountID < rows[j].AccountID
 	})

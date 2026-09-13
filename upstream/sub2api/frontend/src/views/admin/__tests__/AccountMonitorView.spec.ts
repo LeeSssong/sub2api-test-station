@@ -532,7 +532,7 @@ describe('admin account monitor view V3', () => {
     expect(wrapper.get('[data-test="account-metadata"]').text()).toContain('有效观测')
   })
 
-  it('orders the all-site list by the API-provided quality score while the R2 card omits quality ranking panels', async () => {
+  it('orders the all-site list by the API-provided scheduler rank while the R2 card omits quality ranking panels', async () => {
     const wrapper = mountView({ useRealCard: true })
     await flushPromises()
 
@@ -547,11 +547,11 @@ describe('admin account monitor view V3', () => {
     expect(cards.every((card) => !card.find('[data-test="rank-metric"]').exists())).toBe(true)
   })
 
-  it('uses quality-score order site-wide and scheduler order inside the selected group', async () => {
+  it('uses scheduler order site-wide and inside the selected group', async () => {
     const orderedAccounts = [
-      { ...account(10, 'Quality three scheduler two', 3), quality_rank: 3, quality_score: 70, scheduler_rank: 2, group_rank: 3 },
-      { ...account(11, 'Quality one scheduler three', 1), quality_rank: 1, quality_score: 90, scheduler_rank: 3, group_rank: 1 },
-      { ...account(20, 'Quality two scheduler one', 2), quality_rank: 2, quality_score: 80, scheduler_rank: 1, group_rank: 2 },
+      { ...account(10, 'Quality three scheduler two', 3), quality_rank: 3, quality_score: 70, scheduler_rank: 2, group_rank: 3, best_scheduler_group_name: 'GPT-Pro' },
+      { ...account(11, 'Quality one scheduler three', 1), quality_rank: 1, quality_score: 90, scheduler_rank: 3, group_rank: 1, best_scheduler_group_name: 'GPT-Pro' },
+      { ...account(20, 'Quality two scheduler one', 2), quality_rank: 2, quality_score: 80, scheduler_rank: 1, group_rank: 2, best_scheduler_group_name: 'GPT-Pro' },
       { ...unrankedAccount('24h'), quality_rank: null, scheduler_rank: null, group_rank: null },
     ]
     const snapshot = projection()
@@ -565,13 +565,14 @@ describe('admin account monitor view V3', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-test="monitor-card"]').map((card) => card.get('[data-test="account-identity"]').text())).toEqual([
-      'Quality one scheduler three #11',
       'Quality two scheduler one #20',
       'Quality three scheduler two #10',
+      'Quality one scheduler three #11',
       'Unranked 24h #30',
     ])
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).toEqual(expect.arrayContaining(['grid', 'grid-cols-1']))
     expect(wrapper.get('[data-test="account-card-grid"]').classes()).not.toContain('lg:grid-cols-2')
+    expect(wrapper.text()).toContain('全站与分组均按当前实际调度排名排序')
 
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
@@ -663,7 +664,7 @@ describe('admin account monitor view V3', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('首页按多窗口质量分排序')
+    expect(wrapper.text()).toContain('全站与分组均按当前实际调度排名排序')
     expect(wrapper.find('[data-test="edit-global-score-weights"]').exists()).toBe(false)
     await wrapper.get('[data-test="group-tab-3"]').trigger('click')
     await flushPromises()
@@ -805,12 +806,15 @@ describe('admin account monitor view V3', () => {
     const wrapper = mountView()
     await flushPromises()
 
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(list.mock.calls[0][0]).toBe('24h')
     expect(getConcurrency).toHaveBeenCalledTimes(1)
     expect(getConcurrency).toHaveBeenLastCalledWith([10, 11, 20, 30])
 
     getConcurrency.mockClear()
     await vi.advanceTimersByTimeAsync(5000)
     expect(getConcurrency).toHaveBeenCalledTimes(1)
+    expect(list).toHaveBeenCalledTimes(1)
 
     documentHidden = true
     document.dispatchEvent(new Event('visibilitychange'))

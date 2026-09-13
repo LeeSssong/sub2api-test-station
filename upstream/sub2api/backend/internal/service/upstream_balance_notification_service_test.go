@@ -258,7 +258,7 @@ func TestBuildUpstreamBalanceEvaluationsPreservesBaseURLPathAndGroupRanks(t *tes
 	rank := 2
 	fingerprint := accountMonitorBalanceCredentialFingerprint("test-key")
 	raw := []Account{{
-		ID: 9, Name: "native account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+		ID: 9, Name: "native account", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
 		Credentials: map[string]any{"base_url": "HTTPS://Upstream.Invalid/native/v1/", "api_key": "test-key"},
 	}}
 	page := AccountMonitorPage{AccountMonitorProjection: AccountMonitorProjection{
@@ -345,7 +345,7 @@ func TestBuildUpstreamBalanceEvaluationsCarriesT114SnapshotAndRankMetadata(t *te
 				SchedulerExplanation: &AccountMonitorSchedulerExplanation{Rank: &rank, RankTotal: 4, Eligible: true}},
 		}},
 	}}}
-	accounts := []Account{{ID: 9, Name: "ranked", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive,
+	accounts := []Account{{ID: 9, Name: "ranked", Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
 		Credentials: map[string]any{"base_url": "https://upstream.invalid/v1"},
 		Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
 			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK,
@@ -552,7 +552,7 @@ func upstreamBalanceEvaluationFixture(name, state string, value float64, observe
 		NormalizedBaseURL: "https://upstream.invalid", ValueUSD: &value, ObservedAt: observedAt, State: state,
 		Accounts: []UpstreamBalanceAccount{{
 			AccountID: 9, Name: name, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-			Status: StatusActive, BaseURL: "https://upstream.invalid",
+			Status: StatusActive, Schedulable: true, BaseURL: "https://upstream.invalid",
 			Ranks: []UpstreamBalanceAccountRank{{GroupName: "Primary", Rank: upstreamBalanceIntPointer(1)}},
 		}},
 	}

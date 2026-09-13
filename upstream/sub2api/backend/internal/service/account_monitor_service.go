@@ -2548,7 +2548,7 @@ func (s *AccountMonitorService) RefreshUpstreamBalanceScope(ctx context.Context,
 	}
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Status != StatusActive || !isAccountMonitorBalanceEligible(account) {
+		if !accountEligibleForFeishuBalanceDetection(account, result.ObservedAt) {
 			continue
 		}
 		baseURL, err := NormalizeNotificationBaseURL(account.GetOpenAIBaseURL())

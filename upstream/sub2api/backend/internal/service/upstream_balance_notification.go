@@ -18,15 +18,18 @@ const (
 // the BaseURL evaluator. Credentials are intentionally absent; the sender
 // obtains login values from the protected registry only after claiming an event.
 type UpstreamBalanceAccount struct {
-	AccountID             int64
-	Name                  string
-	Platform              string
-	Type                  string
-	Status                string
-	BaseURL               string
-	Snapshot              *AccountMonitorBalance
-	CredentialFingerprint string
-	Ranks                 []UpstreamBalanceAccountRank
+	AccountID              int64
+	Name                   string
+	Platform               string
+	Type                   string
+	Status                 string
+	Schedulable            bool
+	RateLimitResetAt       *time.Time
+	TempUnschedulableUntil *time.Time
+	BaseURL                string
+	Snapshot               *AccountMonitorBalance
+	CredentialFingerprint  string
+	Ranks                  []UpstreamBalanceAccountRank
 }
 
 type UpstreamBalanceAccountRank struct {
@@ -54,14 +57,15 @@ func NormalizeNotificationBaseURL(raw string) (string, error) {
 	return upstreamnotify.NormalizeBaseURL(raw)
 }
 
-// EvaluateUpstreamBaseURLBalance filters active OpenAI API-key accounts,
-// groups them by normalized BaseURL, and selects one latest strict-valid USD
-// snapshot per key. A same-time value conflict fails closed for that scope
-// because the current value is not unique, while unrelated scopes continue.
+// EvaluateUpstreamBaseURLBalance filters OpenAI API-key accounts whose admin
+// status is 正常, groups them by normalized BaseURL, and selects one latest
+// strict-valid USD snapshot per key. A same-time value conflict fails closed
+// for that scope because the current value is not unique, while unrelated
+// scopes continue.
 func EvaluateUpstreamBaseURLBalance(accounts []UpstreamBalanceAccount, now time.Time) ([]UpstreamBalanceEvaluation, error) {
 	groups := make(map[string][]UpstreamBalanceAccount)
 	for _, account := range accounts {
-		if account.Status != StatusActive || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
+		if !account.hasNormalStatusForFeishuBalance(now) || account.Platform != PlatformOpenAI || account.Type != AccountTypeAPIKey {
 			continue
 		}
 		key, err := NormalizeNotificationBaseURL(account.BaseURL)
@@ -148,6 +152,34 @@ func validNotificationSnapshotForAccount(snapshot *AccountMonitorBalance, accoun
 		return false
 	}
 	return snapshot.CredentialFingerprint != "" && snapshot.CredentialFingerprint == account.CredentialFingerprint
+}
+
+// hasNormalStatusForFeishuBalance matches the admin account-list filter labeled
+// 正常: status=active, schedulable, and not currently rate-limited or
+// temporarily unschedulable. Inactive, error, paused, and cooling accounts are
+// excluded from Feishu balance detection.
+func (account UpstreamBalanceAccount) hasNormalStatusForFeishuBalance(now time.Time) bool {
+	return accountHasNormalStatusForFeishuBalance(account.Status, account.Schedulable, account.RateLimitResetAt, account.TempUnschedulableUntil, now)
+}
+
+func accountHasNormalStatusForFeishuBalance(status string, schedulable bool, rateLimitResetAt, tempUnschedulableUntil *time.Time, now time.Time) bool {
+	if status != StatusActive || !schedulable {
+		return false
+	}
+	if rateLimitResetAt != nil && now.Before(*rateLimitResetAt) {
+		return false
+	}
+	if tempUnschedulableUntil != nil && now.Before(*tempUnschedulableUntil) {
+		return false
+	}
+	return true
+}
+
+func accountEligibleForFeishuBalanceDetection(account *Account, now time.Time) bool {
+	if account == nil || !isAccountMonitorBalanceEligible(account) {
+		return false
+	}
+	return accountHasNormalStatusForFeishuBalance(account.Status, account.Schedulable, account.RateLimitResetAt, account.TempUnschedulableUntil, now)
 }
 
 func validNotificationSnapshot(snapshot *AccountMonitorBalance) bool {

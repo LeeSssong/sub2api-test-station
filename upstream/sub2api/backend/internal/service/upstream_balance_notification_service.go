@@ -131,15 +131,18 @@ func buildUpstreamBalanceEvaluations(accounts []Account, page AccountMonitorPage
 		account := accounts[i]
 		baseURL, _ := account.Credentials["base_url"].(string)
 		projected = append(projected, UpstreamBalanceAccount{
-			AccountID:             account.ID,
-			Name:                  account.Name,
-			Platform:              account.Platform,
-			Type:                  account.Type,
-			Status:                account.Status,
-			BaseURL:               baseURL,
-			Snapshot:              balances[account.ID],
-			CredentialFingerprint: accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey()),
-			Ranks:                 append([]UpstreamBalanceAccountRank(nil), ranks[account.ID]...),
+			AccountID:              account.ID,
+			Name:                   account.Name,
+			Platform:               account.Platform,
+			Type:                   account.Type,
+			Status:                 account.Status,
+			Schedulable:            account.Schedulable,
+			RateLimitResetAt:       account.RateLimitResetAt,
+			TempUnschedulableUntil: account.TempUnschedulableUntil,
+			BaseURL:                baseURL,
+			Snapshot:               balances[account.ID],
+			CredentialFingerprint:  accountMonitorBalanceCredentialFingerprint(account.GetOpenAIApiKey()),
+			Ranks:                  append([]UpstreamBalanceAccountRank(nil), ranks[account.ID]...),
 		})
 	}
 	evaluations, err := EvaluateUpstreamBaseURLBalance(projected, page.ObservedAt)

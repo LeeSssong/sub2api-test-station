@@ -3439,10 +3439,14 @@ func TestAccountMonitorServiceRunAllRefreshesBalanceWhenAllGroupsHaveRealTraffic
 	}}, multiplier.calls)
 }
 
-func TestAccountMonitorServiceRefreshUpstreamBalanceScopesIncludesUnschedulableAccounts(t *testing.T) {
+func TestAccountMonitorServiceRefreshUpstreamBalanceScopesIncludesOnlyNormalStatusAccounts(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
 	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{
-		{ID: 31, Status: StatusActive, Schedulable: false, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://upstream.invalid", "api_key": "current-key"}},
-		{ID: 32, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://other.invalid", "api_key": "other-key"}},
+		{ID: 31, Status: StatusActive, Schedulable: false, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://upstream.invalid", "api_key": "paused-key"}},
+		{ID: 32, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://upstream.invalid", "api_key": "normal-key"}},
+		{ID: 33, Status: "inactive", Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://upstream.invalid", "api_key": "inactive-key"}},
+		{ID: 34, Status: StatusActive, Schedulable: true, TempUnschedulableUntil: &future, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://upstream.invalid", "api_key": "temp-key"}},
+		{ID: 35, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://other.invalid", "api_key": "other-key"}},
 	}}
 	multiplier := &accountMonitorMultiplierStub{}
 	svc := NewAccountMonitorService(&accountMonitorRepoStub{}, accountRepo, nil, nil, multiplier)
@@ -3451,7 +3455,7 @@ func TestAccountMonitorServiceRefreshUpstreamBalanceScopesIncludesUnschedulableA
 
 	require.NoError(t, err)
 	require.Equal(t, []accountMonitorMultiplierCall{{
-		accountID: 31, options: AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true},
+		accountID: 32, options: AccountMonitorRefreshOptions{RefreshDeclaration: true, RefreshBalance: true},
 	}}, multiplier.calls)
 }
 
@@ -3462,7 +3466,7 @@ func TestAccountMonitorServiceRefreshUpstreamBalanceScopesClearsOnlyBalanceBlock
 	account := Account{
 		ID: 41, Status: StatusActive, Schedulable: true, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Credentials:             map[string]any{"base_url": "https://upstream.invalid", "api_key": "current-key"},
-		TempUnschedulableUntil:  timePtr(now.Add(time.Hour)),
+		TempUnschedulableUntil:  timePtr(now.Add(-time.Minute)),
 		TempUnschedulableReason: `{"source":"deterministic_failure_isolation","failure_class":"balance_exhausted"}`,
 		Extra: map[string]any{AccountMonitorBalanceExtraKey: AccountMonitorBalance{
 			Version: AccountMonitorBalanceVersion, Status: AccountMonitorBalanceStatusOK, Source: AccountMonitorBalanceSourceSub2API,

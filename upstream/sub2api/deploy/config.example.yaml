@@ -423,7 +423,7 @@ gateway:
     # API key 冷启动质量优先级信号的全局上限；分组策略可独立覆盖
     unified_quality_priority_cold_start_max: 50
     # API key 日用量质量优先级信号的全局上限；分组策略可独立覆盖
-    unified_quality_priority_daily_max: 20
+    unified_quality_priority_daily_max: 50
   # OpenAI HTTP upstream protocol strategy.
   # OpenAI HTTP 上游协议策略（默认 HTTP/2；代理明确不兼容时可临时回退 HTTP/1.1）。
   openai_http2:

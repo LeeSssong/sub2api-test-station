@@ -407,7 +407,7 @@ func TestOpenAIGatewayService_UnifiedQualityPriorityCapsForRequestSanitizesMalfo
 
 	caps := svc.openAIUnifiedQualityPriorityCapsForRequest(context.Background(), 999)
 	require.Equal(t, 50.0, caps.ColdStartMax)
-	require.Equal(t, 20.0, caps.DailyMax)
+	require.Equal(t, 50.0, caps.DailyMax)
 	require.False(t, math.IsNaN(caps.ColdStartMax))
 	require.False(t, math.IsInf(caps.DailyMax, 0))
 }

@@ -2612,7 +2612,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.previous_response", 5.0)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.session_sticky", 3.0)
 	viper.SetDefault("gateway.openai_scheduler.unified_quality_priority_cold_start_max", 50.0)
-	viper.SetDefault("gateway.openai_scheduler.unified_quality_priority_daily_max", 20.0)
+	viper.SetDefault("gateway.openai_scheduler.unified_quality_priority_daily_max", 50.0)
 	// OpenAI HTTP upstream protocol strategy
 	viper.SetDefault("gateway.openai_http2.enabled", true)
 	viper.SetDefault("gateway.openai_http2.allow_proxy_fallback_to_http1", true)

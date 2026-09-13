@@ -146,7 +146,7 @@ func TestOpenAIAccountSchedulerProjectionAndLivePlanShareEffectivePriorityCompar
 func TestOpenAIAccountSchedulerProjectionUsesResolvedUnifiedQualityPrioritySignals(t *testing.T) {
 	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
 	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = 50
-	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 20
+	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 50
 	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
 		1: {AccountID: 1},
 		2: {AccountID: 2, Windows: map[OpenAIQualityWindow]OpenAIQualityWindowMetrics{
@@ -170,6 +170,36 @@ func TestOpenAIAccountSchedulerProjectionUsesResolvedUnifiedQualityPrioritySigna
 	})
 	require.NoError(t, err)
 	require.Equal(t, []int64{1, 2}, projectionAccountIDs(projection.Candidates))
+}
+
+func TestOpenAIAccountSchedulerProjectionUsesAccountPriorityOverGroupRow(t *testing.T) {
+	scheduler, _, _, _ := newOpenAIAccountSchedulerProjectionTestScheduler(t, "")
+	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax = 50
+	scheduler.service.cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax = 50
+	quality := &recordingOpenAIQualityProvider{snapshot: OpenAIAccountQualitySnapshot{Accounts: map[int64]OpenAIAccountQuality{
+		1: {AccountID: 1},
+		2: {AccountID: 2},
+	}}}
+	scheduler.service.openaiQuality = quality
+	now := time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)
+	groupID := int64(77)
+	cardWorstGroupBest := projectionTestAccount(1)
+	cardWorstGroupBest.Priority = 100
+	cardWorstGroupBest.AccountGroups = []AccountGroup{{AccountID: 1, GroupID: groupID, Priority: 1}}
+	cardBestGroupWorst := projectionTestAccount(2)
+	cardBestGroupWorst.Priority = 1
+	cardBestGroupWorst.AccountGroups = []AccountGroup{{AccountID: 2, GroupID: groupID, Priority: 100}}
+
+	projection, err := scheduler.Project(context.Background(), OpenAIAccountSchedulerProjectionRequest{
+		GroupID: groupID, Platform: PlatformOpenAI, RequestedModel: "gpt-5.4", SnapshotAt: now,
+		Accounts: []*Account{cardWorstGroupBest, cardBestGroupWorst},
+		LoadMap: map[int64]*AccountLoadInfo{
+			1: {AccountID: 1},
+			2: {AccountID: 2},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []int64{2, 1}, projectionAccountIDs(projection.Candidates))
 }
 
 func candidateIDs(candidates []openAIAccountCandidateScore) []int64 {

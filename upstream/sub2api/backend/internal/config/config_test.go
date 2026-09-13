@@ -2785,7 +2785,7 @@ func TestLoad_DefaultUnifiedQualityPriorityCaps(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 50.0, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityColdStartMax)
-	require.Equal(t, 20.0, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax)
+	require.Equal(t, 50.0, cfg.Gateway.OpenAIScheduler.UnifiedQualityPriorityDailyMax)
 }
 
 func TestLoad_ConfiguredUnifiedQualityPriorityCapsUseOpenAISchedulerPath(t *testing.T) {

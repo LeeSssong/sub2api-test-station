@@ -104,7 +104,8 @@ test_success_transfers_metadata_and_backup_helper(){
   [[ "$scp_line" == *deploy-sub2api-test-station-host.sh* ]] || fail 'host executor not transferred'
   final_ssh=$(grep '^ssh ' "$EVENT_LOG" | grep 'sudo -n bash ' | tail -n 1)
   [[ "$final_ssh" != *'bash -s --'* ]] || fail 'host executor still runs from SSH stdin'
-  [[ "$final_ssh" == *"bash '/var/tmp/sub2api-test-station-release.TEST/deploy-sub2api-test-station-host.sh' --"* ]] || fail 'uploaded host executor path not used'
+  [[ "$final_ssh" != *"deploy-sub2api-test-station-host.sh' -- --staging-root"* ]] || fail 'host executor received a stray separator argument'
+  [[ "$final_ssh" == *"bash '/var/tmp/sub2api-test-station-release.TEST/deploy-sub2api-test-station-host.sh' --staging-root"* ]] || fail 'uploaded host executor path not used'
   [[ "$final_ssh" == *"--image-id '$IMAGE_ID'"* ]] || fail 'image ID not passed'
   [[ "$final_ssh" == *"--backup-script '/var/tmp/sub2api-test-station-release.TEST/backup-sub2api-test-station-host.sh'"* ]] || fail 'backup script path not passed'
   [[ "$final_ssh" =~ --migration-set-sha256\ \'[a-f0-9]{64}\' ]] || fail 'migration hash not passed'

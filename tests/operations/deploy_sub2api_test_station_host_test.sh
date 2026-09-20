@@ -198,6 +198,19 @@ assert_rollback_invoked(){
   assert_no_destructive_commands
 }
 
+test_duplicate_historical_image_values_use_active_last_value(){
+  setup duplicate-history
+  tmp=$(mktemp)
+  printf 'CLONE_SOURCE_COMMIT=%s\nCLONE_APP_IMAGE=sub2api-test-station-runtime:%s\n' "$(printf '9%.0s' {1..40})" "$(printf '9%.0s' {1..40})" >"$tmp"
+  cat "$OLD_RELEASE/.env" >>"$tmp"
+  mv "$tmp" "$OLD_RELEASE/.env"
+  chmod 0600 "$OLD_RELEASE/.env"
+  run_exec >/dev/null || fail 'duplicate historical image values rejected active last value'
+  release=$(candidate_release)
+  [[ "$(grep -c '^CLONE_SOURCE_COMMIT=' "$release/.env")" == 1 ]] || fail 'candidate source commit was not deduplicated'
+  [[ "$(grep -c '^CLONE_APP_IMAGE=' "$release/.env")" == 1 ]] || fail 'candidate image was not deduplicated'
+}
+
 test_success_records_previous_backup_and_identity(){
   setup success
   run_exec >/dev/null || fail 'success case failed'
@@ -298,6 +311,7 @@ test_rejects_bad_checksum_and_unsafe_root(){
   if DEPLOY_ROOT=/opt/other run_exec >/dev/null 2>&1; then fail 'unsafe deploy root accepted'; fi
 }
 
+test_duplicate_historical_image_values_use_active_last_value
 test_success_records_previous_backup_and_identity
 test_preflight_failures_do_not_start_candidate
 test_transient_service_health_recovers

@@ -122,7 +122,7 @@ done
 previous_env="$previous_release_dir/.env"
 [[ "$(stat_mode "$previous_env")" == 600 ]] || fail 'previous env mode must be 0600'
 grep -Eq '^name:[[:space:]]*sub2api-test-station[[:space:]]*$' "$active_compose" || fail 'previous Compose project mismatch'
-previous_image=$(grep -E '^CLONE_APP_IMAGE=' "$previous_env" | cut -d= -f2-)
+previous_image=$(awk -F= '/^CLONE_APP_IMAGE=/{value=substr($0,index($0,"=")+1)} END{print value}' "$previous_env")
 [[ "$previous_image" == "sub2api-test-station-runtime:$previous_commit" ]] || fail 'previous image tag does not match release state'
 previous_image_id=$($docker_bin image inspect --format '{{.Id}}' "$previous_image" 2>/dev/null | tr -d '[:space:]')
 [[ "$previous_image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'previous image is missing'

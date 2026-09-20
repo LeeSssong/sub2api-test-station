@@ -54,11 +54,18 @@ func readinessHandler(readiness ReadinessChecker, timeout time.Duration) gin.Han
 
 		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 		defer cancel()
-		if err := readiness.Check(ctx); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
-			return
-		}
+		result := make(chan error, 1)
+		go func() { result <- readiness.Check(ctx) }()
 
-		c.JSON(http.StatusOK, gin.H{"status": "ready"})
+		select {
+		case err := <-result:
+			if err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"status": "ready"})
+		case <-ctx.Done():
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not_ready"})
+		}
 	}
 }

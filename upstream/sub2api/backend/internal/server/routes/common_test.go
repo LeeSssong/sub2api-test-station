@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -152,6 +153,43 @@ func TestCommonRoutesHealthAndReadiness(t *testing.T) {
 	})
 }
 
+func TestDependencyReadinessCheckerBoundsUnresponsiveRedisByContextDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			accepted <- conn
+		}
+	}()
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:         listener.Addr().String(),
+		DialTimeout:  time.Second,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		MaxRetries:   0,
+	})
+	t.Cleanup(func() { require.NoError(t, redisClient.Close()) })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = newDependencyReadinessChecker(&fakeDatabasePinger{}, newRedisReadinessPinger(redisClient)).Check(ctx)
+	require.Error(t, err)
+	require.Less(t, time.Since(started), 500*time.Millisecond)
+
+	select {
+	case conn := <-accepted:
+		require.NoError(t, conn.Close())
+	case <-time.After(time.Second):
+		t.Fatal("Redis readiness probe never opened a connection")
+	}
+}
+
 func TestReadinessHandlerTimeout(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -167,4 +205,21 @@ func TestReadinessHandlerTimeout(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, response.Code)
 	require.JSONEq(t, `{"status":"not_ready"}`, response.Body.String())
 	require.Less(t, time.Since(started), 500*time.Millisecond)
+}
+
+func TestReadinessHandlerEnforcesTimeoutForNonCooperativeChecker(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/readyz", readinessHandler(fakeReadinessChecker{check: func(context.Context) error {
+		time.Sleep(250 * time.Millisecond)
+		return nil
+	}}, 10*time.Millisecond))
+
+	started := time.Now()
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	require.JSONEq(t, `{"status":"not_ready"}`, response.Body.String())
+	require.Less(t, time.Since(started), 100*time.Millisecond)
 }

@@ -47,11 +47,11 @@ curl --fail http://49.51.203.200/health
 正式发布入口仍为根目录干净 `main` 上的 `ops/release-sub2api-test-station.sh`。候选补强版增加以下门禁，但在合入并推送根 `main` 前不得使用：
 
 1. 本地校验 `main == origin/main`，构建 Linux/amd64 镜像，记录 tar 归档 SHA-256、Docker image ID 和迁移集合 SHA-256。
-2. 宿主从活动 API Compose 标签与 `release-state.json` 双重解析上一 release；两者不一致即停止。
-3. 候选启动前调用 `ops/backup-sub2api-test-station-host.sh`，在 `/opt/sub2api-test-station/backups/<UTC timestamp>/` 生成 `postgres.dump`、`redis-dump.rdb`、`app-data.tar.gz`、`SHA256SUMS` 和 `metadata.json`。备份失败时不启动候选。
+2. 宿主从活动 API Compose 标签与 `release-state.json` 双重解析上一 release；同时验证上一 `.env` 的应用 tag、本地 image ID 与活动 API 容器 image ID 完全一致，任一不一致即停止。
+3. 候选启动前调用 `ops/backup-sub2api-test-station-host.sh`，在 `/opt/sub2api-test-station/backups/<UTC timestamp>/` 生成 `postgres.dump`、`redis-dump.rdb`、`app-data.tar.gz`、`SHA256SUMS` 和 `metadata.json`。PostgreSQL dump 由活动 PostgreSQL 容器内同版本 `pg_restore` 校验，Redis RDB 由活动 Redis 容器内 `redis-check-rdb` 校验；备份失败时不启动候选。
 4. 候选加载后必须验证 tag 的 Docker image ID；然后对同一 project 执行 `up -d --remove-orphans`，保留 PostgreSQL、Redis 和 app-data named volumes。
-5. API、worker、detector、PostgreSQL、Redis、Caddy 达到健康状态后，连续三次验证 `/health` 为 JSON `status=ok`、`/readyz` 为 JSON `status=ready`。
-6. 候选启动后的任一失败会使用上一 release 的 Compose/Caddy/`.env` 对同一 project 自动执行应用回退，并重新验证服务与探针；不恢复数据库、Redis 或 app-data 备份。
+5. 通过容器 ID 与 `docker inspect` 精确确认 API、worker、detector、PostgreSQL、Redis 为 `healthy`、Caddy 为 `running` 后，连续三次验证 `/health` 为 JSON `status=ok`、`/readyz` 为 JSON `status=ready`。
+6. 候选启动后的任一失败（包括成功探针后的状态临时文件创建、JSON 写入和原子提交失败）会使用上一 release 的 Compose/Caddy/`.env` 对同一 project 自动执行应用回退，并重新验证服务与探针；只有 `release-state.json` 原子提交成功后才解除回退保护，不恢复数据库、Redis 或 app-data 备份。
 
 成功状态使用 `release-state.json` schema v2，记录 source commit/tree、迁移集合 SHA、镜像归档 SHA、image ID/tag、当前/上一 release、备份目录、project、结果和时间，不写秘密。失败时保持上一成功状态不变，在候选 release 内写入权限 0600 的 `failure.json`，只记录受控失败阶段和回退结果。
 

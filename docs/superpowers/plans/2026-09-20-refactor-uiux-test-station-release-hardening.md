@@ -360,3 +360,14 @@ git commit -m "docs: document test station rollback gate"
 ```
 
 Report branch, baseline, commits, files, tests, no migration/config/business changes, `downtime_required=unverified until root preflight`, and status `READY_FOR_ROOT_REVIEW`. Do not merge, push, deploy, or remove the worktree.
+
+## 根审查整改（2026-09-20）
+
+- [x] 服务门禁改为 `compose ps -q` 获取唯一容器 ID，再用 `docker inspect` 精确验证 API、worker、detector、PostgreSQL、Redis 的 health 为 `healthy`，Caddy status 为 `running`；`unhealthy` 不再误匹配。
+- [x] 候选启动后启用未提交 release 的 EXIT 回退保护；状态临时文件创建、JSON 写入或原子 `mv` 失败都会恢复上一应用 release，成功提交状态后才解除保护。
+- [x] 候选启动前解析上一 `.env` 的应用 tag，验证它与上一 source commit 一致、本地镜像存在，且 image ID 与活动 API 容器一致。
+- [x] PostgreSQL dump 使用活动 PostgreSQL 容器内 `pg_restore` 校验；Redis RDB 使用活动 Redis 容器内 `redis-check-rdb` 校验；临时校验文件执行后删除，不读取或打印密码。
+- [x] 增加损坏非空 RDB、上一镜像缺失/身份不一致、真实 health/status、状态提交失败自动回退测试。
+- [x] 清理规格与脚本尾随空格，`git diff --check` 通过。
+
+整改提交：`4866a2a1`、`55324a1d`。

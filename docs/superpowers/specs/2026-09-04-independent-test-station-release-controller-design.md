@@ -1,5 +1,7 @@
 # 独立测试站发布控制器设计
 
+> **2026-09-20 纠偏：** 本文保留为初始设计记录。其“失败恢复旧 Compose”和 `previous_release_dir` 描述在当时实现中并未成立；当前补强设计与验收合同以 [`2026-09-20-refactor-uiux-test-station-release-hardening-design.md`](./2026-09-20-refactor-uiux-test-station-release-hardening-design.md) 为准。补强代码仍在候选分支，尚未合并、推送或部署。
+
 ## 问题与现状
 
 独立测试站运行于 `sub2api-test-station` Compose project，入口为 `http://49.51.203.200/`，部署根目录为 `/opt/sub2api-test-station/`。当前只有克隆时使用的临时链路；仓库内旧 `ops/release-sub2api-acceptance.sh` 面向历史 `/admin/lab` 拓扑，不能发布新站。测试站当前 release 由 `release-state.json` 记录 source commit/tree，运行 API、worker、detector 使用带提交标识的不可变镜像。

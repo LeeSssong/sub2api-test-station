@@ -27,7 +27,7 @@
 - Create: `ops/backup-sub2api-test-station-host.sh`
 - Create: `tests/operations/backup_sub2api_test_station_host_test.sh`
 
-- [ ] **Step 1: Write the failing happy-path backup test**
+- [x] **Step 1: Write the failing happy-path backup test**
 
 Create a fixture with fake `docker`, `tar`, `sha256sum`, an active Compose/env pair, and output directories. The fake Docker contract must accept only:
 
@@ -41,7 +41,7 @@ docker cp test-station-api-container:/app/data/. <partial>/app-data/
 
 Assert the promoted backup contains exactly `postgres.dump`, `redis-dump.rdb`, `app-data.tar.gz`, `SHA256SUMS`, and `metadata.json`, with directory mode 0700, file mode 0600, valid checksums, and no `.partial-*` directory.
 
-- [ ] **Step 2: Run the backup test and verify RED**
+- [x] **Step 2: Run the backup test and verify RED**
 
 Run:
 
@@ -51,7 +51,7 @@ bash tests/operations/backup_sub2api_test_station_host_test.sh
 
 Expected: FAIL because `ops/backup-sub2api-test-station-host.sh` does not exist.
 
-- [ ] **Step 3: Implement minimal backup helper**
+- [x] **Step 3: Implement minimal backup helper**
 
 Implement these focused helpers:
 
@@ -78,11 +78,11 @@ Use `<deploy-root>/backups/.partial-<timestamp>-$$`, promote with `mv` to `<depl
 test_station_backup status=succeeded backup_dir=<absolute path>
 ```
 
-- [ ] **Step 4: Run the happy path and verify GREEN**
+- [x] **Step 4: Run the happy path and verify GREEN**
 
 Run the focused test. Expected: PASS and exactly one promoted backup set.
 
-- [ ] **Step 5: Add one failing test per backup safety behavior**
+- [x] **Step 5: Add one failing test per backup safety behavior**
 
 Add and run RED tests for:
 
@@ -100,7 +100,7 @@ unknown historical backup files remain untouched
 
 Each failure must leave no promoted timestamp directory and must not alter existing backup sets.
 
-- [ ] **Step 6: Implement the minimum validation and cleanup behavior**
+- [x] **Step 6: Implement the minimum validation and cleanup behavior**
 
 Use an EXIT trap that removes only the current `.partial-*` directory. Reject path/project problems before Docker commands. Generate metadata schema 1:
 
@@ -108,7 +108,7 @@ Use an EXIT trap that removes only the current `.partial-*` directory. Reject pa
 {"schema_version":1,"created_at":"<timestamp>","project_name":"sub2api-test-station","sha256_verified":true}
 ```
 
-- [ ] **Step 7: Verify and commit Task 1**
+- [x] **Step 7: Verify and commit Task 1**
 
 Run:
 
@@ -131,7 +131,7 @@ git commit -m "ops: add verified test station backup"
 - Modify: `ops/deploy-sub2api-test-station-host.sh`
 - Modify: `tests/operations/deploy_sub2api_test_station_host_test.sh`
 
-- [ ] **Step 1: Replace the shallow fixture with a stateful fake Docker fixture**
+- [x] **Step 1: Replace the shallow fixture with a stateful fake Docker fixture**
 
 The fixture must model:
 
@@ -147,7 +147,7 @@ previous release restore invocation
 
 Keep existing unsafe path and checksum tests.
 
-- [ ] **Step 2: Add failing tests for pre-switch validation**
+- [x] **Step 2: Add failing tests for pre-switch validation**
 
 Add tests that expect no candidate `up` when:
 
@@ -162,7 +162,7 @@ loaded candidate tag image ID differs from --image-id
 
 Run the host executor test and confirm failures are caused by missing validation.
 
-- [ ] **Step 3: Implement active release and candidate identity validation**
+- [x] **Step 3: Implement active release and candidate identity validation**
 
 Add required arguments:
 
@@ -181,7 +181,7 @@ actual_image_id=$($docker_bin image inspect --format '{{.Id}}' "sub2api-test-sta
 
 Invoke the backup helper before candidate `up` and capture its single `backup_dir=` field.
 
-- [ ] **Step 4: Add failing readiness tests**
+- [x] **Step 4: Add failing readiness tests**
 
 Add fake probe responses for:
 
@@ -196,7 +196,7 @@ success fewer than three consecutive attempts
 
 The candidate succeeds only after three consecutive valid health/readiness pairs.
 
-- [ ] **Step 5: Implement probe helpers**
+- [x] **Step 5: Implement probe helpers**
 
 Use a command override `TEST_STATION_PROBE_BIN` for tests and `curl` by default. Capture status, Content-Type, and body separately. Parse JSON with Python. Bound defaults:
 
@@ -208,7 +208,7 @@ probe_interval=${TEST_STATION_PROBE_INTERVAL_SECONDS:-5}
 
 Require positive integers, with interval allowing `0` only in `TEST_STATION_TEST_MODE=true`.
 
-- [ ] **Step 6: Add failing rollback tests**
+- [x] **Step 6: Add failing rollback tests**
 
 Inject failures at candidate Compose start, worker health, Caddy health, and JSON readiness. Assert each case:
 
@@ -224,7 +224,7 @@ returns nonzero even when automatic restore succeeds
 
 Also test restore failure: return nonzero, preserve candidate/backup, and record `rolled_back=false`.
 
-- [ ] **Step 7: Implement rollback trap and state schema v2**
+- [x] **Step 7: Implement rollback trap and state schema v2**
 
 Track `candidate_started=false`. On failures after setting it true, call `restore_previous`. Do not restore on pre-switch validation failures.
 
@@ -251,7 +251,7 @@ On success atomically write:
 
 Write candidate `failure.json` through a temporary file and `mv`; include a controlled stage enum rather than raw stderr.
 
-- [ ] **Step 8: Verify and commit Task 2**
+- [x] **Step 8: Verify and commit Task 2**
 
 Run:
 
@@ -275,11 +275,11 @@ git commit -m "ops: rollback failed test station releases"
 - Modify: `ops/release-sub2api-test-station.sh`
 - Modify: `tests/operations/release_sub2api_test_station_contract_test.sh`
 
-- [ ] **Step 1: Build an executable fake-tool contract test**
+- [x] **Step 1: Build an executable fake-tool contract test**
 
 Replace grep-only assertions with a temporary Git repository and fake `git`, `docker`, `ssh`, and `scp` commands. Retain syntax checks. Assert no Docker/SSH call for non-main, dirty tree, origin drift, unsafe target, or missing source files.
 
-- [ ] **Step 2: Add failing candidate metadata tests**
+- [x] **Step 2: Add failing candidate metadata tests**
 
 On the happy path require the script to:
 
@@ -292,15 +292,15 @@ pass --backup-script, --image-id, and --migration-set-sha256 to the host executo
 
 Run the test and verify RED against the existing orchestrator.
 
-- [ ] **Step 3: Implement metadata generation and transfer**
+- [x] **Step 3: Implement metadata generation and transfer**
 
 Use the existing normalized migration-set algorithm from repository tooling; do not modify migrations. Validate both hashes before contacting SSH. Add the backup helper to `scp`. Keep fixed target and deploy root.
 
-- [ ] **Step 4: Add failure tests for malformed image ID and migration hash**
+- [x] **Step 4: Add failure tests for malformed image ID and migration hash**
 
 The script must fail before staging/SSH if the local image inspect result is not `sha256:<64 hex>` or migration hash generation fails.
 
-- [ ] **Step 5: Verify and commit Task 3**
+- [x] **Step 5: Verify and commit Task 3**
 
 Run:
 
@@ -325,15 +325,15 @@ git commit -m "ops: bind test station release metadata"
 - Modify: `docs/operations/independent-test-station-handoff.md`
 - Modify: `docs/superpowers/specs/2026-09-04-independent-test-station-release-controller-design.md`
 
-- [ ] **Step 1: Correct the historical design discrepancy**
+- [x] **Step 1: Correct the historical design discrepancy**
 
 Mark the 2026-09-04 design as superseded for rollback details and link to the 2026-09-20 specification. Do not rewrite historical facts silently.
 
-- [ ] **Step 2: Update the operations handoff**
+- [x] **Step 2: Update the operations handoff**
 
 Document schema v2 fields, backup path/content, automatic application rollback, named-volume preservation, JSON readiness gate, failure evidence, and the rule that current HTML `/readyz` prevents deployment until the application fix lands.
 
-- [ ] **Step 3: Run final focused verification**
+- [x] **Step 3: Run final focused verification**
 
 Run:
 
@@ -350,11 +350,12 @@ git status --short
 
 Expected: all tests PASS; only task files differ before the final commit.
 
-- [ ] **Step 4: Commit documentation and report candidate**
+- [x] **Step 4: Commit documentation and report candidate**
 
 ```bash
 git add docs/operations/independent-test-station-handoff.md \
-  docs/superpowers/specs/2026-09-04-independent-test-station-release-controller-design.md
+  docs/superpowers/specs/2026-09-04-independent-test-station-release-controller-design.md \
+  docs/superpowers/plans/2026-09-20-refactor-uiux-test-station-release-hardening.md
 git commit -m "docs: document test station rollback gate"
 ```
 

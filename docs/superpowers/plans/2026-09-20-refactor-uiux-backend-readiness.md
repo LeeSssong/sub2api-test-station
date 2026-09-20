@@ -379,3 +379,13 @@ baseline=645ce06834698cebcd6707836a234d7096e0a081
 ```
 
 Include commits, changed files, focused test results, the two unrelated baseline failures if still present, rollback by reverting the candidate commits, and confirmation that the branch/worktree remains unmerged, unpushed, undeployed, and preserved.
+
+## 根审查整改（2026-09-20）
+
+- [x] 增加真实无响应 TCP Redis 合同测试，证明默认 go-redis 客户端不会自动遵守 request context。
+- [x] readiness 使用从现有客户端只读复制的专用探测配置，启用 `ContextTimeoutEnabled`、关闭重试，并把 dial/read/write timeout 收紧到剩余请求预算；每次探测结束关闭专用客户端，不改变应用共享 Redis 客户端的全局超时语义。
+- [x] handler 对不遵守 context 的 checker 也在总预算到期时返回 503；结果 channel 带缓冲，迟到结果不会阻塞发送方。
+- [x] 新鲜定向 routes、embed 绕过、server/cmd 编译以及普通与 embed 构建通过。
+- [x] routes 全包仍只复现既有两条网关文案失败；embed 全包仍只复现既有 `logo.png` fixture mismatch，本次新增定向测试通过。
+
+整改提交：`47d9b125ad33432c532fc8b349e62447a60871c0`。

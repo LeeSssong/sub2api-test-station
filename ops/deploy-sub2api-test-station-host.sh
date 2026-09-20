@@ -4,7 +4,14 @@ umask 077
 
 fail(){ printf 'test_station_host status=failed: %s\n' "$1" >&2; exit 1; }
 sha256_file(){ if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"|awk '{print $1}'; else shasum -a 256 "$1"|awk '{print $1}'; fi; }
-stat_mode(){ stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+stat_mode(){
+  local mode
+  if mode=$(stat -c '%a' "$1" 2>/dev/null); then
+    printf '%s\n' "$mode"
+    return 0
+  fi
+  stat -f '%Lp' "$1"
+}
 
 reject_symlink_components(){
   local value=$1 label=$2 current='' component

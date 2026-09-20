@@ -40,35 +40,49 @@ if [[ "${1:-}" == compose ]]; then
   shift 2
   case "${1:-} ${2:-} ${3:-}" in
     'exec -T test-station-postgres')
-      [[ "$*" == *pg_dump* ]] || exit 64
-      [[ "$mode" != postgres-fail ]] || exit 41
-      [[ "$mode" == postgres-empty ]] || printf 'PGDUMP-CUSTOM'
+      if [[ "$*" == *pg_dump* ]]; then
+        [[ "$mode" != postgres-fail ]] || exit 41
+        [[ "$mode" == postgres-empty ]] || printf 'PGDUMP-CUSTOM'
+      elif [[ "$*" == *'pg_restore --list /tmp/sub2api-test-station-postgres.dump'* ]]; then
+        [[ "$mode" != pg-restore-fail ]] || exit 45
+      elif [[ "$*" == *'rm -f /tmp/sub2api-test-station-postgres.dump'* ]]; then
+        :
+      else
+        exit 64
+      fi
       ;;
     'exec -T test-station-redis')
-      [[ "$*" == *'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" SAVE'* ]] || exit 65
-      [[ "$mode" != redis-save-fail ]] || exit 42
+      if [[ "$*" == *'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" SAVE'* ]]; then
+        [[ "$mode" != redis-save-fail ]] || exit 42
+      elif [[ "$*" == *'redis-check-rdb /tmp/sub2api-test-station-redis.rdb'* ]]; then
+        [[ "$mode" != redis-rdb-corrupt ]] || exit 46
+      elif [[ "$*" == *'rm -f /tmp/sub2api-test-station-redis.rdb'* ]]; then
+        :
+      else
+        exit 65
+      fi
       ;;
+    'ps -q test-station-postgres') printf 'postgres-container\n' ;;
     'ps -q test-station-redis') printf 'redis-container\n' ;;
     'ps -q test-station-api') printf 'api-container\n' ;;
     *) exit 66 ;;
   esac
 elif [[ "${1:-}" == cp ]]; then
   src=${2:-}; dst=${3:-}
-  case "$src" in
-    redis-container:/data/dump.rdb)
+  case "$src:$dst" in
+    redis-container:/data/dump.rdb:*)
       [[ "$mode" != redis-copy-fail ]] || exit 43
       [[ "$mode" == redis-empty ]] || printf 'REDIS-RDB' >"$dst"
       ;;
-    api-container:/app/data/.)
+    api-container:/app/data/.:*)
       [[ "$mode" != app-copy-fail ]] || exit 44
       mkdir -p "$dst"
       printf 'config' >"$dst/config.yaml"
       ;;
+    */postgres.dump:postgres-container:/tmp/sub2api-test-station-postgres.dump) : ;;
+    */redis-dump.rdb:redis-container:/tmp/sub2api-test-station-redis.rdb) : ;;
     *) exit 67 ;;
   esac
-elif [[ "${1:-}" == run ]]; then
-  [[ "$*" == *'pg_restore --list /backup/postgres.dump'* ]] || exit 68
-  [[ "$mode" != pg-restore-fail ]] || exit 45
 else
   exit 69
 fi
@@ -158,7 +172,7 @@ test_rejects_permissive_env_before_docker(){
 
 test_failures_never_promote(){
   local mode
-  for mode in postgres-fail postgres-empty pg-restore-fail redis-save-fail redis-copy-fail redis-empty app-copy-fail app-corrupt checksum-fail; do
+  for mode in postgres-fail postgres-empty pg-restore-fail redis-save-fail redis-copy-fail redis-empty redis-rdb-corrupt app-copy-fail app-corrupt checksum-fail; do
     new_fixture "failure-$mode"
     if FAKE_DOCKER_MODE=$mode run_backup >/dev/null 2>&1; then fail "$mode returned success"; fi
     assert_no_promoted_set

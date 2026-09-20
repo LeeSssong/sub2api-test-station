@@ -2,8 +2,6 @@
 set -euo pipefail
 umask 077
 
-PINNED_POSTGRES_IMAGE='postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15'
-
 fail(){ printf 'test_station_backup status=failed: %s\n' "$1" >&2; exit 1; }
 stat_mode(){ stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
 
@@ -83,12 +81,14 @@ command -v "$docker_bin" >/dev/null 2>&1 || fail 'Docker is required'
 compose=("$docker_bin" compose --project-name sub2api-test-station --env-file "$env_file" -f "$compose_file")
 
 "${compose[@]}" exec -T test-station-postgres \
-  sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' >"$partial/postgres.dump" 
+  sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' >"$partial/postgres.dump"
 [[ -s "$partial/postgres.dump" ]] || fail 'PostgreSQL archive is empty'
-"$docker_bin" run --rm --network none --read-only --cap-drop ALL \
-  --security-opt no-new-privileges:true \
-  --mount "type=bind,src=$partial,dst=/backup,readonly" \
-  "$PINNED_POSTGRES_IMAGE" pg_restore --list /backup/postgres.dump >/dev/null 2>&1 \
+postgres_container=$("${compose[@]}" ps -q test-station-postgres)
+[[ -n "$postgres_container" ]] || fail 'PostgreSQL container is missing'
+"$docker_bin" cp "$partial/postgres.dump" "$postgres_container:/tmp/sub2api-test-station-postgres.dump" >/dev/null \
+  || fail 'PostgreSQL archive validation staging failed'
+"${compose[@]}" exec -T test-station-postgres \
+  sh -c 'pg_restore --list /tmp/sub2api-test-station-postgres.dump >/dev/null 2>&1; rc=$?; rm -f /tmp/sub2api-test-station-postgres.dump; exit $rc' \
   || fail 'PostgreSQL archive validation failed'
 
 "${compose[@]}" exec -T test-station-redis \
@@ -99,6 +99,11 @@ redis_container=$("${compose[@]}" ps -q test-station-redis)
 "$docker_bin" cp "$redis_container:/data/dump.rdb" "$partial/redis-dump.rdb" >/dev/null \
   || fail 'Redis snapshot copy failed'
 [[ -s "$partial/redis-dump.rdb" ]] || fail 'Redis snapshot is empty'
+"$docker_bin" cp "$partial/redis-dump.rdb" "$redis_container:/tmp/sub2api-test-station-redis.rdb" >/dev/null \
+  || fail 'Redis snapshot validation staging failed'
+"${compose[@]}" exec -T test-station-redis \
+  sh -c 'redis-check-rdb /tmp/sub2api-test-station-redis.rdb >/dev/null 2>&1; rc=$?; rm -f /tmp/sub2api-test-station-redis.rdb; exit $rc' \
+  || fail 'Redis snapshot validation failed'
 
 api_container=$("${compose[@]}" ps -q test-station-api)
 [[ -n "$api_container" ]] || fail 'API container is missing'

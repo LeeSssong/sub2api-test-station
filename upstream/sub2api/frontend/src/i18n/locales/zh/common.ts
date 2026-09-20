@@ -170,6 +170,7 @@ export default {
 
   // Navigation
   nav: {
+    aiTools: 'AI 工具',
     dashboard: '仪表盘',
     announcements: '公告',
     apiKeys: 'API 密钥',

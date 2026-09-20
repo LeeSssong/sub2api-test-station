@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-2xl space-y-6">
+    <div class="user-page max-w-4xl space-y-6">
+      <UserPageHeader title="充值与兑换" description="输入兑换码，将余额、并发或订阅权益加入账户" />
       <UserRechargeNav active="redeem" :balance="Number(user?.balance || 0)" />
       <!-- Redeem Form -->
       <div class="card">
@@ -332,6 +333,7 @@ import { useAppStore } from '@/stores/app'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import UserPageHeader from '@/components/user/UserPageHeader.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserRechargeNav from '@/components/payment/UserRechargeNav.vue'
 import { formatDateTime } from '@/utils/format'

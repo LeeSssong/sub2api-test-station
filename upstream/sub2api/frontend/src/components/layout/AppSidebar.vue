@@ -14,7 +14,7 @@
         class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
       >
-        <img v-if="settingsLoaded" :src="isAdmin ? (siteLogo || '/logo.svg') : '/xingqiao-brand-logo.png'" alt="Logo" class="h-full w-full object-contain" />
+        <img v-if="settingsLoaded" :src="isAdmin ? (siteLogo || '/logo.svg') : '/xingqiao/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
@@ -22,10 +22,10 @@
           class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
           @click="handleMenuItemClick(homePath)"
         >
-          {{ siteName }}
+          {{ isAdmin ? siteName : '星桥 AI Link' }}
         </router-link>
         <!-- Version Badge -->
-        <VersionBadge :version="siteVersion" />
+        <VersionBadge :version="isAdmin ? siteVersion : siteVersion.replace(/^v/i, '')" />
       </div>
     </div>
 
@@ -186,7 +186,7 @@
         @click="handleMenuItemClick('/purchase')"
       >
         <strong>{{ formatMoney(userBalance) }}</strong>
-        <span>{{ userNavLabel('recharge', '充值') }} <b aria-hidden="true">+</b></span>
+        <span>充值｜兑换 <b aria-hidden="true">+</b></span>
       </router-link>
 
       <div ref="accountMenuRef" class="user-sidebar-actions">
@@ -200,7 +200,8 @@
           @click.stop="toggleAccountMenu"
         >
           <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="displayName" />
-          <span v-else>{{ userInitials }}</span>
+          <span v-else class="user-account-avatar">{{ userInitials }}</span>
+          <span class="user-account-name">{{ displayName }}</span>
         </button>
 
         <button
@@ -308,9 +309,9 @@ const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
 
-const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
-const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
+const sidebarCollapsed = computed(() => isAdmin.value && appStore.sidebarCollapsed)
+const mobileOpen = computed(() => appStore.mobileOpen)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const accountMenuOpen = ref(false)
@@ -845,7 +846,7 @@ function userNavLabel(key: string, fallback: string): string {
 
 function buildUserNavItems(): NavItem[] {
   return [
-    { path: '/dashboard', label: userNavLabel('myRoutes', '我的线路'), icon: DashboardIcon },
+    { path: '/dashboard', label: userNavLabel('aiTools', 'AI 工具'), icon: DashboardIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/keys', label: userNavLabel('myKeys', '我的密钥'), icon: KeyIcon },
   ]
@@ -1351,9 +1352,13 @@ onBeforeUnmount(() => {
 }
 
 .user-account-button {
-  width: 2.75rem;
+  display: flex;
+  width: auto;
+  min-width: 0;
   height: 2.75rem;
   overflow: hidden;
+  padding: 0 .65rem;
+  gap: .5rem;
   border-color: #1d6088;
   border-radius: 0.55rem;
   background: #0e78ad;
@@ -1362,11 +1367,25 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-.user-account-button img {
-  width: 100%;
-  height: 100%;
+.user-account-button img,
+.user-account-avatar {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: .35rem;
   object-fit: cover;
 }
+.user-account-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #e6f6ff;
+  font-size: .75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.user-recharge-button span b { display: none; }
 
 .user-support-button {
   width: 2rem;
@@ -1445,4 +1464,28 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
 }
+
+.user-sidebar {
+  width: 242px !important;
+  transform: none !important;
+}
+@media (min-width: 701px) and (max-width: 1050px) {
+  .user-sidebar { width: 200px !important; }
+}
+@media (max-width: 700px) {
+  .user-sidebar { width: 76px !important; }
+  .user-sidebar :deep(.sidebar-header) { justify-content: center; padding-inline: 16px; }
+  .user-sidebar .sidebar-brand,
+  .user-sidebar .sidebar-label { display: none !important; }
+  .user-sidebar :deep(.sidebar-link) { justify-content: center; padding-inline: 0; }
+  .user-sidebar-bottom { display: flex; padding: 10px; }
+  .user-recharge-button { width: 48px; min-height: 54px; }
+  .user-recharge-button strong { font-size: 11px; }
+  .user-recharge-button span { font-size: 0; }
+  .user-recharge-button span b { display: inline; font-size: 16px; }
+  .user-account-button { width: 48px; padding: 0; justify-content: center; }
+  .user-account-name { display: none; }
+  .user-sidebar-actions { flex-direction: column; }
+}
+
 </style>

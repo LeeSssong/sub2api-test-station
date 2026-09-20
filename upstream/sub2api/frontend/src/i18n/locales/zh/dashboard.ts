@@ -1,7 +1,7 @@
 export default {
   dashboard: {
-    title: '仪表盘',
-    welcomeMessage: '欢迎回来！这是您账户的概览。',
+    title: 'AI 工具',
+    welcomeMessage: '选择工具并比较可用线路、稳定性与价格倍率。',
     balance: '余额',
     apiKeys: 'API 密钥',
     todayRequests: '今日请求',

@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="user-page space-y-6">
+      <UserPageHeader title="使用记录" description="查看消费、Token、线路分布与请求明细" />
       <UsageStatsCards :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
 
       <div class="space-y-4">
@@ -227,6 +228,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { keysAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import UserPageHeader from '@/components/user/UserPageHeader.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'

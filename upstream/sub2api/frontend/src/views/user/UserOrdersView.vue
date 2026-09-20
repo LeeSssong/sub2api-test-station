@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
+    <div class="user-page space-y-4">
+      <UserPageHeader title="我的订单" description="查看充值与订阅订单，并处理待支付或可退款订单" />
       <!-- Filters -->
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">
@@ -89,6 +90,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import type { PaymentOrder } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import UserPageHeader from '@/components/user/UserPageHeader.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'

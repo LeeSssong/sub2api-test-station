@@ -1,7 +1,7 @@
 export default {
   dashboard: {
-    title: 'Dashboard',
-    welcomeMessage: "Welcome back! Here's an overview of your account.",
+    title: 'AI Tools',
+    welcomeMessage: 'Choose a tool and compare route availability, stability, and rates.',
     balance: 'Balance',
     apiKeys: 'API Keys',
     todayRequests: 'Today Requests',

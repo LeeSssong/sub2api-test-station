@@ -70,7 +70,7 @@ describe('AppSidebar user navigation structure', () => {
       componentSource.indexOf('// Personal navigation items'),
     )
 
-    expect(userItemsSource).toContain("{ path: '/dashboard', label: userNavLabel('myRoutes', '我的线路'), icon: DashboardIcon }")
+    expect(userItemsSource).toContain("{ path: '/dashboard', label: userNavLabel('aiTools', 'AI 工具'), icon: DashboardIcon }")
     expect(userItemsSource).toContain("{ path: '/usage', label: t('nav.usage'), icon: ChartIcon }")
     expect(userItemsSource).toContain("{ path: '/keys', label: userNavLabel('myKeys', '我的密钥'), icon: KeyIcon }")
     expect(userItemsSource).not.toContain("path: '/purchase'")
@@ -80,6 +80,7 @@ describe('AppSidebar user navigation structure', () => {
     expect(componentSource).toContain('data-testid="user-sidebar-recharge"')
     expect(componentSource).toContain('data-testid="user-sidebar-account"')
     expect(componentSource).toContain('data-testid="user-sidebar-support"')
-    expect(componentSource).toContain("'/xingqiao-brand-logo.png'")
+    expect(componentSource).toContain("'/xingqiao/logo.svg'")
+    expect(componentSource).toContain("星桥 AI Link")
   })
 })

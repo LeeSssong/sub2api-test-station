@@ -1,6 +1,8 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <div class="user-page user-keys-page">
+      <UserPageHeader title="我的密钥" description="创建、绑定和管理用于接入 AI 线路的 API 密钥" />
+      <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-center gap-3">
@@ -442,7 +444,8 @@
           @update:pageSize="handlePageSizeChange"
         />
       </template>
-    </TablePageLayout>
+      </TablePageLayout>
+    </div>
 
     <!-- Create/Edit Modal -->
     <BaseDialog
@@ -1127,6 +1130,7 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import UserPageHeader from '@/components/user/UserPageHeader.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import DataTable from '@/components/common/DataTable.vue'
 	import Pagination from '@/components/common/Pagination.vue'
@@ -1954,6 +1958,8 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
+  const requestedGroupId = new URLSearchParams(window.location.search).get('group_id')
+  if (requestedGroupId && /^\d+$/.test(requestedGroupId)) filterGroupId.value = Number(requestedGroupId)
   loadSavedColumns()
   loadApiKeys()
   loadGroups()

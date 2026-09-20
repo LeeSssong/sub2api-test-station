@@ -170,6 +170,7 @@ export default {
 
   // Navigation
   nav: {
+    aiTools: 'AI Tools',
     dashboard: 'Dashboard',
     announcements: 'Announcements',
     apiKeys: 'API Keys',

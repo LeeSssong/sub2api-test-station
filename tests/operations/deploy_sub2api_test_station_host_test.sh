@@ -27,6 +27,8 @@ setup(){
   ACTIVE_PHASE=$CASE/active-phase
   SERVICE_COUNT=$CASE/service-count
   PROBE_COUNT=$CASE/probe-count
+  REAL_MKTEMP=$(command -v mktemp)
+  REAL_MV=$(command -v mv)
   mkdir -p "$STAGE" "$OLD_RELEASE" "$BIN" "$DEPLOY_ROOT/backups"
   printf 'name: sub2api-test-station\nnetworks: {test: {name: sub2api-test-station-network}}\nservices: {}\n' >"$STAGE/compose.yaml"
   cp "$STAGE/compose.yaml" "$OLD_RELEASE/compose.yaml"
@@ -44,6 +46,7 @@ JSON
   printf 'previous\n' >"$ACTIVE_PHASE"
   printf '0\n' >"$SERVICE_COUNT"
   printf '0\n' >"$PROBE_COUNT"
+  printf '%s\n' "$IMAGE_ID" >"$CASE/old-image-id"
   : >"$EVENT_LOG"
 
   cat >"$STAGE/backup.sh" <<'SH'
@@ -65,18 +68,36 @@ mode=${FAKE_MODE:-ok}
 case "${1:-}" in
   ps)
     [[ "$*" == *'com.docker.compose.service=test-station-api'* ]] || exit 61
-    printf '%s\n' "${OLD_RELEASE:?}/compose.yaml"
+    if [[ "$*" == *'--format {{.ID}}'* ]]; then printf 'old-api-container\n'; else printf '%s\n' "${OLD_RELEASE:?}/compose.yaml"; fi
     ;;
   load)
     [[ "$*" == "load --input ${STAGE:?}/image.tar" ]] || exit 62
     ;;
   image)
     [[ "${2:-}" == inspect ]] || exit 63
-    if [[ "$mode" == image-mismatch ]]; then
+    tag=${*: -1}
+    if [[ "$tag" == "sub2api-test-station-runtime:${OLD_COMMIT:?}" ]]; then
+      [[ "$mode" != previous-image-missing ]] || exit 1
+      if [[ "$mode" == previous-image-mismatch ]]; then printf 'sha256:%064d\n' 8; else cat "${CASE:?}/old-image-id"; fi
+    elif [[ "$mode" == image-mismatch ]]; then
       printf 'sha256:%064d\n' 9
     else
       printf '%s\n' "${IMAGE_ID:?}"
     fi
+    ;;
+  inspect)
+    format=${3:-}; container=${4:-}
+    if [[ "$format" == '{{.Image}}' && "$container" == old-api-container ]]; then cat "${CASE:?}/old-image-id"; exit 0; fi
+    if [[ "$format" == '{{.State.Health.Status}}' ]]; then
+      service=${container#*-container}
+      if [[ "$mode" == candidate-worker-unhealthy && "$container" == candidate-test-station-worker-container ]]; then printf 'unhealthy\n'; else printf 'healthy\n'; fi
+      exit 0
+    fi
+    if [[ "$format" == '{{.State.Status}}' ]]; then
+      if [[ "$mode" == candidate-caddy-unhealthy && "$container" == candidate-test-station-caddy-container ]]; then printf 'exited\n'; else printf 'running\n'; fi
+      exit 0
+    fi
+    exit 63
     ;;
   compose)
     args="$*"
@@ -89,24 +110,13 @@ case "${1:-}" in
       printf '%s\n' "$phase" >"${ACTIVE_PHASE:?}"
       exit 0
     fi
-    if [[ "$args" == *' ps '* && "$args" == *" --format {{.State}}"* ]]; then
-      service=${args% --format*}; service=${service##* }
-      if [[ "$phase" == candidate && "$mode" == candidate-worker-unhealthy && "$service" == test-station-worker ]]; then
-        printf 'running\n'; exit 0
-      fi
+    if [[ "$args" == *' ps -q '* ]]; then
+      service=${args##* ps -q }
       if [[ "$phase" == candidate && "$mode" == transient-worker && "$service" == test-station-worker ]]; then
         count=$(cat "${SERVICE_COUNT:?}")
-        if [[ "$count" == 0 ]]; then printf '1\n' >"$SERVICE_COUNT"; printf 'starting\n'; else printf 'healthy\n'; fi
-        exit 0
+        if [[ "$count" == 0 ]]; then printf '1\n' >"$SERVICE_COUNT"; exit 0; fi
       fi
-      if [[ "$phase" == candidate && "$mode" == candidate-caddy-unhealthy && "$service" == test-station-caddy ]]; then
-        printf 'exited\n'; exit 0
-      fi
-      case "$service" in
-        test-station-caddy) printf 'running\n' ;;
-        test-station-api|test-station-worker|test-station-detector|test-station-postgres|test-station-redis) printf 'healthy\n' ;;
-        *) exit 65 ;;
-      esac
+      printf '%s-%s-container\n' "$phase" "$service"
       exit 0
     fi
     exit 66
@@ -115,6 +125,23 @@ case "${1:-}" in
 esac
 SH
   chmod +x "$BIN/docker"
+
+
+  cat >"$BIN/mktemp" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_MODE:-ok}" == state-mktemp-fail && "$*" == *'.release-state.'* ]]; then exit 80; fi
+exec "${REAL_MKTEMP:?}" "$@"
+SH
+  chmod +x "$BIN/mktemp"
+
+  cat >"$BIN/mv" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_MODE:-ok}" == state-mv-fail && "${*: -1}" == "${STATE:?}" ]]; then exit 81; fi
+exec "${REAL_MV:?}" "$@"
+SH
+  chmod +x "$BIN/mv"
 
   cat >"$BIN/probe" <<'SH'
 #!/usr/bin/env bash
@@ -145,7 +172,7 @@ SH
 run_exec(){
   env TEST_STATION_TEST_MODE=true PATH="$BIN:$PATH" EVENT_LOG="$EVENT_LOG" DOCKER_BIN="$BIN/docker" \
     TEST_STATION_PROBE_BIN="$BIN/probe" TEST_STATION_PROBE_INTERVAL_SECONDS=0 TEST_STATION_SERVICE_INTERVAL_SECONDS=0 \
-    ACTIVE_PHASE="$ACTIVE_PHASE" SERVICE_COUNT="$SERVICE_COUNT" PROBE_COUNT="$PROBE_COUNT" OLD_RELEASE="$OLD_RELEASE" STAGE="$STAGE" IMAGE_ID="$IMAGE_ID" \
+    ACTIVE_PHASE="$ACTIVE_PHASE" SERVICE_COUNT="$SERVICE_COUNT" PROBE_COUNT="$PROBE_COUNT" OLD_RELEASE="$OLD_RELEASE" OLD_COMMIT="$OLD_COMMIT" CASE="$CASE" STAGE="$STAGE" IMAGE_ID="$IMAGE_ID" REAL_MKTEMP="$REAL_MKTEMP" REAL_MV="$REAL_MV" STATE="$STATE" \
     DEPLOY_ROOT="$DEPLOY_ROOT" RELEASE_STATE="$STATE" FAKE_MODE="${FAKE_MODE:-ok}" \
     bash "$EXECUTOR" --staging-root "$STAGE" --image-archive "$STAGE/image.tar" \
     --image-sha256 "$ARCHIVE_SHA" --image-id "$IMAGE_ID" --compose "$STAGE/compose.yaml" \
@@ -189,7 +216,7 @@ PY
 
 test_preflight_failures_do_not_start_candidate(){
   local case_name
-  for case_name in missing-state wrong-project state-mismatch missing-previous backup-fail image-mismatch; do
+  for case_name in missing-state wrong-project state-mismatch missing-previous previous-image-missing previous-image-mismatch backup-fail image-mismatch; do
     setup "$case_name"
     case "$case_name" in
       missing-state) rm "$STATE" ;;
@@ -204,6 +231,8 @@ p=sys.argv[1]; v=json.load(open(p)); v['release_dir']=v['release_dir']+'-other';
 PY
         ;;
       missing-previous) rm "$OLD_RELEASE/Caddyfile" ;;
+      previous-image-missing) FAKE_MODE=previous-image-missing ;;
+      previous-image-mismatch) FAKE_MODE=previous-image-mismatch ;;
       backup-fail) FAKE_MODE=backup-fail ;;
       image-mismatch) FAKE_MODE=image-mismatch ;;
     esac
@@ -239,6 +268,16 @@ PY
   done
 }
 
+test_state_commit_failures_restore_previous(){
+  local mode
+  for mode in state-mktemp-fail state-mv-fail; do
+    setup "$mode"
+    if FAKE_MODE=$mode run_exec >/dev/null 2>&1; then fail "$mode returned success"; fi
+    assert_rollback_invoked
+    assert_previous_state_unchanged
+  done
+}
+
 test_rollback_failure_is_recorded(){
   setup rollback-fail
   if FAKE_MODE=rollback-fail run_exec >/dev/null 2>&1; then fail 'rollback failure returned success'; fi
@@ -263,6 +302,7 @@ test_success_records_previous_backup_and_identity
 test_preflight_failures_do_not_start_candidate
 test_transient_service_health_recovers
 test_candidate_failures_restore_previous
+test_state_commit_failures_restore_previous
 test_rollback_failure_is_recorded
 test_rejects_bad_checksum_and_unsafe_root
 printf 'PASS: independent test station host executor\n'

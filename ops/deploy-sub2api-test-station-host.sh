@@ -81,6 +81,11 @@ state=${RELEASE_STATE:-$deploy_root/release-state.json}
 state=$(canonical_file "$state" 'release state')
 [[ "$(stat_mode "$state")" == 600 ]] || fail 'release state mode must be 0600'
 
+active_api_container=$($docker_bin ps \
+  --filter label=com.docker.compose.project=sub2api-test-station \
+  --filter label=com.docker.compose.service=test-station-api \
+  --format '{{.ID}}' | head -n 1)
+[[ -n "$active_api_container" ]] || fail 'active API container is missing'
 active_compose=$($docker_bin ps \
   --filter label=com.docker.compose.project=sub2api-test-station \
   --filter label=com.docker.compose.service=test-station-api \
@@ -110,6 +115,12 @@ done
 previous_env="$previous_release_dir/.env"
 [[ "$(stat_mode "$previous_env")" == 600 ]] || fail 'previous env mode must be 0600'
 grep -Eq '^name:[[:space:]]*sub2api-test-station[[:space:]]*$' "$active_compose" || fail 'previous Compose project mismatch'
+previous_image=$(grep -E '^CLONE_APP_IMAGE=' "$previous_env" | cut -d= -f2-)
+[[ "$previous_image" == "sub2api-test-station-runtime:$previous_commit" ]] || fail 'previous image tag does not match release state'
+previous_image_id=$($docker_bin image inspect --format '{{.Id}}' "$previous_image" 2>/dev/null | tr -d '[:space:]')
+[[ "$previous_image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'previous image is missing'
+active_image_id=$($docker_bin inspect --format '{{.Image}}' "$active_api_container" 2>/dev/null | tr -d '[:space:]')
+[[ "$active_image_id" == "$previous_image_id" ]] || fail 'previous image does not match active API container'
 
 backup_timestamp=${TEST_STATION_BACKUP_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}
 backup_output=$(EVENT_LOG="${EVENT_LOG:-}" FAKE_MODE="${FAKE_MODE:-}" DEPLOY_ROOT="$deploy_root" \
@@ -189,21 +200,25 @@ wait_for_probes(){
 }
 
 check_services(){
-  local target=$1 service state_value
+  local target=$1 service container_id health_value status_value
   for service in test-station-api test-station-worker test-station-detector test-station-postgres test-station-redis; do
     if [[ "$target" == candidate ]]; then
-      state_value=$("${candidate_compose[@]}" ps "$service" --format '{{.State}}' 2>/dev/null || true)
+      container_id=$("${candidate_compose[@]}" ps -q "$service" 2>/dev/null || true)
     else
-      state_value=$("${previous_compose[@]}" ps "$service" --format '{{.State}}' 2>/dev/null || true)
+      container_id=$("${previous_compose[@]}" ps -q "$service" 2>/dev/null || true)
     fi
-    [[ "$state_value" == *healthy* ]] || return 1
+    [[ -n "$container_id" && "$container_id" != *$'\n'* ]] || return 1
+    health_value=$($docker_bin inspect --format '{{.State.Health.Status}}' "$container_id" 2>/dev/null || true)
+    [[ "$health_value" == healthy ]] || return 1
   done
   if [[ "$target" == candidate ]]; then
-    state_value=$("${candidate_compose[@]}" ps test-station-caddy --format '{{.State}}' 2>/dev/null || true)
+    container_id=$("${candidate_compose[@]}" ps -q test-station-caddy 2>/dev/null || true)
   else
-    state_value=$("${previous_compose[@]}" ps test-station-caddy --format '{{.State}}' 2>/dev/null || true)
+    container_id=$("${previous_compose[@]}" ps -q test-station-caddy 2>/dev/null || true)
   fi
-  [[ "$state_value" == *running* || "$state_value" == *healthy* ]]
+  [[ -n "$container_id" && "$container_id" != *$'\n'* ]] || return 1
+  status_value=$($docker_bin inspect --format '{{.State.Status}}' "$container_id" 2>/dev/null || true)
+  [[ "$status_value" == running ]]
 }
 
 wait_for_services(){
@@ -235,10 +250,28 @@ restore_previous(){
   wait_for_probes || return 1
 }
 
+candidate_started=false
+release_committed=false
+rollback_in_progress=false
+failure_stage=candidate_start
+
+rollback_uncommitted_candidate(){
+  local rc=$? rolled_back=false
+  if [[ "$candidate_started" == true && "$release_committed" != true && "$rollback_in_progress" != true ]]; then
+    rollback_in_progress=true
+    if restore_previous; then rolled_back=true; fi
+    write_failure "$failure_stage" "$rolled_back" || true
+  fi
+  return "$rc"
+}
+trap rollback_uncommitted_candidate EXIT
+
 candidate_failed(){
   local stage=$1 rolled_back=false
+  rollback_in_progress=true
   if restore_previous; then rolled_back=true; fi
-  write_failure "$stage" "$rolled_back"
+  write_failure "$stage" "$rolled_back" || true
+  candidate_started=false
   if [[ "$rolled_back" == true ]]; then
     printf 'test_station_host status=failed stage=%s rolled_back=true\n' "$stage" >&2
   else
@@ -247,6 +280,7 @@ candidate_failed(){
   exit 1
 }
 
+candidate_started=true
 if ! "${candidate_compose[@]}" up -d --remove-orphans >/dev/null; then
   candidate_failed compose_start
 fi
@@ -257,6 +291,7 @@ if ! wait_for_probes; then
   candidate_failed readiness
 fi
 
+failure_stage=state_commit
 state_dir=$(dirname "$state")
 tmp_state=$(mktemp "$state_dir/.release-state.XXXXXX")
 chmod 0600 "$tmp_state"
@@ -268,4 +303,7 @@ with open(path,"w",encoding="utf-8") as f: json.dump(value,f,separators=(",",":"
 os.chmod(path,0o600)
 PY
 mv -f "$tmp_state" "$state"
+release_committed=true
+candidate_started=false
+trap - EXIT
 printf 'test_station_host status=succeeded source_commit=%s source_tree=%s release_dir=%s backup_dir=%s\n' "$source_commit" "$source_tree" "$release_dir" "$backup_dir"

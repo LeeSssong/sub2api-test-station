@@ -1,7 +1,7 @@
 # refactorUIUXv0.1 Sub2API 后端 Readiness 设计
 
-> 日期：2026-09-20  
-> 状态：已批准。批准依据：本任务是 PD-19 后阶段 2 已确定的后端 `/readyz` 阻断项；用户连续要求“继续”，且 `docs/project/native-sub-incremental-delivery-constraints.md` 2.3 授权发布总控代审既定队列内规格。  
+> 日期：2026-09-20
+> 状态：已批准。批准依据：本任务是 PD-19 后阶段 2 已确定的后端 `/readyz` 阻断项；用户连续要求“继续”，且 `docs/project/native-sub-incremental-delivery-constraints.md` 2.3 授权发布总控代审既定队列内规格。
 > 基线：`origin/main@645ce06834698cebcd6707836a234d7096e0a081`，tree `d16f0f3f13d2f837587b73455d22aa3ac9eef540`。
 
 ## 1. 问题证据与当前行为

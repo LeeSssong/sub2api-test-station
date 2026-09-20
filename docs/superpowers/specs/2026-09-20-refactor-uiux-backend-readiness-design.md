@@ -12,7 +12,7 @@ Sub2API 原生后端当前只在 `internal/server/routes/common.go` 注册 `/hea
 
 阶段 2 的测试站发布控制器合同要求 `/readyz` 为 HTTP 200、JSON Content-Type 且 `status=ready`；HTML、非 200、非法 JSON 或其他状态必须 fail closed。因此后端 readiness 是发布控制器进入真实发布前的独立阻断项。
 
-基线额外存在两条与本任务无关的 `internal/server/routes` 全包测试失败：旧测试仍期待英文网关错误文案，而当前实现返回已本地化文案。本任务不修改这些网关合同，只运行直接相关的定向测试和编译验证。
+基线额外存在两类与本任务无关的测试问题：`internal/server/routes` 全包测试有两条旧断言仍期待英文网关错误文案，而当前实现返回已本地化文案；当前源码构建出的 embed dist 不再包含 `logo.png`，但既有 `internal/web` 静态文件测试仍固定请求该文件。本任务不修改网关合同或前端资产，只运行 readiness 直接相关的定向测试和编译验证，并确认失败集合不扩大。
 
 ## 2. 目标与非目标
 
@@ -168,8 +168,8 @@ Content-Type: application/json; charset=utf-8
 1. 为 common routes 新增单元测试，先证明缺少 `/readyz`、依赖失败/超时合同尚未满足。
 2. 为 checker 新增数据库与 Redis 成功/失败短路测试。
 3. 在 `embed` build tag 下把 `/readyz` 加入 modern 与 legacy bypass 表；先验证当前失败，再修改实现。
-4. 运行 readiness 定向测试、`go test -tags embed ./internal/web`、`go test ./internal/server` 和 `go test ./cmd/server`，确保依赖注入和生成代码编译。
-5. 运行 `go test ./internal/server/routes` 时预期仍可能命中已确认的两条无关基线文案失败；若失败集合扩大，任务不得收口。
+4. 运行 readiness 定向测试、modern/legacy `skips_api_routes` 子测试、`go test ./internal/server` 和 `go test ./cmd/server`，确保 bypass、依赖注入和生成代码编译。
+5. 运行 `go test ./internal/server/routes` 时预期仍命中已确认的两条无关基线文案失败；完整 embed 包仍可能命中既有 `logo.png` 资产夹具失配。任一失败集合扩大时，任务不得收口。
 
 ## 12. 发布、线上验证与回滚条件
 

@@ -134,9 +134,18 @@ test_malformed_image_id_stops_before_ssh(){
   assert_no_ssh
 }
 
+test_invalid_migration_content_stops_before_build(){
+  setup invalid-migration
+  printf '\377' >"$WORKTREE/upstream/sub2api/backend/migrations/001.sql"
+  if run_release >/dev/null 2>&1; then fail 'invalid migration content returned success'; fi
+  assert_no_docker
+  assert_no_ssh
+}
+
 bash -n "$SCRIPT"
 test_success_transfers_metadata_and_backup_helper
 test_source_failures_stop_before_build
 test_unsafe_target_and_missing_migrations_stop_early
 test_malformed_image_id_stops_before_ssh
+test_invalid_migration_content_stops_before_build
 printf 'PASS: independent test station release contract\n'

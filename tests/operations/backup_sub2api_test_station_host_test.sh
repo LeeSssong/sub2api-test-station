@@ -17,6 +17,8 @@ new_fixture(){
   BACKUP_ROOT=$DEPLOY_ROOT/backups
   BIN=$CASE/bin
   EVENT_LOG=$CASE/events.log
+  REAL_TAR=$(command -v tar)
+  REAL_SHA256SUM=$(command -v sha256sum)
   mkdir -p "$ACTIVE_RELEASE" "$BACKUP_ROOT" "$BIN"
   printf 'name: sub2api-test-station\nnetworks: {test: {name: sub2api-test-station-network}}\nservices: {}\n' >"$ACTIVE_RELEASE/compose.yaml"
   printf 'ADMIN_LAB_DB_PASSWORD=secret\nADMIN_LAB_REDIS_PASSWORD=secret\n' >"$ACTIVE_RELEASE/.env"
@@ -72,11 +74,32 @@ else
 fi
 SH
   chmod +x "$BIN/docker"
+
+  cat >"$BIN/tar" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_DOCKER_MODE:-ok}" == app-corrupt && " $* " == *' -czf '* ]]; then
+  args=("$@")
+  for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[$i]}" == -czf ]]; then printf 'corrupt' >"${args[$((i+1))]}"; exit 0; fi
+  done
+fi
+exec "${REAL_TAR:?}" "$@"
+SH
+  chmod +x "$BIN/tar"
+
+  cat >"$BIN/sha256sum" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_DOCKER_MODE:-ok}" == checksum-fail && "${1:-}" == -c ]]; then exit 51; fi
+exec "${REAL_SHA256SUM:?}" "$@"
+SH
+  chmod +x "$BIN/sha256sum"
 }
 
 run_backup(){
   env PATH="$BIN:$PATH" EVENT_LOG="$EVENT_LOG" ACTIVE_ENV="$ACTIVE_RELEASE/.env" \
-    ACTIVE_COMPOSE="$ACTIVE_RELEASE/compose.yaml" FAKE_DOCKER_MODE="${FAKE_DOCKER_MODE:-ok}" \
+    ACTIVE_COMPOSE="$ACTIVE_RELEASE/compose.yaml" REAL_TAR="$REAL_TAR" REAL_SHA256SUM="$REAL_SHA256SUM" FAKE_DOCKER_MODE="${FAKE_DOCKER_MODE:-ok}" \
     bash "$SCRIPT" --compose "$ACTIVE_RELEASE/compose.yaml" --env-file "$ACTIVE_RELEASE/.env" \
     --deploy-root "$DEPLOY_ROOT" --timestamp "${BACKUP_TIMESTAMP:-20260920T120000Z}"
 }
@@ -135,7 +158,7 @@ test_rejects_permissive_env_before_docker(){
 
 test_failures_never_promote(){
   local mode
-  for mode in postgres-fail postgres-empty pg-restore-fail redis-save-fail redis-copy-fail redis-empty app-copy-fail; do
+  for mode in postgres-fail postgres-empty pg-restore-fail redis-save-fail redis-copy-fail redis-empty app-copy-fail app-corrupt checksum-fail; do
     new_fixture "failure-$mode"
     if FAKE_DOCKER_MODE=$mode run_backup >/dev/null 2>&1; then fail "$mode returned success"; fi
     assert_no_promoted_set

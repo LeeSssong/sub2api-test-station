@@ -26,6 +26,7 @@ setup(){
   EVENT_LOG=$CASE/events.log
   ACTIVE_PHASE=$CASE/active-phase
   SERVICE_COUNT=$CASE/service-count
+  PROBE_COUNT=$CASE/probe-count
   mkdir -p "$STAGE" "$OLD_RELEASE" "$BIN" "$DEPLOY_ROOT/backups"
   printf 'name: sub2api-test-station\nnetworks: {test: {name: sub2api-test-station-network}}\nservices: {}\n' >"$STAGE/compose.yaml"
   cp "$STAGE/compose.yaml" "$OLD_RELEASE/compose.yaml"
@@ -42,6 +43,7 @@ JSON
   chmod 0600 "$STATE"
   printf 'previous\n' >"$ACTIVE_PHASE"
   printf '0\n' >"$SERVICE_COUNT"
+  printf '0\n' >"$PROBE_COUNT"
   : >"$EVENT_LOG"
 
   cat >"$STAGE/backup.sh" <<'SH'
@@ -97,6 +99,9 @@ case "${1:-}" in
         if [[ "$count" == 0 ]]; then printf '1\n' >"$SERVICE_COUNT"; printf 'starting\n'; else printf 'healthy\n'; fi
         exit 0
       fi
+      if [[ "$phase" == candidate && "$mode" == candidate-caddy-unhealthy && "$service" == test-station-caddy ]]; then
+        printf 'exited\n'; exit 0
+      fi
       case "$service" in
         test-station-caddy) printf 'running\n' ;;
         test-station-api|test-station-worker|test-station-detector|test-station-postgres|test-station-redis) printf 'healthy\n' ;;
@@ -123,6 +128,11 @@ if [[ "$url" == */health ]]; then
 fi
 if [[ "$phase" == candidate && "${FAKE_MODE:-ok}" == readiness-html ]]; then
   printf '200\ttext/html\t<html>spa</html>\n'
+elif [[ "$phase" == candidate && "${FAKE_MODE:-ok}" == readiness-malformed ]]; then
+  printf '200\tapplication/json\tnot-json\n'
+elif [[ "$phase" == candidate && "${FAKE_MODE:-ok}" == readiness-flaky ]]; then
+  count=$(cat "${PROBE_COUNT:?}"); count=$((count+1)); printf '%s\n' "$count" >"$PROBE_COUNT"
+  if ((count % 3 == 0)); then printf '503\tapplication/json\t{"status":"not_ready"}\n'; else printf '200\tapplication/json\t{"status":"ready"}\n'; fi
 elif [[ "$phase" == candidate && ( "${FAKE_MODE:-ok}" == readiness-not-ready || "${FAKE_MODE:-ok}" == rollback-fail ) ]]; then
   printf '503\tapplication/json\t{"status":"not_ready"}\n'
 else
@@ -135,7 +145,7 @@ SH
 run_exec(){
   env TEST_STATION_TEST_MODE=true PATH="$BIN:$PATH" EVENT_LOG="$EVENT_LOG" DOCKER_BIN="$BIN/docker" \
     TEST_STATION_PROBE_BIN="$BIN/probe" TEST_STATION_PROBE_INTERVAL_SECONDS=0 TEST_STATION_SERVICE_INTERVAL_SECONDS=0 \
-    ACTIVE_PHASE="$ACTIVE_PHASE" SERVICE_COUNT="$SERVICE_COUNT" OLD_RELEASE="$OLD_RELEASE" STAGE="$STAGE" IMAGE_ID="$IMAGE_ID" \
+    ACTIVE_PHASE="$ACTIVE_PHASE" SERVICE_COUNT="$SERVICE_COUNT" PROBE_COUNT="$PROBE_COUNT" OLD_RELEASE="$OLD_RELEASE" STAGE="$STAGE" IMAGE_ID="$IMAGE_ID" \
     DEPLOY_ROOT="$DEPLOY_ROOT" RELEASE_STATE="$STATE" FAKE_MODE="${FAKE_MODE:-ok}" \
     bash "$EXECUTOR" --staging-root "$STAGE" --image-archive "$STAGE/image.tar" \
     --image-sha256 "$ARCHIVE_SHA" --image-id "$IMAGE_ID" --compose "$STAGE/compose.yaml" \
@@ -214,7 +224,7 @@ test_transient_service_health_recovers(){
 
 test_candidate_failures_restore_previous(){
   local mode
-  for mode in candidate-up-fail candidate-worker-unhealthy readiness-html readiness-not-ready; do
+  for mode in candidate-up-fail candidate-worker-unhealthy candidate-caddy-unhealthy readiness-html readiness-malformed readiness-not-ready readiness-flaky; do
     setup "$mode"
     if FAKE_MODE=$mode run_exec >/dev/null 2>&1; then fail "$mode returned success"; fi
     assert_rollback_invoked

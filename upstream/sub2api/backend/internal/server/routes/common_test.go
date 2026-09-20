@@ -33,6 +33,13 @@ func (f *fakeRedisPinger) Ping(context.Context) *redis.StatusCmd {
 	return redis.NewStatusResult("PONG", f.err)
 }
 
+func TestDependencyReadinessCheckerFailsClosedForNilProductionDependencies(t *testing.T) {
+	require.NotPanics(t, func() {
+		err := NewDependencyReadinessChecker(nil, nil).Check(context.Background())
+		require.Error(t, err)
+	})
+}
+
 func TestDependencyReadinessChecker(t *testing.T) {
 	t.Run("ready when database and redis respond", func(t *testing.T) {
 		database := &fakeDatabasePinger{}

@@ -28,6 +28,9 @@ type dependencyReadinessChecker struct {
 
 // NewDependencyReadinessChecker builds the production readiness checker from existing clients.
 func NewDependencyReadinessChecker(database *sql.DB, redisClient *redis.Client) ReadinessChecker {
+	if database == nil || redisClient == nil {
+		return newDependencyReadinessChecker(nil, nil)
+	}
 	return newDependencyReadinessChecker(database, redisClient)
 }
 

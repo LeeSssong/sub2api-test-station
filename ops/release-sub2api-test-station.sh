@@ -62,15 +62,17 @@ archive_sha256=$(sha256_file "$tmp/image.tar")
 cp "$compose_source" "$tmp/compose.yaml"
 cp "$caddy_source" "$tmp/Caddyfile"
 cp "$backup_helper" "$tmp/backup-sub2api-test-station-host.sh"
-chmod 0700 "$tmp/backup-sub2api-test-station-host.sh"
+cp "$host_executor" "$tmp/deploy-sub2api-test-station-host.sh"
+chmod 0700 "$tmp/backup-sub2api-test-station-host.sh" "$tmp/deploy-sub2api-test-station-host.sh"
 printf '%s\n' "$archive_sha256" >"$tmp/image.sha256"
 
 remote=$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" 'mktemp -d /var/tmp/sub2api-test-station-release.XXXXXX') || fail 'remote staging failed'
 cleanup_remote(){ ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "rm -rf -- '$remote'" >/dev/null 2>&1 || true; }
 trap 'cleanup_remote; rm -rf -- "$tmp"' EXIT
 scp -q "$tmp/image.tar" "$tmp/image.sha256" "$tmp/compose.yaml" "$tmp/Caddyfile" \
-  "$tmp/backup-sub2api-test-station-host.sh" "$target:$remote/" || fail 'bundle transfer failed'
+  "$tmp/backup-sub2api-test-station-host.sh" "$tmp/deploy-sub2api-test-station-host.sh" \
+  "$target:$remote/" || fail 'bundle transfer failed'
 ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" \
-  "sudo -n bash -s -- --staging-root '$remote' --image-archive '$remote/image.tar' --image-sha256 '$archive_sha256' --image-id '$image_id' --compose '$remote/compose.yaml' --caddy '$remote/Caddyfile' --backup-script '$remote/backup-sub2api-test-station-host.sh' --source-commit '$source_commit' --source-tree '$source_tree' --migration-set-sha256 '$migration_set_sha256' --deploy-root '$deploy_root'" \
-  <"$host_executor" || fail 'remote executor failed'
+  "sudo -n bash '$remote/deploy-sub2api-test-station-host.sh' -- --staging-root '$remote' --image-archive '$remote/image.tar' --image-sha256 '$archive_sha256' --image-id '$image_id' --compose '$remote/compose.yaml' --caddy '$remote/Caddyfile' --backup-script '$remote/backup-sub2api-test-station-host.sh' --source-commit '$source_commit' --source-tree '$source_tree' --migration-set-sha256 '$migration_set_sha256' --deploy-root '$deploy_root'" \
+  || fail 'remote executor failed'
 printf 'test_station_release status=succeeded source_commit=%s source_tree=%s\n' "$source_commit" "$source_tree"

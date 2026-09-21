@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -90,5 +91,29 @@ func TestAccountMonitorProbeResultClassifiesFatalErrorsWithHTTPStatus(t *testing
 				t.Fatalf("http status = %#v, want %d", result.HTTPStatus, tt.httpStatus)
 			}
 		})
+	}
+}
+
+func TestManualProbeFirstTokenDeadlineStopsAfterContent(t *testing.T) {
+	ctx := context.WithValue(context.Background(), accountMonitorFirstTokenTimeoutKey{}, 10*time.Millisecond)
+	probeCtx, observer, cleanup := newAccountMonitorProbeContext(ctx)
+	defer cleanup()
+	observer.observe(TestEvent{Type: "content", Text: "ok"}, time.Now())
+	select {
+	case <-probeCtx.Done():
+		t.Fatal("first token timer cancelled a response already streaming")
+	case <-time.After(30 * time.Millisecond):
+	}
+}
+func TestManualProbeFirstTokenDeadlineIsExplicit(t *testing.T) {
+	ctx := context.WithValue(context.Background(), accountMonitorFirstTokenTimeoutKey{}, time.Millisecond)
+	probeCtx, observer, cleanup := newAccountMonitorProbeContext(ctx)
+	defer cleanup()
+	observer.observe(TestEvent{Type: "status", Text: "waiting"}, time.Now())
+	select {
+	case <-probeCtx.Done():
+		require.ErrorIs(t, context.Cause(probeCtx), errAccountMonitorFirstTokenTimeout)
+	case <-time.After(time.Second):
+		t.Fatal("first token deadline not enforced")
 	}
 }

@@ -22,11 +22,13 @@ func accountMonitorProbePrompt() string {
 }
 
 type accountMonitorProbeObserverKey struct{}
+type accountMonitorFirstTokenTimeoutKey struct{}
 
 var accountMonitorHTTPStatusPattern = regexp.MustCompile(`(?i)(?:returned|返回|status(?:\s+code)?|http|failed)\s*(?:\(|:)?\s*([1-5][0-9]{2})(?:[^0-9]|$)`)
 
 type accountMonitorProbeObserver struct {
 	firstContentAt time.Time
+	firstContent   func()
 }
 
 func (o *accountMonitorProbeObserver) observe(event TestEvent, now time.Time) {
@@ -35,6 +37,9 @@ func (o *accountMonitorProbeObserver) observe(event TestEvent, now time.Time) {
 	}
 	if event.Type == "content" && strings.TrimSpace(event.Text) != "" {
 		o.firstContentAt = now
+		if o.firstContent != nil {
+			o.firstContent()
+		}
 	}
 }
 
@@ -48,8 +53,8 @@ func (s *AccountTestService) ProbeAccountConnection(
 	mode string,
 ) (AccountMonitorProbeResult, error) {
 	startedAt := time.Now()
-	observer := &accountMonitorProbeObserver{}
-	ctx = context.WithValue(ctx, accountMonitorProbeObserverKey{}, observer)
+	ctx, observer, cleanup := newAccountMonitorProbeContext(ctx)
+	defer cleanup()
 
 	recorder := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(recorder)
@@ -57,6 +62,12 @@ func (s *AccountTestService) ProbeAccountConnection(
 
 	testErr := s.TestAccountConnectionWithProbeKind(ginCtx, accountID, modelID, prompt, mode, ProbeKindMonitor)
 	finishedAt := time.Now()
+	if errors.Is(context.Cause(ctx), errAccountMonitorFirstTokenTimeout) {
+		testErr = context.DeadlineExceeded
+	} else if ctx.Err() != nil && ctx.Value(accountMonitorFirstTokenTimeoutKey{}) != nil {
+		// A caller/batch deadline is not evidence that the 15s first-token timer fired.
+		testErr = context.Canceled
+	}
 	result := buildAccountMonitorProbeResult(accountID, modelID, startedAt, finishedAt, observer, testErr)
 	if usageObserver, ok := ginCtx.Request.Context().Value(accountProbeUsageObserverKey{}).(*accountProbeUsageObserver); ok {
 		observation := usageObserver.observation(modelID, ProbeOutcomeSuccess, "")
@@ -158,4 +169,19 @@ func extractAccountMonitorProbeHTTPStatus(err error) *int {
 		return nil
 	}
 	return &status
+}
+
+var errAccountMonitorFirstTokenTimeout = errors.New("first token timeout")
+
+func newAccountMonitorProbeContext(ctx context.Context) (context.Context, *accountMonitorProbeObserver, func()) {
+	observer := &accountMonitorProbeObserver{}
+	cleanup := func() {}
+	if limit, ok := ctx.Value(accountMonitorFirstTokenTimeoutKey{}).(time.Duration); ok && limit > 0 {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		timer := time.AfterFunc(limit, func() { cancel(errAccountMonitorFirstTokenTimeout) })
+		observer.firstContent = func() { timer.Stop() }
+		cleanup = func() { timer.Stop(); cancel(nil) }
+	}
+	return context.WithValue(ctx, accountMonitorProbeObserverKey{}, observer), observer, cleanup
 }

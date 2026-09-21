@@ -1,318 +1,149 @@
 <template>
   <AppLayout>
-    <section class="user-page ai-tools-workspace" data-testid="ai-tools-workspace" aria-labelledby="ai-tools-title">
-      <header class="ai-page-head">
-        <div>
-          <h1 id="ai-tools-title">请选择你的 AI 工具</h1>
-          <p>比较可用线路、稳定性和价格倍率</p>
+    <section class="user-page xq-ai" data-testid="ai-tools-workspace" aria-labelledby="ai-tools-title">
+      <header class="page-head"><h1 id="ai-tools-title">请选择你的 AI 工具</h1><p>比较可用线路、稳定性和价格倍率</p></header>
+      <div v-if="workspaceError" class="workspace-error" role="alert">{{ workspaceError }} <button class="xq-button" @click="loadWorkspace">重试</button></div>
+      <div v-if="loading && !loaded" class="empty" role="status">正在读取 AI 工具…</div>
+      <template v-if="loaded">
+        <div class="tool-grid" :aria-busy="loading">
+          <article v-for="tool in toolCards" :key="tool.id" class="tool-card">
+            <h3 class="tool-title"><img class="provider-logo" :src="providerIcon(tool.platform)" alt="" /><span>{{ tool.label }}</span></h3>
+            <span class="tool-type">{{ tool.type }}</span>
+            <div class="tool-status" :class="`status-${tool.statusKind}`"><span class="dot" :class="tool.statusKind"></span><span class="availability-pill">{{ tool.statusText }}</span><button class="xq-button icon-btn" :aria-label="`${tool.label} 线路详情`" @click="openDetails(tool)"><img src="/xingqiao/info.svg" alt="" /></button></div>
+            <div class="separator"></div><small>最佳线路</small><strong class="best" :class="{muted:!tool.best}">{{ tool.best?.name || '暂无可用线路' }}</strong>
+            <div class="card-bottom"><span>已关联 {{ tool.linked }} 把密钥</span><button class="xq-button" :disabled="!tool.active.length" @click="openCreate(tool)">关联密钥</button></div>
+          </article>
         </div>
-        <button type="button" class="btn btn-secondary ai-refresh" :disabled="loading" @click="loadWorkspace">
-          <Icon name="refresh" size="sm" :class="{ 'animate-spin': loading }" />
-          刷新
-        </button>
-      </header>
-
-      <div class="tool-grid" :aria-busy="loading">
-        <article v-for="tool in toolCards" :key="tool.id" class="tool-card">
-          <div class="tool-card-heading">
-            <div class="tool-name">
-              <img :src="tool.icon" alt="" />
-              <h2>{{ tool.label }}</h2>
-            </div>
-            <span>{{ tool.type }}</span>
-          </div>
-          <div class="tool-status" :class="`is-${tool.statusKind}`">
-            <span class="status-dot" aria-hidden="true"></span>
-            <span>{{ tool.statusText }}</span>
-            <button type="button" class="tool-info" :aria-label="`${tool.label} 线路详情`" @click="selectedTool = tool">
-              <Icon name="infoCircle" size="sm" />
-            </button>
-          </div>
-          <div class="tool-best">
-            <span>最佳线路</span>
-            <strong :class="{ muted: !tool.bestGroup }">{{ tool.bestGroup?.name || '暂无可用线路' }}</strong>
-            <small v-if="tool.bestGroup">{{ rateLabel(tool.bestGroup) }} · {{ successLabel(tool.bestGroup) }}</small>
-          </div>
-          <div class="tool-card-footer">
-            <span>已关联 {{ tool.linkedKeys }} 把密钥</span>
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="!tool.groups.length" @click="openKeys(tool)">
-              {{ tool.linkedKeys ? '管理密钥' : '关联密钥' }}
-            </button>
-          </div>
-        </article>
-      </div>
-
-      <div v-if="workspaceError" class="workspace-error" role="alert">
-        <span>{{ workspaceError }}</span>
-        <button type="button" @click="loadWorkspace">重试</button>
-      </div>
-
-      <section class="routes-panel" aria-labelledby="routes-title">
-        <div class="routes-panel-head">
-          <div>
-            <h2 id="routes-title">我的 AI 线路</h2>
-            <p>数据来自当前可用分组与近 1 小时真实请求观测</p>
-          </div>
-          <span v-if="updatedAt">更新于 {{ updatedAt }}</span>
-        </div>
-
-        <div v-if="loading && !routeRows.length" class="routes-empty">正在读取线路…</div>
-        <div v-else-if="!routeRows.length" class="routes-empty">还没有可用线路，请联系管理员开通分组权限。</div>
-        <div v-else class="route-table-scroll">
-          <div class="route-table" role="table" aria-label="我的 AI 线路">
-            <div class="route-row route-header" role="row">
-              <span>线路</span><span>近 1 小时成功率</span><span>最近观测</span><span>关联密钥</span><span>操作</span>
-            </div>
-            <div v-for="row in routeRows" :key="row.group.id" class="route-row" role="row">
-              <div class="route-identity">
-                <span class="status-dot" :class="row.operational ? 'is-success' : 'is-danger'" aria-hidden="true"></span>
-                <img :src="providerIcon(row.group.platform)" alt="" />
-                <div>
-                  <strong>{{ row.group.name }}</strong>
-                  <small>{{ platformLabel(row.group.platform) }} · {{ rateLabel(row.group) }}</small>
-                </div>
+        <section class="lines-panel" aria-labelledby="routes-title">
+          <div class="panel-head"><h2 id="routes-title">我的 AI 线路</h2><button class="xq-button icon-btn" aria-label="检查线路" title="检查线路" :disabled="checking || !routeRows.some(g=>g.status==='active')" @click="runChecks"><img src="/xingqiao/refresh.svg" alt="" :class="{'is-checking':checking}" /></button></div>
+          <div v-if="checkError" class="workspace-error" role="alert">{{ checkError }}</div>
+          <div class="route-table-scroll">
+            <div class="route-table" role="table" aria-label="我的 AI 线路">
+              <div class="route-header" role="row"><span role="columnheader">线路</span><span role="columnheader">近 1 小时成功率</span><span role="columnheader" title="本次检查首字耗时">本次检查结果</span><span role="columnheader">关联密钥</span><span role="columnheader">操作</span></div>
+              <div v-for="group in routeRows" :key="group.id" class="route-row" role="row">
+                <div class="route-name" role="cell"><span class="dot" :class="stateOf(group).kind" :aria-label="stateOf(group).text"></span><div><div class="route-identity"><img class="provider-logo route-provider-logo" :src="providerIcon(group.platform)" alt="" /><strong>{{ group.name }}</strong><span class="rate-badge">{{ rateLabel(group) }}</span></div><small>{{ platformLabel(group.platform) }} · {{ stateOf(group).text }}</small></div></div>
+                <span role="cell" class="rate" :title="statsHint(group)">{{ successLabel(group,metricsById,true) }}</span>
+                <span role="cell" :class="checkOf(group).kind" :title="checkOf(group).text==='—'?'本次尚未检查':'本次检查首字耗时'"><Icon v-if="checkOf(group).kind==='success'" name="check" size="sm" />{{ checkOf(group).text }}</span>
+                <span role="cell">{{ counts.get(group.id)||0 }} 把</span><button class="route-action" @click="openGroupKeys(group.id)">查看关联密钥</button>
               </div>
-              <span :class="row.successRate === null ? 'muted' : row.operational ? 'success' : 'danger'">{{ row.successRate === null ? '近 1 小时无请求' : `${row.successRate.toFixed(1)}%` }}</span>
-              <span class="route-observation">{{ observationLabel(row) }}</span>
-              <span>{{ row.linkedKeys }} 把</span>
-              <button type="button" class="route-action" @click="openGroupKeys(row.group.id)">查看关联密钥</button>
             </div>
           </div>
-        </div>
-      </section>
-
-      <BaseDialog :show="!!selectedTool" :title="selectedTool ? `${selectedTool.label} 线路详情` : '线路详情'" @close="selectedTool = null">
-        <div v-if="selectedTool" class="tool-dialog-list">
-          <div v-for="group in selectedTool.groups" :key="group.id" class="tool-dialog-row">
-            <div class="route-identity">
-              <img :src="providerIcon(group.platform)" alt="" />
-              <div><strong>{{ group.name }}</strong><small>{{ rateLabel(group) }}</small></div>
-            </div>
-            <span>{{ successLabel(group) }}</span>
-          </div>
-          <div v-if="!selectedTool.groups.length" class="routes-empty">暂无可用线路</div>
-        </div>
-        <template #footer>
-          <button type="button" class="btn btn-secondary" @click="selectedTool = null">关闭</button>
-          <button v-if="selectedTool?.groups.length" type="button" class="btn btn-primary" @click="openKeys(selectedTool)">管理密钥</button>
-        </template>
+          <div v-if="!routeRows.length" class="empty">暂无已关联密钥的线路</div>
+        </section>
+      </template>
+      <BaseDialog :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
+        <div class="detail-section-head"><p>已按线路质量从高到低排列；成功率、请求次数与 P50 按所选时间范围统计</p><div class="detail-period"><span>统计范围</span><div class="detail-period-segment" role="group" aria-label="线路统计时间"><button v-for="period in periods" :key="period.value" :aria-pressed="detailWindow===period.value" :class="{active:detailWindow===period.value}" @click="loadDetails(period.value)">{{ period.label }}</button></div></div></div>
+        <div v-if="detailError" class="workspace-error" role="alert">{{ detailError }} <button class="xq-button" @click="loadDetails(detailWindow)">重试</button></div>
+        <div v-if="detailLoading && !detailData.length" class="empty" role="status">正在读取统计…</div>
+        <div v-else class="table-scroll"><table class="route-metrics-table"><thead><tr><th>线路</th><th>关联密钥</th><th>成功率</th><th>请求次数</th><th>首字 P50</th><th>耗时 P50</th><th title="本次检查首字耗时">本次检查</th></tr></thead><tbody>
+          <tr v-for="group in detailRows" :key="group.id"><td><div class="detail-route"><div class="detail-route-title"><div class="route-identity"><img class="provider-logo route-provider-logo" :src="providerIcon(group.platform)" alt="" /><strong>{{group.name}}</strong><span class="rate-badge">{{rateLabel(group)}}</span></div><span v-if="group.id===detailBest?.id" class="best-route-badge">最佳线路</span></div><small class="route-availability" :class="stateOf(group).kind"><span class="dot" :class="stateOf(group).kind"></span>{{stateOf(group).text}}</small></div></td>
+            <td><div class="linked-key-cell"><span>{{counts.get(group.id)?'已关联':'未关联'}} · {{counts.get(group.id)||0}} 把</span><button v-if="group.status==='active'" class="xq-button small" :data-detail-group-id="group.id" @click="openCreate(selectedTool!,group.id)">关联密钥</button><span v-else class="muted">不可配置</span></div></td>
+            <td><strong class="success-rate">{{successLabel(group,detailMetrics,false)}}</strong></td><td><span class="request-count">{{group.status!=='active'?'—':detailMetrics.get(group.id)?.request_count??'—'}}</span></td><td><strong class="latency-metric">{{group.status!=='active'?'—':metricLabel(detailMetrics.get(group.id)?.ttft_p50_ms)}}</strong></td><td><strong class="latency-metric">{{group.status!=='active'?'—':metricLabel(detailMetrics.get(group.id)?.latency_p50_ms)}}</strong></td><td><span :class="checkOf(group).kind"><Icon v-if="checkOf(group).kind==='success'" name="check" size="sm" />{{checkOf(group).text}}</span></td>
+          </tr>
+        </tbody></table><div v-if="!detailRows.length" class="empty">暂无线路</div></div>
       </BaseDialog>
+      <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :groups="createTool?.active||[]" :metrics="metricsById" :linked-counts="counts" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
     </section>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
 import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
+import { checkLines, type LineCheck } from '@/features/ai-tools/api'
+import { tools, linkedCounts, configuredLines, availability, compareQuality, metricLabel, providerIcon, platformLabel } from '@/features/ai-tools/model'
 import type { ApiKey, Group } from '@/types'
-import type { MonitorV4Group } from '@/features/monitor-v4/types'
+import type { MonitorV4Group, MonitorV4Window } from '@/features/monitor-v4/types'
+import '@/styles/xingqiao-ai.css'
 
-interface ToolCard {
-  id: string
-  label: string
-  type: string
-  platforms: string[]
-  icon: string
-  groups: Group[]
-  bestGroup: Group | null
-  linkedKeys: number
-  statusKind: 'success' | 'danger' | 'muted'
-  statusText: string
-}
-
-const router = useRouter()
-const groups = ref<Group[]>([])
-const keys = ref<ApiKey[]>([])
-const userRates = ref<Record<number, number>>({})
-const monitorGroups = ref<MonitorV4Group[]>([])
-const loading = ref(true)
-const workspaceError = ref('')
-const generatedAt = ref('')
-const selectedTool = ref<ToolCard | null>(null)
-let controller: AbortController | null = null
-
-const toolDefinitions = [
-  { id: 'codex', label: 'Codex', type: 'AI 编程', platforms: ['openai'], icon: '/xingqiao/providers/openai.svg' },
-  { id: 'claude-code', label: 'Claude Code', type: 'AI 编程', platforms: ['anthropic'], icon: '/xingqiao/providers/anthropic.svg' },
-  { id: 'grok', label: 'Grok', type: '通用 AI', platforms: ['grok'], icon: '/xingqiao/providers/grok.svg' },
-  { id: 'deepseek', label: 'DeepSeek', type: '通用 AI', platforms: ['deepseek'], icon: '/xingqiao/providers/deepseek.svg' },
-]
-
-const monitorById = computed(() => new Map(monitorGroups.value.map(item => [item.id, item])))
-const linkedKeyCounts = computed(() => {
-  const counts = new Map<number, number>()
-  keys.value.filter(key => key.status === 'active' && key.group_id).forEach(key => counts.set(key.group_id!, (counts.get(key.group_id!) || 0) + 1))
-  return counts
-})
-
-function groupOperational(group: Group): boolean {
-  const monitor = monitorById.value.get(group.id)
-  return group.status === 'active' && (monitor ? monitor.current_operational : true)
-}
-function groupSuccess(group: Group): number | null { return monitorById.value.get(group.id)?.success_rate ?? null }
-function effectiveRate(group: Group): number { return userRates.value[group.id] ?? group.rate_multiplier }
-function bestGroupFor(items: Group[]): Group | null {
-  return [...items].filter(groupOperational).sort((a, b) => {
-    const successDiff = (groupSuccess(b) ?? -1) - (groupSuccess(a) ?? -1)
-    return successDiff || effectiveRate(a) - effectiveRate(b) || a.name.localeCompare(b.name, 'zh-CN')
-  })[0] || null
-}
-
-const toolCards = computed<ToolCard[]>(() => toolDefinitions.map(definition => {
-  const matching = groups.value.filter(group => definition.platforms.includes(group.platform))
-  const available = matching.filter(groupOperational)
-  const linkedKeys = matching.reduce((sum, group) => sum + (linkedKeyCounts.value.get(group.id) || 0), 0)
-  return {
-    ...definition,
-    groups: matching,
-    bestGroup: bestGroupFor(matching),
-    linkedKeys,
-    statusKind: matching.length === 0 ? 'muted' : available.length ? 'success' : 'danger',
-    statusText: matching.length === 0 ? '暂无可用线路' : available.length ? `可用 · ${available.length}/${matching.length} 条` : `不可用 · 0/${matching.length} 条`,
-  }
+const router=useRouter()
+const clock=ref(Date.now())
+let freshnessTimer:ReturnType<typeof setInterval>|undefined
+const groups=ref<Group[]>([]), keys=ref<ApiKey[]>([]), rates=ref<Record<number,number>>({}), metrics=ref<MonitorV4Group[]>([])
+const loading=ref(false), loaded=ref(false), workspaceError=ref(''), statsFailed=ref(false), checking=ref(false), checkError=ref('')
+const checks=ref<Record<number,LineCheck>>({}), detailWindow=ref<MonitorV4Window>('1h'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
+let loadController:AbortController|undefined, detailController:AbortController|undefined, checkController:AbortController|undefined
+const detailCache=new Map<MonitorV4Window,MonitorV4Group[]>()
+let returnToDetailGroup:number|undefined
+let detailsTrigger:HTMLElement|null=null, createTrigger:HTMLElement|null=null
+const counts=computed(()=>linkedCounts(keys.value))
+const metricsById=computed(()=>new Map(metrics.value.map(m=>[m.id,m])))
+const detailMetrics=computed(()=>new Map(detailData.value.map(m=>[m.id,m])))
+const allGroups=computed(()=>{const all=new Map(groups.value.map(g=>[g.id,g]));for(const g of configuredLines(groups.value,keys.value))all.set(g.id,g);return [...all.values()]})
+const sort=(list:Group[], ms=metricsById.value)=>[...list].sort((a,b)=>compareQuality(a,b,ms,rates.value,clock.value))
+const stateOf=(g:Group)=>availability(g,statsFailed.value?undefined:metricsById.value.get(g.id),clock.value)
+const toolCards=computed(()=>tools.map(tool=>{
+  const matching=sort(allGroups.value.filter(g=>metricsById.value.get(g.id)?.tool_ids?.includes(tool.id)))
+  const active=matching.filter(g=>g.status==='active'),available=active.filter(g=>stateOf(g).available)
+  const unknown=active.some(g=>stateOf(g).text==='暂不可用')
+  return {...tool,groups:matching,active,best:available[0],linked:matching.reduce((n,g)=>n+(counts.value.get(g.id)||0),0),statusKind:!active.length||unknown&&!available.length?'muted':available.length?'success':'danger',statusText:!active.length?'暂无可用线路':available.length?`可用 · ${available.length}/${active.length} 条`:unknown?'暂不可用':`不可用 · 0/${active.length} 条`}
 }))
-
-const routeRows = computed(() => groups.value.map(group => {
-  const monitor = monitorById.value.get(group.id)
-  return {
-    group,
-    operational: groupOperational(group),
-    successRate: monitor?.success_rate ?? null,
-    ttftMs: monitor?.ttft_p95_ms ?? null,
-    latencyMs: monitor?.latency_p95_ms ?? null,
-    linkedKeys: linkedKeyCounts.value.get(group.id) || 0,
-  }
-}).sort((a, b) => Number(b.operational) - Number(a.operational) || (b.successRate ?? -1) - (a.successRate ?? -1) || effectiveRate(a.group) - effectiveRate(b.group)))
-
-const updatedAt = computed(() => generatedAt.value ? new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(generatedAt.value)) : '')
-
-async function loadAllKeys(signal: AbortSignal): Promise<ApiKey[]> {
-  const first = await keysAPI.list(1, 100, undefined, { signal })
-  const items = [...first.items]
-  const pages = Math.min(20, Math.ceil(first.total / 100))
-  for (let page = 2; page <= pages; page += 1) {
-    const next = await keysAPI.list(page, 100, undefined, { signal })
-    items.push(...next.items)
-  }
-  return items
+type ToolCard=typeof toolCards.value[number]
+const selectedTool=ref<ToolCard|null>(null), createTool=ref<ToolCard|null>(null),createGroupId=ref<number>()
+const routeRows=computed(()=>sort(configuredLines(groups.value,keys.value)))
+const detailRows=computed(()=>sort(selectedTool.value?.groups||[],detailMetrics.value))
+const detailBest=computed(()=>detailRows.value.find(g=>stateOf(g).available))
+const periods=[{value:'1h' as const,label:'近 1 小时'},{value:'24h' as const,label:'近 24 小时'},{value:'7d' as const,label:'近 7 天'}]
+const rateLabel=(g:Group)=>`${rates.value[g.id]??g.rate_multiplier}x`
+function successLabel(g:Group,ms:Map<number,MonitorV4Group>,hour:boolean){
+  if(g.status!=='active')return '—'
+  const m=ms.get(g.id)
+  if(!m || hour&&statsFailed.value)return '暂不可用'
+  return m.request_count===0?(hour?'近 1 小时无请求':'无请求'):m.success_rate==null?'暂不可用':`${Number(m.success_rate.toFixed(1))}%`
 }
-
-async function loadWorkspace() {
-  controller?.abort()
-  const nextController = new AbortController()
-  controller = nextController
-  loading.value = true
-  workspaceError.value = ''
-  const results = await Promise.allSettled([
-    userGroupsAPI.getAvailable(),
-    userGroupsAPI.getUserGroupRates(),
-    getHybridPerformanceSnapshot('1h', nextController.signal),
-    loadAllKeys(nextController.signal),
-  ])
-  if (nextController.signal.aborted || controller !== nextController) return
-  if (results[0].status === 'fulfilled') groups.value = results[0].value
-  if (results[1].status === 'fulfilled') userRates.value = results[1].value
-  if (results[2].status === 'fulfilled') {
-    monitorGroups.value = results[2].value.groups
-    generatedAt.value = results[2].value.generated_at
-  }
-  if (results[3].status === 'fulfilled') keys.value = results[3].value
-  const failed = results.filter(result => result.status === 'rejected').length
-  if (failed) workspaceError.value = failed === results.length ? 'AI 工具数据暂时不可用，请稍后重试。' : '部分线路数据暂时不可用，当前已展示可读取的信息。'
-  loading.value = false
-  controller = null
+function statsHint(g:Group){const m=metricsById.value.get(g.id);return g.status!=='active'||!m||statsFailed.value?'':'最近 1 小时\n成功请求：'+m.success_count+' 次\n总请求：'+m.request_count+' 次'}
+function checkOf(g:Group){
+  if(g.status!=='active')return {kind:'muted',text:'线路已停用'}
+  if(checking.value&&counts.value.has(g.id))return {kind:'warning',text:'检查中…'}
+  const r=checks.value[g.id]
+  if(!r)return {kind:'muted',text:'—'}
+  if(r.status==='success'&&r.ttft_ms!=null)return {kind:'success',text:metricLabel(r.ttft_ms)}
+  return {kind:r.status==='disabled'?'muted':'danger',text:r.status==='timeout'?'响应超时':r.status==='disabled'?'线路已停用':'检查失败'}
 }
-
-function rateLabel(group: Group): string { return `${effectiveRate(group).toFixed(2).replace(/\.00$/, '')}× 倍率` }
-function successLabel(group: Group): string {
-  const success = groupSuccess(group)
-  return success === null ? '近 1 小时无请求' : `近 1 小时 ${success.toFixed(1)}%`
+async function loadAllKeys(signal:AbortSignal){const first=await keysAPI.list(1,100,undefined,{signal});const items=[...first.items];for(let page=2;page<=Math.ceil(first.total/100);page++){const next=await keysAPI.list(page,100,undefined,{signal});items.push(...next.items)}return items}
+async function loadWorkspace(){
+  loadController?.abort();const c=new AbortController();loadController=c;loading.value=true;workspaceError.value=''
+  try {
+    const [gs,rs,ks,ms]=await Promise.allSettled([userGroupsAPI.getAvailable(),userGroupsAPI.getUserGroupRates(),loadAllKeys(c.signal),getHybridPerformanceSnapshot('1h',c.signal)])
+    if(c.signal.aborted)return
+    if(gs.status==='rejected'||ks.status==='rejected'||rs.status==='rejected'||ms.status==='rejected') {workspaceError.value=loaded.value?'刷新失败，保留上次成功数据。':'AI 工具数据暂时不可用，请重试。';return}
+    clock.value=Date.now()
+    groups.value=gs.value;rates.value=rs.value;keys.value=ks.value
+    statsFailed.value=false
+    metrics.value=ms.value.groups
+    loaded.value=true
+    if(selectedTool.value) selectedTool.value=toolCards.value.find(t=>t.id===selectedTool.value?.id)||null
+  }finally{if(!c.signal.aborted)loading.value=false}
 }
-function platformLabel(platform: string): string {
-  return ({ openai: 'OpenAI', anthropic: 'Anthropic', grok: 'xAI', deepseek: 'DeepSeek' } as Record<string, string>)[platform] || platform
+async function openDetails(tool:ToolCard){detailsTrigger=document.activeElement as HTMLElement;selectedTool.value=tool;await loadDetails('1h')}
+function closeDetails(){detailController?.abort();selectedTool.value=null;nextTick(()=>detailsTrigger?.focus())}
+async function loadDetails(window:MonitorV4Window){detailController?.abort();const c=new AbortController();detailController=c;detailWindow.value=window;detailLoading.value=true;detailError.value='';detailData.value=detailCache.get(window)||[];try{const result=await getHybridPerformanceSnapshot(window,c.signal);if(!c.signal.aborted){detailData.value=result.groups;detailCache.set(window,result.groups)}}catch{if(!c.signal.aborted)detailError.value=detailCache.has(window)?'统计刷新失败，保留上次成功数据。':'统计读取失败，请重试。'}finally{if(!c.signal.aborted)detailLoading.value=false}}
+function openCreate(tool:ToolCard,id?:number){createTrigger=document.activeElement as HTMLElement;createTool.value=tool;createGroupId.value=id}
+function restoreDetailFocus(){
+  if(returnToDetailGroup){document.querySelector<HTMLElement>(`[data-detail-group-id="${returnToDetailGroup}"]`)?.focus();returnToDetailGroup=undefined}
 }
-function providerIcon(platform: string): string {
-  const known = new Set(['openai', 'anthropic', 'grok', 'deepseek'])
-  return known.has(platform) ? `/xingqiao/providers/${platform}.svg` : '/logo.svg'
+function closeCreate(){
+  returnToDetailGroup=selectedTool.value?createGroupId.value:undefined
+  createTool.value=null
+  if(!selectedTool.value)nextTick(()=>createTrigger?.focus())
 }
-function observationLabel(row: { operational: boolean; ttftMs: number | null; latencyMs: number | null }): string {
-  if (!row.operational) return '当前不可用'
-  if (row.ttftMs !== null) return `首字 P95 ${(row.ttftMs / 1000).toFixed(2)}s`
-  if (row.latencyMs !== null) return `延迟 P95 ${(row.latencyMs / 1000).toFixed(2)}s`
-  return '等待观测'
+async function keyCreated(key:ApiKey){keys.value=[...keys.value.filter(k=>k.id!==key.id),key];createTool.value=null;await loadWorkspace();if(selectedTool.value)await loadDetails(detailWindow.value)}
+async function runChecks(){
+  if(checking.value)return
+  const ids=routeRows.value.filter(g=>g.status==='active').map(g=>g.id);if(!ids.length)return
+  checking.value=true;checkError.value='';checkController=new AbortController()
+  try{const results=await checkLines(ids,checkController.signal);if(checkController.signal.aborted)return;for(const id of ids)checks.value[id]=results.find(r=>r.group_id===id)||{group_id:id,status:'failed',ttft_ms:null,checked_at:''};await loadWorkspace()}
+  catch{if(!checkController.signal.aborted){checkError.value='线路检查请求未完成，请稍后重试。'}}
+  finally{checking.value=false}
 }
-function openKeys(tool: ToolCard) {
-  selectedTool.value = null
-  const groupId = tool.bestGroup?.id || tool.groups[0]?.id
-  void router.push({ path: '/keys', query: groupId ? { group_id: String(groupId) } : undefined })
-}
-function openGroupKeys(groupId: number) { void router.push({ path: '/keys', query: { group_id: String(groupId) } }) }
-
-onMounted(loadWorkspace)
-onBeforeUnmount(() => controller?.abort())
+function openGroupKeys(id:number){void router.push({path:'/keys',query:{group_id:String(id)}})}
+onMounted(()=>{void loadWorkspace();freshnessTimer=setInterval(()=>{clock.value=Date.now()},30000)})
+onBeforeUnmount(()=>{clearInterval(freshnessTimer);loadController?.abort();detailController?.abort();checkController?.abort()})
 </script>
-
-<style scoped>
-.ai-tools-workspace { display: flex; flex-direction: column; gap: 24px; }
-.ai-page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.ai-page-head h1 { margin: 0; color: var(--xq-text); font-size: clamp(24px, 2.2vw, 32px); font-weight: 680; letter-spacing: -.03em; }
-.ai-page-head p { margin: 7px 0 0; color: var(--xq-secondary); font-size: 14px; }
-.ai-refresh { flex: 0 0 auto; }
-.tool-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
-.tool-card { min-width: 0; padding: 20px; border: 1px solid var(--xq-border); border-radius: 12px; background: var(--xq-surface); }
-.tool-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.tool-name { display: flex; min-width: 0; align-items: center; gap: 10px; }
-.tool-name img { width: 24px; height: 24px; object-fit: contain; }
-.tool-name h2 { margin: 0; color: var(--xq-text); font-size: 17px; font-weight: 650; }
-.tool-card-heading > span { color: var(--xq-muted); font-size: 11px; }
-.tool-status { display: flex; align-items: center; gap: 7px; margin-top: 22px; color: var(--xq-secondary); font-size: 12px; }
-.status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--xq-muted); }
-.is-success .status-dot, .status-dot.is-success { background: var(--xq-success); box-shadow: 0 0 0 3px rgb(140 223 196 / .09); }
-.is-danger .status-dot, .status-dot.is-danger { background: var(--xq-danger); }
-.tool-info { display: grid; width: 28px; height: 28px; margin-left: auto; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--xq-muted); }
-.tool-info:hover { background: var(--xq-raised); color: var(--xq-accent); }
-.tool-best { display: flex; min-height: 92px; flex-direction: column; justify-content: center; gap: 5px; margin-top: 16px; padding: 16px 0; border-top: 1px solid var(--xq-line); border-bottom: 1px solid var(--xq-line); }
-.tool-best span, .tool-best small { color: var(--xq-muted); font-size: 11px; }
-.tool-best strong { overflow: hidden; color: var(--xq-text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.tool-best strong.muted { color: var(--xq-muted); font-weight: 500; }
-.tool-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 16px; color: var(--xq-secondary); font-size: 12px; }
-.workspace-error { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border: 1px solid rgb(212 126 126 / .45); border-radius: 10px; background: rgb(212 126 126 / .08); color: var(--xq-danger); font-size: 13px; }
-.workspace-error button { color: inherit; font-weight: 650; text-decoration: underline; }
-.routes-panel { overflow: hidden; border: 1px solid var(--xq-border); border-radius: 12px; background: var(--xq-surface); }
-.routes-panel-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 19px 20px; border-bottom: 1px solid var(--xq-line); }
-.routes-panel-head h2 { margin: 0; color: var(--xq-text); font-size: 17px; font-weight: 650; }
-.routes-panel-head p { margin: 5px 0 0; color: var(--xq-muted); font-size: 11px; }
-.routes-panel-head > span { color: var(--xq-muted); font-size: 11px; white-space: nowrap; }
-.route-table-scroll { overflow-x: auto; }
-.route-table { min-width: 900px; }
-.route-row { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(150px, .9fr) minmax(150px, .9fr) 110px 130px; min-height: 68px; align-items: center; gap: 16px; padding: 10px 20px; border-top: 1px solid var(--xq-line); color: var(--xq-secondary); font-size: 12px; }
-.route-row:first-child { border-top: 0; }
-.route-header { min-height: 42px; background: var(--xq-depth); color: var(--xq-muted); font-size: 11px; font-weight: 650; }
-.route-identity { display: flex; min-width: 0; align-items: center; gap: 10px; }
-.route-identity img { width: 22px; height: 22px; object-fit: contain; }
-.route-identity div { min-width: 0; }
-.route-identity strong, .route-identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.route-identity strong { color: var(--xq-text); font-size: 13px; }
-.route-identity small { margin-top: 4px; color: var(--xq-muted); font-size: 10px; }
-.success { color: var(--xq-success); }
-.danger { color: var(--xq-danger); }
-.muted { color: var(--xq-muted); }
-.route-action { justify-self: start; border: 0; background: transparent; color: var(--xq-accent); font-size: 12px; }
-.route-action:hover { color: var(--xq-core); text-decoration: underline; }
-.routes-empty { padding: 48px 20px; color: var(--xq-muted); text-align: center; }
-.tool-dialog-list { display: flex; flex-direction: column; gap: 8px; }
-.tool-dialog-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; border: 1px solid var(--xq-line); border-radius: 9px; background: var(--xq-depth); color: var(--xq-secondary); font-size: 12px; }
-@media (max-width: 1350px) { .tool-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 700px) {
-  .ai-page-head { align-items: stretch; flex-direction: column; }
-  .ai-refresh { align-self: flex-start; }
-  .tool-grid { grid-template-columns: 1fr; }
-  .routes-panel-head { align-items: flex-start; flex-direction: column; }
-}
-</style>

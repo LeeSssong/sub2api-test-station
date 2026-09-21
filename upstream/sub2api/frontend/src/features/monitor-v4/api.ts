@@ -59,10 +59,14 @@ function group(value: unknown, path: string): MonitorV4Group {
   if (typeof source.current_operational !== 'boolean') throw new MonitorV4ContractError(`${path} status flags are invalid`)
   return {
     id, name, platform,
+    status: typeof source.status === "string" ? source.status : undefined,
+    tool_ids: Array.isArray(source.tool_ids) ? source.tool_ids.filter((id): id is string => typeof id === "string") : [],
     rate_multiplier: number(source.rate_multiplier, `${path}.rate_multiplier`),
     success_rate: successRate, request_count: requestCount, success_count: successCount,
     real_request_count: realRequestCount, real_success_count: realSuccessCount,
     probe_fallback_bucket_count: probeFallbackBucketCount, probe_fallback_request_count: probeFallbackRequestCount,
+    ttft_p50_ms: source.ttft_p50_ms == null ? null : nullableNumber(source.ttft_p50_ms, `${path}.ttft_p50_ms`),
+    latency_p50_ms: source.latency_p50_ms == null ? null : nullableNumber(source.latency_p50_ms, `${path}.latency_p50_ms`),
     ttft_p95_ms: ttftP95, ttft_sample_count: ttftSampleCount,
     latency_p95_ms: latencyP95, latency_sample_count: latencySampleCount,
     cache_hit_rate: cacheHitRate,

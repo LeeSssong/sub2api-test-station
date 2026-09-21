@@ -1,0 +1,39 @@
+
+ RUN  v2.1.9 /Users/awen/Documents/ChatGPT/sub2api-prototype-parity/upstream/sub2api/frontend
+
+(node:9818) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9824) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9820) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9821) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9823) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9816) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9819) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9822) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:9817) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/components/layout/__tests__/AppSidebar.spec.ts (8 tests) 2ms
+ ✓ src/features/ai-tools/__tests__/model.spec.ts (5 tests) 2ms
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ src/utils/__tests__/branding.spec.ts (9 tests) 13ms
+ ✓ src/components/admin/group/__tests__/GroupToolMappings.spec.ts (3 tests) 26ms
+ ✓ src/features/monitor-v4/__tests__/HybridPerformanceGroupCard.spec.ts (9 tests) 21ms
+ ✓ src/components/common/__tests__/BaseDialog.user-theme.spec.ts (2 tests) 30ms
+ ✓ src/features/ai-tools/__tests__/CreateLineKeyDialog.spec.ts (10 tests) 61ms
+ ✓ src/features/monitor-v4/__tests__/api.spec.ts (5 tests) 2ms
+ ✓ src/views/user/__tests__/DashboardView.parity.spec.ts (6 tests) 47ms
+
+ Test Files  9 passed (9)
+      Tests  57 passed (57)
+   Start at  02:03:05
+   Duration  1.86s (transform 1.21s, setup 747ms, collect 2.49s, tests 204ms, environment 5.18s, prepare 623ms)
+

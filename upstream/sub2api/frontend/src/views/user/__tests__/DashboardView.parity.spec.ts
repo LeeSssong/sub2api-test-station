@@ -1,0 +1,22 @@
+import { mount, flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import Dashboard from '../DashboardView.vue'
+const mocks=vi.hoisted(()=>({groups:vi.fn(),rates:vi.fn(),keys:vi.fn(),snapshot:vi.fn(),check:vi.fn(),push:vi.fn()}))
+vi.mock('vue-router',()=>({useRouter:()=>({push:mocks.push})}))
+vi.mock('@/api/groups',()=>({default:{getAvailable:mocks.groups,getUserGroupRates:mocks.rates}}))
+vi.mock('@/api/keys',()=>({default:{list:mocks.keys}}))
+vi.mock('@/features/monitor-v4/api',()=>({getHybridPerformanceSnapshot:mocks.snapshot}))
+vi.mock('@/features/ai-tools/api',()=>({checkLines:mocks.check}))
+const groups=[{id:1,name:'GPT-Pro',platform:'openai',rate_multiplier:1,status:'active'},{id:2,name:'未关联线路',platform:'openai',rate_multiplier:.5,status:'active'}]
+const metric=(id:number)=>({id,tool_ids:['codex'],success_rate:98,request_count:100,success_count:98,ttft_p50_ms:2160,latency_p50_ms:6500,current_operational:true,source_updated_at:new Date().toISOString()})
+const make=()=>mount(Dashboard,{global:{stubs:{AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title'],template:'<div v-if="show" role="dialog"><h3>{{title}}</h3><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{props:['show','initialGroupId'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
+beforeEach(()=>{vi.clearAllMocks();mocks.groups.mockResolvedValue(groups);mocks.rates.mockResolvedValue({});mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]}],total:1});mocks.snapshot.mockResolvedValue({groups:groups.map(g=>metric(g.id))});mocks.check.mockResolvedValue([{group_id:1,status:'success',ttft_ms:1230}])})
+describe('原型AI工具交互',()=>{
+ it('keeps associate action even with keys and opens creation without navigation',async()=>{const w=make();await flushPromises();const b=w.findAll('button').find(b=>b.text()==='关联密钥')!;await b.trigger('click');expect(w.find('[data-testid="create-key"]').exists()).toBe(true);expect(mocks.push).not.toHaveBeenCalled();w.unmount()})
+ it('only lists linked lines and starts checks without using historical latency',async()=>{const w=make();await flushPromises();const list=w.get('[aria-labelledby="routes-title"]');expect(list.text()).not.toContain('未关联线路');expect(list.text()).not.toContain('2.16s');await w.get('button[aria-label="检查线路"]').trigger('click');await flushPromises();expect(mocks.check.mock.calls[0][0]).toEqual([1]);expect(list.text()).toContain('1.23s');w.unmount()})
+ it('shows all detail metrics and fetches selected period',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).toContain('首字 P50');expect(w.get('[role="dialog"]').text()).toContain('2.16s');await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises();expect(mocks.snapshot.mock.calls.some(c=>c[0]==='7d')).toBe(true);w.unmount()})
+ it('initial load failure shows retry instead of invented empty data',async()=>{mocks.groups.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('[role="alert"]').text()).toContain('重试');expect(w.find('.tool-grid').exists()).toBe(false);w.unmount()})
+ it('does not show zero linked keys when the initial mapping/statistics request fails',async()=>{mocks.snapshot.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(false);expect(w.get('[role="alert"]').text()).toContain('重试');w.unmount()})
+ it('preserves the last successful detail metrics after a same-window refresh fails',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();mocks.snapshot.mockRejectedValue(new Error('offline'));await w.findAll('button').find(b=>b.text()==='近 1 小时')!.trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).toContain('2.16s');expect(w.get('[role="dialog"]').text()).toContain('98%');w.unmount()})
+
+})

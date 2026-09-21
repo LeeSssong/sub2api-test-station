@@ -65,12 +65,12 @@ func (r *accountMonitorRepository) ReplaceMonitorV4Snapshots(ctx context.Context
 				"window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version,
 				success_rate, request_count, success_count, real_request_count, real_success_count,
 				probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count,
-				ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational
-			) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
+				ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational, ttft_p50_ms, latency_p50_ms
+			) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
 				snapshot.Window, groupID, snapshotID, snapshot.GeneratedAt.UTC(), snapshot.WindowStart.UTC(), snapshot.WindowEnd.UTC(), snapshot.ContractVersion,
 				projection.SuccessRate, projection.RequestCount, projection.SuccessCount, projection.RealRequestCount, projection.RealSuccessCount,
 				projection.ProbeFallbackBucketCount, projection.ProbeFallbackRequestCount, projection.MissingProbeTerminalCount,
-				projection.TTFTP95MS, projection.TTFTSampleCount, projection.LatencyP95MS, projection.LatencySampleCount, projection.CacheHitRate, projection.SourceUpdatedAt, projection.CurrentOperational); err != nil {
+				projection.TTFTP95MS, projection.TTFTSampleCount, projection.LatencyP95MS, projection.LatencySampleCount, projection.CacheHitRate, projection.SourceUpdatedAt, projection.CurrentOperational, projection.TTFTP50MS, projection.LatencyP50MS); err != nil {
 				return rollback(err)
 			}
 		}
@@ -82,7 +82,7 @@ func (r *accountMonitorRepository) LoadLatestMonitorV4Snapshot(ctx context.Conte
 	if window != service.MonitorV4Window1H && window != service.MonitorV4Window24H && window != service.MonitorV4Window7D {
 		return service.MonitorV4StoredWindow{}, fmt.Errorf("unsupported monitor v4 window %q", window)
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT "window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version, success_rate, request_count, success_count, real_request_count, real_success_count, probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count, ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational FROM account_monitor_v4_snapshots WHERE "window" = $1 ORDER BY generated_at DESC, group_id`, window)
+	rows, err := r.db.QueryContext(ctx, `SELECT "window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version, success_rate, request_count, success_count, real_request_count, real_success_count, probe_fallback_bucket_count, probe_fallback_request_count, missing_probe_terminal_count, ttft_p95_ms, ttft_sample_count, latency_p95_ms, latency_sample_count, cache_hit_rate, source_updated_at, current_operational, ttft_p50_ms, latency_p50_ms FROM account_monitor_v4_snapshots WHERE "window" = $1 ORDER BY generated_at DESC, group_id`, window)
 	if err != nil {
 		return service.MonitorV4StoredWindow{}, err
 	}
@@ -94,11 +94,11 @@ func (r *accountMonitorRepository) LoadLatestMonitorV4Snapshot(ctx context.Conte
 		var groupID int64
 		var snapshotID, contract string
 		var generatedAt, start, end time.Time
-		var successRate, ttft, latency, cache sql.NullFloat64
+		var successRate, ttft, latency, cache, ttftP50, latencyP50 sql.NullFloat64
 		var source sql.NullTime
 		var requestCount, successCount, realRequestCount, realSuccessCount, probeBuckets, probeRequests, missing, ttftSamples, latencySamples int
 		var operational bool
-		if err := rows.Scan(&rowWindow, &groupID, &snapshotID, &generatedAt, &start, &end, &contract, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeBuckets, &probeRequests, &missing, &ttft, &ttftSamples, &latency, &latencySamples, &cache, &source, &operational); err != nil {
+		if err := rows.Scan(&rowWindow, &groupID, &snapshotID, &generatedAt, &start, &end, &contract, &successRate, &requestCount, &successCount, &realRequestCount, &realSuccessCount, &probeBuckets, &probeRequests, &missing, &ttft, &ttftSamples, &latency, &latencySamples, &cache, &source, &operational, &ttftP50, &latencyP50); err != nil {
 			return service.MonitorV4StoredWindow{}, err
 		}
 		if result.SnapshotID == "" {
@@ -106,7 +106,7 @@ func (r *accountMonitorRepository) LoadLatestMonitorV4Snapshot(ctx context.Conte
 		} else if result.SnapshotID != snapshotID || !result.WindowStart.Equal(start) || !result.WindowEnd.Equal(end) || !result.GeneratedAt.Equal(generatedAt) || result.ContractVersion != contract || result.Window != service.MonitorV4Window(rowWindow) {
 			return service.MonitorV4StoredWindow{}, errors.New("inconsistent monitor v4 snapshot metadata")
 		}
-		p := service.MonitorV4GroupProjection{RequestCount: requestCount, SuccessCount: successCount, RealRequestCount: realRequestCount, RealSuccessCount: realSuccessCount, ProbeFallbackBucketCount: probeBuckets, ProbeFallbackRequestCount: probeRequests, MissingProbeTerminalCount: missing, TTFTSampleCount: ttftSamples, LatencySampleCount: latencySamples, CurrentOperational: operational}
+		p := service.MonitorV4GroupProjection{TTFTP50MS: nullableMonitorMetric(ttftP50), LatencyP50MS: nullableMonitorMetric(latencyP50), RequestCount: requestCount, SuccessCount: successCount, RealRequestCount: realRequestCount, RealSuccessCount: realSuccessCount, ProbeFallbackBucketCount: probeBuckets, ProbeFallbackRequestCount: probeRequests, MissingProbeTerminalCount: missing, TTFTSampleCount: ttftSamples, LatencySampleCount: latencySamples, CurrentOperational: operational}
 		if successRate.Valid {
 			p.SuccessRate = &successRate.Float64
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,6 +66,8 @@ type MonitorV4Metric struct {
 }
 
 type MonitorV4Group struct {
+	ToolIDs                   []string
+	Status                    string
 	ID                        int64
 	Name                      string
 	Platform                  string
@@ -76,6 +79,8 @@ type MonitorV4Group struct {
 	RealSuccessCount          int
 	ProbeFallbackBucketCount  int
 	ProbeFallbackRequestCount int
+	TTFTP50MS                 *float64
+	LatencyP50MS              *float64
 	TTFTP95MS                 *float64
 	TTFTSampleCount           int
 	LatencyP95MS              *float64
@@ -97,12 +102,16 @@ type MonitorV4Snapshot struct {
 }
 
 type MonitorV4Service struct {
-	groupRepo  GroupRepository
-	available  MonitorV2AvailableGroupReader
-	configured MonitorV2ConfiguredGroupReader
-	native     MonitorV4ProjectionReader
-	settings   MonitorV2SettingsReader
-	store      MonitorV4SnapshotStore
+	checkMu     sync.Mutex
+	checkNext   map[int64]time.Time
+	checkActive map[int64]bool
+	checkCount  int
+	groupRepo   GroupRepository
+	available   MonitorV2AvailableGroupReader
+	configured  MonitorV2ConfiguredGroupReader
+	native      MonitorV4ProjectionReader
+	settings    MonitorV2SettingsReader
+	store       MonitorV4SnapshotStore
 }
 
 func (s *MonitorV4Service) SetSnapshotStore(store MonitorV4SnapshotStore) {
@@ -147,6 +156,23 @@ func (s *MonitorV4Service) Snapshot(ctx context.Context, userID int64, window Mo
 		return nil, fmt.Errorf("load available groups for monitor v4: %w", err)
 	}
 	visibleGroups, _ := monitorV2VisibleGroups(allGroups, availableGroups, configuredGroupIDs, len(configuredGroupIDs) == 0)
+	// User AI routes must retain every entitled/linked group, including a
+	// disabled group whose keys still exist, independently of monitor filters.
+	visibleIDs := map[int64]bool{}
+	for _, g := range visibleGroups {
+		visibleIDs[g.ID] = true
+	}
+	for _, g := range availableGroups {
+		if !visibleIDs[g.ID] {
+			visibleGroups = append(visibleGroups, g)
+			visibleIDs[g.ID] = true
+		}
+	}
+	visibleGroups, err = s.withLinkedMonitorGroups(ctx, userID, visibleGroups)
+	if err != nil {
+		return nil, fmt.Errorf("load linked monitor groups: %w", err)
+	}
+
 	if len(visibleGroups) > monitorV4MaxGroups {
 		return nil, fmt.Errorf("too many public groups: %d exceeds %d", len(visibleGroups), monitorV4MaxGroups)
 	}
@@ -168,7 +194,14 @@ func (s *MonitorV4Service) Snapshot(ctx context.Context, userID int64, window Mo
 			return nil, fmt.Errorf("invalid persisted monitor v4 snapshot counts for group %d: %w", groupID, err)
 		}
 	}
-	return s.snapshotWithGroups(ctx, window, stored.GeneratedAt, stored.WindowStart, visibleGroups, stored.Groups)
+	snapshot, err := s.snapshotWithGroups(ctx, window, stored.GeneratedAt, stored.WindowStart, visibleGroups, stored.Groups)
+	if err != nil {
+		return nil, err
+	}
+	for i := range snapshot.Groups {
+		snapshot.Groups[i].CurrentOperational = monitorV4CurrentOperational(snapshot.Groups[i], now)
+	}
+	return snapshot, nil
 }
 
 func (s *MonitorV4Service) RefreshMonitorV4Snapshots(ctx context.Context, asOf time.Time) error {
@@ -195,9 +228,23 @@ func (s *MonitorV4Service) RefreshMonitorV4Snapshots(ctx context.Context, asOf t
 			}
 		}
 	}
+	mappedIDs := map[int64]bool{}
+	if repo, ok := s.groupRepo.(GroupToolMappingRepository); ok {
+		ids := make([]int64, 0, len(allGroups))
+		for _, group := range allGroups {
+			ids = append(ids, group.ID)
+		}
+		mappings, err := repo.ReadGroupToolMappings(ctx, ids)
+		if err != nil {
+			return fmt.Errorf("read tool mappings for refresh: %w", err)
+		}
+		for id, mapping := range mappings {
+			mappedIDs[id] = len(mapping.ToolIDs) > 0
+		}
+	}
 	groupIDs := make([]int64, 0, len(allGroups))
 	for _, group := range allGroups {
-		if group.Status != StatusActive || (len(configuredIDs) > 0 && func() bool { _, ok := configuredIDs[group.ID]; return !ok }()) {
+		if group.Status != StatusActive || (len(configuredIDs) > 0 && !mappedIDs[group.ID] && func() bool { _, ok := configuredIDs[group.ID]; return !ok }()) {
 			continue
 		}
 		groupIDs = append(groupIDs, group.ID)
@@ -235,13 +282,32 @@ func (s *MonitorV4Service) RefreshMonitorV4Snapshots(ctx context.Context, asOf t
 func (s *MonitorV4Service) snapshotWithGroups(ctx context.Context, window MonitorV4Window, now, start time.Time, visibleGroups []Group, projections map[int64]MonitorV4GroupProjection) (*MonitorV4Snapshot, error) {
 	now = now.UTC()
 	cards := make([]MonitorV4Group, 0, len(visibleGroups))
+
+	mappings := map[int64]GroupToolMapping{}
+	if repo, ok := s.groupRepo.(GroupToolMappingRepository); ok {
+		ids := make([]int64, 0, len(visibleGroups))
+		for _, g := range visibleGroups {
+			ids = append(ids, g.ID)
+		}
+		var err error
+		mappings, err = repo.ReadGroupToolMappings(ctx, ids)
+		if err != nil {
+			return nil, fmt.Errorf("read tool mappings: %w", err)
+		}
+	}
 	for _, group := range visibleGroups {
+		tools := mappings[group.ID].ToolIDs
+		if tools == nil {
+			tools = []string{}
+		}
 		projection := projections[group.ID]
 		cards = append(cards, MonitorV4Group{
+			ToolIDs: tools, Status: group.Status,
 			ID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier,
 			SuccessRate: projection.SuccessRate, RequestCount: projection.RequestCount, SuccessCount: projection.SuccessCount,
 			RealRequestCount: projection.RealRequestCount, RealSuccessCount: projection.RealSuccessCount,
 			ProbeFallbackBucketCount: projection.ProbeFallbackBucketCount, ProbeFallbackRequestCount: projection.ProbeFallbackRequestCount,
+			TTFTP50MS: projection.TTFTP50MS, LatencyP50MS: projection.LatencyP50MS,
 			TTFTP95MS: projection.TTFTP95MS, TTFTSampleCount: projection.TTFTSampleCount,
 			LatencyP95MS: projection.LatencyP95MS, LatencySampleCount: projection.LatencySampleCount,
 			CacheHitRate: projection.CacheHitRate, CacheReadTokens: projection.CacheReadTokens, CacheCreationTokens: projection.CacheCreationTokens, CacheHitDenominator: projection.CacheHitDenominator,
@@ -269,4 +335,8 @@ func monitorV4WindowStart(window MonitorV4Window, now time.Time) (time.Time, err
 	default:
 		return time.Time{}, fmt.Errorf("unsupported monitor window %q", window)
 	}
+}
+
+func monitorV4CurrentOperational(group MonitorV4Group, now time.Time) bool {
+	return group.Status == StatusActive && group.CurrentOperational && group.SourceUpdatedAt != nil && !group.SourceUpdatedAt.After(now) && !group.SourceUpdatedAt.Before(now.Add(-5*time.Minute))
 }

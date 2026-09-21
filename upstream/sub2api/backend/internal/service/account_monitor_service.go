@@ -3311,6 +3311,9 @@ func (s *AccountMonitorService) activeProbeUsageReader() ActiveProbeUsageWindowR
 
 func (s *AccountMonitorService) probeAccount(ctx context.Context, account Account) AccountMonitorProbeResult {
 	modelID := s.connectionProbeModel(ctx, &account)
+	if override, ok := ctx.Value(accountMonitorConnectionModelOverrideKey{}).(string); ok && override != "" {
+		modelID = override
+	}
 	probeConnection := s.probeConnection
 	if probeConnection == nil && s.testService != nil {
 		probeConnection = s.testService.ProbeAccountConnection

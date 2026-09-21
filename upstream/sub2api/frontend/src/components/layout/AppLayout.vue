@@ -36,7 +36,8 @@
 <script setup lang="ts">
 import '@/styles/onboarding.css'
 import '@/styles/xingqiao-user.css'
-import { computed, onMounted } from 'vue'
+import '@/styles/xingqiao-ai.css'
+import { computed, onMounted, provide } from 'vue'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
@@ -49,6 +50,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
+provide('starbridge-user', computed(() => !isAdmin.value))
 
 const { replayTour } = useOnboardingTour({
   storageKey: isAdmin.value ? 'admin_guide' : 'user_guide',

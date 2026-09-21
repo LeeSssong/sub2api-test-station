@@ -51,6 +51,11 @@ func (s *PaymentConfigService) pcApplyEnabledVisibleMethodInstances(ctx context.
 	}
 
 	for _, method := range []string{payment.TypeAlipay, payment.TypeWxpay} {
+		disabled, err := s.isVisibleMethodExplicitlyDisabled(ctx, method)
+		if err != nil || disabled {
+			delete(filtered, method)
+			continue
+		}
 		matching := filterEnabledVisibleMethodInstances(instances, method)
 		providerKey, err := s.resolveVisibleMethodProviderKey(ctx, method, matching)
 		if err != nil {

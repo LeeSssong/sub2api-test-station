@@ -537,3 +537,55 @@ func TestGetAvailableMethodLimitsPreservesLegacyCrossProviderBehaviorWhenVisible
 	require.Equal(t, 10.0, resp.GlobalMin)
 	require.Equal(t, 400.0, resp.GlobalMax)
 }
+
+func TestVisibleMethodEnabledSettingControlsCheckoutAndOrderRouting(t *testing.T) {
+	tests := []struct {
+		name           string
+		enabledSetting *string
+		wantVisible    bool
+		wantResolved   bool
+	}{
+		{name: "explicit false disables method", enabledSetting: ptr("false"), wantVisible: false, wantResolved: false},
+		{name: "explicit true enables method", enabledSetting: ptr("true"), wantVisible: true, wantResolved: true},
+		{name: "missing setting preserves legacy behavior", enabledSetting: nil, wantVisible: true, wantResolved: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := newPaymentConfigServiceTestClient(t)
+			_, err := client.PaymentProviderInstance.Create().
+				SetProviderKey(payment.TypeAlipay).
+				SetName("Official Alipay").
+				SetConfig("{}").
+				SetSupportedTypes(payment.TypeAlipay).
+				SetEnabled(true).
+				Save(ctx)
+			require.NoError(t, err)
+
+			values := map[string]string{
+				SettingPaymentVisibleMethodAlipaySource: VisibleMethodSourceOfficialAlipay,
+			}
+			if tt.enabledSetting != nil {
+				values[SettingPaymentVisibleMethodAlipayEnabled] = *tt.enabledSetting
+			}
+			svc := &PaymentConfigService{
+				entClient:   client,
+				settingRepo: &paymentConfigSettingRepoStub{values: values},
+			}
+
+			resp, err := svc.GetAvailableMethodLimits(ctx)
+			require.NoError(t, err)
+			_, visible := resp.Methods[payment.TypeAlipay]
+			require.Equal(t, tt.wantVisible, visible)
+
+			resolved, err := svc.resolveEnabledVisibleMethodInstance(ctx, payment.TypeAlipay)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantResolved, resolved != nil)
+		})
+	}
+}
+
+func ptr(value string) *string {
+	return &value
+}

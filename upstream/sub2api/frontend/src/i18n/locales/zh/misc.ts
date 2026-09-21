@@ -419,6 +419,8 @@ export default {
     tabSubscribe: '订阅',
     noPlans: '暂无可用订阅套餐',
     notAvailable: '充值功能暂未开放',
+    loadFailedTitle: '充值信息加载失败',
+    loadFailedHint: '支付服务暂时无法连接，请稍后重试。',
     confirmSubscription: '确认订阅',
     confirmCancel: '确定要取消此订单吗？',
     amountTooLow: '最低金额为 {min}',

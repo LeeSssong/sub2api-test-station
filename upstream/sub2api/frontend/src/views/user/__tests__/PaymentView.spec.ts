@@ -51,6 +51,7 @@ vi.mock('@/stores/auth', () => ({
     user: {
       username: 'demo-user',
       balance: 0,
+      concurrency: 7,
     },
     refreshUser,
   }),
@@ -447,7 +448,7 @@ describe.skip('PaymentView subscription confirmation amounts (removed from user 
 
 describe('PaymentView recharge-only experience', () => {
 
-  it('uses a compact two-column recharge workspace with the order action beside the amount summary', async () => {
+  it('matches the Figma recharge workspace dimensions and account benefits', async () => {
     routeState.path = '/purchase'
     routeState.query = {}
     getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({ recharge_fee_rate: 2.5 }))
@@ -462,9 +463,12 @@ describe('PaymentView recharge-only experience', () => {
     })
     await flushPromises()
 
+    const page = wrapper.find('[data-test="recharge-page"]')
+    expect(page.classes()).toContain('max-w-[1180px]')
+    expect(wrapper.findComponent({ name: 'UserRechargeNav' }).props('concurrency')).toBe(7)
     const workspace = wrapper.find('[data-test="recharge-workspace"]')
     expect(workspace.exists()).toBe(true)
-    expect(workspace.classes()).toEqual(expect.arrayContaining(['grid', 'lg:grid-cols-[1.1fr_0.9fr]']))
+    expect(workspace.classes()).toEqual(expect.arrayContaining(['grid', 'lg:grid-cols-[minmax(0,848px)_330px]']))
     expect(workspace.find('[data-test="recharge-summary"]').exists()).toBe(true)
     expect(workspace.find('[data-test="create-recharge-order"]').exists()).toBe(true)
   })
@@ -474,7 +478,32 @@ describe('PaymentView recharge-only experience', () => {
     expect(wrapper.text()).not.toContain('payment.tabSubscribe')
     expect(wrapper.text()).not.toContain('payment.noPlans')
     const amountInput = wrapper.findComponent({ name: 'AmountInput' })
-    expect(amountInput.props('amounts')).toEqual([10, 30, 50, 100])
+    expect(amountInput.props('amounts')).toEqual([10, 30, 50, 100, 200])
+  })
+
+  it('shows a retry state when checkout loading fails instead of reporting payment unavailable', async () => {
+    getCheckoutInfo.mockReset()
+      .mockRejectedValueOnce(new Error('gateway unavailable'))
+      .mockResolvedValueOnce(checkoutInfoFixture())
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="checkout-load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('payment.notAvailable')
+
+    await wrapper.get('[data-test="retry-checkout"]').trigger('click')
+    await flushPromises()
+
+    expect(getCheckoutInfo).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="checkout-load-error"]').exists()).toBe(false)
   })
 })
 

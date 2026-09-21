@@ -5,20 +5,20 @@
       <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
         {{ t('payment.quickAmounts') }}
       </label>
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <button
           v-for="amt in filteredAmounts"
           :key="amt"
           type="button"
           :class="[
-            'rounded-lg border-2 px-4 py-3 text-center font-medium transition-colors',
+            'min-h-12 rounded-lg border px-3 py-3 text-center font-medium transition-colors',
             modelValue === amt
-              ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/40 dark:text-primary-300'
-              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:border-dark-500',
+              ? 'border-[#67d4e5] bg-[#12344a] text-white'
+              : 'border-[#21445d] bg-[#071827] text-[#b7c8d5] hover:border-[#3a6c87] hover:text-white',
           ]"
           @click="selectAmount(amt)"
         >
-          {{ amt }}
+          ${{ amt }}
         </button>
       </div>
     </div>

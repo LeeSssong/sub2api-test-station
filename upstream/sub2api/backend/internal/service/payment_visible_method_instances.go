@@ -184,6 +184,22 @@ func (s *PaymentConfigService) resolveVisibleMethodSourceProviderKey(ctx context
 	return providerKey, nil
 }
 
+func (s *PaymentConfigService) isVisibleMethodExplicitlyDisabled(ctx context.Context, method string) (bool, error) {
+	enabledKey := visibleMethodEnabledSettingKey(method)
+	if s == nil || s.settingRepo == nil || enabledKey == "" {
+		return false, nil
+	}
+
+	value, err := s.settingRepo.GetValue(ctx, enabledKey)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get %s: %w", enabledKey, err)
+	}
+	return strings.EqualFold(strings.TrimSpace(value), "false"), nil
+}
+
 func (s *PaymentConfigService) resolveVisibleMethodProviderKey(
 	ctx context.Context,
 	method string,
@@ -223,6 +239,13 @@ func (s *PaymentConfigService) resolveEnabledVisibleMethodInstance(
 
 	method = NormalizeVisibleMethod(method)
 	if method == "" {
+		return nil, nil
+	}
+	disabled, err := s.isVisibleMethodExplicitlyDisabled(ctx, method)
+	if err != nil {
+		return nil, err
+	}
+	if disabled {
 		return nil, nil
 	}
 

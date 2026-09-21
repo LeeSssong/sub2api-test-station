@@ -42,13 +42,15 @@ export async function bootstrap() {
   // Initialize settings from injected config BEFORE mounting (prevents flash)
   // This must happen after pinia is installed but before router and i18n
   const appStore = useAppStore()
-  appStore.initFromInjectedConfig()
+  const hasInjectedConfig = appStore.initFromInjectedConfig()
 
   // Set document title immediately after config is loaded
   if (appStore.siteName && appStore.siteName !== 'Sub2API') {
     document.title = `${appStore.siteName} - AI API Gateway`
   }
-  updateFavicon(appStore.siteLogo)
+  if (hasInjectedConfig) {
+    updateFavicon(appStore.siteLogo)
+  }
 
   app.use(router)
   app.use(i18n)

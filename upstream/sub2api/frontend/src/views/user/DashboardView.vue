@@ -58,7 +58,7 @@ import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
 import { checkLines, type LineCheck } from '@/features/ai-tools/api'
-import { tools, linkedCounts, configuredLines, availability, compareQuality, metricLabel, providerIcon, platformLabel } from '@/features/ai-tools/model'
+import { tools, linkedCounts, configuredLines, availability, compareQuality, metricLabel, providerIcon, platformLabel, toolIdsForGroup } from '@/features/ai-tools/model'
 import type { ApiKey, Group } from '@/types'
 import type { MonitorV4Group, MonitorV4Window } from '@/features/monitor-v4/types'
 import '@/styles/xingqiao-ai.css'
@@ -80,7 +80,7 @@ const allGroups=computed(()=>{const all=new Map(groups.value.map(g=>[g.id,g]));f
 const sort=(list:Group[], ms=metricsById.value)=>[...list].sort((a,b)=>compareQuality(a,b,ms,rates.value,clock.value))
 const stateOf=(g:Group)=>availability(g,statsFailed.value?undefined:metricsById.value.get(g.id),clock.value)
 const toolCards=computed(()=>tools.map(tool=>{
-  const matching=sort(allGroups.value.filter(g=>metricsById.value.get(g.id)?.tool_ids?.includes(tool.id)))
+  const matching=sort(allGroups.value.filter(g=>toolIdsForGroup(g,metricsById.value.get(g.id)).includes(tool.id)))
   const active=matching.filter(g=>g.status==='active'),available=active.filter(g=>stateOf(g).available)
   const unknown=active.some(g=>stateOf(g).text==='暂不可用')
   return {...tool,groups:matching,active,best:available[0],linked:matching.reduce((n,g)=>n+(counts.value.get(g.id)||0),0),statusKind:!active.length||unknown&&!available.length?'muted':available.length?'success':'danger',statusText:!active.length?'暂无可用线路':available.length?`可用 · ${available.length}/${active.length} 条`:unknown?'暂不可用':`不可用 · 0/${active.length} 条`}

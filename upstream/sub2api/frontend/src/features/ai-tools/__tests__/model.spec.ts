@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { linkedCounts, configuredLines, availability, compareQuality, metricLabel } from '../model'
+import { linkedCounts, configuredLines, availability, compareQuality, metricLabel, toolIdsForGroup } from '../model'
 import type { ApiKey, Group } from '@/types'
 import type { MonitorV4Group } from '@/features/monitor-v4/types'
 const group = (id: number, status = 'active') => ({ id, name: `线路${id}`, status, platform: 'openai', rate_multiplier: 1 }) as Group
@@ -15,6 +15,13 @@ describe('AI线路真实口径', () => {
   })
   it('retains an inactive linked group from native key relation', () => {
     expect(configuredLines([], [key(1,3,'inactive',group(3,'inactive'))])[0].status).toBe('inactive')
+  })
+  it('falls back to the group platform only when no explicit tool mapping exists', () => {
+    const openaiGroup = group(1)
+    const anthropicGroup = { ...group(2), platform: 'anthropic' } as Group
+    expect(toolIdsForGroup(openaiGroup, metric({ tool_ids: [] }))).toEqual(['codex'])
+    expect(toolIdsForGroup(anthropicGroup, metric({ tool_ids: [] }))).toEqual(['claude'])
+    expect(toolIdsForGroup(openaiGroup, metric({ tool_ids: ['grok'] }))).toEqual(['grok'])
   })
   it('never treats missing or expired observations as available', () => {
     expect(availability(group(1),undefined,now).text).toBe('暂不可用')

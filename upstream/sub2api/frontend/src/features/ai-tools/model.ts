@@ -7,6 +7,11 @@ export const tools = [
   { id: 'deepseek', label: 'DeepSeek', platform: 'deepseek', type: '通用 AI' },
 ] as const
 export type Tool = typeof tools[number]
+export function toolIdsForGroup(group: Group, metric?: MonitorV4Group): string[] {
+  if (metric?.tool_ids?.length) return metric.tool_ids
+  const fallback = tools.find(tool => tool.platform === group.platform)
+  return fallback ? [fallback.id] : []
+}
 export function linkedCounts(keys: ApiKey[]): Map<number, number> {
   const counts = new Map<number,number>()
   for (const key of keys) if (key.group_id) counts.set(key.group_id,(counts.get(key.group_id)||0)+1)

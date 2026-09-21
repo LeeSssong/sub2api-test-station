@@ -17,6 +17,19 @@ describe('原型AI工具交互',()=>{
  it('shows all detail metrics and fetches selected period',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).toContain('首字 P50');expect(w.get('[role="dialog"]').text()).toContain('2.16s');await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises();expect(mocks.snapshot.mock.calls.some(c=>c[0]==='7d')).toBe(true);w.unmount()})
  it('initial load failure shows retry instead of invented empty data',async()=>{mocks.groups.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('[role="alert"]').text()).toContain('重试');expect(w.find('.tool-grid').exists()).toBe(false);w.unmount()})
  it('does not show zero linked keys when the initial mapping/statistics request fails',async()=>{mocks.snapshot.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(false);expect(w.get('[role="alert"]').text()).toContain('重试');w.unmount()})
+ it('falls back to the group platform when no explicit tool mapping exists',async()=>{
+  const anthropic={id:3,name:'default',platform:'anthropic',rate_multiplier:1,status:'active'}
+  mocks.groups.mockResolvedValue([groups[0],anthropic])
+  mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]},{id:2,group_id:3,status:'active',group:anthropic}],total:2})
+  mocks.snapshot.mockResolvedValue({groups:[metric(1),{...metric(3),tool_ids:[]}]})
+  const w=make();await flushPromises()
+  const cards=w.findAll('.tool-card')
+  expect(cards[0].text()).toContain('已关联 1 把密钥')
+  expect(cards[1].text()).toContain('已关联 1 把密钥')
+  expect(cards[0].find('button').attributes('disabled')).toBeUndefined()
+  expect(cards[1].find('button').attributes('disabled')).toBeUndefined()
+  w.unmount()
+ })
  it('preserves the last successful detail metrics after a same-window refresh fails',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();mocks.snapshot.mockRejectedValue(new Error('offline'));await w.findAll('button').find(b=>b.text()==='近 1 小时')!.trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).toContain('2.16s');expect(w.get('[role="dialog"]').text()).toContain('98%');w.unmount()})
 
 })

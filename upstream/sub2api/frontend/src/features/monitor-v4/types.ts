@@ -5,6 +5,8 @@ export type MonitorV4RefreshIntervalSeconds = 0 | 30 | 60 | 300 | 600
 export interface MonitorV4Group {
   id: number
   name: string
+  tool_ids?: string[]
+  status?: string
   platform: string
   rate_multiplier: number
   success_rate: number | null
@@ -14,6 +16,8 @@ export interface MonitorV4Group {
   real_success_count: number
   probe_fallback_bucket_count: number
   probe_fallback_request_count: number
+  ttft_p50_ms?: number | null
+  latency_p50_ms?: number | null
   ttft_p95_ms: number | null
   ttft_sample_count: number
   latency_p95_ms: number | null

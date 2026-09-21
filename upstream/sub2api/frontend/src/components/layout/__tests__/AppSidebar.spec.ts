@@ -80,7 +80,7 @@ describe('AppSidebar user navigation structure', () => {
     expect(componentSource).toContain('data-testid="user-sidebar-recharge"')
     expect(componentSource).toContain('data-testid="user-sidebar-account"')
     expect(componentSource).toContain('data-testid="user-sidebar-support"')
-    expect(componentSource).toContain("'/xingqiao/logo.svg'")
+    expect(componentSource).toContain(':src="siteLogo || DEFAULT_SITE_LOGO"')
     expect(componentSource).toContain("星桥 AI Link")
   })
 })

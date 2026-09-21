@@ -14,7 +14,7 @@
         class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
       >
-        <img v-if="settingsLoaded" :src="isAdmin ? (siteLogo || '/logo.svg') : '/xingqiao/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        <img v-if="settingsLoaded" :src="siteLogo || DEFAULT_SITE_LOGO" alt="Logo" class="h-full w-full object-contain" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
@@ -25,7 +25,8 @@
           {{ isAdmin ? siteName : '星桥 AI Link' }}
         </router-link>
         <!-- Version Badge -->
-        <VersionBadge :version="isAdmin ? siteVersion : siteVersion.replace(/^v/i, '')" />
+        <VersionBadge v-if="isAdmin" :version="siteVersion" />
+        <small v-else-if="siteVersion" class="user-brand-version">{{ siteVersion.startsWith('v') ? siteVersion : `v${siteVersion}` }}</small>
       </div>
     </div>
 
@@ -135,12 +136,12 @@
             :to="item.path"
             class="sidebar-link mb-1"
             :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
-            :title="sidebarCollapsed ? item.label : undefined"
+            :aria-label="item.label"
+            :aria-current="isActive(item.path) ? 'page' : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
           >
-            <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
-            <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
+            <img :src="userNavIcon(item.path)" class="user-nav-icon" alt="" aria-hidden="true" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
           </router-link>
         </div>
@@ -186,7 +187,7 @@
         @click="handleMenuItemClick('/purchase')"
       >
         <strong>{{ formatMoney(userBalance) }}</strong>
-        <span>充值｜兑换 <b aria-hidden="true">+</b></span>
+        <span>充值｜兑换</span>
       </router-link>
 
       <div ref="accountMenuRef" class="user-sidebar-actions">
@@ -200,7 +201,7 @@
           @click.stop="toggleAccountMenu"
         >
           <img v-if="userAvatarUrl" :src="userAvatarUrl" :alt="displayName" />
-          <span v-else class="user-account-avatar">{{ userInitials }}</span>
+          <span v-else class="user-account-avatar"><img src="/xingqiao/user.svg" alt="" aria-hidden="true" /></span>
           <span class="user-account-name">{{ displayName }}</span>
         </button>
 
@@ -212,7 +213,7 @@
           :title="t('common.contactSupport')"
           @click="supportDialogOpen = true"
         >
-          <SupportIcon class="h-4 w-4" />
+          <img src="/xingqiao/support.svg" class="user-nav-icon" alt="" aria-hidden="true" />
         </button>
 
         <transition name="dropdown">
@@ -259,6 +260,7 @@ import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } 
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
+import { DEFAULT_SITE_LOGO } from '@/utils/branding'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 import ContactSupportDialog from './ContactSupportDialog.vue'
@@ -335,7 +337,6 @@ const user = computed(() => authStore.user)
 const userBalance = computed(() => Number(user.value?.balance || 0))
 const userAvatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
-const userInitials = computed(() => displayName.value.substring(0, 2).toUpperCase())
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -769,17 +770,6 @@ const ChevronDownIcon = {
     )
 }
 
-const SupportIcon = {
-  render: () =>
-    h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [
-      h('path', {
-        'stroke-linecap': 'round',
-        'stroke-linejoin': 'round',
-        d: 'M8.625 12a3.375 3.375 0 116.75 0c0 1.875-1.875 2.25-2.625 3M12 18h.008v.008H12V18zm9-6a9 9 0 11-18 0 9 9 0 0118 0z'
-      })
-    ])
-}
-
 const LogoutIcon = {
   render: () =>
     h('svg', { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' }, [
@@ -842,6 +832,10 @@ function finalizeNav(items: NavItem[]): NavItem[] {
 function userNavLabel(key: string, fallback: string): string {
   const translated = t(`nav.${key}`)
   return translated === `nav.${key}` ? fallback : translated
+}
+
+function userNavIcon(path: string): string {
+  return `/xingqiao/${({ '/dashboard': 'tools', '/usage': 'history', '/keys': 'key' } as Record<string, string>)[path]}.svg`
 }
 
 function buildUserNavItems(): NavItem[] {
@@ -1255,237 +1249,91 @@ onBeforeUnmount(() => {
   height: 1.25rem;
 }
 
-.user-sidebar {
-  background: #020813;
-  border-color: #14304f;
-}
-
-.user-sidebar :deep(.sidebar-header) {
-  border-color: #10223a;
-}
-
-.user-sidebar .sidebar-brand-title {
-  color: #e6f6ff;
-}
-
-.user-sidebar :deep(.sidebar-link) {
-  color: #94bbd9;
-  border-radius: 0.5rem;
-}
-
-.user-sidebar :deep(.sidebar-link:hover) {
-  color: #e6f6ff;
-  background: #0a162c;
-}
-
-.user-sidebar :deep(.sidebar-link-active) {
-  color: #31b9ff;
-  background: #0a2440;
-  box-shadow: inset 3px 0 #ffca48;
-}
-
-.user-sidebar-bottom {
-  position: relative;
-  display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr);
-  align-items: end;
-  gap: 0.5rem;
-  margin-top: auto;
-  padding: 0.75rem;
-  border-top: 1px solid #10223a;
-}
-
-.user-recharge-button {
-  display: flex;
-  width: 5.75rem;
-  min-height: 4.25rem;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  border: 1px solid #173a5e;
-  border-radius: 0.5rem;
-  background: #0a162c;
-  color: #ffca48;
-  text-decoration: none;
-}
-
-.user-recharge-button span {
-  color: #31b9ff;
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
-.user-recharge-button-collapsed {
-  width: 3rem;
-  min-height: 3.5rem;
-}
-
-.user-recharge-button-collapsed strong {
-  font-size: 0.75rem;
-}
-
-.user-recharge-button-collapsed span {
-  font-size: 0;
-}
-
-.user-recharge-button-collapsed span b {
-  font-size: 1rem;
-}
-
-.user-sidebar-actions {
-  position: relative;
-  display: flex;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.user-account-button,
-.user-support-button {
-  display: grid;
-  place-items: center;
-  border: 1px solid #173a5e;
-  background: #071426;
-  color: #94bbd9;
-}
-
-.user-account-button {
-  display: flex;
-  width: auto;
-  min-width: 0;
-  height: 2.75rem;
-  overflow: hidden;
-  padding: 0 .65rem;
-  gap: .5rem;
-  border-color: #1d6088;
-  border-radius: 0.55rem;
-  background: #0e78ad;
-  color: white;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.user-account-button img,
-.user-account-avatar {
-  display: grid;
-  width: 1.75rem;
-  height: 1.75rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: .35rem;
-  object-fit: cover;
-}
-.user-account-name {
-  min-width: 0;
-  overflow: hidden;
-  color: #e6f6ff;
-  font-size: .75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.user-recharge-button span b { display: none; }
-
-.user-support-button {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.45rem;
-}
-
-.user-account-menu {
-  position: absolute;
-  right: 0;
-  bottom: 3.25rem;
-  width: 13rem;
-  overflow: hidden;
-  border: 1px solid #173a5e;
-  border-radius: 0.5rem;
-  background: #071426;
-  box-shadow: 0 1rem 2rem rgb(0 0 0 / 30%);
-}
-
-.user-account-summary {
-  padding: 0.75rem;
-  border-bottom: 1px solid #17304d;
-}
-
-.user-account-summary strong,
-.user-account-summary span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-account-summary strong {
-  color: #e6f6ff;
-  font-size: 0.8rem;
-}
-
-.user-account-summary span {
-  margin-top: 0.2rem;
-  color: #94bbd9;
-  font-size: 0.7rem;
-}
-
-.user-account-menu-item {
-  display: flex;
-  min-height: 2.5rem;
-  align-items: center;
-  gap: 0.55rem;
-  width: 100%;
-  padding: 0 0.75rem;
-  border: 0;
-  background: #071426;
-  color: #c6d9e8;
-  font-size: 0.75rem;
-  text-align: left;
-}
-
-.user-account-menu-item:hover {
-  background: #0a2440;
-  color: #31b9ff;
-}
-
-.user-account-menu-danger {
-  border-top: 1px solid #17304d;
-  color: #ff6b72;
-}
-
-@media (max-width: 1023px) {
-  .user-sidebar-bottom {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .user-sidebar-actions {
-    flex-direction: column;
-  }
-}
-
+/* User shell mirrors the confirmed interactive prototype; admin styles stay above. */
 .user-sidebar {
   width: 242px !important;
   transform: none !important;
+  padding: 24px 18px;
+  background: rgba(6,20,33,.96);
+  border-right: 1px solid rgba(46,97,119,.42);
+  box-shadow: 18px 0 60px rgba(0,0,0,.10);
+  color: var(--xq-text, #f1f9f9);
 }
-@media (min-width: 701px) and (max-width: 1050px) {
-  .user-sidebar { width: 200px !important; }
+.user-sidebar .sidebar-header {
+  height: auto; min-height: 0; flex-shrink: 0; align-items: flex-start;
+  gap: 12px; padding: 2px 10px 12px; margin-bottom: 28px;
+  border-bottom: 1px solid rgba(59,111,133,.25);
 }
+.user-sidebar .sidebar-logo {
+  width: 24px; min-width: 24px; height: 24px; margin-top: 2px; flex: 0 0 24px;
+  border-radius: 5px; background: #040a12; box-shadow: none;
+}
+.user-sidebar .sidebar-brand { min-width: 0; }
+.user-sidebar .sidebar-brand-title { color: #f1f9f9; font-size: 16px; line-height: 1.6; white-space: nowrap; }
+.user-brand-version { display: block; font-size: 10px; margin-top: 4px; color: #708c9e; }
+.user-sidebar .sidebar-nav { padding: 0; }
+.user-sidebar .sidebar-section { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; }
+.user-sidebar .sidebar-link {
+  position: relative; height: 42px; min-height: 42px; margin: 0; padding: 0 12px; gap: 16px;
+  border: 1px solid transparent; border-radius: 9px; color: #809aa8;
+  font-size: 13px; font-weight: 500; background: transparent;
+  transition: color .18s ease, background .18s ease, border-color .18s ease;
+}
+.user-sidebar .sidebar-link:hover { color: #f1f9f9; background: #143047; border-color: #61c9d9; }
+.user-sidebar .sidebar-link-active {
+  color: #f1f9f9; background: linear-gradient(90deg,rgba(39,112,143,.24),rgba(16,45,66,.50));
+  border-color: rgba(97,201,217,.18); box-shadow: inset 3px 0 #61c9d9;
+}
+.user-nav-icon { width: 20px; height: 20px; flex-shrink: 0; }
+.user-sidebar-bottom { position: relative; margin-top: auto; }
+.user-recharge-button {
+  display: flex; width: 100%; height: 58px; padding: 0 12px;
+  align-items: center; justify-content: space-between; margin: 20px 0 24px;
+  border: 1px solid rgba(97,201,217,.22); border-radius: 9px;
+  background: linear-gradient(145deg,rgba(17,54,77,.88),rgba(10,34,51,.9));
+  color: #a1b8c2; text-decoration: none;
+}
+.user-recharge-button strong { color: #f1f9f9; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.user-recharge-button span { color: #a1b8c2; font-size: 12px; }
+.user-sidebar-actions { position: relative; display: flex; gap: 8px; align-items: center; }
+.user-account-button {
+  display: flex; flex: 1; min-width: 0; padding: 0; gap: 10px; align-items: center;
+  border: 0; background: none; text-align: left; color: #a1b8c2; font-size: 12px;
+}
+.user-account-button > img, .user-account-avatar {
+  display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+  flex-shrink: 0; border: 1px solid #1b4055; border-radius: 50%; background: #10283d;
+  color: #61c9d9; overflow: hidden; object-fit: cover;
+}
+.user-account-avatar img { width: 20px; height: 20px; }
+.user-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-support-button {
+  display: inline-flex; align-items: center; justify-content: center; width: 40px; min-height: 38px;
+  flex-shrink: 0; padding: 0; border: 1px solid #1b4055; border-radius: 9px; background: #10283d; color: #a1b8c2;
+}
+.user-recharge-button:hover, .user-support-button:hover { border-color: #61c9d9; background: #143047; color: #f1f9f9; }
+.user-account-menu {
+  position: absolute; bottom: 48px; left: 0; width: 210px; z-index: 40;
+  border: 1px solid #1b4055; border-radius: 10px; padding: 6px;
+  background: #10283d; box-shadow: 0 16px 40px #0005;
+}
+.user-account-summary { padding: 8px 10px; border-bottom: 1px solid #153246; }
+.user-account-summary strong, .user-account-summary span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-account-summary strong { color: #f1f9f9; font-size: 12px; }
+.user-account-summary span { color: #708c9e; font-size: 11px; }
+.user-account-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 0 10px; border: 0; background: none; color: #a1b8c2; font-size: 12px; text-align: left; border-radius: 6px; }
+.user-account-menu-item:hover { background: #143047; color: #f1f9f9; }
+.user-account-menu-danger { color: #d47e7e; }
+@media (min-width: 701px) and (max-width: 1050px) { .user-sidebar { width: 200px !important; } }
 @media (max-width: 700px) {
-  .user-sidebar { width: 76px !important; }
-  .user-sidebar :deep(.sidebar-header) { justify-content: center; padding-inline: 16px; }
-  .user-sidebar .sidebar-brand,
-  .user-sidebar .sidebar-label { display: none !important; }
-  .user-sidebar :deep(.sidebar-link) { justify-content: center; padding-inline: 0; }
-  .user-sidebar-bottom { display: flex; padding: 10px; }
-  .user-recharge-button { width: 48px; min-height: 54px; }
-  .user-recharge-button strong { font-size: 11px; }
-  .user-recharge-button span { font-size: 0; }
-  .user-recharge-button span b { display: inline; font-size: 16px; }
-  .user-account-button { width: 48px; padding: 0; justify-content: center; }
-  .user-account-name { display: none; }
+  .user-sidebar { width: 76px !important; padding: 18px 10px; }
+  .user-sidebar .sidebar-header { padding: 0 12px 22px; }
+  .user-sidebar .sidebar-brand, .user-sidebar .sidebar-label,
+  .user-recharge-button strong, .user-recharge-button span, .user-account-name { display: none !important; }
+  .user-sidebar .sidebar-link { justify-content: center; padding: 0; }
+  .user-recharge-button { padding: 0; justify-content: center; }
+  .user-recharge-button::after { content: "充值"; font-size: 12px; }
   .user-sidebar-actions { flex-direction: column; }
+  .user-account-menu { left: 58px; bottom: 0; }
 }
-
 </style>

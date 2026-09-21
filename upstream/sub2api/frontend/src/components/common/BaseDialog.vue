@@ -1,9 +1,10 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition name="modal" @after-enter="emit('opened')">
       <div
         v-if="show"
         class="modal-overlay"
+        :class="{ 'user-app-shell xq-dialog': userTheme }"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
         role="dialog"
@@ -11,7 +12,7 @@
         @click.self="handleClose"
       >
         <!-- Modal panel -->
-        <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+        <div ref="dialogRef" :class="['modal-content', widthClasses, panelClass]" @click.stop>
           <!-- Header -->
           <div class="modal-header">
             <h3 :id="dialogId" class="modal-title">
@@ -21,7 +22,7 @@
               v-if="showCloseButton"
               @click="emit('close')"
               class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300 dark:focus-visible:ring-offset-dark-900"
-              aria-label="Close modal"
+              :aria-label="userTheme ? '关闭' : 'Close modal'"
             >
               <Icon name="x" size="md" />
             </button>
@@ -42,12 +43,17 @@
   </Teleport>
 </template>
 
-<script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
-import Icon from '@/components/icons/Icon.vue'
-
-// 生成唯一ID以避免多个对话框时ID冲突
+<script lang="ts">
 let dialogIdCounter = 0
+const openDialogs = new Set<string>()
+</script>
+
+<script setup lang="ts">
+import { computed, watch, onMounted, onUnmounted, ref, nextTick, inject } from 'vue'
+import Icon from '@/components/icons/Icon.vue'
+const userTheme = inject('starbridge-user', ref(false))
+
+// Each instance must own a unique accessible title.
 const dialogId = `modal-title-${++dialogIdCounter}`
 
 // 焦点管理
@@ -58,6 +64,7 @@ let previousActiveElement: HTMLElement | null = null
 type DialogWidth = 'narrow' | 'normal' | 'wide' | 'extra-wide' | 'full'
 
 interface Props {
+  panelClass?: string
   show: boolean
   title: string
   width?: DialogWidth
@@ -69,10 +76,12 @@ interface Props {
 
 interface Emits {
   (e: 'close'): void
+  (e: 'opened'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
   width: 'normal',
+  panelClass: '',
   closeOnEscape: true,
   closeOnClickOutside: false,
   showCloseButton: true,
@@ -107,6 +116,14 @@ const handleClose = () => {
 }
 
 const handleEscape = (event: KeyboardEvent) => {
+  if (!props.show || [...openDialogs].at(-1) !== dialogId) return
+  if (userTheme.value && event.key === 'Tab' && dialogRef.value) {
+    const elements = [...dialogRef.value.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')]
+    const first = elements[0], last = elements.at(-1)
+    if (!dialogRef.value.contains(document.activeElement)) { event.preventDefault(); first?.focus() }
+    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+  }
   if (props.show && props.closeOnEscape && event.key === 'Escape') {
     emit('close')
   }
@@ -120,6 +137,7 @@ watch(
       // 保存当前焦点元素
       previousActiveElement = document.activeElement as HTMLElement
       // 使用CSS类而不是直接操作style,更易于管理多个对话框
+      openDialogs.add(dialogId)
       document.body.classList.add('modal-open')
 
       // 等待DOM更新后设置焦点到对话框
@@ -134,7 +152,8 @@ watch(
         firstFocusable?.focus()
       }
     } else {
-      document.body.classList.remove('modal-open')
+      openDialogs.delete(dialogId)
+      if (!openDialogs.size) document.body.classList.remove('modal-open')
       // 恢复之前的焦点
       if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
         previousActiveElement.focus()
@@ -152,6 +171,7 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleEscape)
   // 确保组件卸载时移除滚动锁定
-  document.body.classList.remove('modal-open')
+  openDialogs.delete(dialogId)
+  if (!openDialogs.size) document.body.classList.remove('modal-open')
 })
 </script>

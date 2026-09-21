@@ -369,6 +369,8 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.GET("/capacity-summary", h.Admin.Group.GetCapacitySummary)
 		groups.GET("/live-capability", h.Admin.Group.GetLiveCapability)
 		groups.PUT("/sort-order", h.Admin.Group.UpdateSortOrder)
+		groups.GET("/:id/tool-mappings", h.Admin.Group.GetToolMappings)
+		groups.PUT("/:id/tool-mappings", h.Admin.Group.SetToolMappings)
 		groups.GET("/:id/model-allowlist-candidates", h.Admin.Group.GetGroupModelAllowlistCandidates)
 		groups.GET("/:id/composite-routes", h.Admin.Group.ListCompositeRoutes)
 		groups.POST("/:id/composite-routes", h.Admin.Group.CreateCompositeRoute)

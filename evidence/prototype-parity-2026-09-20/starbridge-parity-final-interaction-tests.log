@@ -1,0 +1,18 @@
+
+ RUN  v2.1.9 /Users/awen/Documents/ChatGPT/sub2api-prototype-parity/upstream/sub2api/frontend
+
+(node:10553) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:10552) Warning: `--localstorage-file` was provided without a valid path
+(Use `node --trace-warnings ...` to show where the warning was created)
+Browserslist: browsers data (caniuse-lite) is 9 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+ ✓ src/components/common/__tests__/BaseDialog.user-theme.spec.ts (2 tests) 27ms
+ ✓ src/views/user/__tests__/DashboardView.parity.spec.ts (6 tests) 52ms
+
+ Test Files  2 passed (2)
+      Tests  8 passed (8)
+   Start at  02:08:17
+   Duration  1.28s (transform 480ms, setup 123ms, collect 725ms, tests 79ms, environment 675ms, prepare 103ms)
+

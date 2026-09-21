@@ -40,7 +40,7 @@ func TestMonitorV4SnapshotReplaceIsAtomic(t *testing.T) {
 	for _, snapshot := range []service.MonitorV4StoredWindow{window1h, window, window7} {
 		for _, groupID := range []int64{7, 8} {
 			projection := snapshot.Groups[groupID]
-			mock.ExpectExec(`INSERT INTO account_monitor_v4_snapshots`).WithArgs(snapshot.Window, groupID, window.SnapshotID, snapshot.GeneratedAt, snapshot.WindowStart, snapshot.WindowEnd, snapshot.ContractVersion, projection.SuccessRate, projection.RequestCount, projection.SuccessCount, projection.RealRequestCount, projection.RealSuccessCount, projection.ProbeFallbackBucketCount, projection.ProbeFallbackRequestCount, projection.MissingProbeTerminalCount, projection.TTFTP95MS, projection.TTFTSampleCount, projection.LatencyP95MS, projection.LatencySampleCount, projection.CacheHitRate, projection.SourceUpdatedAt, projection.CurrentOperational).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec(`INSERT INTO account_monitor_v4_snapshots`).WithArgs(snapshot.Window, groupID, window.SnapshotID, snapshot.GeneratedAt, snapshot.WindowStart, snapshot.WindowEnd, snapshot.ContractVersion, projection.SuccessRate, projection.RequestCount, projection.SuccessCount, projection.RealRequestCount, projection.RealSuccessCount, projection.ProbeFallbackBucketCount, projection.ProbeFallbackRequestCount, projection.MissingProbeTerminalCount, projection.TTFTP95MS, projection.TTFTSampleCount, projection.LatencyP95MS, projection.LatencySampleCount, projection.CacheHitRate, projection.SourceUpdatedAt, projection.CurrentOperational, projection.TTFTP50MS, projection.LatencyP50MS).WillReturnResult(sqlmock.NewResult(0, 1))
 		}
 	}
 	mock.ExpectCommit()
@@ -82,11 +82,14 @@ func TestMonitorV4SnapshotLoadValidatesMetadata(t *testing.T) {
 	window := monitorV4StoredWindowFixture()
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT "window", group_id, snapshot_id, generated_at, window_start, window_end, contract_version`)).
 		WithArgs(window.Window).WillReturnRows(sqlmock.NewRows([]string{
-		"window", "group_id", "snapshot_id", "generated_at", "window_start", "window_end", "contract_version", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count", "probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational",
-	}).AddRow(window.Window, 7, window.SnapshotID, window.GeneratedAt, window.WindowStart, window.WindowEnd, window.ContractVersion, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true))
+		"window", "group_id", "snapshot_id", "generated_at", "window_start", "window_end", "contract_version", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count", "probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational", "ttft_p50_ms", "latency_p50_ms",
+	}).AddRow(window.Window, 7, window.SnapshotID, window.GeneratedAt, window.WindowStart, window.WindowEnd, window.ContractVersion, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true, 90.0, 600.0))
 	got, err := repo.LoadLatestMonitorV4Snapshot(context.Background(), window.Window)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if got.Groups[7].TTFTP50MS == nil || *got.Groups[7].TTFTP50MS != 90 || got.Groups[7].LatencyP50MS == nil || *got.Groups[7].LatencyP50MS != 600 {
+		t.Fatal("P50 was not loaded from persisted columns")
 	}
 	if got.SnapshotID != window.SnapshotID || got.Groups[7].RequestCount != 4 {
 		t.Fatalf("loaded snapshot = %#v", got)
@@ -101,8 +104,8 @@ func TestMonitorV4SnapshotLoadRejectsEmptyOrInconsistentRows(t *testing.T) {
 		"window", "group_id", "snapshot_id", "generated_at", "window_start", "window_end", "contract_version",
 		"success_rate", "request_count", "success_count", "real_request_count", "real_success_count",
 		"probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count",
-		"ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational",
-	}).AddRow("24h", 7, "different", time.Now(), time.Now().Add(-time.Hour), time.Now(), "2", nil, 0, 0, 0, 0, 0, 0, 0, nil, 0, nil, 0, nil, nil, false)
+		"ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational", "ttft_p50_ms", "latency_p50_ms",
+	}).AddRow("24h", 7, "different", time.Now(), time.Now().Add(-time.Hour), time.Now(), "2", nil, 0, 0, 0, 0, 0, 0, 0, nil, 0, nil, 0, nil, nil, false, nil, nil)
 	for _, tc := range []struct {
 		name string
 		rows *sqlmock.Rows
@@ -127,7 +130,7 @@ func TestMonitorV4SnapshotLoadRejectsEmptyOrInconsistentRows(t *testing.T) {
 
 func TestMonitorV4SnapshotLoadRejectsWindowBoundsGeneratedAtAndContractMismatch(t *testing.T) {
 	base := monitorV4StoredWindowFixture()
-	columns := []string{"window", "group_id", "snapshot_id", "generated_at", "window_start", "window_end", "contract_version", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count", "probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational"}
+	columns := []string{"window", "group_id", "snapshot_id", "generated_at", "window_start", "window_end", "contract_version", "success_rate", "request_count", "success_count", "real_request_count", "real_success_count", "probe_fallback_bucket_count", "probe_fallback_request_count", "missing_probe_terminal_count", "ttft_p95_ms", "ttft_sample_count", "latency_p95_ms", "latency_sample_count", "cache_hit_rate", "source_updated_at", "current_operational", "ttft_p50_ms", "latency_p50_ms"}
 	for _, tc := range []struct {
 		name                  string
 		window                string
@@ -146,8 +149,8 @@ func TestMonitorV4SnapshotLoadRejectsWindowBoundsGeneratedAtAndContractMismatch(
 			}
 			defer db.Close()
 			rows := sqlmock.NewRows(columns).
-				AddRow("24h", 7, base.SnapshotID, base.GeneratedAt, base.WindowStart, base.WindowEnd, base.ContractVersion, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true).
-				AddRow(tc.window, 8, base.SnapshotID, tc.generated, tc.start, tc.end, tc.contract, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true)
+				AddRow("24h", 7, base.SnapshotID, base.GeneratedAt, base.WindowStart, base.WindowEnd, base.ContractVersion, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true, 90.0, 600.0).
+				AddRow(tc.window, 8, base.SnapshotID, tc.generated, tc.start, tc.end, tc.contract, 75.0, 4, 3, 4, 3, 0, 0, 0, nil, 0, nil, 0, nil, nil, true, 90.0, 600.0)
 			mock.ExpectQuery(`SELECT "window", group_id, snapshot_id`).WithArgs(service.MonitorV4Window24H).WillReturnRows(rows)
 			if _, err := NewAccountMonitorRepository(db).(*accountMonitorRepository).LoadLatestMonitorV4Snapshot(context.Background(), service.MonitorV4Window24H); err == nil {
 				t.Fatal("expected metadata validation error")

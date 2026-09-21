@@ -1,0 +1,100 @@
+{
+  "database": "postgres:16-alpine",
+  "container": "codex-parity-pg-503699b316",
+  "network": "none",
+  "published_ports": false,
+  "checks": [
+    {
+      "name": "container has no network or published ports",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "migration executes: 238_monitor_v4_p50.sql",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "migration executes: 239_group_tool_mappings.sql",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "migration executes: 240_manual_probe_group_scope.sql",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "legacy operational flag invalidated and P50 starts unknown",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "real P50 interpolates four native selected samples",
+      "passed": true,
+      "details": {
+        "ttft_p50_ms": 300,
+        "latency_p50_ms": 4000
+      }
+    },
+    {
+      "name": "real P50 window 24h",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "real P50 window 7d",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "manual group probe does not contaminate another group sharing account",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "fresh successful first token is operational",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "latest first token beyond 15s is not operational",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "latest observation older than five minutes is not operational",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "V2 latest status also respects manual group scope",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "mapping update increments version and preserves explicit tool IDs",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "mapping audit records both versions with actor",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "unmapped group has no inferred tool mapping",
+      "passed": true,
+      "details": null
+    },
+    {
+      "name": "production snapshot INSERT and SELECT preserve P50 separately",
+      "passed": true,
+      "details": null
+    }
+  ],
+  "image_id": "sha256:44c4ee9810eff91f7eab4d822642e01115b1a9eccce4bcbdde7604752d68eac6",
+  "server_version": "PostgreSQL 16.15 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+  "passed": true,
+  "container_removed": true
+}

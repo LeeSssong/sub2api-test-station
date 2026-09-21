@@ -392,6 +392,8 @@ type MonitorV4GroupProjection struct {
 	ProbeFallbackBucketCount  int
 	ProbeFallbackRequestCount int
 	MissingProbeTerminalCount int
+	TTFTP50MS                 *float64
+	LatencyP50MS              *float64
 	TTFTP95MS                 *float64
 	TTFTSampleCount           int
 	LatencyP95MS              *float64

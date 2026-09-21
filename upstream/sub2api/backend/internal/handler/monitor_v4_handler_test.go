@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,4 +84,46 @@ func TestMonitorV4HandlerReturnsCacheHitRateContract(t *testing.T) {
 	require.Nil(t, withoutSamples["cache_hit_rate"])
 	require.Nil(t, withoutSamples["cache_read_tokens_p95"])
 	require.Equal(t, float64(0), withoutSamples["cache_read_tokens_sample_count"])
+}
+
+type monitorV4CheckerStub struct {
+	monitorV4SnapshotterStub
+	ids  []int64
+	user int64
+}
+
+func (s *monitorV4CheckerStub) Check(_ context.Context, user int64, ids []int64) ([]service.MonitorV4CheckResult, error) {
+	s.ids = ids
+	s.user = user
+	return []service.MonitorV4CheckResult{{GroupID: 7, Status: "success"}}, nil
+}
+func TestMonitorV4ManualCheckUsesAuthenticatedIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &monitorV4CheckerStub{}
+	h := NewMonitorV4Handler(stub)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/monitor-v4/check", strings.NewReader(`{"group_ids":[7],"user_id":99}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+	h.Check(c)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, int64(42), stub.user)
+	require.Equal(t, []int64{7}, stub.ids)
+	require.NotContains(t, recorder.Body.String(), "account_id")
+}
+func TestMonitorV4ManualCheckRejectsOversizedInput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	stub := &monitorV4CheckerStub{}
+	h := NewMonitorV4Handler(stub)
+	ids := make([]int64, 101)
+	data, _ := json.Marshal(map[string]any{"group_ids": ids})
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/monitor-v4/check", bytes.NewReader(data))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+	h.Check(c)
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Nil(t, stub.ids)
 }

@@ -80,6 +80,7 @@ func TestAccountMonitorProbeResultClassifiesFatalErrorsWithHTTPStatus(t *testing
 		{name: "authentication failed", message: "Chat Completions authentication failed", errorCode: "invalid_auth"},
 		{name: "http server error", message: "Grok Responses API returned 500: upstream unavailable", errorCode: "http_error", httpStatus: 500},
 		{name: "model name is not http status", message: "model gpt-401 unavailable", errorCode: "model_unavailable"},
+		{name: "blocked base url", message: "Invalid base URL: host is not allowed: upstream.example", errorCode: "account_test_error"},
 	}
 
 	for _, tt := range tests {

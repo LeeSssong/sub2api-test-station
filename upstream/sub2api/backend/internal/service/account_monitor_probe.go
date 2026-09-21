@@ -154,6 +154,9 @@ func classifyAccountMonitorProbeError(err error) string {
 	case strings.Contains(message, "model"),
 		strings.Contains(message, "unsupported"):
 		return "model_unavailable"
+	case strings.Contains(message, "host is not allowed"),
+		strings.Contains(message, "invalid base url"):
+		return "account_test_error"
 	case strings.Contains(message, "stream"),
 		strings.Contains(message, "sse"),
 		strings.Contains(message, "invalid"):

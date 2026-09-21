@@ -19,6 +19,17 @@ func TestAccountMonitorProbeResultRejectsSuccessfulEmptyStream(t *testing.T) {
 	}
 }
 
+func TestAccountMonitorProbeResultAcceptsSuccessfulCompletionWithoutText(t *testing.T) {
+	startedAt := time.Date(2026, 9, 21, 5, 40, 0, 0, time.UTC)
+	observer := &accountMonitorProbeObserver{}
+	observer.observe(TestEvent{Type: "test_complete", Success: true}, startedAt.Add(25*time.Millisecond))
+
+	result := buildAccountMonitorProbeResult(7, "gpt-5.6-sol", startedAt, startedAt.Add(30*time.Millisecond), observer, nil)
+	require.Equal(t, "success", result.Status)
+	require.Empty(t, result.ErrorCode)
+	require.Nil(t, result.TTFTMS)
+}
+
 func TestAccountMonitorProbeResultUsesFirstNonEmptyContentForTTFT(t *testing.T) {
 	startedAt := time.Date(2026, 7, 25, 8, 0, 0, 0, time.UTC)
 	observer := &accountMonitorProbeObserver{}
@@ -26,6 +37,7 @@ func TestAccountMonitorProbeResultUsesFirstNonEmptyContentForTTFT(t *testing.T) 
 	observer.observe(TestEvent{Type: "content", Text: "  "}, startedAt.Add(30*time.Millisecond))
 	observer.observe(TestEvent{Type: "content", Text: "ok"}, startedAt.Add(80*time.Millisecond))
 	observer.observe(TestEvent{Type: "content", Text: "later"}, startedAt.Add(120*time.Millisecond))
+	observer.observe(TestEvent{Type: "test_complete", Success: true}, startedAt.Add(180*time.Millisecond))
 
 	result := buildAccountMonitorProbeResult(7, "gpt-4o-mini", startedAt, startedAt.Add(200*time.Millisecond), observer, nil)
 	if result.Status != "success" || result.ErrorCode != "" || result.TTFTMS == nil || *result.TTFTMS != 80 {

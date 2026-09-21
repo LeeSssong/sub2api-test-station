@@ -59,10 +59,13 @@ func TestProcessOpenAIStreamEmitsCompletedOutputText(t *testing.T) {
 	svc := &AccountTestService{}
 	body := `data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"probe ok"}]}]}}\n\ndata: [DONE]\n\n`
 
+	observer := &accountMonitorProbeObserver{}
+	ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), accountMonitorProbeObserverKey{}, observer))
 	err := svc.processOpenAIStream(ctx, strings.NewReader(body))
 	require.NoError(t, err)
 	require.Contains(t, recorder.Body.String(), `"type":"content"`)
 	require.Contains(t, recorder.Body.String(), `probe ok`)
+	require.False(t, observer.completedAt.IsZero())
 }
 
 func newTestContext() (*gin.Context, *httptest.ResponseRecorder) {

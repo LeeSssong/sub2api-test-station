@@ -53,6 +53,18 @@ func newJSONResponse(status int, body string) *http.Response {
 
 // --- test functions ---
 
+func TestProcessOpenAIStreamEmitsCompletedOutputText(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+	svc := &AccountTestService{}
+	body := `data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"probe ok"}]}]}}\n\ndata: [DONE]\n\n`
+
+	err := svc.processOpenAIStream(ctx, strings.NewReader(body))
+	require.NoError(t, err)
+	require.Contains(t, recorder.Body.String(), `"type":"content"`)
+	require.Contains(t, recorder.Body.String(), `probe ok`)
+}
+
 func newTestContext() (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

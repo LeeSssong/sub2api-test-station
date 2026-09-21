@@ -2908,10 +2908,45 @@ func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, 
 	}
 }
 
+// openAIResponseOutputTexts extracts assistant text from terminal Responses payloads.
+// It intentionally only reads response.output message content, avoiding reasoning/tool fields.
+func openAIResponseOutputTexts(data map[string]any) []string {
+	response, ok := data["response"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	output, ok := response["output"].([]any)
+	if !ok {
+		return nil
+	}
+	texts := make([]string, 0, len(output))
+	for _, rawItem := range output {
+		item, ok := rawItem.(map[string]any)
+		if !ok || item["type"] != "message" {
+			continue
+		}
+		content, ok := item["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawPart := range content {
+			part, ok := rawPart.(map[string]any)
+			if !ok || part["type"] != "output_text" {
+				continue
+			}
+			if text, ok := part["text"].(string); ok && text != "" {
+				texts = append(texts, text)
+			}
+		}
+	}
+	return texts
+}
+
 // processOpenAIStream processes the SSE stream from OpenAI Responses API
 func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader) error {
 	reader := bufio.NewReader(body)
 	seenCompleted := false
+	seenContent := false
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -2952,9 +2987,23 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 		case "response.output_text.delta":
 			// OpenAI Responses API uses "delta" field for text content
 			if delta, ok := data["delta"].(string); ok && delta != "" {
+				seenContent = true
 				s.sendEvent(c, TestEvent{Type: "content", Text: delta})
 			}
 		case "response.completed", "response.done":
+			// Some compatible Responses upstreams omit output_text.delta and only
+			// include the assistant text in the terminal response.output payload.
+			// Preserve the malformed-stream guard for genuinely empty responses.
+			if !seenContent {
+				for _, text := range openAIResponseOutputTexts(data) {
+					if strings.TrimSpace(text) == "" {
+						continue
+					}
+					seenContent = true
+					s.sendEvent(c, TestEvent{Type: "content", Text: text})
+				}
+			}
+			seenCompleted = true
 			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 			return nil
 		case "response.failed":

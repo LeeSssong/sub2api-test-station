@@ -8,6 +8,12 @@ type NavigationGuard = (
 
 const routerHarness = vi.hoisted(() => ({
   guard: null as NavigationGuard | null,
+  afterEach: null as ((to: Record<string, any>) => void) | null,
+}))
+
+const routePrefetchHarness = vi.hoisted(() => ({
+  create: vi.fn(),
+  trigger: vi.fn(),
 }))
 
 const authStore = vi.hoisted(() => ({
@@ -36,7 +42,9 @@ vi.mock('vue-router', () => ({
     beforeEach: vi.fn((guard: NavigationGuard) => {
       routerHarness.guard = guard
     }),
-    afterEach: vi.fn(),
+    afterEach: vi.fn((hook: (to: Record<string, any>) => void) => {
+      routerHarness.afterEach = hook
+    }),
     onError: vi.fn(),
   })),
 }))
@@ -70,11 +78,14 @@ vi.mock('@/composables/useNavigationLoading', () => ({
 }))
 
 vi.mock('@/composables/useRoutePrefetch', () => ({
-  useRoutePrefetch: () => ({
-    triggerPrefetch: vi.fn(),
-    cancelPendingPrefetch: vi.fn(),
-    resetPrefetchState: vi.fn(),
-  }),
+  useRoutePrefetch: (...args: unknown[]) => {
+    routePrefetchHarness.create(...args)
+    return {
+      triggerPrefetch: routePrefetchHarness.trigger,
+      cancelPendingPrefetch: vi.fn(),
+      resetPrefetchState: vi.fn(),
+    }
+  },
 }))
 
 function createDeferred<T>() {
@@ -117,6 +128,17 @@ describe('feature route guard', () => {
     appStore.publicSettingsLoaded = false
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
+    routePrefetchHarness.create.mockClear()
+    routePrefetchHarness.trigger.mockClear()
+  })
+
+  it('does not start background route downloads after navigation completes', () => {
+    expect(routerHarness.afterEach).not.toBeNull()
+
+    routerHarness.afterEach?.({ path: '/dashboard' })
+
+    expect(routePrefetchHarness.create).not.toHaveBeenCalled()
+    expect(routePrefetchHarness.trigger).not.toHaveBeenCalled()
   })
 
   it('waits for the first public-settings request before deciding payment access', async () => {

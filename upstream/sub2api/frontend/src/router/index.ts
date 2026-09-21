@@ -9,7 +9,6 @@ import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useAdminComplianceStore } from '@/stores/adminCompliance'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
-import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
@@ -794,10 +793,8 @@ const router = createRouter({
  */
 let authInitialized = false
 
-// 初始化导航加载状态和预加载
+// 初始化导航加载状态
 const navigationLoading = useNavigationLoadingState()
-// 延迟初始化预加载，传入 router 实例
-let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
 const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
@@ -1033,18 +1030,11 @@ router.beforeEach(async (to, _from, next) => {
 })
 
 /**
- * Navigation guard: End loading and trigger prefetch
+ * Navigation guard: End loading
  */
-router.afterEach((to) => {
+router.afterEach(() => {
   // 结束导航加载状态
   navigationLoading.endNavigation()
-
-  // 懒初始化预加载（首次导航时创建，传入 router 实例）
-  if (!routePrefetch) {
-    routePrefetch = useRoutePrefetch(router)
-  }
-  // 触发路由预加载（在浏览器空闲时执行）
-  routePrefetch.triggerPrefetch(to)
 })
 
 /**

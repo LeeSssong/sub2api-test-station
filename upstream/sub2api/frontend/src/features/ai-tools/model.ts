@@ -23,15 +23,15 @@ export function configuredLines(groups: Group[], keys: ApiKey[]): Group[] {
   const counts = linkedCounts(keys)
   return [...byID.values()].filter(group=>counts.has(group.id))
 }
-export function availability(group: Group, metric?: MonitorV4Group, now = Date.now()) {
+export function availability(group: Group, metric?: MonitorV4Group, now = Date.now(), snapshotGeneratedAt?: string | null) {
   if (group.status !== 'active') return { kind: 'muted', text: '停用', available: false }
-  const observed = metric?.source_updated_at ? Date.parse(metric.source_updated_at) : NaN
+  const observed = snapshotGeneratedAt ? Date.parse(snapshotGeneratedAt) : metric?.source_updated_at ? Date.parse(metric.source_updated_at) : NaN
   if (!metric || !Number.isFinite(observed) || observed>now || now-observed > 300000) return {kind:'muted',text:'暂不可用',available:false}
   return metric.current_operational ? {kind:'success',text:'可用',available:true} : {kind:'danger',text:'不可用',available:false}
 }
-export function compareQuality(a: Group,b: Group, metrics: Map<number,MonitorV4Group>, rates: Record<number,number>,now=Date.now()): number {
+export function compareQuality(a: Group,b: Group, metrics: Map<number,MonitorV4Group>, rates: Record<number,number>,now=Date.now(),snapshotGeneratedAt?:string|null): number {
   const am=metrics.get(a.id),bm=metrics.get(b.id)
-  return Number(availability(b,bm,now).available)-Number(availability(a,am,now).available)
+  return Number(availability(b,bm,now,snapshotGeneratedAt).available)-Number(availability(a,am,now,snapshotGeneratedAt).available)
     || (bm?.success_rate??-1)-(am?.success_rate??-1)
     || (bm?.request_count??0)-(am?.request_count??0)
     || (am?.ttft_p50_ms??Infinity)-(bm?.ttft_p50_ms??Infinity)

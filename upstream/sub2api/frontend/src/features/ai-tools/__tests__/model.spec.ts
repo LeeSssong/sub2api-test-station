@@ -23,11 +23,12 @@ describe('AI线路真实口径', () => {
     expect(toolIdsForGroup(anthropicGroup, metric({ tool_ids: [] }))).toEqual(['claude'])
     expect(toolIdsForGroup(openaiGroup, metric({ tool_ids: ['grok'] }))).toEqual(['grok'])
   })
-  it('never treats missing or expired observations as available', () => {
-    expect(availability(group(1),undefined,now).text).toBe('暂不可用')
-    expect(availability(group(1),metric({source_updated_at:new Date(now-301000).toISOString()}),now).text).toBe('暂不可用')
-    expect(availability(group(1),metric(),now).text).toBe('可用')
-    expect(availability(group(1,'inactive'),metric(),now).text).toBe('停用')
+  it('uses snapshot freshness instead of the oldest source observation', () => {
+    const oldSource = metric({source_updated_at:new Date(now-301000).toISOString()})
+    expect(availability(group(1),undefined,now,new Date(now-30000).toISOString()).text).toBe('暂不可用')
+    expect(availability(group(1),oldSource,now,new Date(now-30000).toISOString()).text).toBe('可用')
+    expect(availability(group(1),oldSource,now,new Date(now-301000).toISOString()).text).toBe('暂不可用')
+    expect(availability(group(1,'inactive'),metric(),now,new Date(now-30000).toISOString()).text).toBe('停用')
   })
   it('sorts quality by availability, success, sample size and real P50', () => {
     const ms = new Map([[1,metric({request_count:2})],[2,metric({request_count:20})]])

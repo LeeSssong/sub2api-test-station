@@ -28,14 +28,18 @@ var accountMonitorHTTPStatusPattern = regexp.MustCompile(`(?i)(?:returned|返回
 
 type accountMonitorProbeObserver struct {
 	firstContentAt time.Time
+	completedAt    time.Time
 	firstContent   func()
 }
 
 func (o *accountMonitorProbeObserver) observe(event TestEvent, now time.Time) {
-	if o == nil || !o.firstContentAt.IsZero() {
+	if o == nil {
 		return
 	}
-	if event.Type == "content" && strings.TrimSpace(event.Text) != "" {
+	if event.Type == "test_complete" && event.Success {
+		o.completedAt = now
+	}
+	if o.firstContentAt.IsZero() && event.Type == "content" && strings.TrimSpace(event.Text) != "" {
 		o.firstContentAt = now
 		if o.firstContent != nil {
 			o.firstContent()
@@ -107,7 +111,10 @@ func buildAccountMonitorProbeResult(
 	}
 
 	if testErr == nil {
-		if result.TTFTMS == nil {
+		// A successful terminal event is sufficient availability evidence. Some
+		// Responses-compatible upstreams legally complete without a text delta;
+		// keep TTFT absent instead of turning that completion into a false outage.
+		if observer == nil || observer.completedAt.IsZero() {
 			result.Status = "failed"
 			result.ErrorCode = "malformed_stream"
 		}

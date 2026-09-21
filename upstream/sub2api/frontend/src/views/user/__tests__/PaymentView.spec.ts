@@ -277,7 +277,6 @@ async function mountSubscriptionPlanList(planCount: number) {
   return wrapper
 }
 
-describe.skip('PaymentView subscription plan grid (removed from user page)', () => {
 describe('PaymentView help text', () => {
   beforeEach(() => {
     vi.useRealTimers()
@@ -341,7 +340,7 @@ describe('PaymentView help text', () => {
   })
 })
 
-describe('PaymentView subscription plan grid', () => {
+describe.skip('PaymentView subscription plan grid (removed from user page)', () => {
   it.each([3, 4, 6])('keeps %i plans on the existing mobile/tablet/desktop grid', async (planCount) => {
     const wrapper = await mountSubscriptionPlanList(planCount)
     const cards = wrapper.findAllComponents(SubscriptionPlanCard)
@@ -447,6 +446,28 @@ describe.skip('PaymentView subscription confirmation amounts (removed from user 
 })
 
 describe('PaymentView recharge-only experience', () => {
+
+  it('uses a compact two-column recharge workspace with the order action beside the amount summary', async () => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({ recharge_fee_rate: 2.5 }))
+    const wrapper = shallowMount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    const workspace = wrapper.find('[data-test="recharge-workspace"]')
+    expect(workspace.exists()).toBe(true)
+    expect(workspace.classes()).toEqual(expect.arrayContaining(['grid', 'lg:grid-cols-[1.1fr_0.9fr]']))
+    expect(workspace.find('[data-test="recharge-summary"]').exists()).toBe(true)
+    expect(workspace.find('[data-test="create-recharge-order"]').exists()).toBe(true)
+  })
   it('ignores legacy subscription navigation and keeps the confirmed recharge amounts', async () => {
     const wrapper = await mountSubscriptionPlanList(3)
 

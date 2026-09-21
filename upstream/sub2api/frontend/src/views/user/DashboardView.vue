@@ -65,8 +65,8 @@ import '@/styles/xingqiao-ai.css'
 
 const router=useRouter()
 const clock=ref(Date.now())
-let freshnessTimer:ReturnType<typeof setInterval>|undefined
 const groups=ref<Group[]>([]), keys=ref<ApiKey[]>([]), rates=ref<Record<number,number>>({}), metrics=ref<MonitorV4Group[]>([])
+const metricsGeneratedAt=ref<string|null>(null)
 const loading=ref(false), loaded=ref(false), workspaceError=ref(''), statsFailed=ref(false), checking=ref(false), checkError=ref('')
 const checks=ref<Record<number,LineCheck>>({}), detailWindow=ref<MonitorV4Window>('1h'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
 let loadController:AbortController|undefined, detailController:AbortController|undefined, checkController:AbortController|undefined
@@ -77,8 +77,8 @@ const counts=computed(()=>linkedCounts(keys.value))
 const metricsById=computed(()=>new Map(metrics.value.map(m=>[m.id,m])))
 const detailMetrics=computed(()=>new Map(detailData.value.map(m=>[m.id,m])))
 const allGroups=computed(()=>{const all=new Map(groups.value.map(g=>[g.id,g]));for(const g of configuredLines(groups.value,keys.value))all.set(g.id,g);return [...all.values()]})
-const sort=(list:Group[], ms=metricsById.value)=>[...list].sort((a,b)=>compareQuality(a,b,ms,rates.value,clock.value))
-const stateOf=(g:Group)=>availability(g,statsFailed.value?undefined:metricsById.value.get(g.id),clock.value)
+const sort=(list:Group[], ms=metricsById.value)=>[...list].sort((a,b)=>compareQuality(a,b,ms,rates.value,clock.value,metricsGeneratedAt.value))
+const stateOf=(g:Group)=>availability(g,statsFailed.value?undefined:metricsById.value.get(g.id),clock.value,metricsGeneratedAt.value)
 const toolCards=computed(()=>tools.map(tool=>{
   const matching=sort(allGroups.value.filter(g=>toolIdsForGroup(g,metricsById.value.get(g.id)).includes(tool.id)))
   const active=matching.filter(g=>g.status==='active'),available=active.filter(g=>stateOf(g).available)
@@ -117,7 +117,7 @@ async function loadWorkspace(){
     clock.value=Date.now()
     groups.value=gs.value;rates.value=rs.value;keys.value=ks.value
     statsFailed.value=false
-    metrics.value=ms.value.groups
+    metrics.value=ms.value.groups;metricsGeneratedAt.value=ms.value.generated_at
     loaded.value=true
     if(selectedTool.value) selectedTool.value=toolCards.value.find(t=>t.id===selectedTool.value?.id)||null
   }finally{if(!c.signal.aborted)loading.value=false}
@@ -144,6 +144,6 @@ async function runChecks(){
   finally{checking.value=false}
 }
 function openGroupKeys(id:number){void router.push({path:'/keys',query:{group_id:String(id)}})}
-onMounted(()=>{void loadWorkspace();freshnessTimer=setInterval(()=>{clock.value=Date.now()},30000)})
-onBeforeUnmount(()=>{clearInterval(freshnessTimer);loadController?.abort();detailController?.abort();checkController?.abort()})
+onMounted(()=>{void loadWorkspace()})
+onBeforeUnmount(()=>{loadController?.abort();detailController?.abort();checkController?.abort()})
 </script>

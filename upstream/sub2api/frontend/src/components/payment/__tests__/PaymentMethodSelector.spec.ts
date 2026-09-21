@@ -60,4 +60,20 @@ describe('PaymentMethodSelector', () => {
     expect(button.classes()).toContain('border-primary-500')
     expect(button.classes()).not.toContain('border-[#02A9F1]')
   })
+
+  it('renders the Figma recharge payment card variant', () => {
+    const wrapper = mount(PaymentMethodSelector, {
+      props: {
+        variant: 'recharge',
+        selected: 'alipay',
+        methods: [{ type: 'alipay', display_name: '支付宝', fee_rate: 0, available: true }],
+      },
+    })
+
+    expect(wrapper.find('label').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="payment-method-grid"]').classes()).toContain('grid-cols-1')
+    expect(wrapper.get('button').classes()).toContain('h-[68px]')
+    expect(wrapper.text()).toContain('当前可用')
+    expect(wrapper.get('[data-testid="payment-method-selected-mark"]').text()).toBe('✓')
+  })
 })

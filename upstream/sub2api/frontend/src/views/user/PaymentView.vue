@@ -1,15 +1,15 @@
 <template>
   <AppLayout>
-    <div data-test="recharge-page" class="user-page max-w-[1180px] space-y-6">
+    <div data-test="recharge-page" class="user-page max-w-[1180px]">
       <UserRechargeNav
         active="recharge"
         :balance="Number(user?.balance || 0)"
         :concurrency="Number(user?.concurrency || 0)"
       />
-      <div v-if="loading" class="flex items-center justify-center py-20">
+      <div v-if="loading" class="mt-[22px] flex items-center justify-center py-20">
         <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
       </div>
-      <div v-else-if="checkoutLoadError" data-test="checkout-load-error" class="rounded-lg border border-red-900/70 bg-[#151b27] px-6 py-12 text-center">
+      <div v-else-if="checkoutLoadError" data-test="checkout-load-error" class="mt-[22px] rounded-lg border border-red-900/70 bg-[#151b27] px-6 py-12 text-center">
         <h2 class="text-base font-semibold text-white">{{ t('payment.loadFailedTitle') }}</h2>
         <p class="mx-auto mt-2 max-w-lg text-sm text-[#8ca5b8]">{{ t('payment.loadFailedHint') }}</p>
         <button data-test="retry-checkout" type="button" class="btn btn-primary mt-6 min-w-32" @click="loadCheckoutInfo">
@@ -51,59 +51,62 @@
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
             <template v-else>
-              <div data-test="recharge-workspace" class="grid overflow-hidden rounded-lg border border-[#285875] bg-[#061522] lg:grid-cols-[minmax(0,848px)_330px]">
-                <div class="space-y-0 px-5 py-6 sm:px-7 sm:py-7">
+              <div data-test="recharge-workspace" class="mt-[22px] grid min-w-0 grid-cols-1 overflow-hidden rounded-[16px] border border-[rgba(69,135,160,0.48)] bg-[rgba(5,19,31,0.78)] shadow-[0_20px_62px_rgba(0,0,0,0.16)] lg:h-[432px] lg:grid-cols-[minmax(0,848px)_330px]">
+                <div class="min-w-0 px-5 py-6 sm:px-[30px] sm:pb-[30px] sm:pt-7">
                   <section>
-                    <div class="mb-5 flex items-start gap-3">
-                      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#315e76] bg-[#123047] text-[10px] font-semibold text-[#67d4e5]">01</span>
+                    <div class="flex items-start gap-3">
+                      <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border border-[rgba(97,201,217,0.3)] bg-[rgba(20,63,84,0.52)] text-[10px] font-semibold text-[#61c9d9]">01</span>
                       <div>
-                        <h2 class="text-sm font-semibold text-white">选择充值额度</h2>
-                        <p class="mt-1 text-xs text-[#7698b3]">充值后将计入账户可用额度</p>
+                        <h2 class="text-[15px] font-semibold leading-[21px] text-[#f1f9f9]">选择充值额度</h2>
+                        <p class="mt-[3px] text-[11px] leading-[18px] text-[#708c9e]">{{ rechargeMinimumHint }}</p>
                       </div>
                     </div>
                     <AmountInput
+                      class="mt-[22px]"
                       v-model="amount"
                       :amounts="[10, 30, 50, 100, 200]"
                       :min="globalMinAmount"
                       :max="globalMaxAmount"
+                      variant="recharge"
                     />
                     <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
                   </section>
-                  <section v-if="enabledMethods.length >= 1" class="mt-7 border-t border-[#21445d] pt-6">
-                    <div class="mb-5 flex items-start gap-3">
-                      <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#315e76] bg-[#123047] text-[10px] font-semibold text-[#67d4e5]">02</span>
+                  <section v-if="enabledMethods.length >= 1" class="mt-[26px] border-t border-[rgba(54,107,128,0.28)] pt-[22px]">
+                    <div class="flex items-start gap-3">
+                      <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border border-[rgba(97,201,217,0.3)] bg-[rgba(20,63,84,0.52)] text-[10px] font-semibold text-[#61c9d9]">02</span>
                       <div>
-                        <h2 class="text-sm font-semibold text-white">支付方式</h2>
-                        <p class="mt-1 text-xs text-[#7698b3]">选择本次充值使用的支付渠道</p>
+                        <h2 class="text-[15px] font-semibold leading-[21px] text-[#f1f9f9]">支付方式</h2>
+                        <p class="mt-[3px] text-[11px] leading-[18px] text-[#708c9e]">选择本次充值使用的支付渠道</p>
                       </div>
                     </div>
                     <PaymentMethodSelector
-                      class="[&>label]:hidden"
+                      class="mt-4"
                       :methods="methodOptions"
                       :selected="selectedMethod"
+                      variant="recharge"
                       @select="selectedMethod = $event"
                     />
                   </section>
                 </div>
-                <aside data-test="recharge-summary" class="flex min-h-[432px] flex-col border-t border-[#285875] bg-[#0a1b2b] px-5 py-6 lg:border-l lg:border-t-0 lg:px-6 lg:py-7">
+                <aside data-test="recharge-summary" class="flex min-h-[432px] min-w-0 flex-col border-t border-[rgba(61,119,141,0.34)] bg-[radial-gradient(300px_220px_at_100%_100%,rgba(76,181,202,0.11),transparent_72%),linear-gradient(161deg,rgba(15,47,68,0.78),rgba(6,23,36,0.92))] px-5 py-6 lg:border-l lg:border-t-0 lg:px-[26px] lg:py-7">
                   <div>
-                    <p class="text-xs text-[#7698b3]">本次支付</p>
-                    <h2 class="mt-1 text-base font-semibold text-white">金额核对</h2>
+                    <p class="text-[10px] leading-4 text-[#61c9d9]">本次支付</p>
+                    <h2 class="mt-1 text-base font-semibold leading-[23px] text-[#f1f9f9]">金额核对</h2>
                   </div>
-                  <div class="mt-8 space-y-4 text-sm">
-                    <div class="flex justify-between gap-4">
-                      <span class="text-[#7896ab]">充值额度</span>
-                      <span class="font-medium text-white">${{ creditedAmount.toFixed(2) }}</span>
+                  <div class="mt-auto w-full pt-[90px]">
+                    <div class="flex items-center justify-between border-b border-[rgba(59,111,132,0.24)] py-3 text-sm">
+                      <span class="text-[#a1b8c2]">充值额度</span>
+                      <span class="font-semibold text-[#f1f9f9]">${{ creditedAmount.toFixed(2) }}</span>
                     </div>
-                    <div v-if="feeRate > 0" class="flex justify-between gap-4">
+                    <div v-if="feeRate > 0" class="flex justify-between gap-4 border-b border-[rgba(59,111,132,0.24)] py-3 text-sm">
                       <span class="text-[#7896ab]">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
                       <span class="text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
                     </div>
-                    <div class="flex items-end justify-between gap-4 border-t border-[#28506a] pt-5">
-                      <span class="text-[#9eb5c5]">{{ t('payment.actualPay') }}</span>
-                      <span class="text-2xl font-semibold text-[#e8fbff]">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
+                    <div class="pb-4 pt-[18px]">
+                      <p class="text-xs leading-5 text-[#a1b8c2]">{{ t('payment.actualPay') }}</p>
+                      <p class="mt-[3px] text-[32px] font-semibold leading-[38px] text-[#eaf9f9]">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
                     </div>
-                    <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between gap-4">
+                    <div v-if="balanceRechargeMultiplier !== 1" class="mb-4 flex justify-between gap-4 text-sm">
                       <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                       <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
                     </div>
@@ -111,14 +114,14 @@
                       {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
                     </p>
                   </div>
-                  <button data-test="create-recharge-order" :class="['btn mt-auto w-full py-3 text-sm font-semibold', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
+                  <button data-test="create-recharge-order" class="btn min-h-[48px] w-full border border-[#eaf9f9] bg-[#eaf9f9] px-4 text-sm font-semibold text-[#071421] shadow-[0_14px_17px_rgba(81,178,195,0.12)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
                     <span v-if="submitting" class="flex items-center justify-center gap-2">
                       <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
                       {{ t('common.processing') }}
                     </span>
                     <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
                   </button>
-                  <p class="mt-4 text-center text-[11px] leading-5 text-[#617f94]">订单创建后将进入安全支付流程</p>
+                  <p class="pt-[10px] text-center text-[10px] leading-4 text-[#708c9e]">订单创建后将进入安全支付流程</p>
                 </aside>
               </div>
             </template>
@@ -637,6 +640,11 @@ function subscriptionPaymentAmountForCurrency(value: number, currency: string): 
 function formatSelectedPaymentAmount(value: number): string {
   return formatPaymentAmount(value, selectedCurrency.value, localeCode.value)
 }
+
+const rechargeMinimumHint = computed(() => {
+  if (globalMinAmount.value <= 0) return '充值后计入账户可用额度'
+  return `最低充值额度 ${formatSelectedPaymentAmount(globalMinAmount.value)}，充值后计入账户可用额度`
+})
 
 function formatSelectedSubscriptionPaymentAmount(value: number): string {
   return formatSelectedPaymentAmount(subscriptionPaymentAmountForCurrency(value, selectedCurrency.value))

@@ -1,20 +1,21 @@
 <template>
-  <div class="space-y-4">
+  <div :class="variant === 'recharge' ? 'space-y-[18px]' : 'space-y-4'">
     <!-- Quick Amount Buttons -->
     <div>
-      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+      <label v-if="variant !== 'recharge'" class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
         {{ t('payment.quickAmounts') }}
       </label>
-      <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div :class="variant === 'recharge' ? 'grid grid-cols-2 gap-[10px] sm:grid-cols-5' : 'grid grid-cols-2 gap-2 sm:grid-cols-5'">
         <button
           v-for="amt in filteredAmounts"
           :key="amt"
           type="button"
           :class="[
-            'min-h-12 rounded-lg border px-3 py-3 text-center font-medium transition-colors',
+            'min-h-12 border px-3 text-center text-sm font-medium transition-colors',
+            variant === 'recharge' ? 'rounded-[9px]' : 'rounded-lg py-3',
             modelValue === amt
-              ? 'border-[#67d4e5] bg-[#12344a] text-white'
-              : 'border-[#21445d] bg-[#071827] text-[#b7c8d5] hover:border-[#3a6c87] hover:text-white',
+              ? 'border-[#61c9d9] bg-[linear-gradient(167deg,rgba(31,87,110,0.82),rgba(15,48,69,0.9))] text-[#eaf9f9] shadow-[0_12px_30px_rgba(27,112,139,0.12)]'
+              : 'border-[rgba(54,111,134,0.44)] bg-[#091a2b] text-[#a1b8c2] hover:border-[#3a6c87] hover:text-white',
           ]"
           @click="selectAmount(amt)"
         >
@@ -25,11 +26,11 @@
 
     <!-- Custom Amount Input -->
     <div>
-      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-        {{ t('payment.customAmount') }}
+      <label :class="variant === 'recharge' ? 'mb-2 block text-xs text-[#a1b8c2]' : 'mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'">
+        {{ variant === 'recharge' ? '自定义额度' : t('payment.customAmount') }}
       </label>
       <div class="relative">
-        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
+        <span v-if="variant !== 'recharge'" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
           $
         </span>
         <input
@@ -37,7 +38,7 @@
           inputmode="decimal"
           :value="customText"
           :placeholder="placeholderText"
-          class="input w-full py-3 pl-8 pr-4"
+          :class="variant === 'recharge' ? 'input h-10 w-full px-[14px] py-2 text-sm' : 'input w-full py-3 pl-8 pr-4'"
           @input="handleInput"
         />
       </div>
@@ -54,10 +55,12 @@ const props = withDefaults(defineProps<{
   modelValue: number | null
   min?: number
   max?: number
+  variant?: 'default' | 'recharge'
 }>(), {
   amounts: () => [20, 50, 100],
   min: 0,
   max: 0,
+  variant: 'default',
 })
 
 const emit = defineEmits<{
@@ -74,6 +77,7 @@ const filteredAmounts = computed(() =>
 )
 
 const placeholderText = computed(() => {
+  if (props.variant === 'recharge') return '输入充值额度（USD）'
   if (props.min > 0 && props.max > 0) return `${props.min} - ${props.max}`
   if (props.min > 0) return `≥ ${props.min}`
   if (props.max > 0) return `≤ ${props.max}`

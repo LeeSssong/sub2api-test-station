@@ -69,6 +69,10 @@ set -euo pipefail
 printf 'ssh %s\n' "$*" >>"${EVENT_LOG:?}"
 if [[ "$*" == *'mktemp -d /var/tmp/sub2api-test-station-release.XXXXXX'* ]]; then
   printf '/var/tmp/sub2api-test-station-release.TEST\n'
+elif [[ "$*" == *'deploy-sub2api-test-station-host.sh'* && "${FAKE_MODE:-ok}" =~ ^executor-(disconnect|unreconciled)$ ]]; then
+  exit 255
+elif [[ "$*" == *'/opt/sub2api-test-station/release-state.json'* ]]; then
+  [[ "${FAKE_MODE:-ok}" == executor-disconnect ]]
 elif [[ "$*" == *'sudo -n bash -s --'* ]]; then
   cat >/dev/null
 else
@@ -100,6 +104,10 @@ test_success_transfers_metadata_and_backup_helper(){
   [[ "$output" == "test_station_release status=succeeded source_commit=$COMMIT source_tree=$TREE" ]] || fail 'success output mismatch'
   grep -F 'docker image inspect --format {{.Id}}' "$EVENT_LOG" >/dev/null || fail 'image ID not inspected'
   scp_line=$(grep '^scp ' "$EVENT_LOG")
+  for option in 'ConnectTimeout=15' 'ServerAliveInterval=10' 'ServerAliveCountMax=18' 'TCPKeepAlive=yes'; do
+    grep '^ssh ' "$EVENT_LOG" | grep -F -- "$option" >/dev/null || fail "SSH missing $option"
+    [[ "$scp_line" == *"$option"* ]] || fail "SCP missing $option"
+  done
   [[ "$scp_line" == *backup-sub2api-test-station-host.sh* ]] || fail 'backup helper not transferred'
   [[ "$scp_line" == *deploy-sub2api-test-station-host.sh* ]] || fail 'host executor not transferred'
   final_ssh=$(grep '^ssh ' "$EVENT_LOG" | grep 'sudo -n bash ' | tail -n 1)
@@ -138,6 +146,21 @@ test_malformed_image_id_stops_before_ssh(){
   assert_no_ssh
 }
 
+test_executor_disconnect_reconciles_committed_release(){
+  setup executor-disconnect
+  output=$(FAKE_MODE=executor-disconnect TEST_STATION_RELEASE_RECONCILE_INTERVAL_SECONDS=0 run_release) || fail 'executor disconnect did not reconcile'
+  [[ "$output" == "test_station_release status=succeeded source_commit=$COMMIT source_tree=$TREE" ]] || fail 'reconciled output mismatch'
+  grep '^ssh ' "$EVENT_LOG" | grep -F '/opt/sub2api-test-station/release-state.json' >/dev/null || fail 'release state was not reconciled'
+}
+
+test_executor_disconnect_fails_when_state_is_not_committed(){
+  setup executor-unreconciled
+  if FAKE_MODE=executor-unreconciled TEST_STATION_RELEASE_RECONCILE_ATTEMPTS=2 TEST_STATION_RELEASE_RECONCILE_INTERVAL_SECONDS=0 run_release >/dev/null 2>&1; then
+    fail 'unreconciled executor disconnect returned success'
+  fi
+  [[ $(grep -c '/opt/sub2api-test-station/release-state.json' "$EVENT_LOG") -eq 2 ]] || fail 'release state reconciliation retries mismatch'
+}
+
 test_invalid_migration_content_stops_before_build(){
   setup invalid-migration
   printf '\377' >"$WORKTREE/upstream/sub2api/backend/migrations/001.sql"
@@ -151,5 +174,7 @@ test_success_transfers_metadata_and_backup_helper
 test_source_failures_stop_before_build
 test_unsafe_target_and_missing_migrations_stop_early
 test_malformed_image_id_stops_before_ssh
+test_executor_disconnect_reconciles_committed_release
+test_executor_disconnect_fails_when_state_is_not_committed
 test_invalid_migration_content_stops_before_build
 printf 'PASS: independent test station release contract\n'

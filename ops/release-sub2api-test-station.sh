@@ -34,6 +34,28 @@ command -v ssh >/dev/null 2>&1 || fail 'SSH is required'
 command -v scp >/dev/null 2>&1 || fail 'SCP is required'
 command -v ruby >/dev/null 2>&1 || fail 'Ruby is required'
 
+# Release steps can spend several minutes in quiet Docker/Compose operations.
+# Keep the control connection alive explicitly instead of relying on a user's
+# local SSH config, and allow transient packet loss before declaring failure.
+ssh_opts=(
+  -o BatchMode=yes
+  -o ConnectTimeout=15
+  -o ServerAliveInterval=10
+  -o ServerAliveCountMax=18
+  -o TCPKeepAlive=yes
+  -o StrictHostKeyChecking=yes
+)
+release_reconcile_attempts=${TEST_STATION_RELEASE_RECONCILE_ATTEMPTS:-6}
+release_reconcile_interval=${TEST_STATION_RELEASE_RECONCILE_INTERVAL_SECONDS:-10}
+[[ "$release_reconcile_attempts" =~ ^[1-9][0-9]*$ ]] || fail 'release reconciliation attempts are invalid'
+[[ "$release_reconcile_interval" =~ ^[0-9]+$ ]] || fail 'release reconciliation interval is invalid'
+
+remote_release_succeeded(){
+  ssh -T "${ssh_opts[@]}" "$target" \
+    "sudo -n python3 -c 'import json,sys; value=json.load(open(\"/opt/sub2api-test-station/release-state.json\",encoding=\"utf-8\")); raise SystemExit(0 if value.get(\"source_commit\")==sys.argv[1] and value.get(\"source_tree\")==sys.argv[2] and value.get(\"result\")==\"succeeded\" and value.get(\"rolled_back\") is False else 1)' '$source_commit' '$source_tree'" \
+    >/dev/null 2>&1
+}
+
 migration_set_sha256=$(ruby -rdigest -e '
   directory = ARGV.fetch(0)
   go_space = /[\u0009-\u000D\u0020\u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/
@@ -66,13 +88,22 @@ cp "$host_executor" "$tmp/deploy-sub2api-test-station-host.sh"
 chmod 0700 "$tmp/backup-sub2api-test-station-host.sh" "$tmp/deploy-sub2api-test-station-host.sh"
 printf '%s\n' "$archive_sha256" >"$tmp/image.sha256"
 
-remote=$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" 'mktemp -d /var/tmp/sub2api-test-station-release.XXXXXX') || fail 'remote staging failed'
-cleanup_remote(){ ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" "rm -rf -- '$remote'" >/dev/null 2>&1 || true; }
+remote=$(ssh -T "${ssh_opts[@]}" "$target" 'mktemp -d /var/tmp/sub2api-test-station-release.XXXXXX') || fail 'remote staging failed'
+cleanup_remote(){ ssh -T "${ssh_opts[@]}" "$target" "rm -rf -- '$remote'" >/dev/null 2>&1 || true; }
 trap 'cleanup_remote; rm -rf -- "$tmp"' EXIT
-scp -q "$tmp/image.tar" "$tmp/image.sha256" "$tmp/compose.yaml" "$tmp/Caddyfile" \
+scp -q "${ssh_opts[@]}" "$tmp/image.tar" "$tmp/image.sha256" "$tmp/compose.yaml" "$tmp/Caddyfile" \
   "$tmp/backup-sub2api-test-station-host.sh" "$tmp/deploy-sub2api-test-station-host.sh" \
   "$target:$remote/" || fail 'bundle transfer failed'
-ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$target" \
-  "sudo -n bash '$remote/deploy-sub2api-test-station-host.sh' --staging-root '$remote' --image-archive '$remote/image.tar' --image-sha256 '$archive_sha256' --image-id '$image_id' --compose '$remote/compose.yaml' --caddy '$remote/Caddyfile' --backup-script '$remote/backup-sub2api-test-station-host.sh' --source-commit '$source_commit' --source-tree '$source_tree' --migration-set-sha256 '$migration_set_sha256' --deploy-root '$deploy_root'" \
-  || fail 'remote executor failed'
+if ! ssh -T "${ssh_opts[@]}" "$target" \
+  "sudo -n bash '$remote/deploy-sub2api-test-station-host.sh' --staging-root '$remote' --image-archive '$remote/image.tar' --image-sha256 '$archive_sha256' --image-id '$image_id' --compose '$remote/compose.yaml' --caddy '$remote/Caddyfile' --backup-script '$remote/backup-sub2api-test-station-host.sh' --source-commit '$source_commit' --source-tree '$source_tree' --migration-set-sha256 '$migration_set_sha256' --deploy-root '$deploy_root'"; then
+  reconciled=false
+  for ((attempt=1; attempt<=release_reconcile_attempts; attempt++)); do
+    if remote_release_succeeded; then
+      reconciled=true
+      break
+    fi
+    ((attempt < release_reconcile_attempts && release_reconcile_interval > 0)) && sleep "$release_reconcile_interval"
+  done
+  [[ "$reconciled" == true ]] || fail 'remote executor failed and release state could not be reconciled'
+fi
 printf 'test_station_release status=succeeded source_commit=%s source_tree=%s\n' "$source_commit" "$source_tree"

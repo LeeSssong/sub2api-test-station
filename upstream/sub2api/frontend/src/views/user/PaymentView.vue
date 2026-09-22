@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
     <div data-test="recharge-page" class="user-page max-w-[1180px]">
+      <UserPageHeader title="充值与兑换" description="为账户充值或兑换余额、并发及订阅权益" />
       <UserRechargeNav
         active="recharge"
         :balance="Number(user?.balance || 0)"
@@ -323,6 +324,7 @@ import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, pl
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import UserRechargeNav from '@/components/payment/UserRechargeNav.vue'
+import UserPageHeader from '@/components/user/UserPageHeader.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import { planValiditySuffix as validitySuffixOf } from '@/components/payment/validity'

@@ -34,10 +34,30 @@ describe('confirmed user shell composition', () => {
   })
 
   it('shares recharge navigation and balance across recharge and redeem pages', () => {
-    expect(payment).toContain('<UserRechargeNav active="recharge"')
-    expect(redeem).toContain('<UserRechargeNav active="redeem"')
-    expect(payment).toContain(':amounts="[10, 30, 50, 100]"')
+    expect(payment).toContain('<UserRechargeNav')
+    expect(payment).toContain('active="recharge"')
+    expect(redeem).toContain('<UserRechargeNav')
+    expect(redeem).toContain('active="redeem"')
+    expect(payment).toContain(':amounts="[10, 30, 50, 100, 200]"')
     expect(payment).toContain('const amount = ref(30)')
+  })
+
+  it('keeps recharge and redeem on the same content width and account metrics', () => {
+    expect(payment).toContain('class="user-page max-w-[1180px]"')
+    expect(redeem).toContain('class="user-page max-w-[1180px]"')
+    expect(redeem).toContain(':concurrency="Number(user?.concurrency || 0)"')
+  })
+
+  it('keeps redeem feedback inside the input card without removing detailed results', () => {
+    const cardStart = redeem.indexOf('data-test="redeem-form-card"')
+    const feedback = redeem.indexOf('data-test="redeem-feedback"')
+    const informationCard = redeem.indexOf('<!-- Information Card -->')
+
+    expect(cardStart).toBeGreaterThan(-1)
+    expect(feedback).toBeGreaterThan(cardStart)
+    expect(feedback).toBeLessThan(informationCard)
+    expect(redeem).toContain('redeemResult.new_balance')
+    expect(redeem).toContain('redeemResult.new_concurrency')
   })
 
   it('keeps orders as a secondary page with a recharge return action', () => {

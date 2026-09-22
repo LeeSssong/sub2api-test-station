@@ -50,6 +50,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -59,15 +60,19 @@ import keysAPI from '@/api/keys'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
 import { checkLines, type LineCheck } from '@/features/ai-tools/api'
 import { tools, linkedCounts, configuredLines, availability, compareQuality, metricLabel, providerIcon, platformLabel, toolIdsForGroup } from '@/features/ai-tools/model'
+import { getDashboardWorkspaceSnapshot, setDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
 import type { ApiKey, Group } from '@/types'
 import type { MonitorV4Group, MonitorV4Window } from '@/features/monitor-v4/types'
 import '@/styles/xingqiao-ai.css'
 
 const router=useRouter()
+const authStore=useAuthStore()
+const cacheUserId=String(authStore.user?.id||'')
+const cachedWorkspace=getDashboardWorkspaceSnapshot(cacheUserId)
 const clock=ref(Date.now())
-const groups=ref<Group[]>([]), keys=ref<ApiKey[]>([]), rates=ref<Record<number,number>>({}), metrics=ref<MonitorV4Group[]>([])
-const metricsGeneratedAt=ref<string|null>(null)
-const loading=ref(false), loaded=ref(false), workspaceError=ref(''), statsFailed=ref(false), checking=ref(false), checkError=ref('')
+const groups=ref<Group[]>(cachedWorkspace?.groups||[]), keys=ref<ApiKey[]>(cachedWorkspace?.keys||[]), rates=ref<Record<number,number>>(cachedWorkspace?.rates||{}), metrics=ref<MonitorV4Group[]>(cachedWorkspace?.metrics||[])
+const metricsGeneratedAt=ref<string|null>(cachedWorkspace?.metricsGeneratedAt||null)
+const loading=ref(false), loaded=ref(!!cachedWorkspace), workspaceError=ref(''), statsFailed=ref(false), checking=ref(false), checkError=ref('')
 const checks=ref<Record<number,LineCheck>>({}), detailWindow=ref<MonitorV4Window>('1h'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
 let loadController:AbortController|undefined, detailController:AbortController|undefined, checkController:AbortController|undefined
 const detailCache=new Map<MonitorV4Window,MonitorV4Group[]>()
@@ -107,19 +112,24 @@ function checkOf(g:Group){
   if(r.status==='success'&&r.ttft_ms!=null)return {kind:'success',text:metricLabel(r.ttft_ms)}
   return {kind:r.status==='disabled'?'muted':'danger',text:r.status==='timeout'?'响应超时':r.status==='disabled'?'线路已停用':'检查失败'}
 }
+function cacheWorkspace(){setDashboardWorkspaceSnapshot({userId:cacheUserId,groups:groups.value,keys:keys.value,rates:rates.value,metrics:metrics.value,metricsGeneratedAt:metricsGeneratedAt.value})}
 async function loadAllKeys(signal:AbortSignal){const first=await keysAPI.list(1,100,undefined,{signal});const items=[...first.items];for(let page=2;page<=Math.ceil(first.total/100);page++){const next=await keysAPI.list(page,100,undefined,{signal});items.push(...next.items)}return items}
 async function loadWorkspace(){
   loadController?.abort();const c=new AbortController();loadController=c;loading.value=true;workspaceError.value=''
   try {
-    const [gs,rs,ks,ms]=await Promise.allSettled([userGroupsAPI.getAvailable(),userGroupsAPI.getUserGroupRates(),loadAllKeys(c.signal),getHybridPerformanceSnapshot('1h',c.signal)])
+    const statsRequest=getHybridPerformanceSnapshot('1h',c.signal).then(value=>({ok:true as const,value}),()=>({ok:false as const}))
+    const [gs,rs,ks]=await Promise.allSettled([userGroupsAPI.getAvailable(),userGroupsAPI.getUserGroupRates(),loadAllKeys(c.signal)])
     if(c.signal.aborted)return
-    if(gs.status==='rejected'||ks.status==='rejected'||rs.status==='rejected'||ms.status==='rejected') {workspaceError.value=loaded.value?'刷新失败，保留上次成功数据。':'AI 工具数据暂时不可用，请重试。';return}
+    if(gs.status==='rejected'||ks.status==='rejected'||rs.status==='rejected') {workspaceError.value=loaded.value?'刷新失败，保留上次成功数据。':'AI 工具数据暂时不可用，请重试。';return}
     clock.value=Date.now()
     groups.value=gs.value;rates.value=rs.value;keys.value=ks.value
-    statsFailed.value=false
-    metrics.value=ms.value.groups;metricsGeneratedAt.value=ms.value.generated_at
     loaded.value=true
+    cacheWorkspace()
     if(selectedTool.value) selectedTool.value=toolCards.value.find(t=>t.id===selectedTool.value?.id)||null
+    const stats=await statsRequest
+    if(c.signal.aborted)return
+    if(stats.ok){statsFailed.value=false;metrics.value=stats.value.groups;metricsGeneratedAt.value=stats.value.generated_at;cacheWorkspace()}
+    else statsFailed.value=!metricsGeneratedAt.value
   }finally{if(!c.signal.aborted)loading.value=false}
 }
 async function openDetails(tool:ToolCard){detailsTrigger=document.activeElement as HTMLElement;selectedTool.value=tool;await loadDetails('1h')}

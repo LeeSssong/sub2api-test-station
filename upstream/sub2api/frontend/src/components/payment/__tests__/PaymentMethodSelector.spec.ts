@@ -73,7 +73,7 @@ describe('PaymentMethodSelector', () => {
     expect(wrapper.find('label').exists()).toBe(false)
     expect(wrapper.get('[data-testid="payment-method-grid"]').classes()).toContain('grid-cols-1')
     expect(wrapper.get('button').classes()).toContain('h-[68px]')
-    expect(wrapper.text()).toContain('当前可用')
+    expect(wrapper.text()).not.toContain('当前可用')
     expect(wrapper.get('[data-testid="payment-method-selected-mark"]').text()).toBe('✓')
   })
 })

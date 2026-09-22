@@ -59,18 +59,18 @@
                       <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border border-[rgba(97,201,217,0.3)] bg-[rgba(20,63,84,0.52)] text-[10px] font-semibold text-[#61c9d9]">01</span>
                       <div>
                         <h2 class="text-[15px] font-semibold leading-[21px] text-[#f1f9f9]">选择充值额度</h2>
-                        <p class="mt-[3px] text-[11px] leading-[18px] text-[#708c9e]">{{ rechargeMinimumHint }}</p>
+                        <p class="mt-[3px] text-[11px] leading-[18px] text-[#708c9e]">单笔最低充值 $1，最高充值 $50，如需大额充值联系客服 QQ:2826033474</p>
                       </div>
                     </div>
                     <AmountInput
                       class="mt-[22px]"
                       v-model="amount"
-                      :amounts="[10, 30, 50, 100, 200]"
-                      :min="globalMinAmount"
-                      :max="globalMaxAmount"
+                      :amounts="[10, 30, 50]"
+                      :min="RECHARGE_MIN_AMOUNT"
+                      :max="RECHARGE_MAX_AMOUNT"
                       variant="recharge"
                     />
-                    <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
+                    <p v-if="amountError" data-test="recharge-amount-error" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
                   </section>
                   <section v-if="enabledMethods.length >= 1" class="mt-[26px] border-t border-[rgba(54,107,128,0.28)] pt-[22px]">
                     <div class="flex items-start gap-3">
@@ -364,6 +364,8 @@ const errorMessage = ref('')
 const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref(30)
+const RECHARGE_MIN_AMOUNT = 1
+const RECHARGE_MAX_AMOUNT = 50
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
@@ -584,20 +586,6 @@ function amountFitsMethod(amt: number, methodType: string): boolean {
   return true
 }
 
-// Visible methods decide the amount range shown to users.
-const globalMinAmount = computed(() => {
-  const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_min <= 0)) return 0
-  return Math.min(...limits.map(limit => limit.single_min))
-})
-const globalMaxAmount = computed(() => {
-  const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_max <= 0)) return 0
-  return Math.max(...limits.map(limit => limit.single_max))
-})
-
 // Selected method's limits (for validation and error messages)
 const selectedLimit = computed(() => visibleMethods.value[selectedMethod.value])
 const selectedCurrency = computed(() => normalizePaymentCurrency(selectedLimit.value?.currency))
@@ -643,11 +631,6 @@ function formatSelectedPaymentAmount(value: number): string {
   return formatPaymentAmount(value, selectedCurrency.value, localeCode.value)
 }
 
-const rechargeMinimumHint = computed(() => {
-  if (globalMinAmount.value <= 0) return '充值后计入账户可用额度'
-  return `最低充值额度 ${formatSelectedPaymentAmount(globalMinAmount.value)}，充值后计入账户可用额度`
-})
-
 function formatSelectedSubscriptionPaymentAmount(value: number): string {
   return formatSelectedPaymentAmount(subscriptionPaymentAmountForCurrency(value, selectedCurrency.value))
 }
@@ -678,6 +661,8 @@ const totalAmount = computed(() =>
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
+  if (validAmount.value < RECHARGE_MIN_AMOUNT) return '单笔最低充值 $1'
+  if (validAmount.value > RECHARGE_MAX_AMOUNT) return '单笔最高充值 $50'
   // No method can handle this amount
   if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
     return t('payment.amountNoMethod')
@@ -692,7 +677,8 @@ const amountError = computed(() => {
 })
 
 const canSubmit = computed(() =>
-  validAmount.value > 0
+  validAmount.value >= RECHARGE_MIN_AMOUNT
+    && validAmount.value <= RECHARGE_MAX_AMOUNT
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )

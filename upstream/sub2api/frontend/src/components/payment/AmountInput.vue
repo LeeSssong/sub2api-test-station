@@ -5,7 +5,7 @@
       <label v-if="variant !== 'recharge'" class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
         {{ t('payment.quickAmounts') }}
       </label>
-      <div :class="variant === 'recharge' ? 'grid grid-cols-2 gap-[10px] sm:grid-cols-5' : 'grid grid-cols-2 gap-2 sm:grid-cols-5'">
+      <div :class="variant === 'recharge' ? 'grid grid-cols-3 gap-[10px]' : 'grid grid-cols-2 gap-2 sm:grid-cols-5'">
         <button
           v-for="amt in filteredAmounts"
           :key="amt"

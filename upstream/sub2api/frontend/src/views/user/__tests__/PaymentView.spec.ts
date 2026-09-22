@@ -476,13 +476,30 @@ describe('PaymentView recharge-only experience', () => {
     expect(wrapper.findComponent({ name: 'AmountInput' }).props('variant')).toBe('recharge')
     expect(wrapper.findComponent({ name: 'PaymentMethodSelector' }).props('variant')).toBe('recharge')
   })
-  it('ignores legacy subscription navigation and keeps the confirmed recharge amounts', async () => {
+  it('matches the confirmed recharge copy and quick amounts', async () => {
     const wrapper = await mountSubscriptionPlanList(3)
 
     expect(wrapper.text()).not.toContain('payment.tabSubscribe')
     expect(wrapper.text()).not.toContain('payment.noPlans')
+    expect(wrapper.text()).toContain('单笔最低充值 $1，最高充值 $50，如需大额充值联系客服 QQ:2826033474')
     const amountInput = wrapper.findComponent({ name: 'AmountInput' })
-    expect(amountInput.props('amounts')).toEqual([10, 30, 50, 100, 200])
+    expect(amountInput.props('amounts')).toEqual([10, 30, 50])
+    expect(amountInput.props('min')).toBe(1)
+    expect(amountInput.props('max')).toBe(50)
+  })
+
+  it.each([
+    [0.5, '单笔最低充值 $1'],
+    [50.01, '单笔最高充值 $50'],
+  ])('shows the fixed recharge limit error for %s', async (value, message) => {
+    const wrapper = await mountSubscriptionPlanList(0)
+    const amountInput = wrapper.findComponent({ name: 'AmountInput' })
+
+    await amountInput.vm.$emit('update:modelValue', value)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-test="recharge-amount-error"]').text()).toBe(message)
+    expect(wrapper.get('[data-test="create-recharge-order"]').attributes('disabled')).toBeDefined()
   })
 
   it('shows a retry state when checkout loading fails instead of reporting payment unavailable', async () => {

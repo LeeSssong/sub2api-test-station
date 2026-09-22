@@ -34,7 +34,7 @@
             <span data-testid="payment-method-label" class="block w-full truncate text-sm font-semibold text-[#f1f9f9]">
               {{ methodLabel(method) }}
             </span>
-            <span class="mt-0.5 text-[10px] text-[#8cdfc4]">
+            <span v-if="!isBuiltInAlipayMethod(method.type)" class="mt-0.5 text-[10px] text-[#8cdfc4]">
               {{ method.available ? '当前可用' : '当前不可用' }}
             </span>
           </span>

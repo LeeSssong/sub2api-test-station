@@ -24,10 +24,11 @@ describe('AI线路真实口径', () => {
     expect(toolIdsForGroup(openaiGroup, metric({ tool_ids: ['grok'] }))).toEqual(['grok'])
   })
   it('uses snapshot freshness instead of the oldest source observation', () => {
-    const oldSource = metric({source_updated_at:new Date(now-301000).toISOString()})
+    const oldSource = metric({source_updated_at:new Date(now-421000).toISOString()})
     expect(availability(group(1),undefined,now,new Date(now-30000).toISOString()).text).toBe('暂不可用')
     expect(availability(group(1),oldSource,now,new Date(now-30000).toISOString()).text).toBe('可用')
-    expect(availability(group(1),oldSource,now,new Date(now-301000).toISOString()).text).toBe('暂不可用')
+    expect(availability(group(1),oldSource,now,new Date(now-360000).toISOString()).text).toBe('可用')
+    expect(availability(group(1),oldSource,now,new Date(now-421000).toISOString()).text).toBe('暂不可用')
     expect(availability(group(1,'inactive'),metric(),now,new Date(now-30000).toISOString()).text).toBe('停用')
   })
   it('sorts quality by availability, success, sample size and real P50', () => {

@@ -7,6 +7,7 @@ export const tools = [
   { id: 'deepseek', label: 'DeepSeek', platform: 'deepseek', type: '通用 AI' },
 ] as const
 export type Tool = typeof tools[number]
+const SNAPSHOT_FRESHNESS_MS = 7 * 60 * 1000
 export function toolIdsForGroup(group: Group, metric?: MonitorV4Group): string[] {
   if (metric?.tool_ids?.length) return metric.tool_ids
   const fallback = tools.find(tool => tool.platform === group.platform)
@@ -26,7 +27,7 @@ export function configuredLines(groups: Group[], keys: ApiKey[]): Group[] {
 export function availability(group: Group, metric?: MonitorV4Group, now = Date.now(), snapshotGeneratedAt?: string | null) {
   if (group.status !== 'active') return { kind: 'muted', text: '停用', available: false }
   const observed = snapshotGeneratedAt ? Date.parse(snapshotGeneratedAt) : metric?.source_updated_at ? Date.parse(metric.source_updated_at) : NaN
-  if (!metric || !Number.isFinite(observed) || observed>now || now-observed > 300000) return {kind:'muted',text:'暂不可用',available:false}
+  if (!metric || !Number.isFinite(observed) || observed>now || now-observed > SNAPSHOT_FRESHNESS_MS) return {kind:'muted',text:'暂不可用',available:false}
   return metric.current_operational ? {kind:'success',text:'可用',available:true} : {kind:'danger',text:'不可用',available:false}
 }
 export function compareQuality(a: Group,b: Group, metrics: Map<number,MonitorV4Group>, rates: Record<number,number>,now=Date.now(),snapshotGeneratedAt?:string|null): number {

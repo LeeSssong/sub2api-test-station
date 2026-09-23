@@ -279,6 +279,19 @@ func (r *AccountMonitorRunner) refreshSnapshotOnce() {
 		return
 	}
 	defer r.snapshotMu.Unlock()
+	r.refreshSnapshotLocked()
+}
+
+func (r *AccountMonitorRunner) refreshSnapshotAfterProbe() {
+	if r == nil || r.snapshotRefresher == nil {
+		return
+	}
+	r.snapshotMu.Lock()
+	defer r.snapshotMu.Unlock()
+	r.refreshSnapshotLocked()
+}
+
+func (r *AccountMonitorRunner) refreshSnapshotLocked() {
 	ctx, cancel := context.WithTimeout(r.ctx, 4*time.Minute)
 	defer cancel()
 	release, acquired := tryAcquireSingletonLeaderLock(ctx, r.lockCache, r.db, accountMonitorV4SnapshotLeaderLockKey, r.instanceID, accountMonitorV4SnapshotLeaderLockTTL)
@@ -315,6 +328,7 @@ func (r *AccountMonitorRunner) runOnce() {
 	defer cancel()
 	completed, err := r.svc.RunAll(ctx, 0)
 	slog.Info("account_monitor: run completed", "completed", completed, "error", err)
+	r.refreshSnapshotAfterProbe()
 	if err != nil {
 		slog.Warn("account_monitor: run failed", "error", err)
 	}

@@ -299,6 +299,20 @@ func TestAccountMonitorRunnerTriggersBalanceEvaluationAfterNativeRun(t *testing.
 	}
 }
 
+func TestAccountMonitorRunnerRefreshesMonitorV4SnapshotAfterNativeRun(t *testing.T) {
+	repo := &accountMonitorRepoStub{settings: AccountMonitorSettings{IntervalSeconds: 60}}
+	svc := NewAccountMonitorService(repo, &accountMonitorAccountRepoStub{}, nil, nil, nil)
+	runner := NewAccountMonitorRunner(svc)
+	refresher := &monitorV4SnapshotRefresherStub{}
+	runner.SetMonitorV4SnapshotRefresher(refresher)
+
+	runner.runOnce()
+
+	if got := refresher.calls.Load(); got != 1 {
+		t.Fatalf("snapshot refresh calls after probe = %d, want 1", got)
+	}
+}
+
 type upstreamBalanceNotificationTriggerStub struct{ calls int }
 
 func (s *upstreamBalanceNotificationTriggerStub) TriggerEvaluate() { s.calls++ }

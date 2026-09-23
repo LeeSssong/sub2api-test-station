@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	MonitorV4ContractVersion = "2"
-	MonitorV4BucketSize      = 5 * time.Minute
-	monitorV4MaxGroups       = 100
+	MonitorV4ContractVersion      = "2"
+	MonitorV4BucketSize           = 5 * time.Minute
+	monitorV4MaxGroups            = 100
+	monitorV4OperationalFreshness = 7 * time.Minute
 )
 
 type MonitorV4Window string
@@ -338,5 +339,5 @@ func monitorV4WindowStart(window MonitorV4Window, now time.Time) (time.Time, err
 }
 
 func monitorV4CurrentOperational(group MonitorV4Group, now time.Time) bool {
-	return group.Status == StatusActive && group.CurrentOperational && group.SourceUpdatedAt != nil && !group.SourceUpdatedAt.After(now) && !group.SourceUpdatedAt.Before(now.Add(-5*time.Minute))
+	return group.Status == StatusActive && group.CurrentOperational && group.SourceUpdatedAt != nil && !group.SourceUpdatedAt.After(now) && !group.SourceUpdatedAt.Before(now.Add(-monitorV4OperationalFreshness))
 }

@@ -3,6 +3,10 @@
     <div class="user-page space-y-6">
       <UserPageHeader title="使用记录" description="查看消费、Token、线路分布与请求明细" />
       <UsageStatsCards :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
+      <div v-if="statsLoadError" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+        <span>{{ t('usage.failedToLoad') }}</span>
+        <button type="button" class="btn btn-secondary px-3 py-1.5" @click="loadStats">{{ t('common.refresh') }}</button>
+      </div>
 
       <div class="space-y-4">
         <div class="card p-4">
@@ -64,6 +68,10 @@
             :end-date="endDate"
           />
           <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+        </div>
+        <div v-if="chartsLoadError || modelStatsLoadError" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+          <span>{{ t('usage.failedToLoad') }}</span>
+          <button type="button" class="btn btn-secondary px-3 py-1.5" @click="refreshData">{{ t('common.refresh') }}</button>
         </div>
       </div>
 
@@ -174,6 +182,10 @@
       </div>
 
       <template v-if="activeTab === 'usage'">
+        <div v-if="logsLoadError" class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+          <span>{{ t('usage.failedToLoad') }}</span>
+          <button type="button" class="btn btn-secondary px-3 py-1.5" @click="loadLogs">{{ t('common.refresh') }}</button>
+        </div>
         <UsageTable
           :data="usageLogs"
           :loading="loading"
@@ -280,6 +292,10 @@ const loading = ref(false)
 const chartsLoading = ref(false)
 const modelStatsLoading = ref(false)
 const endpointStatsLoading = ref(false)
+const logsLoadError = ref(false)
+const statsLoadError = ref(false)
+const modelStatsLoadError = ref(false)
+const chartsLoadError = ref(false)
 const exporting = ref(false)
 const errorRows = ref<UserErrorRequest[]>([])
 const errorLoading = ref(false)
@@ -444,6 +460,7 @@ const loadLogs = async () => {
   const controller = new AbortController()
   abortController = controller
   loading.value = true
+  logsLoadError.value = false
   try {
     const res = await usageAPI.query(buildUsageListParams(pagination.page, pagination.page_size), {
       signal: controller.signal,
@@ -454,6 +471,7 @@ const loadLogs = async () => {
     }
   } catch (error: any) {
     if (error?.name !== 'AbortError' && error?.code !== 'ERR_CANCELED') {
+      logsLoadError.value = true
       appStore.showError(t('usage.failedToLoad'))
     }
   } finally {
@@ -464,6 +482,7 @@ const loadLogs = async () => {
 const loadStats = async () => {
   const seq = ++statsReqSeq
   endpointStatsLoading.value = true
+  statsLoadError.value = false
   try {
     const stats = await usageAPI.getStats(normalizedFilters.value)
     if (seq !== statsReqSeq) return
@@ -474,9 +493,7 @@ const loadStats = async () => {
   } catch (error) {
     if (seq !== statsReqSeq) return
     console.error('Failed to load usage stats:', error)
-    inboundEndpointStats.value = []
-    upstreamEndpointStats.value = []
-    endpointPathStats.value = []
+    statsLoadError.value = true
   } finally {
     if (seq === statsReqSeq) endpointStatsLoading.value = false
   }
@@ -485,6 +502,7 @@ const loadStats = async () => {
 const loadModelStats = async () => {
   const seq = ++modelStatsReqSeq
   modelStatsLoading.value = true
+  modelStatsLoadError.value = false
   try {
     const response = await usageAPI.getDashboardModels({
       ...normalizedFilters.value,
@@ -496,7 +514,7 @@ const loadModelStats = async () => {
   } catch (error) {
     if (seq !== modelStatsReqSeq) return
     console.error('Failed to load model stats:', error)
-    requestedModelStats.value = []
+    modelStatsLoadError.value = true
   } finally {
     if (seq === modelStatsReqSeq) modelStatsLoading.value = false
   }
@@ -505,6 +523,7 @@ const loadModelStats = async () => {
 const loadChartData = async () => {
   const seq = ++chartReqSeq
   chartsLoading.value = true
+  chartsLoadError.value = false
   try {
     const snapshot = await usageAPI.getDashboardSnapshotV2({
       ...normalizedFilters.value,
@@ -519,8 +538,7 @@ const loadChartData = async () => {
   } catch (error) {
     if (seq !== chartReqSeq) return
     console.error('Failed to load chart data:', error)
-    trendData.value = []
-    groupStats.value = []
+    chartsLoadError.value = true
   } finally {
     if (seq === chartReqSeq) chartsLoading.value = false
   }

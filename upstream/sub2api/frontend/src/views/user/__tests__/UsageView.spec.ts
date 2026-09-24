@@ -162,7 +162,6 @@ function mountUsageView() {
         UsageStatsCards: chartStub,
         UsageTable: UsageTableStub,
         UsageDetailDialog: UsageDetailDialogStub,
-        UsageTable: chartStub,
         UserErrorRequestsTable: chartStub,
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
@@ -242,6 +241,36 @@ describe('user UsageView', () => {
 
   it('keeps the successful detail action fixed and opens only the user-scoped dialog', async () => {
     localStorage.setItem('user-usage-hidden-columns', JSON.stringify(['detail']))
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    const usageTable = wrapper.getComponent({ name: 'UsageTable' })
+    const columns = usageTable.props('columns') as Array<{ key: string; class?: string; sortable?: boolean }>
+    expect(columns.at(-1)).toEqual(expect.objectContaining({
+      key: 'detail',
+      class: 'w-24 min-w-24',
+      sortable: false,
+    }))
+    expect((wrapper.vm as any).toggleableColumns.map((column: { key: string }) => column.key))
+      .not.toContain('detail')
+    expect(usageTable.props('showAccountBilling')).toBe(false)
+    expect(usageTable.props('showUpstreamEndpoint')).toBe(false)
+    expect(columns.map((column) => column.key)).not.toEqual(expect.arrayContaining([
+      'account',
+      'account_cost',
+      'upstream_model',
+      'model_mapping',
+      'user',
+    ]))
+
+    await wrapper.get('[data-testid="user-usage-detail-action"]').trigger('click')
+
+    const dialog = wrapper.getComponent({ name: 'UsageDetailDialog' })
+    expect(dialog.props('show')).toBe(true)
+    expect(dialog.props('usageId')).toBe(42)
+    expect(dialog.props('scope')).toBe('user')
+  })
+
   it('includes API keys after the first page in both record filters and queries by the selected key', async () => {
     const firstPageKeys = Array.from({ length: 100 }, (_, index) => ({
       id: index + 1,

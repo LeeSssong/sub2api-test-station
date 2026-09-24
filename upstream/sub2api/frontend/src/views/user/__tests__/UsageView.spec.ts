@@ -239,6 +239,35 @@ describe('user UsageView', () => {
     expect(getAvailable).toHaveBeenCalled()
   })
 
+  it('keeps successful rows and chart data when refresh requests fail independently', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+    const previousRows = (wrapper.vm as any).usageLogs
+    const previousModels = (wrapper.vm as any).requestedModelStats
+    query.mockRejectedValueOnce(new Error('rows unavailable'))
+    getDashboardModels.mockRejectedValueOnce(new Error('models unavailable'))
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.vm as any).usageLogs).toEqual(previousRows)
+    expect((wrapper.vm as any).requestedModelStats).toEqual(previousModels)
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(2)
+    expect((wrapper.vm as any).usageStats.total_actual_cost).toBe(0.08)
+  })
+
+  it('reports an initial stats failure without inventing successful usage totals', async () => {
+    getStats.mockRejectedValueOnce(new Error('stats unavailable'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect((wrapper.vm as any).usageStats).toBeNull()
+    expect(wrapper.find('[role="alert"]').text()).toContain('Failed to load')
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as any).usageStats.total_actual_cost).toBe(0.08)
+  })
+
   it('keeps the successful detail action fixed and opens only the user-scoped dialog', async () => {
     localStorage.setItem('user-usage-hidden-columns', JSON.stringify(['detail']))
     const wrapper = mountUsageView()

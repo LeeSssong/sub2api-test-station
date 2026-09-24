@@ -16,6 +16,10 @@
       </div>
 
       <!-- Table -->
+      <div v-if="loadError" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+        <span>{{ t('common.error') }}</span>
+        <button type="button" class="btn btn-secondary" @click="fetchOrders">{{ t('common.refresh') }}</button>
+      </div>
       <OrderTable :orders="orders" :loading="loading">
         <template #actions="{ row }">
           <div class="flex items-center gap-2">
@@ -102,6 +106,7 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const loading = ref(false)
+const loadError = ref(false)
 const actionLoading = ref(false)
 const orders = ref<PaymentOrder[]>([])
 const refundEligibleProviders = ref<Set<string>>(new Set())
@@ -121,6 +126,7 @@ const statusFilters = computed(() => [
 
 async function fetchOrders() {
   loading.value = true
+  loadError.value = false
   try {
     const res = await paymentAPI.getMyOrders({
       page: pagination.page,
@@ -130,6 +136,7 @@ async function fetchOrders() {
     orders.value = res.data.items || []
     pagination.total = res.data.total || 0
   } catch (err: unknown) {
+    loadError.value = true
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {
     loading.value = false

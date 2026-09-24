@@ -164,6 +164,7 @@ export default {
     keyEnabledSuccess: 'API key enabled successfully',
     keyDisabledSuccess: 'API key disabled successfully',
     failedToLoad: 'Failed to load API keys',
+    usageUnavailable: 'Usage unavailable',
     failedToSave: 'Failed to save API key',
     failedToDelete: 'Failed to delete API key',
     failedToUpdateStatus: 'Failed to update API key status',

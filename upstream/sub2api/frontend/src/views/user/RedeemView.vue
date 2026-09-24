@@ -185,6 +185,11 @@
             </svg>
           </div>
 
+          <div v-if="historyLoadError" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+            <span>{{ t('common.error') }}</span>
+            <button type="button" class="btn btn-secondary" @click="fetchHistory">{{ t('common.refresh') }}</button>
+          </div>
+
           <!-- History List -->
           <div v-else-if="history.length > 0" class="space-y-3">
             <div
@@ -338,6 +343,7 @@ const errorMessage = ref('')
 // History data
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
+const historyLoadError = ref(false)
 const contactInfo = ref('')
 
 // Helper functions for history display
@@ -385,10 +391,12 @@ const formatHistoryValue = (item: RedeemHistoryItem) => {
 
 const fetchHistory = async () => {
   loadingHistory.value = true
+  historyLoadError.value = false
   try {
     history.value = await redeemAPI.getHistory()
   } catch (error) {
     console.error('Failed to fetch history:', error)
+    historyLoadError.value = true
   } finally {
     loadingHistory.value = false
   }

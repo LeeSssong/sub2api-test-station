@@ -164,6 +164,7 @@ export default {
     keyEnabledSuccess: 'API 密钥已启用',
     keyDisabledSuccess: 'API 密钥已禁用',
     failedToLoad: '加载 API 密钥失败',
+    usageUnavailable: '用量暂未获取',
     failedToSave: '保存 API 密钥失败',
     failedToDelete: '删除 API 密钥失败',
     failedToUpdateStatus: '更新 API 密钥状态失败',

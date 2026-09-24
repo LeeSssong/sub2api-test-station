@@ -53,6 +53,8 @@ const messages: Record<string, string> = {
   'keys.status.inactive': 'Inactive',
   'keys.status.quota_exhausted': 'Quota exhausted',
   'keys.usage': 'Usage',
+  'keys.usageUnavailable': 'Usage unavailable',
+  'keys.failedToLoad': 'Failed to load API keys',
 }
 
 vi.mock('@/api', () => ({
@@ -173,6 +175,7 @@ const DataTableStub = {
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
         </div>
+        <div data-test="key-usage"><slot name="cell-usage" :row="row" /></div>
         <div
           v-if="columns.some((col) => col.key === 'last_used_ip')"
           data-test="last-used-ip"
@@ -303,6 +306,32 @@ describe('user KeysView column settings', () => {
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_at')
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_ip')
     expect(visibleColumnKeys(wrapper)).not.toContain('id')
+  })
+
+  it('shows a retryable error instead of the empty state after an initial list failure', async () => {
+    listKeys.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('Failed to load API keys')
+    expect(wrapper.text()).not.toContain('keys.noKeysYet')
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(listKeys).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it('keeps existing keys but marks usage unavailable after a usage refresh failure', async () => {
+    getDashboardApiKeysUsage.mockResolvedValueOnce({ stats: { 1: { today_actual_cost: 1.25, total_actual_cost: 2.5 } } })
+    const wrapper = await mountView()
+    getDashboardApiKeysUsage.mockRejectedValueOnce(new Error('offline'))
+
+    await wrapper.get('button[title="Refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('test-key')
+    expect(wrapper.text()).toContain('$1.25')
+    expect(wrapper.find('[data-test="key-usage-error"]').exists()).toBe(true)
   })
 
   it('shows a hidden column when toggled and persists the preference', async () => {

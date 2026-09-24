@@ -83,6 +83,14 @@
       </template>
 
       <template #table>
+        <div v-if="listLoadError && apiKeys.length" class="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+          <span>{{ t('keys.failedToLoad') }}</span>
+          <button type="button" class="btn btn-secondary" @click="loadApiKeys">{{ t('common.refresh') }}</button>
+        </div>
+        <div v-if="usageLoadError" data-test="key-usage-error" class="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+          <span>{{ t('keys.usageUnavailable') }}</span>
+          <button type="button" class="btn btn-secondary" @click="loadApiKeys">{{ t('common.refresh') }}</button>
+        </div>
         <DataTable
           :columns="columns"
           :data="apiKeys"
@@ -194,13 +202,13 @@
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ formatMoneyFixed(usageStats[row.id]?.today_actual_cost) }}
+                  {{ formatKeyUsage(usageStats[row.id]?.today_actual_cost) }}
                 </span>
               </div>
               <div class="mt-0.5 flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ formatMoneyFixed(usageStats[row.id]?.total_actual_cost) }}
+                  {{ formatKeyUsage(usageStats[row.id]?.total_actual_cost) }}
                 </span>
               </div>
               <!-- Quota progress (if quota is set) -->
@@ -424,7 +432,12 @@
           </template>
 
           <template #empty>
+            <div v-if="listLoadError" class="flex flex-col items-center gap-3 py-8 text-center" role="alert">
+              <p class="text-sm text-red-600 dark:text-red-400">{{ t('keys.failedToLoad') }}</p>
+              <button type="button" class="btn btn-secondary" @click="loadApiKeys">{{ t('common.refresh') }}</button>
+            </div>
             <EmptyState
+              v-else
               :title="t('keys.noKeysYet')"
               :description="t('keys.createFirstKey')"
               :action-text="t('keys.createKey')"
@@ -1276,10 +1289,14 @@ const columns = computed<Column[]>(() =>
 const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
 const loading = ref(false)
+const listLoadError = ref(false)
+const usageLoadError = ref(false)
 const submitting = ref(false)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
+const formatKeyUsage = (value: number | null | undefined) =>
+  value == null || !Number.isFinite(value) ? t('keys.usageUnavailable') : `$${formatMoneyFixed(value)}`
 const userGroupRates = ref<Record<number, number>>({})
 
 const pagination = ref({
@@ -1461,6 +1478,8 @@ const loadApiKeys = async () => {
   abortController = controller
   const { signal } = controller
   loading.value = true
+  listLoadError.value = false
+  usageLoadError.value = false
   try {
     // Build filters
     const filters: {
@@ -1494,6 +1513,7 @@ const loadApiKeys = async () => {
       } catch (e) {
         if (!isAbortError(e)) {
           console.error('Failed to load usage stats:', e)
+          usageLoadError.value = true
         }
       }
     }
@@ -1501,6 +1521,7 @@ const loadApiKeys = async () => {
     if (isAbortError(error)) {
       return
     }
+    listLoadError.value = true
     appStore.showError(t('keys.failedToLoad'))
   } finally {
     if (abortController === controller) {

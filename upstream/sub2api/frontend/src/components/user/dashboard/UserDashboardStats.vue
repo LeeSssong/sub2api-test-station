@@ -389,7 +389,10 @@ const formatBalance = (b: number) =>
   }).format(b)
 
 const formatNumber = (n: number) => n.toLocaleString()
-const formatCost = (c: number) => c.toFixed(4)
+const formatCost = (c: number | null | undefined) => {
+  if (c == null || !Number.isFinite(c)) return '—'
+  return usdFormatter.format(c)
+}
 const formatTokens = (t: number) => {
   if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`
   if (t >= 1000) return `${(t / 1000).toFixed(1)}K`

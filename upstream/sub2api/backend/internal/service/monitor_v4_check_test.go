@@ -86,6 +86,65 @@ func TestManualCheckOnlyProbesRequestedGroup(t *testing.T) {
 	require.Equal(t, []int64{7}, repo.groupIDs)
 }
 
+func TestManualCheckPrefersGroupPriorityOverGlobalPriority(t *testing.T) {
+	repo := &manualGroupRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{
+		{ID: 1, Status: StatusActive, Schedulable: true, Priority: 1, GroupIDs: []int64{7}, AccountGroups: []AccountGroup{{GroupID: 7, Priority: 9}}},
+		{ID: 2, Status: StatusActive, Schedulable: true, Priority: 99, GroupIDs: []int64{7}, AccountGroups: []AccountGroup{{GroupID: 7, Priority: 1}}},
+	}}
+	s := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	var selectedID int64
+	s.probeConnection = func(_ context.Context, id int64, _, _, _ string) (AccountMonitorProbeResult, error) {
+		selectedID = id
+		return AccountMonitorProbeResult{Status: "success"}, nil
+	}
+	_, err := s.CheckMonitorGroup(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), selectedID)
+}
+
+func TestManualCheckRandomizesAccountsAtBestGroupPriority(t *testing.T) {
+	repo := &manualGroupRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{
+		{ID: 1, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, AccountGroups: []AccountGroup{{GroupID: 7, Priority: 1}}},
+		{ID: 2, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, AccountGroups: []AccountGroup{{GroupID: 7, Priority: 1}}},
+		{ID: 3, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, AccountGroups: []AccountGroup{{GroupID: 7, Priority: 2}}},
+	}}
+	s := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	selected := map[int64]bool{}
+	s.probeConnection = func(_ context.Context, id int64, _, _, _ string) (AccountMonitorProbeResult, error) {
+		selected[id] = true
+		return AccountMonitorProbeResult{Status: "success"}, nil
+	}
+	for range 64 {
+		_, err := s.CheckMonitorGroup(context.Background(), 7)
+		require.NoError(t, err)
+	}
+	require.Equal(t, map[int64]bool{1: true, 2: true}, selected)
+}
+
+func TestManualCheckRandomizesModelsAllowedByGroupAndAccount(t *testing.T) {
+	repo := &manualGroupRepoStub{}
+	accountRepo := &accountMonitorAccountRepoStub{accounts: []Account{{
+		ID: 2, Status: StatusActive, Schedulable: true, GroupIDs: []int64{7}, Platform: PlatformOpenAI,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gpt-5.6-sol": "gpt-5.6-sol", "gpt-5.2": "gpt-5.2", "gpt-5.3": "gpt-5.3",
+		}},
+	}}}
+	s := NewAccountMonitorService(repo, accountRepo, nil, nil, nil)
+	selected := map[string]bool{}
+	s.probeConnection = func(_ context.Context, _ int64, model, _, _ string) (AccountMonitorProbeResult, error) {
+		selected[model] = true
+		return AccountMonitorProbeResult{Status: "success"}, nil
+	}
+	group := Group{ID: 7, ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5.6-sol", "gpt-5.2"}}}
+	for range 64 {
+		_, err := s.CheckMonitorGroup(context.WithValue(context.Background(), monitorV4ProbeGroupKey{}, group), 7)
+		require.NoError(t, err)
+	}
+	require.Equal(t, map[string]bool{"gpt-5.6-sol": true, "gpt-5.2": true}, selected)
+}
+
 func TestMonitorV4VisibleGroupsIncludeDisabledLinkedIdentity(t *testing.T) {
 	s := &MonitorV4Service{available: checkAvailableStub{linked: []Group{{ID: 7, Name: "Disabled line", Status: "disabled"}}}}
 	groups, err := s.withLinkedMonitorGroups(context.Background(), 42, []Group{{ID: 1, Status: StatusActive}})

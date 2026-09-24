@@ -194,13 +194,13 @@
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
+                  ${{ formatMoneyFixed(usageStats[row.id]?.today_actual_cost) }}
                 </span>
               </div>
               <div class="mt-0.5 flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
                 <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
+                  ${{ formatMoneyFixed(usageStats[row.id]?.total_actual_cost) }}
                 </span>
               </div>
               <!-- Quota progress (if quota is set) -->
@@ -644,7 +644,7 @@
               <div class="flex items-center gap-2">
                 <div class="flex-1 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700">
                   <span class="font-medium text-gray-900 dark:text-white">
-                    ${{ selectedKey.quota_used?.toFixed(4) || '0.0000' }}
+                    ${{ formatMoneyFixed(selectedKey.quota_used) }}
                   </span>
                   <span class="mx-2 text-gray-400">/</span>
                   <span class="text-gray-500 dark:text-gray-400">
@@ -711,7 +711,7 @@
                       selectedKey.usage_5h >= selectedKey.rate_limit_5h * 0.8 ? 'text-yellow-500' :
                       'text-gray-900 dark:text-white'
                     ]">
-                      ${{ selectedKey.usage_5h?.toFixed(4) || '0.0000' }}
+                      ${{ formatMoneyFixed(selectedKey.usage_5h) }}
                     </span>
                     <span class="mx-2 text-gray-400">/</span>
                     <span class="text-gray-500 dark:text-gray-400">
@@ -757,7 +757,7 @@
                       selectedKey.usage_1d >= selectedKey.rate_limit_1d * 0.8 ? 'text-yellow-500' :
                       'text-gray-900 dark:text-white'
                     ]">
-                      ${{ selectedKey.usage_1d?.toFixed(4) || '0.0000' }}
+                      ${{ formatMoneyFixed(selectedKey.usage_1d) }}
                     </span>
                     <span class="mx-2 text-gray-400">/</span>
                     <span class="text-gray-500 dark:text-gray-400">
@@ -803,7 +803,7 @@
                       selectedKey.usage_7d >= selectedKey.rate_limit_7d * 0.8 ? 'text-yellow-500' :
                       'text-gray-900 dark:text-white'
                     ]">
-                      ${{ selectedKey.usage_7d?.toFixed(4) || '0.0000' }}
+                      ${{ formatMoneyFixed(selectedKey.usage_7d) }}
                     </span>
                     <span class="mx-2 text-gray-400">/</span>
                     <span class="text-gray-500 dark:text-gray-400">
@@ -971,7 +971,7 @@
     <ConfirmDialog
       :show="showResetQuotaDialog"
       :title="t('keys.resetQuotaTitle')"
-      :message="t('keys.resetQuotaConfirmMessage', { name: selectedKey?.name, used: selectedKey?.quota_used?.toFixed(4) })"
+      :message="t('keys.resetQuotaConfirmMessage', { name: selectedKey?.name, used: formatMoneyFixed(selectedKey?.quota_used) })"
       :confirm-text="t('keys.reset')"
       :cancel-text="t('common.cancel')"
       :danger="true"
@@ -1147,7 +1147,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, formatMoneyFixed } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,

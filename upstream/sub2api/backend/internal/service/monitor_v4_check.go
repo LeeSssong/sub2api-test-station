@@ -6,7 +6,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/google/uuid"
-	"sort"
+	"math/rand"
 	"time"
 )
 
@@ -187,12 +187,14 @@ func (s *AccountMonitorService) CheckMonitorGroup(ctx context.Context, groupID i
 	if err != nil {
 		return AccountMonitorProbeResult{}, err
 	}
-	sort.SliceStable(accounts, func(i, j int) bool {
-		if accounts[i].Priority != accounts[j].Priority {
-			return accounts[i].Priority < accounts[j].Priority
-		}
-		return accounts[i].ID < accounts[j].ID
-	})
+	type probeCandidate struct {
+		account  Account
+		models   []string
+		priority int
+	}
+	var candidates []probeCandidate
+	var accountIDs []int64
+	group, hasGroup := ctx.Value(monitorV4ProbeGroupKey{}).(Group)
 	for _, account := range accounts {
 		belongs := false
 		for _, id := range account.GroupIDs {
@@ -208,44 +210,60 @@ func (s *AccountMonitorService) CheckMonitorGroup(ctx context.Context, groupID i
 		if !belongs || !account.IsSchedulableAt(time.Now()) {
 			continue
 		}
-		latest, e := s.repo.ListLatest(ctx, []int64{account.ID})
-		if e != nil {
-			return AccountMonitorProbeResult{}, e
+		models := make([]string, 0)
+		for _, model := range nativeAccountTextModels(&account) {
+			if (!hasGroup || group.ModelAllowlist.Allows(model)) && account.IsModelSupported(model) {
+				models = append(models, model)
+			}
 		}
-		if accountMonitorProbeShouldStop(account, latest[account.ID]) || s.shouldSkipAPIKeyRecoveryProbe(account, time.Now()) {
+		if len(models) == 0 {
 			continue
 		}
-		model := s.connectionProbeModel(ctx, &account)
-		if group, ok := ctx.Value(monitorV4ProbeGroupKey{}).(Group); ok && !group.ModelAllowlist.Allows(model) {
-			model = ""
-			for _, candidate := range nativeAccountTextModels(&account) {
-				if group.ModelAllowlist.Allows(candidate) && account.IsModelSupported(candidate) {
-					model = candidate
-					break
-				}
-			}
-			if model == "" {
-				continue
-			}
-		}
-		modelCtx := context.WithValue(ctx, accountMonitorConnectionModelOverrideKey{}, model)
-		probeCtx, cancel := context.WithTimeout(context.WithValue(modelCtx, accountMonitorFirstTokenTimeoutKey{}, 15*time.Second), 60*time.Second)
-		result := s.probeAccount(probeCtx, account)
-		cancel()
-		if result.TTFTMS != nil && *result.TTFTMS > 15000 {
-			result.Status = "failed"
-			result.ErrorCode = "timeout"
-		}
-		writer, ok := s.repo.(monitorV4GroupProbeWriter)
-		if !ok {
-			return AccountMonitorProbeResult{}, errors.New("group probe persistence unavailable")
-		}
-		if err := writer.InsertGroupProbeResult(ctx, groupID, result, uuid.NewString()); err != nil {
-			return AccountMonitorProbeResult{}, err
-		}
-		return result, nil
+		candidates = append(candidates, probeCandidate{account: account, models: models, priority: accountSchedulingPriorityForGroup(&account, &groupID)})
+		accountIDs = append(accountIDs, account.ID)
 	}
-	return AccountMonitorProbeResult{}, errors.New("no schedulable account for requested group")
+	if len(candidates) == 0 {
+		return AccountMonitorProbeResult{}, errors.New("no schedulable account for requested group")
+	}
+	latest, err := s.repo.ListLatest(ctx, accountIDs)
+	if err != nil {
+		return AccountMonitorProbeResult{}, err
+	}
+	bestPriority := 0
+	var best []probeCandidate
+	for _, candidate := range candidates {
+		if accountMonitorProbeShouldStop(candidate.account, latest[candidate.account.ID]) || s.shouldSkipAPIKeyRecoveryProbe(candidate.account, time.Now()) {
+			continue
+		}
+		if len(best) == 0 || candidate.priority < bestPriority {
+			bestPriority = candidate.priority
+			best = best[:0]
+		}
+		if candidate.priority == bestPriority {
+			best = append(best, candidate)
+		}
+	}
+	if len(best) == 0 {
+		return AccountMonitorProbeResult{}, errors.New("no schedulable account for requested group")
+	}
+	selected := best[rand.Intn(len(best))]
+	model := selected.models[rand.Intn(len(selected.models))]
+	modelCtx := context.WithValue(ctx, accountMonitorConnectionModelOverrideKey{}, model)
+	probeCtx, cancel := context.WithTimeout(context.WithValue(modelCtx, accountMonitorFirstTokenTimeoutKey{}, 15*time.Second), 60*time.Second)
+	result := s.probeAccount(probeCtx, selected.account)
+	cancel()
+	if result.TTFTMS != nil && *result.TTFTMS > 15000 {
+		result.Status = "failed"
+		result.ErrorCode = "timeout"
+	}
+	writer, ok := s.repo.(monitorV4GroupProbeWriter)
+	if !ok {
+		return AccountMonitorProbeResult{}, errors.New("group probe persistence unavailable")
+	}
+	if err := writer.InsertGroupProbeResult(ctx, groupID, result, uuid.NewString()); err != nil {
+		return AccountMonitorProbeResult{}, err
+	}
+	return result, nil
 }
 
 func (s *MonitorV4Service) withLinkedMonitorGroups(ctx context.Context, userID int64, groups []Group) ([]Group, error) {

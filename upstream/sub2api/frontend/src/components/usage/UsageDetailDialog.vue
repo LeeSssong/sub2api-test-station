@@ -371,7 +371,7 @@ import { adminUsageAPI } from '@/api/admin/usage'
 import { usageAPI } from '@/api/usage'
 import { useClipboard } from '@/composables/useClipboard'
 import type { AdminUsageLog, StreamDiagnosticResponse, UsageCostEvidenceDetail, UserUsageDetail } from '@/types'
-import { formatDateTime, formatReasoningEffort } from '@/utils/format'
+import { formatDateTime, formatMoneyFixed, formatReasoningEffort } from '@/utils/format'
 import { formatMultiplier } from '@/utils/formatters'
 import { getBillingModeLabel, getDisplayBillingMode } from '@/utils/billingMode'
 import {
@@ -605,7 +605,8 @@ function formatDiagnosticBytes(read: number | undefined, forwarded: number | und
 }
 
 function formatCost(value: number | null | undefined): string {
-  return `$${(Number.isFinite(value) ? value as number : 0).toFixed(6)}`
+  const formatted = formatMoneyFixed(value)
+  return formatted === '—' ? formatted : `$${formatted}`
 }
 
 function requestTypeLabel(row: Pick<UsageDetailRecord, 'request_type' | 'stream' | 'openai_ws_mode'>): string {

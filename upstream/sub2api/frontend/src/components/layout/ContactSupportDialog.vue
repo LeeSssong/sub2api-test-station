@@ -18,24 +18,24 @@
         >
       </div>
 
-      <p class="text-center text-sm text-gray-500 dark:text-dark-400">
+      <p class="support-qr-hint text-center text-sm text-gray-700 dark:text-gray-200">
         {{ t('common.contactSupportDialog.scanQrCode') }}
       </p>
 
       <div
-        class="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-900/50"
+        class="support-group flex flex-col items-stretch gap-3 rounded-lg border border-gray-200 bg-[#091a2b] p-3 dark:border-dark-600 sm:flex-row sm:items-center"
       >
         <div class="min-w-0 flex-1">
-          <span class="block text-xs text-gray-500 dark:text-dark-400">
+          <span class="support-group-label block text-xs text-gray-700 dark:text-gray-200">
             {{ t('common.contactSupportDialog.groupNumber') }}
           </span>
-          <strong class="mt-1 block font-mono text-lg text-gray-900 dark:text-white">
+          <strong class="support-group-number mt-1 block break-all font-mono text-lg text-gray-900 dark:text-white">
             {{ QQ_GROUP_NUMBER }}
           </strong>
         </div>
         <button
           type="button"
-          class="btn btn-primary min-w-[7.5rem]"
+          class="btn btn-primary w-full min-w-0 sm:w-auto sm:min-w-[7.5rem]"
           data-testid="copy-qq-group"
           @click="copyGroupNumber"
         >

@@ -223,13 +223,13 @@
             <DetailItem
               v-if="effectiveInputPrice != null"
               :label="t('usage.detail.effectiveInputPrice')"
-              :value="`${formatCost(effectiveInputPrice)} ${t('usage.perMillionTokens')}`"
+              :value="`${formatUnitPrice(effectiveInputPrice)} ${t('usage.perMillionTokens')}`"
               numeric
             />
             <DetailItem
               v-if="effectiveOutputPrice != null"
               :label="t('usage.detail.effectiveOutputPrice')"
-              :value="`${formatCost(effectiveOutputPrice)} ${t('usage.perMillionTokens')}`"
+              :value="`${formatUnitPrice(effectiveOutputPrice)} ${t('usage.perMillionTokens')}`"
               numeric
             />
           </dl>
@@ -371,7 +371,7 @@ import { adminUsageAPI } from '@/api/admin/usage'
 import { usageAPI } from '@/api/usage'
 import { useClipboard } from '@/composables/useClipboard'
 import type { AdminUsageLog, StreamDiagnosticResponse, UsageCostEvidenceDetail, UserUsageDetail } from '@/types'
-import { formatDateTime, formatMoneyFixed, formatReasoningEffort } from '@/utils/format'
+import { formatCostFixed, formatDateTime, formatMoneyFixed, formatReasoningEffort } from '@/utils/format'
 import { formatMultiplier } from '@/utils/formatters'
 import { getBillingModeLabel, getDisplayBillingMode } from '@/utils/billingMode'
 import {
@@ -607,6 +607,10 @@ function formatDiagnosticBytes(read: number | undefined, forwarded: number | und
 function formatCost(value: number | null | undefined): string {
   const formatted = formatMoneyFixed(value)
   return formatted === '—' ? formatted : `$${formatted}`
+}
+
+function formatUnitPrice(value: number): string {
+  return `$${formatCostFixed(value, 6)}`
 }
 
 function requestTypeLabel(row: Pick<UsageDetailRecord, 'request_type' | 'stream' | 'openai_ws_mode'>): string {

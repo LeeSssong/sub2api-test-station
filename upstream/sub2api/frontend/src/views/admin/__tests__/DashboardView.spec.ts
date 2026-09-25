@@ -87,6 +87,19 @@ const createDashboardStats = (): DashboardStats => ({
 })
 
 describe('admin DashboardView', () => {
+  it('shows fixed two-decimal costs without treating a failed snapshot as zero', async () => {
+    getSnapshotV2.mockResolvedValueOnce({ stats: { ...createDashboardStats(), today_actual_cost: 0.001, today_cost: 1234.5, total_actual_cost: -1.2 }, trend: [], models: [] })
+    const wrapper = mount(DashboardView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, LoadingSpinner: true, Icon: true, DateRangePicker: true, Select: true, ModelDistributionChart: true, TokenUsageTrend: true, Line: true } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('$0.00')
+    expect(wrapper.text()).toContain('$1234.50')
+    expect(wrapper.text()).toContain('$-1.20')
+    getSnapshotV2.mockRejectedValueOnce(new Error('offline'))
+    // Initial fetch failure has no cost cards to masquerade as a zero balance.
+    const failed = mount(DashboardView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, LoadingSpinner: true, Icon: true, DateRangePicker: true, Select: true, ModelDistributionChart: true, TokenUsageTrend: true, Line: true } } })
+    await flushPromises()
+    expect(failed.text()).not.toContain('$0.00')
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
 

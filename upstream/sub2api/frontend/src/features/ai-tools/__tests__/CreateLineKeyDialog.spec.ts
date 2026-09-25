@@ -5,8 +5,9 @@ import type { Group } from '@/types'
 import type { MonitorV4Group } from '@/features/monitor-v4/types'
 const { create } = vi.hoisted(() => ({ create: vi.fn() }))
 vi.mock('@/api/keys', () => ({ keysAPI: { create } }))
+vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 const groups = [{id: 1, name: 'GPT Plus', platform: 'openai', status: 'active', rate_multiplier: 1}, {id: 2, name: 'GPT Budget', platform: 'openai', status: 'active', rate_multiplier: .2}] as Group[]
-function render(initialGroupId?: number, attached = false) { return mount(CreateLineKeyDialog, {attachTo: attached ? document.body : undefined, props: { show: true, toolName: 'Codex', groups, metrics: new Map([[1, {success_rate: 97, ttft_p50_ms: 2160, current_operational: false} as MonitorV4Group]]), linkedCounts: new Map([[1, 2]]), rates: {}, initialGroupId }, global: {stubs: { BaseDialog: {template: '<div><slot/><slot name="footer"/></div>'} }}}) }
+function render(initialGroupId?: number, attached = false) { return mount(CreateLineKeyDialog, {attachTo: attached ? document.body : undefined, props: { show: true, toolName: 'Codex', groups, metrics: new Map([[1, {success_rate: 97, ttft_p50_ms: 2160, current_operational: false} as MonitorV4Group]]), linkedCounts: new Map([[1, 2]]), rates: {}, initialGroupId }, global: {stubs: { BaseDialog: {template: '<div><slot/><slot name="footer"/></div>'}, Teleport: true }}}) }
 beforeEach(() => create.mockReset())
 describe('create line key', () => {
   it('allows unavailable already linked lines and searches supplied choices', async () => {
@@ -15,7 +16,7 @@ describe('create line key', () => {
     expect(wrapper.text()).toContain('关联密钥 2 把')
     expect(wrapper.text()).toContain('97%')
     expect(wrapper.text()).toContain('2.16s')
-    await wrapper.get('[aria-label="搜索线路"]').setValue('Plus')
+    await wrapper.get('[aria-label="搜索Codex线路"]').setValue('Plus')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(1)
     await wrapper.get('[role="option"]').trigger('click')
     await wrapper.get('[name="name"]').setValue('工作密钥')
@@ -57,9 +58,9 @@ describe('create line key', () => {
   it('closes line choices on outside click', async () => {
     const wrapper = render()
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
-    document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}))
+    document.body.dispatchEvent(new MouseEvent('click', {bubbles: true}))
     await flushPromises()
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(wrapper.get('[aria-label="选择线路"]').attributes('aria-expanded')).toBe('false')
     wrapper.unmount()
   })
   it('returns focus to trigger after selecting or escaping choices', async () => {
@@ -71,11 +72,11 @@ describe('create line key', () => {
     await flushPromises()
     expect(document.activeElement).toBe(trigger.element)
     await trigger.trigger('click')
-    ;(wrapper.get('[aria-label="搜索线路"]').element as HTMLElement).focus()
-    await wrapper.get('[aria-label="搜索线路"]').trigger('keydown', {key: 'Escape'})
+    ;(wrapper.get('[aria-label="搜索Codex线路"]').element as HTMLElement).focus()
+    await wrapper.get('[aria-label="搜索Codex线路"]').trigger('keydown', {key: 'Escape'})
     await flushPromises()
     expect(document.activeElement).toBe(trigger.element)
-    expect(wrapper.find('[role="listbox"]').exists()).toBe(false)
+    expect(trigger.attributes('aria-expanded')).toBe('false')
     wrapper.unmount()
   })
   it('lets Escape reach dialog when choices are already closed', async () => {
@@ -100,6 +101,16 @@ describe('create line key', () => {
     const wrapper = render()
     await wrapper.setProps({groups: []})
     expect(wrapper.get('[type="submit"]').attributes('disabled')).toBeDefined()
+  })
+  it('uses the shared current-tool options and the effective user rate', async () => {
+    const wrapper = render()
+    await wrapper.setProps({
+      groups: [...groups, { ...groups[0], id: 3, name: 'Claude', platform: 'anthropic' }],
+      rates: { 1: 0.8 }
+    })
+    await wrapper.get('[aria-label="选择线路"]').trigger('click')
+    expect(wrapper.text()).toContain('0.8倍率')
+    expect(wrapper.text()).not.toContain('Claude')
   })
   it('sends enabled limits and omits switched off custom key', async () => {
     const wrapper = render(1)

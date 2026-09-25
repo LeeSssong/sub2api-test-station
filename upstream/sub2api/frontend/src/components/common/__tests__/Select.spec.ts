@@ -36,8 +36,9 @@ const mockTriggerRect = (left: number, width: number) => {
   })
 }
 
-const openSelect = async () => {
+const openSelect = async (attachTo?: HTMLElement) => {
   const wrapper = mount(Select, {
+    attachTo,
     props: {
       modelValue: null,
       options: [
@@ -78,16 +79,16 @@ describe('Select dropdown viewport constraints', () => {
     expect(dropdown?.style.maxWidth).toBe('996px')
   })
 
-  it('shrinks the minimum width to fit near the right viewport edge', async () => {
+  it('opens leftward near the right viewport edge', async () => {
     setViewportWidth(320)
     mockTriggerRect(220, 80)
 
     const dropdown = await openSelect()
 
     expect(dropdown).not.toBeNull()
-    expect(dropdown?.style.left).toBe('220px')
-    expect(dropdown?.style.minWidth).toBe('92px')
-    expect(dropdown?.style.maxWidth).toBe('92px')
+    expect(dropdown?.style.left).toBe('112px')
+    expect(dropdown?.style.minWidth).toBe('200px')
+    expect(dropdown?.style.maxWidth).toBe('200px')
   })
 
   it('clamps a trigger left of the viewport to the safe padding', async () => {
@@ -109,9 +110,35 @@ describe('Select dropdown viewport constraints', () => {
     const dropdown = await openSelect()
 
     expect(dropdown).not.toBeNull()
-    expect(dropdown?.style.left).toBe('312px')
-    expect(dropdown?.style.minWidth).toBe('0px')
-    expect(dropdown?.style.maxWidth).toBe('0px')
+    expect(dropdown?.style.left).toBe('112px')
+    expect(dropdown?.style.minWidth).toBe('200px')
+    expect(dropdown?.style.maxWidth).toBe('200px')
+  })
+
+  it('opens to the left at the right edge without narrowing a readable menu', async () => {
+    setViewportWidth(390)
+    mockTriggerRect(280, 96)
+
+    const dropdown = await openSelect()
+
+    expect(dropdown?.style.left).toBe('182px')
+    expect(dropdown?.style.minWidth).toBe('200px')
+    expect(dropdown?.style.maxWidth).toBe('200px')
+  })
+
+  it('keeps a right-aligned menu within its card rather than the wider viewport', async () => {
+    setViewportWidth(1024)
+    const panel = document.createElement('div')
+    panel.className = 'card'
+    document.body.append(panel)
+    vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue({ left: 100, right: 400 } as DOMRect)
+    mockTriggerRect(330, 64)
+
+    const dropdown = await openSelect(panel)
+
+    expect(dropdown?.style.left).toBe('192px')
+    expect(dropdown?.style.minWidth).toBe('200px')
+    expect(dropdown?.style.maxWidth).toBe('200px')
   })
 })
 

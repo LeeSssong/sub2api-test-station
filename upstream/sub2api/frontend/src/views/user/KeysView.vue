@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="user-page user-keys-page">
       <UserPageHeader title="我的密钥" description="创建、绑定和管理用于接入 AI 线路的 API 密钥" />
-      <TablePageLayout>
+      <TablePageLayout continuous>
       <template #filters>
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-center gap-3">
@@ -14,12 +14,14 @@
             />
             <Select
               :model-value="filterGroupId"
+              brand
               class="w-40"
               :options="groupFilterOptions"
               @update:model-value="onGroupFilterChange"
             />
             <Select
               :model-value="filterStatus"
+              brand
               class="w-40"
               :options="statusFilterOptions"
               @update:model-value="onStatusFilterChange"
@@ -221,7 +223,7 @@
                     row.quota_used >= row.quota * 0.8 ? 'text-yellow-500' :
                     'text-gray-900 dark:text-white'
                   ]">
-                    ${{ row.quota_used?.toFixed(2) || '0.00' }} / ${{ row.quota?.toFixed(2) }}
+                    {{ formatUsdMoney(row.quota_used) }} / {{ formatUsdMoney(row.quota) }}
                   </span>
                 </div>
                 <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
@@ -251,7 +253,7 @@
                     row.usage_5h >= row.rate_limit_5h * 0.8 ? 'text-yellow-500' :
                     'text-gray-700 dark:text-gray-300'
                   ]">
-                    ${{ row.usage_5h?.toFixed(2) || '0.00' }}/${{ row.rate_limit_5h?.toFixed(2) }}
+                    {{ formatUsdMoney(row.usage_5h) }}/{{ formatUsdMoney(row.rate_limit_5h) }}
                   </span>
                 </div>
                 <div class="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
@@ -279,7 +281,7 @@
                     row.usage_1d >= row.rate_limit_1d * 0.8 ? 'text-yellow-500' :
                     'text-gray-700 dark:text-gray-300'
                   ]">
-                    ${{ row.usage_1d?.toFixed(2) || '0.00' }}/${{ row.rate_limit_1d?.toFixed(2) }}
+                    {{ formatUsdMoney(row.usage_1d) }}/{{ formatUsdMoney(row.rate_limit_1d) }}
                   </span>
                 </div>
                 <div class="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
@@ -307,7 +309,7 @@
                     row.usage_7d >= row.rate_limit_7d * 0.8 ? 'text-yellow-500' :
                     'text-gray-700 dark:text-gray-300'
                   ]">
-                    ${{ row.usage_7d?.toFixed(2) || '0.00' }}/${{ row.rate_limit_7d?.toFixed(2) }}
+                    {{ formatUsdMoney(row.usage_7d) }}/{{ formatUsdMoney(row.rate_limit_7d) }}
                   </span>
                 </div>
                 <div class="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
@@ -460,10 +462,21 @@
       </TablePageLayout>
     </div>
 
-    <!-- Create/Edit Modal -->
+    <CreateLineKeyDialog
+      :show="showCreateModal"
+      tool-name="全部"
+      :groups="groups"
+      :rates="userGroupRates"
+      :metrics="lineMetrics"
+      :linked-counts="lineCounts"
+      @close="showCreateModal = false"
+      @created="handleKeyCreated"
+    />
+
+    <!-- Edit Modal -->
     <BaseDialog
-      :show="showCreateModal || showEditModal"
-      :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
+      :show="showEditModal"
+      :title="t('keys.editKey')"
       width="normal"
       @close="closeModals"
     >
@@ -482,45 +495,16 @@
 
         <div>
           <label class="input-label">{{ t('keys.groupLabel') }}</label>
-          <Select
+          <LineSelect
             v-model="formData.group_id"
-            :options="groupOptions"
+            :groups="groups"
+            :rates="userGroupRates"
+            :metrics="lineMetrics"
+            :linked-counts="lineCounts"
             :placeholder="t('keys.selectGroup')"
-            :searchable="true"
             :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
-          >
-            <template #selected="{ option }">
-              <GroupBadge
-                v-if="option"
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
-                :peak-start="(option as unknown as GroupOption).peakStart"
-                :peak-end="(option as unknown as GroupOption).peakEnd"
-                :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
-              />
-              <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
-            </template>
-            <template #option="{ option, selected }">
-              <GroupOptionItem
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
-                :peak-start="(option as unknown as GroupOption).peakStart"
-                :peak-end="(option as unknown as GroupOption).peakEnd"
-                :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
-                :description="(option as unknown as GroupOption).description"
-                :selected="selected"
-              />
-            </template>
-          </Select>
+          />
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -657,11 +641,11 @@
               <div class="flex items-center gap-2">
                 <div class="flex-1 rounded-lg bg-gray-100 px-3 py-2 dark:bg-dark-700">
                   <span class="font-medium text-gray-900 dark:text-white">
-                    ${{ formatMoneyFixed(selectedKey.quota_used) }}
+                    {{ formatUsdMoney(selectedKey.quota_used) }}
                   </span>
                   <span class="mx-2 text-gray-400">/</span>
                   <span class="text-gray-500 dark:text-gray-400">
-                    ${{ selectedKey.quota?.toFixed(2) || '0.00' }}
+                    {{ formatUsdMoney(selectedKey.quota) }}
                   </span>
                 </div>
                 <button
@@ -724,11 +708,11 @@
                       selectedKey.usage_5h >= selectedKey.rate_limit_5h * 0.8 ? 'text-yellow-500' :
                       'text-gray-900 dark:text-white'
                     ]">
-                      ${{ formatMoneyFixed(selectedKey.usage_5h) }}
+                      {{ formatUsdMoney(selectedKey.usage_5h) }}
                     </span>
                     <span class="mx-2 text-gray-400">/</span>
                     <span class="text-gray-500 dark:text-gray-400">
-                      ${{ selectedKey.rate_limit_5h?.toFixed(2) || '0.00' }}
+                      {{ formatUsdMoney(selectedKey.rate_limit_5h) }}
                     </span>
                   </div>
                 </div>
@@ -770,11 +754,11 @@
                       selectedKey.usage_1d >= selectedKey.rate_limit_1d * 0.8 ? 'text-yellow-500' :
                       'text-gray-900 dark:text-white'
                     ]">
-                      ${{ formatMoneyFixed(selectedKey.usage_1d) }}
+                      {{ formatUsdMoney(selectedKey.usage_1d) }}
                     </span>
                     <span class="mx-2 text-gray-400">/</span>
                     <span class="text-gray-500 dark:text-gray-400">
-                      ${{ selectedKey.rate_limit_1d?.toFixed(2) || '0.00' }}
+                      {{ formatUsdMoney(selectedKey.rate_limit_1d) }}
                     </span>
                   </div>
                 </div>
@@ -816,11 +800,11 @@
                       selectedKey.usage_7d >= selectedKey.rate_limit_7d * 0.8 ? 'text-yellow-500' :
                       'text-gray-900 dark:text-white'
                     ]">
-                      ${{ formatMoneyFixed(selectedKey.usage_7d) }}
+                      {{ formatUsdMoney(selectedKey.usage_7d) }}
                     </span>
                     <span class="mx-2 text-gray-400">/</span>
                     <span class="text-gray-500 dark:text-gray-400">
-                      ${{ selectedKey.rate_limit_7d?.toFixed(2) || '0.00' }}
+                      {{ formatUsdMoney(selectedKey.rate_limit_7d) }}
                     </span>
                   </div>
                 </div>
@@ -1133,7 +1117,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, onMounted, onUnmounted, watch, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1157,10 +1141,15 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import LineSelect from '@/components/keys/LineSelect.vue'
+import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
+import { linkedCounts } from '@/features/ai-tools/model'
+import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
+import type { MonitorV4Group } from '@/features/monitor-v4/types'
+	import type { ApiKey, Group, PublicSettings, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
-import { formatDateTime, formatMoneyFixed } from '@/utils/format'
+import { formatDateTime, formatMoneyFixed, formatUsdMoney } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
@@ -1172,20 +1161,6 @@ const formatDateTimeLocal = (isoDate: string): string => {
   const date = new Date(isoDate)
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-interface GroupOption {
-  value: number
-  label: string
-  description: string | null
-  rate: number
-  userRate: number | null
-  peakRateEnabled: boolean
-  peakStart: string
-  peakEnd: string
-  peakRateMultiplier: number
-  subscriptionType: SubscriptionType
-  platform: GroupPlatform
 }
 
 const appStore = useAppStore()
@@ -1298,6 +1273,8 @@ const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
 const formatKeyUsage = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? t('keys.usageUnavailable') : `$${formatMoneyFixed(value)}`
 const userGroupRates = ref<Record<number, number>>({})
+const lineMetrics = ref(new Map<number, MonitorV4Group>())
+const lineCounts = ref<Map<number, number> | null>(null)
 
 const pagination = ref({
   page: 1,
@@ -1546,6 +1523,27 @@ const loadUserGroupRates = async () => {
   }
 }
 
+async function loadLineContext() {
+  const [snapshot, keys] = await Promise.allSettled([
+    getHybridPerformanceSnapshot('1h'),
+    (async () => {
+      const first = await keysAPI.list(1, 100)
+      const items = [...first.items]
+      for (let page = 2; page <= Math.ceil(first.total / 100); page++) {
+        const next = await keysAPI.list(page, 100)
+        items.push(...next.items)
+      }
+      return items
+    })()
+  ])
+  if (snapshot.status === 'fulfilled') lineMetrics.value = new Map(snapshot.value.groups.map(group => [group.id, group]))
+  if (keys.status === 'fulfilled') lineCounts.value = linkedCounts(keys.value)
+}
+
+watch([showCreateModal, showEditModal], ([create, edit]) => {
+  if (create || edit) void loadLineContext()
+})
+
 const loadPublicSettings = async () => {
   try {
     publicSettings.value = await authAPI.getPublicSettings()
@@ -1786,6 +1784,15 @@ const handleSubmit = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+const handleKeyCreated = () => {
+  showCreateModal.value = false
+  appStore.showSuccess(t('keys.keyCreatedSuccess'))
+  if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
+    onboardingStore.nextStep(500)
+  }
+  void loadApiKeys()
 }
 
 /**

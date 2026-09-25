@@ -42,7 +42,7 @@
           </tr>
         </tbody></table><div v-if="!detailRows.length" class="empty">暂无线路</div></div>
       </BaseDialog>
-      <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :groups="createTool?.active||[]" :metrics="metricsById" :linked-counts="counts" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
+      <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :tool-id="createTool?.id" :groups="createTool?.active||[]" :metrics="metricsById" :linked-counts="counts" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
     </section>
   </AppLayout>
 </template>

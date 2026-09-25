@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProfilePasswordForm from '@/components/user/profile/ProfilePasswordForm.vue'
 
 const { changePasswordMock, showSuccessMock, showErrorMock } = vi.hoisted(() => ({
@@ -47,6 +47,31 @@ vi.mock('vue-i18n', async (importOriginal) => {
 })
 
 describe('ProfilePasswordForm', () => {
+  beforeEach(() => {
+    changePasswordMock.mockReset()
+    showSuccessMock.mockReset()
+    showErrorMock.mockReset()
+  })
+
+  it('prevents duplicate password submissions and retains input after failure', async () => {
+    let rejectRequest!: (error: Error) => void
+    changePasswordMock.mockImplementationOnce(() => new Promise((_, reject) => { rejectRequest = reject }))
+    const wrapper = mount(ProfilePasswordForm)
+    await wrapper.get('#old_password').setValue('old-password')
+    await wrapper.get('#new_password').setValue('new-password')
+    await wrapper.get('#confirm_password').setValue('new-password')
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('form').trigger('submit')
+    expect(changePasswordMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+    rejectRequest(new Error('offline'))
+    await flushPromises()
+    expect((wrapper.get('#new_password').element as HTMLInputElement).value).toBe('new-password')
+    changePasswordMock.mockResolvedValueOnce({})
+    await wrapper.get('form').trigger('submit')
+    expect(changePasswordMock).toHaveBeenCalledTimes(2)
+  })
+
   it('shows validation failures as toast messages instead of inline errors', async () => {
     const wrapper = mount(ProfilePasswordForm)
 

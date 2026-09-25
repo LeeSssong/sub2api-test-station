@@ -22,6 +22,7 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({ global: { t: (key: string) => key } }),
   useI18n: () => ({ t: (key: string) => key }),
 }))
 
@@ -49,8 +50,8 @@ describe('UserBalanceModal', () => {
     })
   })
 
-  it('shows the backend message when recharge fails with the API client error shape', async () => {
-    createQuotaLedgerEntry.mockRejectedValue({
+  it('shows the backend message when balance update fails', async () => {
+    updateBalance.mockRejectedValue({
       status: 500,
       code: 500,
       reason: 'QUOTA_WALLET_WRITE_FAILED',
@@ -59,12 +60,13 @@ describe('UserBalanceModal', () => {
     })
 
     const wrapper = mount(UserBalanceModal, {
-      props: { show: true, user, operation: 'add' },
+      props: { show: false, user, operation: 'add' },
       global: { stubs: { BaseDialog: BaseDialogStub } },
     })
 
-    await wrapper.findAll('input[type="number"]')[0].setValue('10')
-    await wrapper.find('input[type="text"]').setValue('TRX-FAIL')
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    await wrapper.find('input[type="number"]').setValue('10')
     await wrapper.get('#balance-form').trigger('submit')
     await flushPromises()
 
@@ -72,66 +74,70 @@ describe('UserBalanceModal', () => {
     expect(showError).not.toHaveBeenCalledWith('common.error')
   })
 
-  it('submits a recharge containing only gifted quota', async () => {
+  it('displays current and projected quotas with two decimals without changing submitted amount', async () => {
+    getUserQuotaSummary.mockResolvedValue({
+      paid_quota_balance_usd: '18.84689040',
+      gift_quota_balance_usd: '0.00000000',
+      total_quota_balance_usd: '18.84689040',
+    })
     const wrapper = mount(UserBalanceModal, {
-      props: { show: true, user, operation: 'add' },
+      props: { show: false, user, operation: 'add' },
       global: { stubs: { BaseDialog: BaseDialogStub } },
     })
-
-    const inputs = wrapper.findAll('input[type="number"]')
-    await inputs[0].setValue('0')
-    await inputs[1].setValue('5')
-    await wrapper.find('input[type="text"]').setValue('TRX-GIFT')
-    await wrapper.get('#balance-form').trigger('submit')
+    await wrapper.setProps({ show: true })
     await flushPromises()
-
-    expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, {
-      record_type: 'recharge',
-      amount_cny: 0,
-      gift_quota_usd: 5,
-      payment_trade_no: 'TRX-GIFT',
-      note: '',
-    })
+    expect(wrapper.text()).toContain('$18.85')
+    expect(wrapper.text()).toContain('$0.00')
+    await wrapper.find('input[type="number"]').setValue('0.12345678')
+    expect(wrapper.text()).toContain('$18.97')
+    await wrapper.get('#balance-form').trigger('submit')
+    expect(updateBalance).toHaveBeenCalledWith(1, 0.12345678, 'add', '')
   })
 
-  it('trims the required administrator transaction number', async () => {
-    const wrapper = mount(UserBalanceModal, {
-      props: { show: true, user, operation: 'add' },
-      global: { stubs: { BaseDialog: BaseDialogStub } },
-    })
-
-    await wrapper.findAll('input[type="number"]')[0].setValue('10')
-    const confirm = wrapper.find('button[type="submit"]')
-    expect(confirm.attributes('disabled')).toBeDefined()
-    await wrapper.find('input[type="text"]').setValue('  ADMIN-20260904  ')
-    expect(confirm.attributes('disabled')).toBeUndefined()
-    await wrapper.get('#balance-form').trigger('submit')
-    await flushPromises()
-
-    expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, expect.objectContaining({ payment_trade_no: 'ADMIN-20260904' }))
-  })
-
-  it('generates a transaction number so entering only a recharge amount enables confirmation', async () => {
+  it('submits the entered amount through the native balance API', async () => {
     const wrapper = mount(UserBalanceModal, {
       props: { show: false, user, operation: 'add' },
       global: { stubs: { BaseDialog: BaseDialogStub } },
     })
 
     await wrapper.setProps({ show: true })
-    const tradeNoInput = wrapper.find('input[type="text"]')
-    expect(tradeNoInput.element.value).toMatch(/^ADMIN-\d{17}-[A-Z0-9]{8}$/)
+    await flushPromises()
+    await wrapper.find('input[type="number"]').setValue('5')
+    await wrapper.get('#balance-form').trigger('submit')
+    await flushPromises()
 
-    await wrapper.findAll('input[type="number"]')[0].setValue('110')
+    expect(updateBalance).toHaveBeenCalledWith(1, 5, 'add', '')
+  })
+
+  it('keeps the confirmation disabled until an amount is entered', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    const confirm = wrapper.find('button[type="submit"]')
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await wrapper.find('input[type="number"]').setValue('10')
+    expect(confirm.attributes('disabled')).toBeUndefined()
+  })
+
+  it('enables confirmation after opening and entering a valid amount', async () => {
+    const wrapper = mount(UserBalanceModal, {
+      props: { show: false, user, operation: 'add' },
+      global: { stubs: { BaseDialog: BaseDialogStub } },
+    })
+
+    await wrapper.setProps({ show: true })
+    await wrapper.find('input[type="number"]').setValue('110')
     const confirm = wrapper.find('button[type="submit"]')
     expect(confirm.attributes('disabled')).toBeUndefined()
 
     await wrapper.get('#balance-form').trigger('submit')
     await flushPromises()
 
-    expect(createQuotaLedgerEntry).toHaveBeenCalledWith(1, expect.objectContaining({
-      amount_cny: 110,
-      payment_trade_no: tradeNoInput.element.value,
-    }))
+    expect(updateBalance).toHaveBeenCalledWith(1, 110, 'add', '')
   })
 
   it('shows refreshed quota summary rather than the stale users-list balance', async () => {

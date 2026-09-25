@@ -2,7 +2,7 @@
   <div class="group/usage relative text-sm">
     <div class="flex items-center gap-1.5">
       <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.today') }}:</span>
-      <span class="font-medium text-gray-900 dark:text-white">${{ formatMoneyFixed(today) }}</span>
+      <span class="font-medium text-gray-900 dark:text-white">{{ formatUsdMoney(today) }}</span>
       <Icon
         v-if="hasBreakdown"
         name="infoCircle"
@@ -12,7 +12,7 @@
     </div>
     <div class="mt-0.5 flex items-center gap-1.5">
       <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.total') }}:</span>
-      <span class="font-medium text-gray-900 dark:text-white">${{ formatMoneyFixed(total) }}</span>
+      <span class="font-medium text-gray-900 dark:text-white">{{ formatUsdMoney(total) }}</span>
     </div>
 
     <div
@@ -33,9 +33,9 @@
           {{ item.isOther ? t('admin.users.platformOther') : platformLabel(item.platform) }}
         </span>
         <span class="font-mono">
-          ${{ formatMoneyFixed(item.today_actual_cost) }}
+          {{ formatUsdMoney(item.today_actual_cost) }}
           <span class="opacity-50">/</span>
-          ${{ formatMoneyFixed(item.total_actual_cost) }}
+          {{ formatUsdMoney(item.total_actual_cost) }}
         </span>
       </div>
     </div>
@@ -47,7 +47,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { PlatformUsage } from '@/api/admin/dashboard'
-import { formatMoneyFixed } from '@/utils/format'
+import { formatUsdMoney } from '@/utils/format'
 
 const props = defineProps<{
   today: number

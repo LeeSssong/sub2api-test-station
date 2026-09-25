@@ -4,13 +4,17 @@ import { nextTick } from 'vue'
 
 import type { ApiKey } from '@/types'
 import KeysView from '../KeysView.vue'
+import LineSelect from '@/components/keys/LineSelect.vue'
+import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
 
 const {
   listKeys,
+  createKey,
   getPublicSettings,
   getDashboardApiKeysUsage,
   getAvailableGroups,
   getUserGroupRates,
+  getHybridPerformanceSnapshot,
   showError,
   showSuccess,
   copyToClipboard,
@@ -18,10 +22,12 @@ const {
   nextStep,
 } = vi.hoisted(() => ({
   listKeys: vi.fn(),
+  createKey: vi.fn(),
   getPublicSettings: vi.fn(),
   getDashboardApiKeysUsage: vi.fn(),
   getAvailableGroups: vi.fn(),
   getUserGroupRates: vi.fn(),
+  getHybridPerformanceSnapshot: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   copyToClipboard: vi.fn(),
@@ -60,7 +66,7 @@ const messages: Record<string, string> = {
 vi.mock('@/api', () => ({
   keysAPI: {
     list: listKeys,
-    create: vi.fn(),
+    create: createKey,
     update: vi.fn(),
     delete: vi.fn(),
     toggleStatus: vi.fn(),
@@ -76,6 +82,8 @@ vi.mock('@/api', () => ({
     getUserGroupRates,
   },
 }))
+vi.mock('@/api/keys', () => ({ keysAPI: { create: createKey } }))
+vi.mock('@/features/monitor-v4/api', () => ({ getHybridPerformanceSnapshot }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
@@ -143,10 +151,11 @@ const AppLayoutStub = {
 }
 
 const TablePageLayoutStub = {
+  props: ['continuous'],
   template: `
-    <div>
-      <slot name="filters" />
+    <div :data-continuous="continuous">
       <slot name="actions" />
+      <slot name="filters" />
       <slot name="table" />
       <slot name="pagination" />
     </div>
@@ -226,7 +235,7 @@ const mountView = async () => {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: PaginationStub,
-        BaseDialog: true,
+        BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' },
         ConfirmDialog: true,
         EmptyState: true,
         Select: SelectStub,
@@ -264,10 +273,12 @@ describe('user KeysView column settings', () => {
     localStorage.clear()
 
     listKeys.mockReset()
+    createKey.mockReset()
     getPublicSettings.mockReset()
     getDashboardApiKeysUsage.mockReset()
     getAvailableGroups.mockReset()
     getUserGroupRates.mockReset()
+    getHybridPerformanceSnapshot.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     copyToClipboard.mockReset()
@@ -285,7 +296,43 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
+    getHybridPerformanceSnapshot.mockResolvedValue({ groups: [] })
     isCurrentStep.mockReturnValue(false)
+  })
+
+  it('uses the shared line selector in the full key management form', async () => {
+    getAvailableGroups.mockResolvedValue([{ id: 12, name: 'GPT Plus', status: 'active', platform: 'openai', rate_multiplier: 1.2 }])
+    getUserGroupRates.mockResolvedValue({ 12: 0.8 })
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click')
+    const selector = wrapper.getComponent(LineSelect)
+    expect(selector.props('groups')).toHaveLength(1)
+    expect(selector.props('rates')).toEqual({ 12: 0.8 })
+  })
+
+  it('keeps actions, filters, endpoints, list, and pagination in one work surface', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-continuous]').exists()).toBe(true)
+    const content = wrapper.get('[data-continuous]').html()
+    expect(content.indexOf('data-tour="keys-create-btn"')).toBeLessThan(content.indexOf('Search name or key...'))
+    expect(content.indexOf('Search name or key...')).toBeLessThan(content.indexOf('data-test="columns"'))
+    expect(content.indexOf('data-test="columns"')).toBeLessThan(content.indexOf('data-test="page-size-50"'))
+  })
+
+  it('uses the same complete key form as the AI tool entry when creating a key', async () => {
+    getAvailableGroups.mockResolvedValue([{ id: 12, name: 'GPT Plus', status: 'active', platform: 'openai', rate_multiplier: 1.2 }])
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click')
+    expect(wrapper.getComponent(CreateLineKeyDialog).props('show')).toBe(true)
+    await wrapper.get('[name="name"]').setValue('new-key')
+    wrapper.getComponent(LineSelect).vm.$emit('update:modelValue', 12)
+    await nextTick()
+    createKey.mockResolvedValue({ id: 7, group_id: 12 })
+    await wrapper.get('#xq-create-line-key').trigger('submit')
+    await flushPromises()
+    expect(createKey).toHaveBeenCalledWith('new-key', 12, undefined, [], [], 0, undefined, {
+      rate_limit_5h: 0, rate_limit_1d: 0, rate_limit_7d: 0,
+    })
   })
 
   it('uses the default API key columns with low-frequency columns hidden', async () => {
@@ -332,6 +379,13 @@ describe('user KeysView column settings', () => {
     expect(wrapper.text()).toContain('test-key')
     expect(wrapper.text()).toContain('$1.25')
     expect(wrapper.find('[data-test="key-usage-error"]').exists()).toBe(true)
+  })
+
+  it('shows an unavailable quota amount rather than a fabricated zero when used quota is missing', async () => {
+    listKeys.mockResolvedValue({ items: [{ ...createApiKey(), quota: 20.1234, quota_used: null }], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="key-usage"]').text()).toContain('— / $20.12')
+    expect(wrapper.get('[data-test="key-usage"]').text()).not.toContain('$0.00 / $20.12')
   })
 
   it('shows a hidden column when toggled and persists the preference', async () => {

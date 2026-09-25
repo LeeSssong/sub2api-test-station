@@ -91,8 +91,8 @@
                 </div>
                 <aside data-test="recharge-summary" class="flex min-h-[432px] min-w-0 flex-col border-t border-[rgba(61,119,141,0.34)] bg-[radial-gradient(300px_220px_at_100%_100%,rgba(76,181,202,0.11),transparent_72%),linear-gradient(161deg,rgba(15,47,68,0.78),rgba(6,23,36,0.92))] px-5 py-6 lg:border-l lg:border-t-0 lg:px-[26px] lg:py-7">
                   <div>
-                    <p class="text-[10px] leading-4 text-[#61c9d9]">本次支付</p>
-                    <h2 class="mt-1 text-base font-semibold leading-[23px] text-[#f1f9f9]">金额核对</h2>
+                    <p class="text-[11px] leading-4 text-[#61c9d9]">本次支付</p>
+                    <h2 class="mt-1 text-[14px] font-semibold leading-[23px] text-[#f1f9f9]">金额核对</h2>
                   </div>
                   <div class="mt-auto w-full pt-[90px]">
                     <div class="flex items-center justify-between border-b border-[rgba(59,111,132,0.24)] py-3 text-sm">
@@ -105,7 +105,7 @@
                     </div>
                     <div class="pb-4 pt-[18px]">
                       <p class="text-xs leading-5 text-[#a1b8c2]">{{ t('payment.actualPay') }}</p>
-                      <p class="mt-[3px] text-[32px] font-semibold leading-[38px] text-[#eaf9f9]">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
+                      <p class="mt-[3px] text-[28px] font-semibold leading-[34px] text-[#eaf9f9]">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
                     </div>
                     <div v-if="balanceRechargeMultiplier !== 1" class="mb-4 flex justify-between gap-4 text-sm">
                       <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
@@ -122,7 +122,7 @@
                     </span>
                     <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
                   </button>
-                  <p class="pt-[10px] text-center text-[10px] leading-4 text-[#708c9e]">订单创建后将进入安全支付流程</p>
+                  <p class="pt-[10px] text-center text-[11px] leading-4 text-[#708c9e]">订单创建后将进入安全支付流程</p>
                 </aside>
               </div>
             </template>

@@ -209,7 +209,7 @@
                         )
                       "
                       >{{
-                        formatUsd(usageMap.get(row.id)?.today_cost ?? 0)
+                        formatUsd(usageMap.get(row.id)?.today_cost)
                       }}</span
                     >
                     <span class="text-gray-400 dark:text-gray-500">
@@ -251,7 +251,7 @@
                     >{{
                       usageLoading
                         ? "—"
-                        : formatUsd(usageMap.get(row.id)?.total_cost ?? 0)
+                        : formatUsd(usageMap.get(row.id)?.total_cost)
                     }}</span
                   >
                 </div>
@@ -338,8 +338,8 @@
                   t("admin.groups.usageToday")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
-                  >${{
-                    formatCost(usageMap.get(row.id)?.today_cost ?? 0)
+                  >{{
+                    formatUsd(usageMap.get(row.id)?.today_cost)
                   }}</span
                 >
               </div>
@@ -348,8 +348,8 @@
                   t("admin.groups.usageYesterday")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
-                  >${{
-                    formatCost(usageMap.get(row.id)?.yesterday_cost ?? 0)
+                  >{{
+                    formatUsd(usageMap.get(row.id)?.yesterday_cost)
                   }}</span
                 >
               </div>
@@ -358,8 +358,8 @@
                   t("admin.groups.usageTotal")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
-                  >${{
-                    formatCost(usageMap.get(row.id)?.total_cost ?? 0)
+                  >{{
+                    formatUsd(usageMap.get(row.id)?.total_cost)
                   }}</span
                 >
               </div>
@@ -4308,6 +4308,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { formatUsdMoney } from "@/utils/format";
 import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
 import { useOnboardingStore } from "@/stores/onboarding";
@@ -5680,14 +5681,8 @@ const loadGroups = async () => {
   }
 };
 
-const formatCost = (cost: number): string => {
-  if (cost >= 1000) return cost.toFixed(0);
-  if (cost >= 100) return cost.toFixed(1);
-  return cost.toFixed(2);
-};
-
 const formatUsd = (cost: number | null | undefined): string =>
-  `$${formatCost(cost ?? 0)}`;
+  formatUsdMoney(cost);
 
 const getQuotaUsageClass = (
   used: number,

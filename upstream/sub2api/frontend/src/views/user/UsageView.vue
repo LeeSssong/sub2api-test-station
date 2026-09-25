@@ -22,7 +22,7 @@
             <div class="ml-auto flex items-center gap-2">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.granularity') }}:</span>
               <div class="w-28">
-                <Select v-model="granularity" :options="granularityOptions" @change="loadChartData" />
+                <Select v-model="granularity" :options="granularityOptions" brand @change="loadChartData" />
               </div>
             </div>
           </div>
@@ -30,6 +30,8 @@
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <ModelDistributionChart
+            v-if="!modelStatsLoadError || modelStatsLoaded"
+            data-testid="usage-model-chart"
             v-model:metric="modelDistributionMetric"
             :model-stats="requestedModelStats"
             :loading="modelStatsLoading"
@@ -41,6 +43,7 @@
             :end-date="endDate"
           />
           <GroupDistributionChart
+            v-if="!chartsLoadError || chartsLoaded"
             v-model:metric="groupDistributionMetric"
             :group-stats="groupStats"
             :loading="chartsLoading"
@@ -54,6 +57,7 @@
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <EndpointDistributionChart
+            v-if="!statsLoadError || usageStats"
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"
             :endpoint-stats="inboundEndpointStats"
@@ -67,11 +71,11 @@
             :start-date="startDate"
             :end-date="endDate"
           />
-          <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
+          <TokenUsageTrend v-if="!chartsLoadError || chartsLoaded" :trend-data="trendData" :loading="chartsLoading" />
         </div>
-        <div v-if="chartsLoadError || modelStatsLoadError" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+        <div v-if="chartsLoadError || modelStatsLoadError" data-testid="usage-charts-error" class="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
           <span>{{ t('usage.failedToLoad') }}</span>
-          <button type="button" class="btn btn-secondary px-3 py-1.5" @click="refreshData">{{ t('common.refresh') }}</button>
+          <button type="button" class="btn btn-secondary px-3 py-1.5" @click="retryFailedCharts">{{ t('common.refresh') }}</button>
         </div>
       </div>
 
@@ -80,13 +84,14 @@
           <div v-if="activeTab === 'errors'" class="flex flex-1 flex-wrap items-end gap-4">
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.errors.keyName') }}</label>
-              <Select v-model="errorFilter.api_key_id" :options="errorKeyOptions" @change="applyErrorFilters" />
+              <Select v-model="errorFilter.api_key_id" :options="errorKeyOptions" brand @change="applyErrorFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.errors.model') }}</label>
               <Select
                 v-model="errorFilter.model"
                 :options="errorModelOptions"
+                brand
                 searchable
                 creatable
                 clearable
@@ -96,37 +101,37 @@
             </div>
             <div class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('usage.errors.category') }}</label>
-              <Select v-model="errorFilter.category" :options="errorCategoryOptions" @change="applyErrorFilters" />
+              <Select v-model="errorFilter.category" :options="errorCategoryOptions" brand @change="applyErrorFilters" />
             </div>
           </div>
           <div v-else class="flex flex-1 flex-wrap items-end gap-4">
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.apiKeyFilter') }}</label>
-              <Select v-model="filters.api_key_id" :options="apiKeyOptions" @change="applyFilters" />
+              <Select v-model="filters.api_key_id" :options="apiKeyOptions" brand @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.model') }}</label>
-              <Select v-model="filters.model" :options="modelOptions" searchable @change="applyFilters" />
+              <Select v-model="filters.model" :options="modelOptions" searchable brand @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.group') }}</label>
-              <Select v-model="filters.group_id" :options="groupOptions" searchable @change="applyFilters" />
+              <Select v-model="filters.group_id" :options="groupOptions" searchable brand @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[180px]">
               <label class="input-label">{{ t('usage.type') }}</label>
-              <Select v-model="filters.request_type" :options="requestTypeOptions" @change="applyFilters" />
+              <Select v-model="filters.request_type" :options="requestTypeOptions" brand @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[180px]">
               <label class="input-label">{{ t('usage.compactionFilter') }}</label>
-              <Select v-model="filters.native_compaction_v2" :options="compactionOptions" @change="applyFilters" />
+              <Select v-model="filters.native_compaction_v2" :options="compactionOptions" brand @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.billingType') }}</label>
-              <Select v-model="filters.billing_type" :options="billingTypeOptions" @change="applyFilters" />
+              <Select v-model="filters.billing_type" :options="billingTypeOptions" brand @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.billingMode') }}</label>
-              <Select v-model="filters.billing_mode" :options="billingModeOptions" @change="applyFilters" />
+              <Select v-model="filters.billing_mode" :options="billingModeOptions" brand @change="applyFilters" />
             </div>
           </div>
 
@@ -182,11 +187,12 @@
       </div>
 
       <template v-if="activeTab === 'usage'">
-        <div v-if="logsLoadError" class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+        <div v-if="logsLoadError" data-testid="usage-logs-error" class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
           <span>{{ t('usage.failedToLoad') }}</span>
           <button type="button" class="btn btn-secondary px-3 py-1.5" @click="loadLogs">{{ t('common.refresh') }}</button>
         </div>
         <UsageTable
+          v-if="!logsLoadError || logsLoaded"
           :data="usageLogs"
           :loading="loading"
           :columns="visibleColumns"
@@ -210,8 +216,13 @@
         />
       </template>
 
-      <UserErrorRequestsTable
-        v-else-if="errorViewEnabled"
+      <template v-else-if="errorViewEnabled">
+        <div v-if="errorListLoadError" data-testid="usage-errors-error" class="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
+          <span>{{ t('usage.errors.failedToLoad') }}</span>
+          <button type="button" class="btn btn-secondary px-3 py-1.5" @click="loadErrors">{{ t('common.refresh') }}</button>
+        </div>
+        <UserErrorRequestsTable
+        v-if="!errorListLoadError || errorListLoaded"
         :rows="errorRows"
         :total="errorTotal"
         :loading="errorLoading"
@@ -223,6 +234,7 @@
         @update:pageSize="onErrorPageSize"
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
       />
+      </template>
 
       <UsageDetailDialog
         v-model:show="showUsageDetail"
@@ -296,6 +308,11 @@ const logsLoadError = ref(false)
 const statsLoadError = ref(false)
 const modelStatsLoadError = ref(false)
 const chartsLoadError = ref(false)
+const logsLoaded = ref(false)
+const modelStatsLoaded = ref(false)
+const chartsLoaded = ref(false)
+const errorListLoaded = ref(false)
+const errorListLoadError = ref(false)
 const exporting = ref(false)
 const errorRows = ref<UserErrorRequest[]>([])
 const errorLoading = ref(false)
@@ -468,6 +485,7 @@ const loadLogs = async () => {
     if (!controller.signal.aborted) {
       usageLogs.value = res.items
       pagination.total = res.total
+      logsLoaded.value = true
     }
   } catch (error: any) {
     if (error?.name !== 'AbortError' && error?.code !== 'ERR_CANCELED') {
@@ -510,6 +528,7 @@ const loadModelStats = async () => {
     })
     if (seq !== modelStatsReqSeq) return
     requestedModelStats.value = response.models || []
+    modelStatsLoaded.value = true
     refreshModelOptions(response.models || [])
   } catch (error) {
     if (seq !== modelStatsReqSeq) return
@@ -535,6 +554,7 @@ const loadChartData = async () => {
     if (seq !== chartReqSeq) return
     trendData.value = snapshot.trend || []
     groupStats.value = snapshot.groups || []
+    chartsLoaded.value = true
   } catch (error) {
     if (seq !== chartReqSeq) return
     console.error('Failed to load chart data:', error)
@@ -569,6 +589,11 @@ const refreshData = () => {
   void loadModelStats()
   void loadChartData()
   if (activeTab.value === 'errors') void loadErrors()
+}
+
+const retryFailedCharts = () => {
+  if (modelStatsLoadError.value) void loadModelStats()
+  if (chartsLoadError.value) void loadChartData()
 }
 
 const resetFilters = () => {
@@ -872,6 +897,7 @@ const resetErrorRows = () => {
 
 const loadErrors = async () => {
   errorLoading.value = true
+  errorListLoadError.value = false
   try {
     const resp = await usageAPI.listMyErrorRequests({
       page: errorPage.value,
@@ -886,8 +912,10 @@ const loadErrors = async () => {
     })
     errorRows.value = resp.items
     errorTotal.value = resp.total
+    errorListLoaded.value = true
   } catch (error) {
     console.error('[UsageView] loadErrors failed:', error)
+    errorListLoadError.value = true
     appStore.showError(t('usage.errors.failedToLoad'))
   } finally {
     errorLoading.value = false

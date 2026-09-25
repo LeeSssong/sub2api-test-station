@@ -266,6 +266,21 @@ describe('admin GroupsView column settings', () => {
     isCurrentStep.mockReturnValue(false)
   })
 
+  it('displays group usage and quota in two decimals without rounding source values', async () => {
+    getUsageSummary.mockResolvedValue([{ group_id: 1, today_cost: 1234.5, yesterday_cost: -1.2, total_cost: 0.001 }])
+    const wrapper = await mountView()
+    expect(getUsageSummary).toHaveBeenCalled()
+    const usage = wrapper.get('[data-test="usage-cell"]').text()
+    expect(usage).toContain('$1234.50')
+    expect(usage).toContain('$-1.20')
+    expect(usage).toContain('$0.00')
+  })
+
+  it('does not invent zero costs when group usage summary is unavailable', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-test="usage-cell"]').text()).not.toContain('$0.00')
+  })
+
   it('does not call advanced group APIs or expose the exclusive filter in simple mode', async () => {
     authState.isSimpleMode = true
     const wrapper = await mountView()

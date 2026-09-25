@@ -110,7 +110,19 @@ describe('GroupDistributionChart', () => {
       raw: 0.9,
       dataset: { data: [0.9, 0.1] },
     })
-    expect(label).toBe('group-b: $0.900 (90.0%)')
+    expect(label).toBe('group-b: $0.90 (90.0%)')
+  })
+
+  it('renders tiny, negative and large costs with two decimals without changing raw chart data', () => {
+    const wrapper = mount(GroupDistributionChart, {
+      props: { groupStats: [{ ...groupStats[0], actual_cost: -1.2, account_cost: 0.001, cost: 1234.5 }] },
+      global: { stubs: { LoadingSpinner: true } },
+    })
+    const row = wrapper.find('tbody tr').text()
+    expect(row).toContain('$-1.20')
+    expect(row).toContain('$0.00')
+    expect(row).toContain('$1234.50')
+    expect(JSON.parse(wrapper.find('.chart-data').text()).datasets[0].data).toEqual([1200])
   })
 
   it('can hide account cost for user usage stats without account_cost', () => {

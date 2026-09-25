@@ -1,5 +1,5 @@
 <template>
-  <div class="table-page-layout" :class="{ 'mobile-mode': isMobile }">
+  <div class="table-page-layout" :class="{ 'mobile-mode': isMobile, 'continuous-surface': continuous }">
     <!-- 固定区域：操作按钮 -->
     <div v-if="$slots.actions" class="layout-section-fixed">
       <slot name="actions" />
@@ -26,6 +26,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+
+withDefaults(defineProps<{ continuous?: boolean }>(), { continuous: false })
 
 const isMobile = ref(false)
 
@@ -104,5 +106,43 @@ onUnmounted(() => {
   @apply flex-none;
   display: table;
   min-width: 100%;
+}
+
+.continuous-surface {
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--xq-border, #dbe3e8);
+  border-radius: 8px;
+  background: var(--xq-depth, #fff);
+}
+
+.continuous-surface > .layout-section-fixed {
+  min-width: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--xq-border, #dbe3e8);
+}
+
+.continuous-surface > .layout-section-fixed:last-child {
+  border-top: 1px solid var(--xq-border, #dbe3e8);
+  border-bottom: 0;
+}
+
+.continuous-surface .table-scroll-container,
+.continuous-surface.mobile-mode .table-scroll-container {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.continuous-surface.mobile-mode {
+  height: auto;
+  overflow: visible;
+}
+
+.continuous-surface.mobile-mode .layout-section-scrollable {
+  min-width: 0;
+  overflow-x: auto;
 }
 </style>

@@ -75,6 +75,25 @@ describe('ContactSupportDialog', () => {
     )
   })
 
+  it('keeps support copy readable and stacked at narrow widths', () => {
+    mountDialog()
+
+    const description = document.body.querySelector('.support-qr-hint')
+    const group = document.body.querySelector('.support-group')
+    const label = document.body.querySelector('.support-group-label')
+    const number = document.body.querySelector('.support-group-number')
+    const button = document.body.querySelector('[data-testid="copy-qq-group"]')
+
+    expect(description?.classList.contains('text-gray-700')).toBe(true)
+    expect(label?.classList.contains('text-gray-700')).toBe(true)
+    expect(group?.classList.contains('flex-col')).toBe(true)
+    expect(group?.classList.contains('sm:flex-row')).toBe(true)
+    expect(group?.classList.contains('bg-[#091a2b]')).toBe(true)
+    expect(number?.classList.contains('break-all')).toBe(true)
+    expect(button?.classList.contains('w-full')).toBe(true)
+    expect(button?.classList.contains('sm:w-auto')).toBe(true)
+  })
+
   it('copies the QQ group number and shows the copied state', async () => {
     mountDialog()
 

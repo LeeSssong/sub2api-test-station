@@ -131,8 +131,8 @@ describe('UsageDetailDialog PascalCase compatibility', () => {
     })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
     expect(apiGet).toHaveBeenCalledWith('/admin/usage/42/upstream-cost')
   })
 })

@@ -215,10 +215,10 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('Account rate')
     expect(text).toContain('User billed')
     expect(text).toContain('Account billed')
-    expect(text).toContain('$0.092883')
+    expect(text).toContain('$0.09')
     expect(text).toContain('$5.0000 / 1M tokens')
     expect(text).toContain('$30.0000 / 1M tokens')
-    expect(text).toContain('$0.069568')
+    expect(text).toContain('$0.07')
   })
 
   it('prefers the final account cost snapshot over the legacy multiplier formula', () => {
@@ -245,8 +245,8 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    expect(wrapper.text()).toContain('A $0.240000')
-    expect(wrapper.text()).not.toContain('A $0.120000')
+    expect(wrapper.text()).toContain('A $0.24')
+    expect(wrapper.text()).not.toContain('A $0.12')
   })
 
   it('shows requested and upstream models separately for admin rows', () => {

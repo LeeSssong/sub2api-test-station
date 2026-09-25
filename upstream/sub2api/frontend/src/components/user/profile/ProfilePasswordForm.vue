@@ -92,6 +92,7 @@ const form = ref({
 })
 
 const handleChangePassword = async () => {
+  if (loading.value) return
   if (form.value.new_password !== form.value.confirm_password) {
     appStore.showError(t('profile.passwordsNotMatch'))
     return

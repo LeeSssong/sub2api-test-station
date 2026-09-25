@@ -12,6 +12,7 @@
       :aria-describedby="ariaDescribedby"
       :class="[
         'select-trigger',
+        brand && 'select-trigger-brand',
         isOpen && 'select-trigger-open',
         error && 'select-trigger-error',
         disabled && 'select-trigger-disabled'
@@ -52,7 +53,7 @@
           v-if="isOpen"
           ref="dropdownRef"
           class="select-dropdown-portal"
-          :class="[instanceId]"
+          :class="[instanceId, brand && 'select-dropdown-brand']"
           :style="dropdownStyle"
           role="listbox"
           @click.stop
@@ -158,6 +159,7 @@ interface Props {
   remote?: boolean
   /** 远程搜索模式下的加载态：options 为空时下拉显示 loading 文案 */
   loading?: boolean
+  brand?: boolean
 }
 
 interface Emits {
@@ -176,7 +178,8 @@ const props = withDefaults(defineProps<Props>(), {
   valueKey: 'value',
   labelKey: 'label',
   remote: false,
-  loading: false
+  loading: false,
+  brand: false
 })
 
 const emit = defineEmits<Emits>()
@@ -191,6 +194,7 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const optionsListRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<'bottom' | 'top'>('bottom')
 const triggerRect = ref<DOMRect | null>(null)
+const panelRect = ref<DOMRect | null>(null)
 const dropdownViewportPadding = 8
 const dropdownMinimumWidth = 200
 
@@ -216,18 +220,17 @@ const dropdownStyle = computed(() => {
 
   const rect = triggerRect.value
   const viewportRight = Math.max(dropdownViewportPadding, window.innerWidth - dropdownViewportPadding)
-  const left = Math.min(
-    Math.max(dropdownViewportPadding, rect.left),
-    viewportRight
-  )
-  const availableWidth = Math.max(0, viewportRight - left)
+  const boundaryLeft = Math.max(dropdownViewportPadding, (panelRect.value?.left ?? 0) + (panelRect.value ? dropdownViewportPadding : 0))
+  const boundaryRight = Math.max(boundaryLeft, Math.min(viewportRight, (panelRect.value?.right ?? window.innerWidth) - (panelRect.value ? dropdownViewportPadding : 0)))
+  const availableWidth = boundaryRight - boundaryLeft
   const preferredMinWidth = Math.max(dropdownMinimumWidth, rect.width)
   const minWidth = Math.min(preferredMinWidth, availableWidth)
+  const left = Math.max(boundaryLeft, Math.min(rect.left, boundaryRight - minWidth))
   const style: Record<string, string> = {
     position: 'fixed',
     left: `${left}px`,
     minWidth: `${minWidth}px`,
-    maxWidth: `${availableWidth}px`,
+    maxWidth: `${boundaryRight - left}px`,
     zIndex: '100000020'
   }
 
@@ -342,6 +345,7 @@ const handleOptionMouseEnter = (option: any, index: number) => {
 const updateTriggerRect = () => {
   if (containerRef.value) {
     triggerRect.value = containerRef.value.getBoundingClientRect()
+    panelRect.value = containerRef.value.closest('.card')?.getBoundingClientRect() ?? null
   }
 }
 
@@ -528,6 +532,13 @@ onUnmounted(() => {
   @apply cursor-not-allowed bg-gray-100 opacity-60 dark:bg-dark-900;
 }
 
+.select-trigger-brand {
+  border-radius: 8px;
+  background: var(--xq-depth);
+  border-color: var(--xq-border);
+  color: var(--xq-text);
+}
+
 .select-value {
   @apply flex-1 truncate text-left;
 }
@@ -553,6 +564,19 @@ onUnmounted(() => {
   @apply overflow-hidden;
   pointer-events: auto !important;
 }
+
+.select-dropdown-portal.select-dropdown-brand {
+  border-radius: 8px;
+  border-color: var(--xq-border);
+  background: var(--xq-depth);
+  color: var(--xq-text);
+}
+.select-dropdown-brand .select-search,
+.select-dropdown-brand .select-option { border-color: var(--xq-line); color: var(--xq-text); }
+.select-dropdown-brand .select-search-input { color: var(--xq-text); }
+.select-dropdown-brand .select-option:hover,
+.select-dropdown-brand .select-option-focused,
+.select-dropdown-brand .select-option-selected { background: var(--xq-raised); color: var(--xq-text); }
 
 .select-dropdown-portal .select-search {
   @apply flex items-center gap-2 px-3 py-2;

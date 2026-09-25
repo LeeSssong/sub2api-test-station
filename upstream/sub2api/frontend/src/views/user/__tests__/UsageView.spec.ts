@@ -106,6 +106,11 @@ vi.mock('vue-i18n', async () => {
 
 const simpleStub = { template: '<div><slot /></div>' }
 const chartStub = { template: '<div />' }
+const SelectStub = {
+  props: { brand: Boolean, options: Array, modelValue: [String, Number, Boolean] },
+  emits: ['update:modelValue', 'change'],
+  template: '<div class="select-stub" :data-brand="brand ? \'yes\' : \'no\'" />',
+}
 const UsageTableStub = {
   name: 'UsageTable',
   props: ['data', 'columns', 'showAccountBilling', 'showUpstreamEndpoint'],
@@ -156,7 +161,7 @@ function mountUsageView() {
       stubs: {
         AppLayout: simpleStub,
         Pagination: true,
-        Select: true,
+        Select: SelectStub,
         DateRangePicker: true,
         Icon: true,
         UsageStatsCards: chartStub,
@@ -218,6 +223,13 @@ describe('user UsageView', () => {
     getAvailable.mockResolvedValue([{ id: 1, name: 'default' }])
   })
 
+  it('uses the branded select shell for granularity and all visible usage filters', () => {
+    const wrapper = mountUsageView()
+    const selects = wrapper.findAll('.select-stub')
+    expect(selects.length).toBeGreaterThan(1)
+    expect(selects.every(select => select.attributes('data-brand') === 'yes')).toBe(true)
+  })
+
   afterEach(() => {
     localStorage.removeItem('user-usage-hidden-columns')
   })
@@ -266,6 +278,50 @@ describe('user UsageView', () => {
     await wrapper.find('[role="alert"] button').trigger('click')
     await flushPromises()
     expect((wrapper.vm as any).usageStats.total_actual_cost).toBe(0.08)
+  })
+
+  it('hides the empty detail table after an initial failure and retries that section alone', async () => {
+    query.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="user-usage-detail-action"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="usage-logs-error"]').exists()).toBe(true)
+    const statsCalls = getStats.mock.calls.length
+    await wrapper.get('[data-testid="usage-logs-error"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="user-usage-detail-action"]').exists()).toBe(true)
+    expect(getStats).toHaveBeenCalledTimes(statsCalls)
+  })
+
+  it('retries only failed chart sources and keeps successful statistics and details', async () => {
+    getDashboardModels.mockRejectedValueOnce(new Error('models unavailable'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="usage-charts-error"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="usage-model-chart"]').exists()).toBe(false)
+    const statsCalls = getStats.mock.calls.length
+    const chartCalls = getDashboardSnapshotV2.mock.calls.length
+    const logCalls = query.mock.calls.length
+    await wrapper.get('[data-testid="usage-charts-error"] button').trigger('click')
+    await flushPromises()
+    expect(getDashboardModels).toHaveBeenCalledTimes(2)
+    expect(getDashboardSnapshotV2).toHaveBeenCalledTimes(chartCalls)
+    expect(getStats).toHaveBeenCalledTimes(statsCalls)
+    expect(query).toHaveBeenCalledTimes(logCalls)
+    expect(wrapper.find('[data-testid="usage-model-chart"]').exists()).toBe(true)
+  })
+
+  it('does not show an empty error-record table after its first failed load', async () => {
+    listMyErrorRequests.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountUsageView()
+    await flushPromises()
+    await wrapper.findAll('.tab').find(button => button.text() === 'Error records')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="usage-errors-error"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'UserErrorRequestsTable' }).exists()).toBe(false)
+    await wrapper.get('[data-testid="usage-errors-error"] button').trigger('click')
+    await flushPromises()
+    expect(listMyErrorRequests).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the successful detail action fixed and opens only the user-scoped dialog', async () => {

@@ -221,8 +221,8 @@ describe('UsageDetailDialog', () => {
     expect(wrapper.text()).toContain('1.23s')
     expect(wrapper.text()).toContain('245ms')
     expect(wrapper.text()).toContain('1,000')
-    expect(wrapper.text()).toContain('$0.005000')
-    expect(wrapper.text()).toContain('$0.006880')
+    expect(wrapper.text()).toContain('usage.detail.inputCost$0.01')
+    expect(wrapper.text()).toContain('usage.detail.actualCost$0.01')
     expect(wrapper.text()).toContain('$5.000000')
   })
 
@@ -299,8 +299,8 @@ describe('UsageDetailDialog', () => {
     expect(valueForLabel(wrapper, 'usage.detail.modelMappingChain'))
       .toBe('sonnet-latest -> claude-sonnet-4-20250514')
     expect(valueForLabel(wrapper, 'usage.detail.billingTier')).toBe('premium')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
   })
 
   it('uses the explicit account cost when strict evidence is unavailable', async () => {
@@ -319,8 +319,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.003314')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.003566')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
     expect(wrapper.text()).not.toContain('admin.usageCostDetail.unavailableReasons.endpointUnavailable')
   })
 
@@ -338,9 +338,9 @@ describe('UsageDetailDialog', () => {
 
     expect(adminGetCostEvidence).toHaveBeenCalledWith(42)
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamRequestId')).toBe('upstream-req-42')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteActualCost')).toBe('$0.006880')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.siteActualCost')).toBe('$0.01')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
     const administratorSection = wrapper.get('section[aria-labelledby="usage-detail-admin-heading"]')
     expect(administratorSection.text()).toContain('admin.usageCostDetail.siteActualCost')
     expect(administratorSection.text()).toContain('admin.usageCostDetail.upstreamActualCost')
@@ -367,8 +367,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
   })
 
   it('keeps the native cost and profit when strict evidence is unavailable', async () => {
@@ -383,8 +383,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
   })
 
   it('keeps cost and margin pending when native evidence is unavailable', async () => {
@@ -400,8 +400,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
     expect(valueForLabel(wrapper, 'admin.usageCostDetail.costSource')).toBe('newapi')
   })
 
@@ -417,8 +417,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
     expect(wrapper.text()).not.toContain('admin.usageCostDetail.unavailableReasons.endpointUnsupported')
   })
 
@@ -429,8 +429,8 @@ describe('UsageDetailDialog', () => {
     const wrapper = mountDialog({ scope: 'admin' })
     await flushPromises()
 
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.002500')
-    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.004380')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.upstreamActualCost')).toBe('$0.00')
+    expect(valueForLabel(wrapper, 'admin.usageCostDetail.profit')).toBe('$0.00')
   })
 
   it('shows a placeholder for a missing upstream request ID while querying by local ID', async () => {

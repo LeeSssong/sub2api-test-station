@@ -30,6 +30,7 @@ vi.mock('@/stores/app', () => ({
 }))
 vi.mock('@/utils/featureFlags', () => ({
   isChannelMonitorThroughputHidden: () => false,
+  isChannelMonitorUserRankingHidden: () => false,
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => {

@@ -112,7 +112,7 @@ function readPeerRefreshResult(
     if (
       expiresAt === snapshot.expiresAt &&
       storedPair.access_token === snapshot.accessToken &&
-      expiresAt > Date.now() + TOKEN_REFRESH_BUFFER_MS
+      expiresAt > Date.now() + TOKEN_REFRESH_BUFFER_MS + PEER_REFRESH_GRACE_MS
     ) {
       return storedPair
     }

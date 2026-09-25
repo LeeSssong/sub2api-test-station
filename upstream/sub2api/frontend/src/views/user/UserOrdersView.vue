@@ -20,7 +20,7 @@
         <span>{{ t('common.error') }}</span>
         <button type="button" class="btn btn-secondary" @click="fetchOrders">{{ t('common.refresh') }}</button>
       </div>
-      <OrderTable :orders="orders" :loading="loading">
+      <OrderTable v-else :orders="orders" :loading="loading">
         <template #actions="{ row }">
           <div class="flex items-center gap-2">
             <button v-if="row.status === 'PENDING'" @click="handleCancel(row.id)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:bg-yellow-900/20">
@@ -37,7 +37,7 @@
 
       <!-- Pagination -->
       <Pagination
-        v-if="pagination.total > 0"
+        v-if="!loadError && pagination.total > 0"
         :page="pagination.page"
         :total="pagination.total"
         :page-size="pagination.page_size"

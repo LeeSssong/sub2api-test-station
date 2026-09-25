@@ -24,6 +24,11 @@ vi.mock('@/stores', () => ({
   useAppStore: () => state.app,
 }))
 
+vi.mock('@/utils/featureFlags', async () => ({
+  ...(await vi.importActual<typeof import('@/utils/featureFlags')>('@/utils/featureFlags')),
+  isFeatureFlagEnabled: () => false,
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {

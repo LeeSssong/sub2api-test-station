@@ -2,8 +2,61 @@ package service
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
+
+func TestPrepareErrorLogInput_RedactsUpstreamMessages(t *testing.T) {
+	t.Parallel()
+	message := "Authorization: Bearer top-message-secret\nprovider unavailable"
+	entry := &OpsInsertErrorLogInput{
+		UpstreamErrorMessage: &message,
+		UpstreamErrors: []*OpsUpstreamErrorEvent{{
+			UpstreamStatusCode: 502,
+			Message:            "X-Goog-Api-Key: event-message-secret\nupstream timeout",
+		}},
+	}
+	prepared, ok, err := (&OpsService{opsRepo: &opsRepoMock{}}).prepareErrorLogInput(nil, entry)
+	if err != nil || !ok {
+		t.Fatalf("prepare error log: ok=%v err=%v", ok, err)
+	}
+	if strings.Contains(*prepared.UpstreamErrorMessage, "top-message-secret") ||
+		strings.Contains(*prepared.UpstreamErrorsJSON, "event-message-secret") {
+		t.Fatalf("upstream messages retained credentials: message=%q events=%q", *prepared.UpstreamErrorMessage, *prepared.UpstreamErrorsJSON)
+	}
+	if !strings.Contains(*prepared.UpstreamErrorMessage, "provider unavailable") ||
+		!strings.Contains(*prepared.UpstreamErrorsJSON, "upstream timeout") {
+		t.Fatalf("diagnostic context lost: message=%q events=%q", *prepared.UpstreamErrorMessage, *prepared.UpstreamErrorsJSON)
+	}
+}
+
+func TestSanitizeErrorBodyForStorage_RedactsPlainTextCredentials(t *testing.T) {
+	t.Parallel()
+	raw := "Authorization: Bearer raw-body-secret\nX-Goog-Api-Key: raw-upstream-secret\nprovider unavailable"
+	out, _ := sanitizeErrorBodyForStorage(raw, 10*1024)
+	if strings.Contains(out, "raw-body-secret") || strings.Contains(out, "raw-upstream-secret") {
+		t.Fatalf("plain-text credentials were not redacted: %q", out)
+	}
+	if !strings.Contains(out, "provider unavailable") {
+		t.Fatalf("non-sensitive diagnostic content lost: %q", out)
+	}
+}
+
+func TestSanitizeErrorBodyForStorage_RedactsCredentialsInsideJSONMessage(t *testing.T) {
+	t.Parallel()
+	raw := `{"message":"Authorization: Bearer nested-secret","detail":"X-Goog-Api-Key: another-secret","max_tokens":128}`
+	out, _ := sanitizeErrorBodyForStorage(raw, 10*1024)
+	if strings.Contains(out, "nested-secret") || strings.Contains(out, "another-secret") {
+		t.Fatalf("JSON message credentials were not redacted: %q", out)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatalf("sanitized JSON must remain valid: %v", err)
+	}
+	if decoded["max_tokens"] != float64(128) {
+		t.Fatalf("token budget changed: %#v", decoded["max_tokens"])
+	}
+}
 
 func TestIsSensitiveKey_TokenBudgetKeysNotRedacted(t *testing.T) {
 	t.Parallel()
@@ -30,6 +83,7 @@ func TestIsSensitiveKey_TokenBudgetKeysNotRedacted(t *testing.T) {
 	for _, key := range []string{
 		"authorization",
 		"Authorization",
+		"x-goog-api-key",
 		"access_token",
 		"refresh_token",
 		"id_token",
@@ -73,6 +127,14 @@ func TestSanitizeAndTrimJSONPayload_PreservesTokenBudgetFields(t *testing.T) {
 
 	if got := decoded["access_token"]; got != "[REDACTED]" {
 		t.Fatalf("expected access_token to be redacted, got %#v", got)
+	}
+}
+
+func TestSanitizeAndTrimJSONPayload_RedactsProviderAPIKey(t *testing.T) {
+	t.Parallel()
+	out, _, _ := sanitizeAndTrimJSONPayload([]byte(`{"x-goog-api-key":"provider-secret","status":"unavailable"}`), 10*1024)
+	if strings.Contains(out, "provider-secret") || !strings.Contains(out, "unavailable") {
+		t.Fatalf("provider API key redaction failed: %q", out)
 	}
 }
 

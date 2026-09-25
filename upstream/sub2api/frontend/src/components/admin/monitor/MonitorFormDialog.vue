@@ -934,6 +934,7 @@ async function handleSubmit() {
     if (target) {
       const { api_key, ...rest } = buildPayload()
       const req: UpdateParams = { ...rest }
+      if (!usesQuotaMode.value) req.account_id = 0
       // Only send api_key if user typed a new value
       if (api_key) req.api_key = api_key
       // template_id=null 用 clear_template=true 明确告诉后端清空（pointer 语义）

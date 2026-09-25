@@ -13,7 +13,8 @@ vi.mock('@/api/admin', () => ({
   }
 }))
 
-vi.mock('vue-i18n', () => ({
+vi.mock('vue-i18n', async () => ({
+  ...(await vi.importActual<typeof import('vue-i18n')>('vue-i18n')),
   useI18n: () => ({
     t: (key: string) => key
   })
@@ -61,6 +62,23 @@ describe('CNProviderBalanceCell', () => {
     const wrapper = mount(CNProviderBalanceCell, { props: { account: lowAccount } })
 
     expect(wrapper.text()).toContain('admin.accounts.cnProviders.balanceLow')
+  })
+
+  it('keeps two decimal places for large snapshot and queried balances', async () => {
+    const largeAccount = {
+      ...account,
+      extra: { kimi_balance: 1234.5, kimi_balance_currency: 'CNY' }
+    } as Account
+    queryBalance.mockResolvedValue({
+      success: true,
+      balances: [{ currency: 'CNY', balance: 100 }, { currency: 'USD', balance: 0.001 }]
+    })
+    const wrapper = mount(CNProviderBalanceCell, { props: { account: largeAccount } })
+
+    expect(wrapper.get('[data-test="cn-provider-balance-value"]').text()).toBe('CNY 1234.50')
+    await wrapper.get('[data-test="cn-provider-balance-probe"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="cn-provider-balance-value"]').text()).toBe('CNY 100.00 · USD 0.00')
   })
 
   it('keeps the snapshot balance visible when a query fails', async () => {

@@ -390,7 +390,7 @@ async function fetchCorrelatedUpstreamErrors(requestErrorId: number) {
       { page: 1, page_size: 100, view: 'all' },
       { include_detail: true }
     )
-    correlatedUpstream.value = res.items || []
+    correlatedUpstream.value = (res.items || []).map(redactDetailEvidence)
   } catch (err) {
     console.error('[OpsErrorDetailModal] Failed to load correlated upstream errors', err)
     correlatedUpstream.value = []
@@ -417,12 +417,63 @@ function prettyJSON(raw?: string): string {
   }
 }
 
+function redactEvidence(value: string | undefined): string | undefined {
+  if (!value) return value
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (parsed !== null && typeof parsed === 'object') {
+      return JSON.stringify(redactStructuredEvidence(parsed, 0))
+    }
+  } catch {
+    // Non-JSON diagnostic text is handled below.
+  }
+  return value
+    .replace(/\b(Authorization|X-Goog-Api-Key|X-Api-Key|Api-Key)\s*:\s*[^\r\n]+/gi, '$1: [REDACTED]')
+    .replace(/\bBearer\s+[^\s"',}]+/gi, 'Bearer [REDACTED]')
+    .replace(/\b((?:[\w-]+(?:_secret|_token|_password|_key))|authorization|proxy-authorization|x-goog-api-key|x-api-key|api[_-]?key|access_token|refresh_token|id_token|session_token|token|password|passwd|passphrase|secret|private_key|jwt|signature|accesskeyid|secretaccesskey)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s&,]+)/gi, '$1$2[REDACTED]')
+}
+
+function isSensitiveEvidenceKey(key: string): boolean {
+  return /^(authorization|proxy-authorization|x-goog-api-key|x-api-key|api[_-]?key|access_token|refresh_token|id_token|session_token|token|password|passwd|passphrase|secret|client_secret|private_key|jwt|signature|accesskeyid|secretaccesskey)$/i.test(key)
+    || /(_secret|_token|_password|_passwd|_passphrase|_key)$/i.test(key)
+}
+
+function redactStructuredEvidence(value: unknown, depth: number): unknown {
+  if (depth > 32) return '[REDACTED]'
+  if (Array.isArray(value)) return value.map(item => redactStructuredEvidence(item, depth + 1))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      key,
+      isSensitiveEvidenceKey(key)
+        ? '[REDACTED]'
+        : redactStructuredEvidence(item, depth + 1),
+    ]))
+  }
+  return typeof value === 'string' ? redactEvidence(value) : value
+}
+
+function redactDetailEvidence(value: OpsErrorDetail): OpsErrorDetail {
+  return {
+    ...value,
+    message: redactEvidence(value.message) || '',
+    error_body: redactEvidence(value.error_body) || '',
+    upstream_error_message: redactEvidence(value.upstream_error_message),
+    upstream_error_detail: redactEvidence(value.upstream_error_detail),
+    upstream_errors: redactEvidence(value.upstream_errors),
+    diagnosis: value.diagnosis ? {
+      ...value.diagnosis,
+      original_upstream_message: redactEvidence(value.diagnosis.original_upstream_message),
+      original_upstream_detail: redactEvidence(value.diagnosis.original_upstream_detail),
+    } : undefined,
+  }
+}
+
 async function fetchDetail(id: number) {
   loading.value = true
   try {
     const kind = props.errorType || (detail.value?.phase === 'upstream' ? 'upstream' : 'request')
     const d = kind === 'upstream' ? await opsAPI.getUpstreamErrorDetail(id) : await opsAPI.getRequestErrorDetail(id)
-    detail.value = d
+    detail.value = redactDetailEvidence(d)
   } catch (err: any) {
     detail.value = null
     appStore.showError(err?.message || t('admin.ops.failedToLoadErrorDetail'))

@@ -653,7 +653,7 @@ import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
-import { formatCompactNumber } from '@/utils/format'
+import { formatCompactNumber, formatMoneyFixed } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
@@ -1190,11 +1190,7 @@ const grokMonthlyBillingBar = computed((): GrokQuotaBarInfo | null => {
   }
 })
 const formatGrokMoney = (value?: number | null) => {
-  if (value == null || Number.isNaN(value)) return '0'
-  if (value >= 1000) return formatCompactNumber(value)
-  if (value >= 100) return value.toFixed(0)
-  if (value >= 10) return value.toFixed(1)
-  return value.toFixed(2)
+  return formatMoneyFixed(value)
 }
 // Prepaid chip only when there is a positive prepaid balance.
 // Used/limit only when monthly limit is a positive number (0 means unlimited / unset).

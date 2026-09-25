@@ -67,6 +67,26 @@ afterEach(() => {
 })
 
 describe('Select dropdown viewport constraints', () => {
+  it('carries brand colors into a dropdown teleported outside the themed shell', async () => {
+    const wrapper = mount(Select, {
+      attachTo: document.body,
+      props: { modelValue: null, options: [{ value: 1, label: 'GPT Plus' }], brand: true, searchable: true },
+    })
+    unmountWrapper = () => wrapper.unmount()
+    const trigger = wrapper.get('button').element as HTMLElement
+    trigger.style.setProperty('--xq-depth', '#091a2b')
+    trigger.style.setProperty('--xq-text', '#f1f9f9')
+    trigger.style.setProperty('--xq-raised', '#10283d')
+
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+
+    const dropdown = document.body.querySelector<HTMLElement>('.select-dropdown-brand')
+    expect(dropdown?.style.getPropertyValue('--xq-depth')).toBe('#091a2b')
+    expect(dropdown?.style.getPropertyValue('--xq-text')).toBe('#f1f9f9')
+    expect(dropdown?.style.getPropertyValue('--xq-raised')).toBe('#10283d')
+  })
+
   it('preserves the existing 200px minimum width when space is available', async () => {
     setViewportWidth(1024)
     mockTriggerRect(20, 80)

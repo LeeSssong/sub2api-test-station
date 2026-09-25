@@ -70,6 +70,19 @@ function createUser(overrides: Partial<User> = {}): User {
 }
 
 describe('ProfileInfoCard', () => {
+  it('distinguishes an unavailable balance from a real zero balance', async () => {
+    const wrapper = mount(ProfileInfoCard, {
+      props: { user: null },
+      global: { stubs: { Icon: true } }
+    })
+
+    expect(wrapper.get('[data-testid="profile-overview-metric-balance"]').text()).toContain('—')
+    expect(wrapper.get('[data-testid="profile-overview-metric-balance"]').text()).not.toContain('$0.00')
+
+    await wrapper.setProps({ user: createUser({ balance: 0 }) })
+    expect(wrapper.get('[data-testid="profile-overview-metric-balance"]').text()).toContain('$0.00')
+  })
+
   it('renders basic account information inside the new overview shell', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {

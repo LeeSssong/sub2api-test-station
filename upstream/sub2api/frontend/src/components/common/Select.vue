@@ -197,6 +197,8 @@ const triggerRect = ref<DOMRect | null>(null)
 const panelRect = ref<DOMRect | null>(null)
 const dropdownViewportPadding = 8
 const dropdownMinimumWidth = 200
+const brandTheme = ref<Record<string, string>>({})
+const brandTokens = ['--xq-depth', '--xq-raised', '--xq-border', '--xq-line', '--xq-text', '--xq-secondary', '--xq-muted', '--xq-accent']
 
 // i18n placeholders
 const placeholderText = computed(() => props.placeholder ?? t('common.selectOption'))
@@ -231,7 +233,8 @@ const dropdownStyle = computed(() => {
     left: `${left}px`,
     minWidth: `${minWidth}px`,
     maxWidth: `${boundaryRight - left}px`,
-    zIndex: '100000020'
+    zIndex: '100000020',
+    ...(props.brand ? brandTheme.value : {})
   }
 
   if (dropdownPosition.value === 'top') {
@@ -346,6 +349,10 @@ const updateTriggerRect = () => {
   if (containerRef.value) {
     triggerRect.value = containerRef.value.getBoundingClientRect()
     panelRect.value = containerRef.value.closest('.card')?.getBoundingClientRect() ?? null
+    if (props.brand && triggerRef.value) {
+      const theme = getComputedStyle(triggerRef.value)
+      brandTheme.value = Object.fromEntries(brandTokens.map(token => [token, theme.getPropertyValue(token).trim()]).filter(([, value]) => value))
+    }
   }
 }
 
@@ -571,12 +578,6 @@ onUnmounted(() => {
   background: var(--xq-depth);
   color: var(--xq-text);
 }
-.select-dropdown-brand .select-search,
-.select-dropdown-brand .select-option { border-color: var(--xq-line); color: var(--xq-text); }
-.select-dropdown-brand .select-search-input { color: var(--xq-text); }
-.select-dropdown-brand .select-option:hover,
-.select-dropdown-brand .select-option-focused,
-.select-dropdown-brand .select-option-selected { background: var(--xq-raised); color: var(--xq-text); }
 
 .select-dropdown-portal .select-search {
   @apply flex items-center gap-2 px-3 py-2;
@@ -635,6 +636,15 @@ onUnmounted(() => {
   @apply px-4 py-8 text-center text-sm;
   @apply text-gray-500 dark:text-dark-400;
 }
+
+.select-dropdown-portal.select-dropdown-brand .select-search { border-color: var(--xq-line); }
+.select-dropdown-portal.select-dropdown-brand .select-search-input { color: var(--xq-text); caret-color: var(--xq-accent); }
+.select-dropdown-portal.select-dropdown-brand .select-search-input::placeholder { color: var(--xq-muted); }
+.select-dropdown-portal.select-dropdown-brand .select-option { color: var(--xq-text); }
+.select-dropdown-portal.select-dropdown-brand .select-option:hover,
+.select-dropdown-portal.select-dropdown-brand .select-option-focused,
+.select-dropdown-portal.select-dropdown-brand .select-option-selected { background: var(--xq-raised); color: var(--xq-text); }
+.select-dropdown-portal.select-dropdown-brand .select-empty { color: var(--xq-secondary); }
 
 .select-dropdown-enter-active,
 .select-dropdown-leave-active {

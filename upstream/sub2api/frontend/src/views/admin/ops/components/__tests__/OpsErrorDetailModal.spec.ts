@@ -128,4 +128,34 @@ describe('OpsErrorDetailModal diagnosis', () => {
     expect(wrapper.text()).not.toContain('raw-body-secret')
     expect(wrapper.text()).not.toContain('raw-upstream-secret')
   })
+
+  it('redacts credential keys inside JSON evidence from an older error record', async () => {
+    const rawDetail = makeDetail(true)
+    rawDetail.error_body = JSON.stringify({
+      'x-goog-api-key': 'provider-secret',
+      nested: { token: 'historical-token-secret', private_key: 'historical-key-secret' },
+      max_tokens: 128,
+      status: 'unavailable',
+    })
+    getUpstreamErrorDetail.mockResolvedValue(rawDetail)
+    const wrapper = mountModal('upstream')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('provider-secret')
+    expect(wrapper.text()).not.toContain('historical-token-secret')
+    expect(wrapper.text()).not.toContain('historical-key-secret')
+    expect(wrapper.text()).toContain('128')
+    expect(wrapper.text()).toContain('unavailable')
+  })
+
+  it('redacts key-value credentials in older plain-text evidence', async () => {
+    const rawDetail = makeDetail(true)
+    rawDetail.error_body = 'api_key=historical-api-secret\nprovider unavailable'
+    getUpstreamErrorDetail.mockResolvedValue(rawDetail)
+    const wrapper = mountModal('upstream')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('historical-api-secret')
+    expect(wrapper.text()).toContain('provider unavailable')
+  })
 })

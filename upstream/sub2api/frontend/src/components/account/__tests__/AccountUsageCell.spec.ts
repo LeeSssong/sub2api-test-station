@@ -1423,7 +1423,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
     expect(usedOnly.text()).not.toContain('admin.accounts.usageWindow.grokPrepaid')
     expect(usedOnly.text()).toContain('admin.accounts.usageWindow.grokUsed')
-    expect(usedOnly.text()).toContain('3.50/25.0')
+    expect(usedOnly.text()).toContain('3.50/25.00')
 
     getUsage.mockResolvedValueOnce({
       subscription_tier: 'SuperGrok Heavy',
@@ -1449,9 +1449,30 @@ describe('AccountUsageCell', () => {
     })
     await flushPromises()
     expect(prepaidOnly.text()).toContain('admin.accounts.usageWindow.grokPrepaid')
-    expect(prepaidOnly.text()).toContain('$12.5')
+    expect(prepaidOnly.text()).toContain('$12.50')
     expect(prepaidOnly.text()).not.toContain('admin.accounts.usageWindow.grokUsed')
     expect(prepaidOnly.text()).not.toContain('8.00/0')
+  })
+
+  it('Grok paid keeps large prepaid and monthly amounts at two decimals', async () => {
+    getUsage.mockResolvedValue({
+      subscription_tier: 'SuperGrok',
+      grok_billing: {
+        period_type: 'monthly',
+        prepaid_balance: 1234.5,
+        monthly_limit: 1000,
+        monthly_used: 100.5,
+        plan: 'SuperGrok'
+      }
+    })
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 4416, platform: 'grok', type: 'oauth', extra: {} }) },
+      global: { stubs: { UsageProgressBar: true, AccountQuotaInfo: true } }
+    })
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('$1234.50')
+    expect(wrapper.text()).toContain('100.50/1000.00')
   })
 
   it('Key 账号在 today stats loading 时显示骨架屏', async () => {

@@ -150,6 +150,8 @@ describe('monitorFormat accuracy', () => {
         score: 42,
       }),
     ).toBe('scored')
+  })
+
   it('keeps missing first-token samples neutral instead of critical', () => {
     const health: MonitorHealth = {
       overall: 'healthy',

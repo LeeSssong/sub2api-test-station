@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import HybridPerformanceView from '../HybridPerformanceView.vue'
+import HybridPerformancePanel from '../HybridPerformancePanel.vue'
 
 const { getSnapshot } = vi.hoisted(() => ({
   getSnapshot: vi.fn().mockResolvedValue({
@@ -34,7 +34,7 @@ vi.mock('vue-i18n', async () => {
 
 describe('HybridPerformanceView', () => {
   it('renders Chinese title and empty copy instead of translation keys', async () => {
-    const wrapper = mount(HybridPerformanceView, {
+    const wrapper = mount(HybridPerformancePanel, {
       global: {
         stubs: {
           AppLayout: { template: '<main><slot /></main>' },
@@ -50,7 +50,6 @@ describe('HybridPerformanceView', () => {
     expect(wrapper.text()).toContain('暂无可见分组')
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.title')
     expect(wrapper.text()).not.toContain('monitorV2.hybrid.empty')
-    expect(wrapper.find('[data-test="codexradar-panel"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="hybrid-group-status"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -58,7 +57,7 @@ describe('HybridPerformanceView', () => {
   it('shows a retryable error while keeping the last successful window', async () => {
     getSnapshot.mockReset()
     getSnapshot.mockRejectedValueOnce(new Error('timeout'))
-    const wrapper = mount(HybridPerformanceView, {
+    const wrapper = mount(HybridPerformancePanel, {
       global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
     })
     await vi.waitFor(() => expect(wrapper.find('[data-test="hybrid-load-error"]').exists()).toBe(true))
@@ -71,7 +70,7 @@ describe('HybridPerformanceView', () => {
     getSnapshot.mockReset()
     getSnapshot.mockResolvedValueOnce({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })
     getSnapshot.mockRejectedValueOnce(new Error('timeout'))
-    const wrapper = mount(HybridPerformanceView, {
+    const wrapper = mount(HybridPerformancePanel, {
       global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
     })
     await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal)))
@@ -83,14 +82,14 @@ describe('HybridPerformanceView', () => {
     wrapper.unmount()
   })
 
-  it('does not offer the removed 1-hour window', async () => {
+  it('offers the persisted 1-hour window', async () => {
     getSnapshot.mockReset()
     getSnapshot.mockResolvedValue({ contract_version: '2', window: '24h', refresh_interval_seconds: 0, generated_at: '2026-08-25T00:00:00Z', groups: [] })
-    const wrapper = mount(HybridPerformanceView, {
+    const wrapper = mount(HybridPerformancePanel, {
       global: { stubs: { AppLayout: { template: '<main><slot /></main>' }, CodexRadarRecommendations: { template: '<section />' } } },
     })
     await vi.waitFor(() => expect(getSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal)))
-    expect(wrapper.find('[data-test="hybrid-window-1h"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="hybrid-window-1h"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="hybrid-window-24h"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="hybrid-window-7d"]').exists()).toBe(true)
     wrapper.unmount()

@@ -12,7 +12,7 @@ const source = readFileSync(
 describe('AppLayout regular user shell', () => {
   it('keeps the full header for admins and a mobile menu trigger for users', () => {
     expect(source).toContain('<AppHeader v-if="isAdmin" />')
-    expect(source).toContain('v-else class="sticky top-0')
+    expect(source).toContain('v-else class="user-mobile-header sticky top-0')
     expect(source).toContain('@click="appStore.toggleMobileSidebar()"')
     expect(source).toContain('lg:hidden')
   })

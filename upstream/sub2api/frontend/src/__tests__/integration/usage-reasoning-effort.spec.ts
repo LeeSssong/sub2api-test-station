@@ -278,7 +278,7 @@ describe('usage reasoning effort page display', () => {
 
     expect(wrapper.find('[data-testid="reasoning-effort-cell"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
+    await wrapper.get('[title="Columns"]').trigger('click')
     await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
     await flushPromises()
 
@@ -311,7 +311,7 @@ describe('usage reasoning effort page display', () => {
     })
     await flushPromises()
 
-    await wrapper.get('[data-testid="usage-column-settings"]').trigger('click')
+    await wrapper.get('[title="Columns"]').trigger('click')
     await wrapper.get('[data-testid="usage-column-toggle-reasoning_effort"]').trigger('click')
     await flushPromises()
 

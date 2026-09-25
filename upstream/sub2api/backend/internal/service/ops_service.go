@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"math/rand/v2"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,7 +15,10 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
+
+var opsPlainCredentialHeader = regexp.MustCompile(`(?im)(\b(?:Authorization|X-Goog-Api-Key|X-Api-Key|Api-Key)\s*:\s*)[^\r\n]+`)
 
 var ErrOpsDisabled = infraerrors.NotFound("OPS_DISABLED", "Ops monitoring is disabled")
 
@@ -523,7 +527,7 @@ func (s *OpsService) prepareErrorLogInput(ctx context.Context, entry *OpsInsertE
 	}
 	if entry.UpstreamErrorMessage != nil {
 		msg := strings.TrimSpace(*entry.UpstreamErrorMessage)
-		msg = sanitizeUpstreamErrorMessage(msg)
+		msg = sanitizeOpsDiagnosticText(sanitizeUpstreamErrorMessage(msg))
 		msg = truncateString(msg, 2048)
 		if strings.TrimSpace(msg) == "" {
 			entry.UpstreamErrorMessage = nil
@@ -612,7 +616,7 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 			out.AtUnixMs = 0
 		}
 
-		msg := sanitizeUpstreamErrorMessage(strings.TrimSpace(out.Message))
+		msg := sanitizeOpsDiagnosticText(sanitizeUpstreamErrorMessage(strings.TrimSpace(out.Message)))
 		msg = truncateString(msg, messageMaxLen)
 		out.Message = msg
 
@@ -917,6 +921,8 @@ func redactSensitiveJSON(v any) any {
 			out = append(out, redactSensitiveJSON(vv))
 		}
 		return out
+	case string:
+		return sanitizeOpsDiagnosticText(t)
 	default:
 		return v
 	}
@@ -953,6 +959,7 @@ func isSensitiveKey(key string) bool {
 	case "authorization",
 		"proxy-authorization",
 		"x-api-key",
+		"x-goog-api-key",
 		"api_key",
 		"apikey",
 		"access_token",
@@ -1140,9 +1147,15 @@ func sanitizeErrorBodyForStorage(raw string, maxBytes int) (sanitized string, tr
 		return out, trunc
 	}
 
-	// Non-JSON: best-effort truncate.
+	// Non-JSON payloads can contain headers as free text, including bearer credentials.
+	raw = sanitizeOpsDiagnosticText(raw)
 	if maxBytes > 0 && len(raw) > maxBytes {
 		return truncateString(raw, maxBytes), true
 	}
 	return raw, false
+}
+
+func sanitizeOpsDiagnosticText(raw string) string {
+	raw = opsPlainCredentialHeader.ReplaceAllString(raw, `${1}[REDACTED]`)
+	return logredact.RedactText(raw, "authorization", "x-goog-api-key", "x-api-key", "api_key", "apikey", "secret", "token")
 }

@@ -22,7 +22,6 @@
 .xq-ai ::selection,.xq-dialog ::selection{background:#245665;color:var(--xq-text)}
 .xq-ai .page-head{margin-bottom:28px}
 .xq-ai .page-head h1{font-size:20px;line-height:1.4;font-weight:600;letter-spacing:-.01em}
-.xq-ai .page-head p{font-size:12px;color:#7b98a7;margin-top:8px}
 .xq-ai .tool-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:34px}
 .xq-ai .tool-card{position:relative;overflow:hidden;display:flex;flex-direction:column;min-width:0;height:250px;padding:20px;border:1px solid rgba(58,118,143,.42);border-radius:14px;background:linear-gradient(150deg,rgba(17,51,74,.88),rgba(8,27,42,.80));transition:border-color .2s,background .2s}
 .xq-ai .tool-card:after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(220px 130px at 8% 0,rgba(97,201,217,.075),transparent 72%);opacity:.8}
@@ -60,7 +59,11 @@
 .xq-ai .route-identity strong,.xq-dialog .route-identity strong{font-size:12px;font-weight:600;color:var(--xq-text)}
 .xq-ai .route-provider-logo,.xq-dialog .route-provider-logo{width:16px;height:16px;flex:0 0 16px}
 .xq-ai .rate-badge,.xq-dialog .rate-badge{font-size:11px;padding:2px 6px;border-radius:5px;color:var(--xq-accent);background:rgba(97,201,217,.1);white-space:nowrap}
-.xq-ai .rate{font-size:14px;color:var(--xq-text)}
+.xq-ai .rate{font-size:14px}
+.xq-ai .success-rate-tone,.xq-dialog .success-rate-tone{color:var(--xq-muted)}
+.xq-ai .success-rate-tone[data-tone="green"],.xq-dialog .success-rate-tone[data-tone="green"]{color:var(--xq-success)}
+.xq-ai .success-rate-tone[data-tone="amber"],.xq-dialog .success-rate-tone[data-tone="amber"]{color:var(--xq-warning)}
+.xq-ai .success-rate-tone[data-tone="red"],.xq-dialog .success-rate-tone[data-tone="red"]{color:var(--xq-danger)}
 .xq-ai .route-action{min-height:30px;padding:0 6px;background:transparent;border:0;color:var(--xq-accent);font-size:12px;text-align:left}
 .xq-ai .empty,.xq-dialog .empty{padding:32px 16px;text-align:center;color:var(--xq-secondary)}
 .xq-ai .workspace-error,.xq-dialog .workspace-error{padding:16px;margin-bottom:16px;border:1px solid var(--xq-danger);border-radius:9px;color:var(--xq-danger);font-size:12px}
@@ -89,7 +92,7 @@
 .xq-dialog .route-metrics-table th:nth-child(4){width:88px}
 .xq-dialog .route-metrics-table th:nth-child(5),.xq-dialog .route-metrics-table th:nth-child(6){width:94px}
 .xq-dialog .route-metrics-table th:nth-child(7){width:112px}
-.xq-dialog .success-rate{font-size:20px;font-weight:650;color:var(--xq-success)}
+.xq-dialog .success-rate{font-size:20px;font-weight:650}
 .xq-dialog .request-count{font-size:12px;color:var(--xq-secondary)}
 .xq-dialog .latency-metric{font-size:14px;font-weight:600;color:var(--xq-text)}
 .xq-dialog .linked-key-cell{display:flex;align-items:center;gap:10px;white-space:nowrap}

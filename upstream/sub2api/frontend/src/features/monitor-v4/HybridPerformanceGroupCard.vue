@@ -43,10 +43,11 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MonitorV4Group } from './types'
+import { successRateTone } from './successRate'
 
 const props = defineProps<{ group: MonitorV4Group }>()
 const { t } = useI18n()
-const tone = computed(() => props.group.success_rate === null ? 'amber' : props.group.success_rate >= 85 ? 'green' : props.group.success_rate >= 50 ? 'amber' : 'red')
+const tone = computed(() => props.group.success_rate === null ? 'amber' : successRateTone(props.group.success_rate))
 const successRateLabel = computed(() => props.group.success_rate === null ? '--' : `${Number.isInteger(props.group.success_rate) ? props.group.success_rate : props.group.success_rate.toFixed(1)}%`)
 const formatSeconds = (value: number | null) => value === null ? '--' : `${(value / 1000).toFixed(2)} s`
 </script>

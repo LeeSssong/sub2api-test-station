@@ -1,6 +1,7 @@
 import type { Group } from '@/types'
 import type { MonitorV4Group } from '@/features/monitor-v4/types'
 import { metricLabel, toolIdsForGroup } from '@/features/ai-tools/model'
+import { successRateTone } from '@/features/monitor-v4/successRate'
 
 export interface LineOption {
   [key: string]: unknown
@@ -14,7 +15,18 @@ export interface LineOption {
   linkedCount: number | null
   statusLabel: string
   successLabel: string
+  successTone: ReturnType<typeof successRateTone>
   ttftLabel: string
+}
+
+export function resolveLineRate(group: Group, rates: Record<number, number>): number | null {
+  const userRate = rates[group.id]
+  const rate = Number.isFinite(userRate) ? userRate : group.rate_multiplier
+  return Number.isFinite(rate) ? rate : null
+}
+
+export function formatLineRate(rate: number | null): string {
+  return rate == null ? '倍率暂不可用' : (Number.isInteger(rate) ? rate.toFixed(1) : String(rate)) + '倍率'
 }
 
 export function buildLineOptions(
@@ -27,8 +39,7 @@ export function buildLineOptions(
   return groups
     .filter(group => !toolId || (group.status === 'active' && toolIdsForGroup(group, metrics.get(group.id)).includes(toolId)))
     .map(group => {
-      const userRate = rates[group.id]
-      const rate = Number.isFinite(userRate) ? userRate : group.rate_multiplier
+      const rate = resolveLineRate(group, rates)
       const metric = metrics.get(group.id)
       return {
         value: group.id,
@@ -36,11 +47,12 @@ export function buildLineOptions(
         group,
         description: group.description,
         platform: group.platform,
-        rate: Number.isFinite(rate) ? rate : null,
-        rateLabel: Number.isFinite(rate) ? `${Number.isInteger(rate) ? rate.toFixed(1) : rate}倍率` : '倍率暂不可用',
+        rate,
+        rateLabel: formatLineRate(rate),
         linkedCount: linkedCounts?.get(group.id) ?? (linkedCounts ? 0 : null),
         statusLabel: group.status === 'active' ? '管理正常' : '已停用',
         successLabel: metric?.success_rate == null ? '—' : `${Number(metric.success_rate.toFixed(1))}%`,
+        successTone: successRateTone(group.status === 'active' && metric?.request_count !== 0 ? metric?.success_rate : null),
         ttftLabel: metricLabel(metric?.ttft_p50_ms)
       }
     })

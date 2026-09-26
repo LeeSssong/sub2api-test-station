@@ -27,7 +27,7 @@
           <span>{{ line(option).rateLabel }}</span>
         </div>
         <small>{{ line(option).statusLabel }} · 关联密钥 {{ line(option).linkedCount == null ? '暂不可用' : `${line(option).linkedCount} 把` }}</small>
-        <small>近 1 小时稳定性 {{ line(option).successLabel }} · 首字 {{ line(option).ttftLabel }}</small>
+        <small>近 1 小时稳定性 <span class="line-success-rate" :data-tone="line(option).successTone">{{ line(option).successLabel }}</span> · 首字 {{ line(option).ttftLabel }}</small>
       </div>
     </template>
   </Select>
@@ -72,4 +72,8 @@ const line = (value: unknown) => value as LineOption
 .line-option-head strong{flex:1;font-size:14px;font-weight:600}
 .line-option-head>span{flex:none;font-size:11px;color:var(--xq-accent)}
 .line-option small{font-size:11px;color:var(--xq-secondary);white-space:normal}
+.line-success-rate{color:var(--xq-muted)}
+.line-success-rate[data-tone="green"]{color:var(--xq-success)}
+.line-success-rate[data-tone="amber"]{color:var(--xq-warning)}
+.line-success-rate[data-tone="red"]{color:var(--xq-danger)}
 </style>

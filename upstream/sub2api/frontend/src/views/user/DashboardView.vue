@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <section class="user-page xq-ai" data-testid="ai-tools-workspace" aria-labelledby="ai-tools-title">
-      <header class="page-head"><h1 id="ai-tools-title">请选择你的 AI 工具</h1><p>比较可用线路、稳定性和价格倍率</p></header>
+      <header class="page-head"><h1 id="ai-tools-title">请选择你的 AI 工具</h1></header>
       <div v-if="workspaceError" class="workspace-error" role="alert">{{ workspaceError }} <button class="xq-button" @click="loadWorkspace">重试</button></div>
       <div v-if="loading && !loaded" class="empty" role="status">正在读取 AI 工具…</div>
       <template v-if="loaded">
@@ -22,7 +22,7 @@
               <div class="route-header" role="row"><span role="columnheader">线路</span><span role="columnheader">近 1 小时成功率</span><span role="columnheader" title="本次检查首字耗时">本次检查结果</span><span role="columnheader">关联密钥</span><span role="columnheader">操作</span></div>
               <div v-for="group in routeRows" :key="group.id" class="route-row" role="row">
                 <div class="route-name" role="cell"><span class="dot" :class="stateOf(group).kind" :aria-label="stateOf(group).text"></span><div><div class="route-identity"><img class="provider-logo route-provider-logo" :src="providerIcon(group.platform)" alt="" /><strong>{{ group.name }}</strong><span class="rate-badge">{{ rateLabel(group) }}</span></div><small>{{ platformLabel(group.platform) }} · {{ stateOf(group).text }}</small></div></div>
-                <span role="cell" class="rate" :title="statsHint(group)">{{ successLabel(group,metricsById,true) }}</span>
+                <span role="cell" class="rate success-rate-tone" :data-tone="successTone(group,metricsById,true)" :title="statsHint(group)">{{ successLabel(group,metricsById,true) }}</span>
                 <span role="cell" :class="checkOf(group).kind" :title="checkOf(group).text==='—'?'本次尚未检查':'本次检查首字耗时'"><Icon v-if="checkOf(group).kind==='success'" name="check" size="sm" />{{ checkOf(group).text }}</span>
                 <span role="cell">{{ counts.get(group.id)||0 }} 把</span><button class="route-action" @click="openGroupKeys(group.id)">查看关联密钥</button>
               </div>
@@ -31,14 +31,14 @@
           <div v-if="!routeRows.length" class="empty">暂无已关联密钥的线路</div>
         </section>
       </template>
-      <BaseDialog :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
+      <BaseDialog brand :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
         <div class="detail-section-head"><p>已按线路质量从高到低排列；成功率、请求次数与 P50 按所选时间范围统计</p><div class="detail-period"><span>统计范围</span><div class="detail-period-segment" role="group" aria-label="线路统计时间"><button v-for="period in periods" :key="period.value" :aria-pressed="detailWindow===period.value" :class="{active:detailWindow===period.value}" @click="loadDetails(period.value)">{{ period.label }}</button></div></div></div>
         <div v-if="detailError" class="workspace-error" role="alert">{{ detailError }} <button class="xq-button" @click="loadDetails(detailWindow)">重试</button></div>
         <div v-if="detailLoading && !detailData.length" class="empty" role="status">正在读取统计…</div>
         <div v-else class="table-scroll"><table class="route-metrics-table"><thead><tr><th>线路</th><th>关联密钥</th><th>成功率</th><th>请求次数</th><th>首字 P50</th><th>耗时 P50</th><th title="本次检查首字耗时">本次检查</th></tr></thead><tbody>
           <tr v-for="group in detailRows" :key="group.id"><td><div class="detail-route"><div class="detail-route-title"><div class="route-identity"><img class="provider-logo route-provider-logo" :src="providerIcon(group.platform)" alt="" /><strong>{{group.name}}</strong><span class="rate-badge">{{rateLabel(group)}}</span></div><span v-if="group.id===detailBest?.id" class="best-route-badge">最佳线路</span></div><small class="route-availability" :class="stateOf(group).kind"><span class="dot" :class="stateOf(group).kind"></span>{{stateOf(group).text}}</small></div></td>
             <td><div class="linked-key-cell"><span>{{counts.get(group.id)?'已关联':'未关联'}} · {{counts.get(group.id)||0}} 把</span><button v-if="group.status==='active'" class="xq-button small" :data-detail-group-id="group.id" @click="openCreate(selectedTool!,group.id)">关联密钥</button><span v-else class="muted">不可配置</span></div></td>
-            <td><strong class="success-rate">{{successLabel(group,detailMetrics,false)}}</strong></td><td><span class="request-count">{{group.status!=='active'?'—':detailMetrics.get(group.id)?.request_count??'—'}}</span></td><td><strong class="latency-metric">{{group.status!=='active'?'—':metricLabel(detailMetrics.get(group.id)?.ttft_p50_ms)}}</strong></td><td><strong class="latency-metric">{{group.status!=='active'?'—':metricLabel(detailMetrics.get(group.id)?.latency_p50_ms)}}</strong></td><td><span :class="checkOf(group).kind"><Icon v-if="checkOf(group).kind==='success'" name="check" size="sm" />{{checkOf(group).text}}</span></td>
+            <td><strong class="success-rate success-rate-tone" :data-tone="successTone(group,detailMetrics,false)">{{successLabel(group,detailMetrics,false)}}</strong></td><td><span class="request-count">{{group.status!=='active'?'—':detailMetrics.get(group.id)?.request_count??'—'}}</span></td><td><strong class="latency-metric">{{group.status!=='active'?'—':metricLabel(detailMetrics.get(group.id)?.ttft_p50_ms)}}</strong></td><td><strong class="latency-metric">{{group.status!=='active'?'—':metricLabel(detailMetrics.get(group.id)?.latency_p50_ms)}}</strong></td><td><span :class="checkOf(group).kind"><Icon v-if="checkOf(group).kind==='success'" name="check" size="sm" />{{checkOf(group).text}}</span></td>
           </tr>
         </tbody></table><div v-if="!detailRows.length" class="empty">暂无线路</div></div>
       </BaseDialog>
@@ -58,6 +58,8 @@ import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
 import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
+import { successRateTone } from '@/features/monitor-v4/successRate'
+import { formatLineRate, resolveLineRate } from '@/components/keys/lineOptions'
 import { checkLines, type LineCheck } from '@/features/ai-tools/api'
 import { tools, linkedCounts, configuredLines, availability, compareQuality, metricLabel, providerIcon, platformLabel, toolIdsForGroup } from '@/features/ai-tools/model'
 import { getDashboardWorkspaceSnapshot, setDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
@@ -96,7 +98,11 @@ const routeRows=computed(()=>sort(configuredLines(groups.value,keys.value)))
 const detailRows=computed(()=>sort(selectedTool.value?.groups||[],detailMetrics.value))
 const detailBest=computed(()=>detailRows.value.find(g=>stateOf(g).available))
 const periods=[{value:'1h' as const,label:'近 1 小时'},{value:'24h' as const,label:'近 24 小时'},{value:'7d' as const,label:'近 7 天'}]
-const rateLabel=(g:Group)=>`${rates.value[g.id]??g.rate_multiplier}x`
+const rateLabel=(g:Group)=>formatLineRate(resolveLineRate(g,rates.value))
+function successTone(g:Group,ms:Map<number,MonitorV4Group>,hour:boolean){
+  const m=ms.get(g.id)
+  return successRateTone(g.status==='active' && m?.request_count!==0 && !(hour&&statsFailed.value) ? m?.success_rate : null)
+}
 function successLabel(g:Group,ms:Map<number,MonitorV4Group>,hour:boolean){
   if(g.status!=='active')return '—'
   const m=ms.get(g.id)

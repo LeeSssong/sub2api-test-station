@@ -199,11 +199,14 @@ const panelRect = ref<DOMRect | null>(null)
 const dropdownViewportPadding = 8
 const dropdownMinimumWidth = 200
 const brandTheme = ref<Record<string, string>>({})
-const brandTokens = ['--xq-depth', '--xq-raised', '--xq-border', '--xq-line', '--xq-text', '--xq-secondary', '--xq-muted', '--xq-accent']
+const brandTokens = ['--xq-depth', '--xq-raised', '--xq-border', '--xq-line', '--xq-text', '--xq-secondary', '--xq-muted', '--xq-accent', '--xq-success', '--xq-warning', '--xq-danger']
 const defaultBrandTheme: Record<string, string> = {
   '--xq-depth': '#091a2b',
   '--xq-raised': '#10283d',
   '--xq-border': '#1b4055',
+  '--xq-success': '#8cdfc4',
+  '--xq-warning': '#d9b86d',
+  '--xq-danger': '#d47e7e',
   '--xq-line': '#153246',
   '--xq-text': '#f1f9f9',
   '--xq-secondary': '#a1b8c2',

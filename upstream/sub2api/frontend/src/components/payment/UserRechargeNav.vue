@@ -19,15 +19,17 @@
 
     <div class="mt-[14px] flex min-w-0 items-center justify-between gap-2 border-b border-[rgba(55,107,128,0.35)] sm:gap-4">
       <div class="flex" role="tablist" aria-label="充值方式">
-        <router-link to="/purchase" role="tab" :aria-selected="active === 'recharge'" class="relative flex h-12 items-center px-3 text-sm font-semibold transition-colors sm:px-6" :class="active === 'recharge' ? activeClass : inactiveClass">
+        <router-link v-if="paymentEnabled" data-test="recharge-tab" to="/purchase" role="tab" :aria-selected="active === 'recharge'" class="relative flex h-12 items-center px-3 text-sm font-semibold transition-colors sm:px-6" :class="active === 'recharge' ? activeClass : inactiveClass">
           充值
         </router-link>
+        <span v-else data-test="recharge-tab" role="tab" aria-disabled="true" aria-selected="false" class="flex h-12 items-center px-3 text-sm text-[#708c9e] sm:px-6">充值</span>
         <router-link to="/redeem" role="tab" :aria-selected="active === 'redeem'" class="relative flex h-12 items-center px-3 text-sm font-semibold transition-colors sm:px-6" :class="active === 'redeem' ? activeClass : inactiveClass">
           兑换码
         </router-link>
       </div>
-      <router-link to="/orders" class="flex h-[34px] shrink-0 items-center whitespace-nowrap px-1 text-xs text-[#a1b8c2] transition-colors hover:text-[#61c9d9]">我的订单 →</router-link>
+      <router-link v-if="paymentEnabled" data-test="orders-link" to="/orders" class="flex h-[34px] shrink-0 items-center whitespace-nowrap px-1 text-xs text-[#a1b8c2] transition-colors hover:text-[#61c9d9]">我的订单 →</router-link>
     </div>
+    <p v-if="!paymentEnabled" data-test="recharge-unavailable" class="mt-3 text-xs text-[#a1b8c2]">充值暂不可用，仍可使用兑换码。</p>
   </div>
 </template>
 
@@ -36,8 +38,10 @@ withDefaults(defineProps<{
   active: 'recharge' | 'redeem'
   balance: number
   concurrency?: number
+  paymentEnabled?: boolean
 }>(), {
   concurrency: 0,
+  paymentEnabled: true,
 })
 
 const activeClass = 'text-[#eaf9f9] after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:bg-[#61c9d9]'

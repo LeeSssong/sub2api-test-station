@@ -56,6 +56,7 @@
           :class="[instanceId, brand && 'select-dropdown-brand']"
           :style="dropdownStyle"
           role="listbox"
+          tabindex="-1"
           @click.stop
           @mousedown.stop
           @keydown="onDropdownKeyDown"
@@ -199,6 +200,16 @@ const dropdownViewportPadding = 8
 const dropdownMinimumWidth = 200
 const brandTheme = ref<Record<string, string>>({})
 const brandTokens = ['--xq-depth', '--xq-raised', '--xq-border', '--xq-line', '--xq-text', '--xq-secondary', '--xq-muted', '--xq-accent']
+const defaultBrandTheme: Record<string, string> = {
+  '--xq-depth': '#091a2b',
+  '--xq-raised': '#10283d',
+  '--xq-border': '#1b4055',
+  '--xq-line': '#153246',
+  '--xq-text': '#f1f9f9',
+  '--xq-secondary': '#a1b8c2',
+  '--xq-muted': '#708c9e',
+  '--xq-accent': '#61c9d9',
+}
 
 // i18n placeholders
 const placeholderText = computed(() => props.placeholder ?? t('common.selectOption'))
@@ -234,7 +245,7 @@ const dropdownStyle = computed(() => {
     minWidth: `${minWidth}px`,
     maxWidth: `${boundaryRight - left}px`,
     zIndex: '100000020',
-    ...(props.brand ? brandTheme.value : {})
+    ...(props.brand ? { ...defaultBrandTheme, ...brandTheme.value } : {})
   }
 
   if (dropdownPosition.value === 'top') {
@@ -393,9 +404,7 @@ watch(isOpen, (open) => {
         : initialIdx
     }
 
-    if (isSearchable.value) {
-      nextTick(() => searchInputRef.value?.focus())
-    }
+    nextTick(() => (isSearchable.value ? searchInputRef.value : dropdownRef.value)?.focus())
     // Add scroll listener to update position
     window.addEventListener('scroll', updateTriggerRect, { capture: true, passive: true })
     window.addEventListener('resize', calculateDropdownPosition)
@@ -464,11 +473,13 @@ const onDropdownKeyDown = (e: KeyboardEvent) => {
       break
     case 'Escape':
       e.preventDefault()
+      e.stopPropagation()
       isOpen.value = false
       triggerRef.value?.focus()
       break
     case 'Tab':
       isOpen.value = false
+      triggerRef.value?.focus()
       break
   }
 }

@@ -4,6 +4,7 @@
       <UserPageHeader title="充值与兑换" description="为账户充值或兑换余额、并发及订阅权益" />
       <UserRechargeNav
         active="redeem"
+        :payment-enabled="appStore.cachedPublicSettings?.payment_enabled !== false"
         :balance="Number(user?.balance || 0)"
         :concurrency="Number(user?.concurrency || 0)"
       />

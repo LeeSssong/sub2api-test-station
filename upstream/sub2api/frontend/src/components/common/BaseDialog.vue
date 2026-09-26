@@ -4,7 +4,7 @@
       <div
         v-if="show"
         class="modal-overlay"
-        :class="{ 'user-app-shell xq-dialog': userTheme }"
+        :class="{ 'user-app-shell xq-dialog': branded }"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
         role="dialog"
@@ -22,7 +22,7 @@
               v-if="showCloseButton"
               @click="emit('close')"
               class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300 dark:focus-visible:ring-offset-dark-900"
-              :aria-label="userTheme ? '关闭' : 'Close modal'"
+              :aria-label="branded ? '关闭' : 'Close modal'"
             >
               <Icon name="x" size="md" />
             </button>
@@ -72,6 +72,7 @@ interface Props {
   closeOnClickOutside?: boolean
   showCloseButton?: boolean
   zIndex?: number
+  brandTheme?: boolean
 }
 
 interface Emits {
@@ -89,6 +90,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<Emits>()
+const branded = computed(() => props.brandTheme || userTheme.value)
 
 // Custom z-index style (overrides the default z-50 from CSS)
 const zIndexStyle = computed(() => {
@@ -117,7 +119,7 @@ const handleClose = () => {
 
 const handleEscape = (event: KeyboardEvent) => {
   if (!props.show || [...openDialogs].at(-1) !== dialogId) return
-  if (userTheme.value && event.key === 'Tab' && dialogRef.value) {
+  if (branded.value && event.key === 'Tab' && dialogRef.value) {
     const elements = [...dialogRef.value.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')]
     const first = elements[0], last = elements.at(-1)
     if (!dialogRef.value.contains(document.activeElement)) { event.preventDefault(); first?.focus() }

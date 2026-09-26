@@ -179,12 +179,12 @@
 
     <div v-else class="user-sidebar-bottom">
       <router-link
-        to="/purchase"
+        :to="rechargeEntryPath"
         class="user-recharge-button"
         :class="{ 'user-recharge-button-collapsed': sidebarCollapsed }"
         data-testid="user-sidebar-recharge"
         :aria-label="`${formatMoney(userBalance)} ${userNavLabel('recharge', '充值')}`"
-        @click="handleMenuItemClick('/purchase')"
+        @click="handleMenuItemClick(rechargeEntryPath)"
       >
         <strong>{{ formatMoney(userBalance) }}</strong>
         <span>充值｜兑换</span>
@@ -335,6 +335,7 @@ const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 const user = computed(() => authStore.user)
 const userBalance = computed(() => Number(user.value?.balance || 0))
+const rechargeEntryPath = computed(() => appStore.cachedPublicSettings?.payment_enabled === false ? '/redeem' : '/purchase')
 const userAvatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const displayName = computed(() => user.value?.username || user.value?.email?.split('@')[0] || '')
 

@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CreateLineKeyDialog from '../CreateLineKeyDialog.vue'
 import type { Group } from '@/types'
@@ -10,6 +11,17 @@ const groups = [{id: 1, name: 'GPT Plus', platform: 'openai', status: 'active', 
 function render(initialGroupId?: number, attached = false) { return mount(CreateLineKeyDialog, {attachTo: attached ? document.body : undefined, props: { show: true, toolName: 'Codex', groups, metrics: new Map([[1, {success_rate: 97, ttft_p50_ms: 2160, current_operational: false} as MonitorV4Group]]), linkedCounts: new Map([[1, 2]]), rates: {}, initialGroupId }, global: {stubs: { BaseDialog: {template: '<div><slot/><slot name="footer"/></div>'}, Teleport: true }}}) }
 beforeEach(() => create.mockReset())
 describe('create line key', () => {
+  it('applies one type and color hierarchy to all seven field labels and their controls', () => {
+    const source = readFileSync('src/features/ai-tools/CreateLineKeyDialog.vue', 'utf8')
+    expect(source).toContain('<BaseDialog :show="show" title="创建线路密钥" brand-theme')
+    expect(source).toMatch(/\.compact-key-form\{[^}]*font-size:12px;[^}]*color:var\(--xq-secondary\)/)
+    expect(source).toMatch(/\.toggle-row\{[^}]*font-weight:500/)
+    expect(source).toMatch(/\.xq-control\{[^}]*font-size:14px;[^}]*font-weight:400/)
+    expect(source).toMatch(/\.hint\{[^}]*font-size:11px;[^}]*font-weight:400/)
+    const wrapper = render()
+    expect(wrapper.findAll('.compact-key-form > .field, .compact-key-form > .key-option')).toHaveLength(7)
+    wrapper.unmount()
+  })
   it('allows unavailable already linked lines and searches supplied choices', async () => {
     const wrapper = render()
     await wrapper.get('[aria-label="选择线路"]').trigger('click')

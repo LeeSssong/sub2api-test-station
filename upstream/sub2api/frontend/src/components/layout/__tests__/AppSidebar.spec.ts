@@ -64,6 +64,12 @@ describe('AppSidebar header styles', () => {
 })
 
 describe('AppSidebar user navigation structure', () => {
+  it('sends the recharge entry to redeem when payments are explicitly disabled', () => {
+    expect(componentSource).toContain(':to="rechargeEntryPath"')
+    expect(componentSource).toContain("appStore.cachedPublicSettings?.payment_enabled === false ? '/redeem' : '/purchase'")
+    expect(componentSource).toContain('@click="handleMenuItemClick(rechargeEntryPath)"')
+  })
+
   it('keeps only the confirmed primary entries for regular users', () => {
     const userItemsSource = componentSource.slice(
       componentSource.indexOf('function buildUserNavItems'),

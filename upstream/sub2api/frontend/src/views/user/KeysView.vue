@@ -477,6 +477,8 @@
     <BaseDialog
       :show="showEditModal"
       :title="t('keys.editKey')"
+      brand-theme
+      panel-class="xq-key-dialog"
       width="normal"
       @close="closeModals"
     >
@@ -546,6 +548,7 @@
             v-model="formData.status"
             :options="statusOptions"
             :placeholder="t('keys.selectStatus')"
+            brand
           />
         </div>
 

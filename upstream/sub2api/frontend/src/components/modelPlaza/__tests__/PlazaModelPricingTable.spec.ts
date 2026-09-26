@@ -65,7 +65,7 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('$3.75')
     expect(text).toContain('$0.30')
     // 倍率列
-    expect(text).toContain('1x')
+    expect(text).toContain('1.0x倍率')
   })
 
   it('shows the Max reasoning billing multiplier', () => {
@@ -98,8 +98,8 @@ describe('PlazaModelPricingTable', () => {
     // 倍率列:原倍率划线 + 专属倍率
     const struck = wrapper.find('td .line-through')
     expect(struck.exists()).toBe(true)
-    expect(struck.text()).toBe('1x')
-    expect(text).toContain('0.8x')
+    expect(struck.text()).toBe('1.0x倍率')
+    expect(text).toContain('0.8x倍率')
   })
 
   it('模型按官方输出价从高到低排序,无官方价的排最后', () => {
@@ -378,7 +378,7 @@ describe('PlazaModelPricingTable', () => {
     expect(text).not.toContain('$0.002')
     // 倍率列展示独立倍率 1x,而非分组倍率 0.1x
     const rateCell = wrapper.findAll('tbody tr td').at(-1)!
-    expect(rateCell.text()).toBe('1x')
+    expect(rateCell.text()).toBe('1.0x倍率')
   })
 
   it('生图独立倍率关闭时,按图价格仍乘分组/专属生效倍率', () => {
@@ -401,7 +401,7 @@ describe('PlazaModelPricingTable', () => {
     const text = wrapper.text()
     expect(text).toContain('$0.02')
     const rateCell = wrapper.findAll('tbody tr td').at(-1)!
-    expect(rateCell.text()).toBe('0.1x')
+    expect(rateCell.text()).toBe('0.1x倍率')
   })
 
   it('按图模型主行展示阶梯芯片,不把 image_output_price(每 token)当按次价', () => {

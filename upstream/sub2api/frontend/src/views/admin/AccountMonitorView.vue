@@ -288,6 +288,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
+import { formatMultiplierLabel } from '@/utils/formatters'
 import type { Account, AdminGroup, Proxy as AccountProxy, ClaudeModel } from '@/types'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
@@ -451,7 +452,7 @@ function formatGroupStatus(value?: string): string {
   return value || '--'
 }
 function formatMultiplier(value?: number): string {
-  return value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(2)}×`
+  return value == null || !Number.isFinite(value) ? '--' : formatMultiplierLabel(value)
 }
 function formatNativeNumber(value?: number): string {
   return value == null || !Number.isFinite(value) ? '--' : String(value)

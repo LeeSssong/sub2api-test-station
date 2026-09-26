@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMultiplier } from '../formatters'
+import { formatMultiplier, formatMultiplierLabel } from '../formatters'
 
 describe('formatMultiplier', () => {
   it('keeps significant decimals instead of rounding to 2 places', () => {
@@ -23,5 +23,20 @@ describe('formatMultiplier', () => {
 
   it('falls back to 2 significant digits below 0.0001', () => {
     expect(formatMultiplier(0.00005)).toBe('0.000050')
+  })
+})
+
+describe('formatMultiplierLabel', () => {
+  it('uses the configured rate with the x multiplier suffix', () => {
+    expect(formatMultiplierLabel(0.12)).toBe('0.12x倍率')
+    expect(formatMultiplierLabel(1)).toBe('1.0x倍率')
+    expect(formatMultiplierLabel(0.035)).toBe('0.035x倍率')
+    expect(formatMultiplierLabel(0.6 * 1.5)).toBe('0.9x倍率')
+    expect(formatMultiplierLabel(0.1234567890123)).toBe('0.1234567890123x倍率')
+  })
+
+  it('does not turn an unavailable rate into a fabricated value', () => {
+    expect(formatMultiplierLabel(null)).toBe('倍率暂不可用')
+    expect(formatMultiplierLabel(Number.NaN)).toBe('倍率暂不可用')
   })
 })

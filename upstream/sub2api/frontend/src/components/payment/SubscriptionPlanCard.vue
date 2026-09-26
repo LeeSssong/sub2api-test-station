@@ -111,6 +111,7 @@ import type { SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import { formatMultiplierLabel } from '@/utils/formatters'
 import { planValiditySuffix } from './validity'
 import { currencySymbol } from '@/components/payment/currency'
 import {
@@ -150,8 +151,7 @@ const discountText = computed(() => {
 })
 
 const rateDisplay = computed(() => {
-  const rate = props.plan.rate_multiplier ?? 1
-  return `×${Number(rate.toPrecision(10))}`
+  return formatMultiplierLabel(props.plan.rate_multiplier)
 })
 
 const appStore = useAppStore()

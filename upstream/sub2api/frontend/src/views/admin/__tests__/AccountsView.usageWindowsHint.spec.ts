@@ -232,7 +232,7 @@ describe('admin AccountsView usage windows hint', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.get('[data-test="account-rate"]').text()).toBe('0.065x')
+    expect(wrapper.get('[data-test="account-rate"]').text()).toBe('0.065x倍率')
     const indicator = wrapper.get('[data-testid="account-rate-sync-indicator"]')
     expect(indicator.attributes('title')).toBe('admin.accounts.upstreamBilling.syncedRateTooltip')
   })

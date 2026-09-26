@@ -11,7 +11,7 @@
         <span class="font-medium text-gray-900 dark:text-white">{{ group.name }}</span>
         <span class="text-gray-400">|</span>
         <span class="text-gray-600 dark:text-gray-400">
-          {{ t('admin.groups.columns.rateMultiplier') }}: {{ group.rate_multiplier }}x
+          {{ t('admin.groups.columns.rateMultiplier') }}: {{ formatMultiplierLabel(group.rate_multiplier) }}
         </span>
       </div>
 
@@ -249,6 +249,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
+import { formatMultiplierLabel } from '@/utils/formatters'
 
 interface LocalEntry extends GroupRateMultiplierEntry {}
 

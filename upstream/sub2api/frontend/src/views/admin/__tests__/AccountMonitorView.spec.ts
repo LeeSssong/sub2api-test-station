@@ -646,7 +646,7 @@ describe('admin account monitor view V3', () => {
       'active_account_count',
       'rate_limited_account_count',
     ])
-    expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.20×')
+    expect(wrapper.get('[data-test="group-summary"]').text()).toContain('1.2x倍率')
     expect(wrapper.get('[data-test="group-summary"]').text()).toContain('120')
     expect(wrapper.find('[data-test="edit-group-score-weights"]').exists()).toBe(false)
 

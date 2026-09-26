@@ -2,6 +2,7 @@ import type { Group } from '@/types'
 import type { MonitorV4Group } from '@/features/monitor-v4/types'
 import { metricLabel, toolIdsForGroup } from '@/features/ai-tools/model'
 import { successRateTone } from '@/features/monitor-v4/successRate'
+import { formatMultiplierLabel } from '@/utils/formatters'
 
 export interface LineOption {
   [key: string]: unknown
@@ -26,7 +27,7 @@ export function resolveLineRate(group: Group, rates: Record<number, number>): nu
 }
 
 export function formatLineRate(rate: number | null): string {
-  return rate == null ? '倍率暂不可用' : (Number.isInteger(rate) ? rate.toFixed(1) : String(rate)) + '倍率'
+  return formatMultiplierLabel(rate)
 }
 
 export function buildLineOptions(

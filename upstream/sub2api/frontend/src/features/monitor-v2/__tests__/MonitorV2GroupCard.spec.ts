@@ -58,7 +58,7 @@ describe('MonitorV2GroupCard', () => {
     expect(wrapper.find('[data-test="monitor-group-status"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="monitor-availability-badge"]').text()).toBe('100%')
     expect(wrapper.get('[data-test="monitor-availability-label"]').text()).toBe('可用性')
-    expect(wrapper.get('[data-test="monitor-rate-multiplier"]').text()).toContain('0.3×')
+    expect(wrapper.get('[data-test="monitor-rate-multiplier"]').text()).toBe('0.3x倍率')
     expect(wrapper.text()).toContain('首字速度：2.22 s')
     expect(wrapper.get('[data-test="timeline-slot"]').exists()).toBe(true)
   })

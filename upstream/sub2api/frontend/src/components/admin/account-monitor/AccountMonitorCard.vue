@@ -213,6 +213,7 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import type { AccountModelDetectionModelsResponse, AccountMonitorAccount, AccountMonitorConcurrencyItem, AccountMonitorGroupRecommendation, AccountMonitorRange } from '@/api/admin/accountMonitor'
 import AccountModelDetectionDialog from './AccountModelDetectionDialog.vue'
 import MonitorV2Timeline from '@/features/monitor-v2/MonitorV2Timeline.vue'
+import { formatMultiplierLabel } from '@/utils/formatters'
 
 type CardConcurrency = AccountMonitorConcurrencyItem & { delayed?: boolean }
 type SchedulerDetails = NonNullable<AccountMonitorAccount['scheduler_explanation']> & {
@@ -590,7 +591,7 @@ function parseFiniteNumber(value: unknown, allowNegative = false): number | null
 function formatMultiplier(value?: string | number | null): string {
   const parsed = parseFiniteNumber(value)
   if (parsed == null) return '--'
-  return `${parsed.toFixed(2)}×`
+  return formatMultiplierLabel(parsed)
 }
 function isAPIKeyAccountType(value?: string | null): boolean {
   return value?.toLowerCase().replace(/[-_]/g, '') === 'apikey'

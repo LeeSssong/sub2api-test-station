@@ -161,7 +161,7 @@ describe('MonitorV2View', () => {
     expect(wrapper.text()).not.toContain('查看当前可见分组的实时状态与调用质量')
     expect(wrapper.text()).toContain('OpenAI 组')
     expect(wrapper.text()).toContain('100%')
-    expect(wrapper.text()).toContain('0.2×')
+    expect(wrapper.text()).toContain('0.2x倍率')
     expect(wrapper.text()).toContain('首字速度：420 ms')
     expect(wrapper.text()).toContain('平均耗时：10 s')
     expect(wrapper.text()).toContain('探测于')
@@ -201,7 +201,7 @@ describe('MonitorV2View', () => {
     expect(flagshipCard.classes()).not.toContain('hover:-translate-y-0.5')
     expect(wrapper.text()).toContain('0%')
     const multiplier = wrapper.get('[data-test="monitor-rate-multiplier"]')
-    expect(multiplier.text()).toContain('0.2×')
+    expect(multiplier.text()).toContain('0.2x倍率')
     expect(multiplier.classes()).toContain('bg-emerald-500/12')
     expect(multiplier.classes()).toContain('text-[11px]')
     const unconfiguredCard = wrapper.findAll('article')[1]

@@ -211,7 +211,7 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('Service tier')
     expect(text).toContain('Fast')
     expect(text).toContain('Rate')
-    expect(text).toContain('1.00x')
+    expect(text).toContain('1.0x倍率')
     expect(text).toContain('Account rate')
     expect(text).toContain('User billed')
     expect(text).toContain('Account billed')

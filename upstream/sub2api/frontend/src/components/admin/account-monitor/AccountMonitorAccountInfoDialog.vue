@@ -44,6 +44,7 @@
 import { computed, defineComponent, h } from 'vue'
 import type { Account } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import { formatMultiplierLabel } from '@/utils/formatters'
 
 type AccountInfo = Account & {
   effective_schedulable?: boolean
@@ -148,7 +149,7 @@ function formatPercent(value?: number | null): string {
 }
 
 function formatMultiplier(value?: number | null): string {
-  return value == null || !Number.isFinite(value) ? '--' : `${value.toFixed(2)}×`
+  return value == null || !Number.isFinite(value) ? '--' : formatMultiplierLabel(value)
 }
 
 function formatDate(value?: number | string | null): string {

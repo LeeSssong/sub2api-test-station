@@ -15,3 +15,10 @@ export function formatMultiplier(val: number): string {
   if (val < 0.0001) return val.toPrecision(2)
   return val.toFixed(4).replace(/(\.\d{2}\d*?)0+$/, '$1')
 }
+
+/** Display-only label for a configured multiplier; never substitute missing data. */
+export function formatMultiplierLabel(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '倍率暂不可用'
+  const displayValue = Number(value.toPrecision(15))
+  return `${Number.isInteger(displayValue) ? displayValue.toFixed(1) : String(displayValue)}x倍率`
+}

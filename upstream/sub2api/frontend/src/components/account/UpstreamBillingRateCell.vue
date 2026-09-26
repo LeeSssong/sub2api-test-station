@@ -96,7 +96,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatMultiplier } from '@/utils/formatters'
+import { formatMultiplierLabel } from '@/utils/formatters'
 import type { Account, UpstreamBillingProbeSnapshot } from '@/types'
 
 const props = withDefaults(defineProps<{
@@ -202,7 +202,7 @@ const elapsedSinceLastSuccess = computed(() => {
 const effectiveRate = computed(() => {
   if (!validTimestamps.value || stale.value || !['ok', 'failed'].includes(snapshot.value?.status ?? '')) return '-'
   const value = currentEffectiveRate.value
-  return value == null ? '-' : `${formatMultiplier(value)}x`
+  return value == null ? '-' : formatMultiplierLabel(value)
 })
 const statusLabel = computed(() => {
   if (!snapshot.value) return t('admin.accounts.upstreamBilling.notProbed')
@@ -222,7 +222,7 @@ const hasEffectiveRate = computed(() => effectiveRate.value !== '-')
 const registeredAccountRate = computed(() => {
   const value = props.account.rate_multiplier
   return isNewAPIRegistered.value && typeof value === 'number' && Number.isFinite(value) && value >= 0
-    ? `${formatMultiplier(value)}x`
+    ? formatMultiplierLabel(value)
     : null
 })
 const primaryValue = computed(() => hasEffectiveRate.value ? effectiveRate.value : registeredAccountRate.value || statusLabel.value || '-')

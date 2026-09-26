@@ -22,12 +22,14 @@ export function serverTimezoneLabel(utcOffset?: string | null): string {
   return utcOffset ? `UTC${utcOffset}` : ''
 }
 
-/** "14:00-18:00 ×2 (UTC+08:00)"，tzLabel 为空时省略括号部分 */
+import { formatMultiplierLabel } from './formatters'
+
+/** "14:00-18:00 2.0x倍率 (UTC+08:00)"，tzLabel 为空时省略括号部分 */
 export function formatPeakRateWindow(
   fields: PeakRateFields | null | undefined,
   tzLabel?: string
 ): string {
   if (!hasPeakRate(fields) || !fields) return ''
-  const base = `${fields.peak_start}-${fields.peak_end} ×${fields.peak_rate_multiplier ?? 1}`
+  const base = `${fields.peak_start}-${fields.peak_end} ${formatMultiplierLabel(fields.peak_rate_multiplier ?? 1)}`
   return tzLabel ? `${base} (${tzLabel})` : base
 }

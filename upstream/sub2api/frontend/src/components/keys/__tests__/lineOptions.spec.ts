@@ -9,7 +9,7 @@ const group = (id: number, platform = 'openai', status: Group['status'] = 'activ
 describe('key line options', () => {
   it('prefers the current user rate and falls back to the configured group rate', () => {
     const result = buildLineOptions([group(1), group(2)], { 1: 0.8 }, new Map(), new Map(), undefined)
-    expect(result.map(option => option.rateLabel)).toEqual(['0.8倍率', '1.2倍率'])
+    expect(result.map(option => option.rateLabel)).toEqual(['0.8x倍率', '1.2x倍率'])
   })
 
   it('keeps missing or invalid rate unavailable rather than fabricating a multiplier', () => {

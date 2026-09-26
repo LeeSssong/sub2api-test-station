@@ -190,7 +190,7 @@ describe('PlanEditDialog', () => {
 
     const options = wrapper.findAll('option').map(option => option.text())
 
-    expect(options).toContain('OpenAI + Claude + Gemini + Grok — composite (1.2x)')
-    expect(options).not.toContain('Standard OpenAI — openai (1x)')
+    expect(options).toContain('OpenAI + Claude + Gemini + Grok — composite (1.2x倍率)')
+    expect(options).not.toContain('Standard OpenAI — openai (1.0x倍率)')
   })
 })

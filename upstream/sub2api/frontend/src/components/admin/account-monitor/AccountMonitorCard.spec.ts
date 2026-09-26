@@ -76,7 +76,7 @@ describe('AccountMonitorCard R2', () => {
     expect(wrapper.get('[data-test="ttft-metric"]').text()).toContain('4120 ms')
     expect(wrapper.get('[data-test="profit-rate-metric"]').text()).toContain('61.8%')
     expect(wrapper.get('[data-test="native-priority-metric"]').text()).toContain('1')
-    expect(wrapper.get('[data-test="upstream-multiplier-metric"]').text()).toContain('0.12×')
+    expect(wrapper.get('[data-test="upstream-multiplier-metric"]').text()).toContain('0.12x倍率')
     expect(wrapper.findAll('[data-timeline-point]').length).toBe(24)
     expect(wrapper.get('[data-test="account-info"]').text()).toContain('账号详情')
     expect(wrapper.get('[data-test="account-more"]').text()).toContain('账号操作')

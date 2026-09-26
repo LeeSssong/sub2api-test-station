@@ -33,10 +33,10 @@ describe('原型AI工具交互',()=>{
  it('uses the effective multiplier with its suffix in both line tables',async()=>{
   mocks.rates.mockResolvedValue({1:0.12})
   const w=make();await flushPromises()
-  expect(w.get('.route-row .rate-badge').text()).toBe('0.12倍率')
+  expect(w.get('.route-row .rate-badge').text()).toBe('0.12x倍率')
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  expect(w.get('[role="dialog"]').text()).toContain('0.12倍率')
-  expect(w.get('[role="dialog"]').text()).toContain('0.5倍率')
+  expect(w.get('[role="dialog"]').text()).toContain('0.12x倍率')
+  expect(w.get('[role="dialog"]').text()).toContain('0.5x倍率')
   w.unmount()
  })
  it('keeps associate action even with keys and opens creation without navigation',async()=>{const w=make();await flushPromises();const b=w.findAll('button').find(b=>b.text()==='关联密钥')!;await b.trigger('click');expect(w.find('[data-testid="create-key"]').exists()).toBe(true);expect(mocks.push).not.toHaveBeenCalled();w.unmount()})

@@ -121,7 +121,7 @@ describe('create line key', () => {
       rates: { 1: 0.8 }
     })
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
-    expect(wrapper.text()).toContain('0.8倍率')
+    expect(wrapper.text()).toContain('0.8x倍率')
     expect(wrapper.text()).not.toContain('Claude')
   })
   it('sends enabled limits and omits switched off custom key', async () => {

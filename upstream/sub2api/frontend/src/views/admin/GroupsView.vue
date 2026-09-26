@@ -261,7 +261,7 @@
 
           <template #cell-rate_multiplier="{ value }">
             <span class="text-sm text-gray-700 dark:text-gray-300"
-              >{{ value }}x</span
+              >{{ formatMultiplierLabel(value) }}</span
             >
           </template>
 
@@ -4309,6 +4309,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { formatUsdMoney } from "@/utils/format";
+import { formatMultiplierLabel } from "@/utils/formatters";
 import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
 import { useOnboardingStore } from "@/stores/onboarding";

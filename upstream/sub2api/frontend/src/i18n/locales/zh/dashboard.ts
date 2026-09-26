@@ -92,7 +92,7 @@ export default {
     },
     availability: '可用性：{value}%',
     availabilityNoData: '暂无可用率数据',
-    peakRate: '{start}-{end} 高峰倍率 {rate}×',
+    peakRate: '{start}-{end} 高峰 {rate}x倍率',
     timeline: {
       label: '可用性时间线，共 {count} 个探测点',
       noData: '该时段暂无探测记录',
@@ -733,7 +733,7 @@ export default {
     detail: {
       noModels: '该分组暂未配置模型',
       noPricing: '未配置定价',
-      peakNote: '高峰时段 {window} 计费倍率 ×{multiplier}',
+      peakNote: '高峰时段 {window} 计费倍率 {multiplier}x倍率',
       longContextDisabledNote: '该分组未启用长上下文阶梯计费，超阈值请求仍按基础档计费，官方阶梯仅供参考'
     },
     table: {
@@ -747,15 +747,15 @@ export default {
       cacheReadShort: '读',
       tierHint: '按单次请求的总上下文（输入 + 缓存写入 + 缓存读取）所在档位对整单计价',
       tierHintMarginal: '仅超过阈值的部分按该档计价，输出不加价',
-      maxReasoningMultiplierBadge: 'Max ×{multiplier}',
-      maxReasoningMultiplierHint: '最终转发的推理强度为 max 时，整次请求的计费与额度消耗乘以 {multiplier}',
+      maxReasoningMultiplierBadge: 'Max {multiplier}x倍率',
+      maxReasoningMultiplierHint: '最终转发的推理强度为 max 时，整次请求的计费与额度消耗按 {multiplier}x倍率计算',
       marginalBadge: '超出部分计价',
       timePricingRowHint: '按 {timezone} 时间，在该时段内发起的请求按本行价格计费',
       timePricingRowHintWeekdays:
         '按 {timezone} 时间，仅工作日（周一至周五）在该时段内发起的请求按本行价格计费，周末全天按标准价',
-      timePricingRowHintPeak: '；本行价格未含高峰倍率，与高峰时段 {window} 重叠的部分实付再乘 ×{multiplier}',
+      timePricingRowHintPeak: '；本行价格未含高峰倍率，与高峰时段 {window} 重叠的部分实付再按 {multiplier}x倍率计算',
       timePricingWeekdays: '工作日',
-      timePricingRateHint: '生效倍率 {rate} × 时段倍率 {multiplier}',
+      timePricingRateHint: '生效 {rate}x倍率 × 时段 {multiplier}x倍率',
       paidPrice: '实付价格(折后)',
       officialPrice: '官方价格',
       rate: '折扣倍率',

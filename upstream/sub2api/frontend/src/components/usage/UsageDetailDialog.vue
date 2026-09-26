@@ -212,7 +212,7 @@
             <DetailItem :label="t('usage.detail.actualCost')" :value="formatCost(detail.actual_cost)" numeric emphasized />
             <DetailItem
               :label="t('usage.detail.groupMultiplier')"
-              :value="`${formatMultiplier(detail.rate_multiplier ?? 1)}x`"
+              :value="formatMultiplierLabel(detail.rate_multiplier)"
               numeric
             />
             <DetailItem
@@ -372,7 +372,7 @@ import { usageAPI } from '@/api/usage'
 import { useClipboard } from '@/composables/useClipboard'
 import type { AdminUsageLog, StreamDiagnosticResponse, UsageCostEvidenceDetail, UserUsageDetail } from '@/types'
 import { formatCostFixed, formatDateTime, formatMoneyFixed, formatReasoningEffort } from '@/utils/format'
-import { formatMultiplier } from '@/utils/formatters'
+import { formatMultiplierLabel } from '@/utils/formatters'
 import { getBillingModeLabel, getDisplayBillingMode } from '@/utils/billingMode'
 import {
   formatImageBillingSize,

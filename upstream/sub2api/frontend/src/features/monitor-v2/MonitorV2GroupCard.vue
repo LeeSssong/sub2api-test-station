@@ -31,7 +31,7 @@
               data-test="monitor-rate-multiplier"
               class="inline-flex items-center rounded-md border border-emerald-400/25 bg-emerald-500/12 px-2 py-0.5 text-[11px] font-black tabular-nums text-emerald-700 shadow-sm dark:text-emerald-300"
             >
-              {{ formatRate(group.rate_multiplier) }}×
+              {{ formatMultiplierLabel(group.rate_multiplier) }}
             </span>
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -53,6 +53,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MonitorV2Timeline from './MonitorV2Timeline.vue'
 import type { MonitorV2Group } from './types'
+import { formatMultiplierLabel } from '@/utils/formatters'
 
 const props = defineProps<{
   group: MonitorV2Group
@@ -73,10 +74,6 @@ function formatAvailability(value: number): string {
 function formatDuration(value: number): string {
   if (value < 1000) return `${Math.round(value)} ms`
   return `${Number((value / 1000).toFixed(2))} s`
-}
-
-function formatRate(value: number): string {
-  return Number(value.toFixed(4)).toString()
 }
 
 function metricValue(metric: MonitorV2Group['ttft'], formatter: (value: number) => string): string {

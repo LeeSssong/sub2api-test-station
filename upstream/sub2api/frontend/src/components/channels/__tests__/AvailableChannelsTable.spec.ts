@@ -142,7 +142,7 @@ describe('AvailableChannelsTable responsive surfaces', () => {
     expect(mobile.get('[data-icon="clock"]')).toBeTruthy()
     expect(mobile.text()).toContain('08:00')
     expect(mobile.text()).toContain('10:00')
-    expect(mobile.text()).toContain('×1.5')
+    expect(mobile.text()).toContain('1.5x倍率')
     expect(mobile.get('[data-model-chip]').text()).toBe('claude-test:No pricing')
     expect(mobile.findAll('.max-w-full')).not.toHaveLength(0)
   })

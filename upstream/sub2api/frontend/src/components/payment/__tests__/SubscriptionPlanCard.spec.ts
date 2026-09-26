@@ -52,6 +52,13 @@ const mountPlanCard = (groupPlatform: string, overrides: Partial<SubscriptionPla
   });
 
 describe("SubscriptionPlanCard", () => {
+  it("displays the configured group rate with the common label", () => {
+    expect(mountPlanCard("openai", { rate_multiplier: 0.12 }).text()).toContain("0.12x倍率")
+  });
+
+  it("does not invent a default rate when the backend omitted it", () => {
+    expect(mountPlanCard("openai", { rate_multiplier: undefined }).text()).toContain("倍率暂不可用")
+  });
   it("does not show Antigravity model scopes for OpenAI plans", () => {
     const text = mountPlanCard("openai").text();
 

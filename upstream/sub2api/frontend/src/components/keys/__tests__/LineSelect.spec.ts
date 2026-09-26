@@ -18,7 +18,7 @@ describe('shared line selector', () => {
     wrappers.push(wrapper)
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
     await nextTick()
-    expect(document.body.textContent).toContain('0.8倍率')
+    expect(document.body.textContent).toContain('0.8x倍率')
     expect(document.body.textContent).toContain('管理正常')
     expect(document.body.textContent).toContain('关联密钥 2 把')
     expect(document.body.textContent).toContain('97%')

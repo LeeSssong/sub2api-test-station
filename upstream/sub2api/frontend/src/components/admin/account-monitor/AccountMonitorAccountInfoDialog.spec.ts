@@ -58,6 +58,7 @@ describe('AccountMonitorAccountInfoDialog', () => {
     expect(wrapper.text()).toContain('临时不可调度')
     expect(wrapper.text()).toContain('有效状态快照')
     expect(wrapper.text()).toContain('internal note')
+    expect(wrapper.text()).toContain('0.8x倍率')
     expect(wrapper.text()).not.toContain('sk-secret-value')
     expect(wrapper.text()).not.toContain('Bearer')
     expect(wrapper.text()).not.toContain('credentials')

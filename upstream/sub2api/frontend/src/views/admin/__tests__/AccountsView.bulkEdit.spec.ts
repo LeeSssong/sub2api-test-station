@@ -482,7 +482,7 @@ describe('admin AccountsView bulk edit scope', () => {
 
     expect(probeUpstreamBillingBatch).toHaveBeenCalledWith([11])
     expect(listAccounts).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('[data-test="account-rate"]').text()).toBe('0.065x')
+    expect(wrapper.get('[data-test="account-rate"]').text()).toBe('0.065x倍率')
   })
 
   it('does not report a successful batch probe as failed when reconciliation is skipped', async () => {
@@ -625,6 +625,6 @@ describe('admin AccountsView bulk edit scope', () => {
 
     expect(probeUpstreamBilling).toHaveBeenCalledWith(7)
     expect(listAccounts).toHaveBeenCalledTimes(1)
-    expect(wrapper.get('[data-test="account-rate"]').text()).toBe('0.065x')
+    expect(wrapper.get('[data-test="account-rate"]').text()).toBe('0.065x倍率')
   })
 })

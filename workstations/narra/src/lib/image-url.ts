@@ -38,6 +38,7 @@ export function getThumbUrl(
   quality = 75,
 ): string {
   if (!src) return "";
+  if (src.startsWith("/image-workstation/api/workstation/media/")) return src;
   // 本地预览（用户刚选的文件）和 base64 不需要走优化
   if (src.startsWith("data:") || src.startsWith("blob:")) return src;
   // 已经是 /_next/image 的不要重复包

@@ -110,6 +110,9 @@ func (s *Storage) PersistImage(ctx context.Context, userID string, data []byte, 
 	}
 
 	if root := os.Getenv("LOCAL_MEDIA_ROOT"); root != "" {
+		if err := ctx.Err(); err != nil {
+			return PersistedMedia{}, err
+		}
 		if !regexp.MustCompile(`^site_[0-9]+_[a-f0-9-]{36}$`).MatchString(userID) || !regexp.MustCompile(`^(png|jpg|jpeg|webp|gif)$`).MatchString(extension) || len(data) > 50*1024*1024 {
 			return PersistedMedia{}, errors.New("invalid local image")
 		}

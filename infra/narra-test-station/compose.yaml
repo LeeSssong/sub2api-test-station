@@ -7,7 +7,7 @@ services:
       APP_URL: ${NARRA_APP_URL:?required}
       AUTH_SECRET: ${NARRA_AUTH_SECRET:?required}
       DATABASE_URL: ${NARRA_DATABASE_URL:?required}
-      SITE_INTERNAL_ORIGIN: http://test-station-api:8080
+      SITE_INTERNAL_ORIGIN: http://test-station-caddy:80
       LOCAL_MEDIA_ROOT: /data/media
       ENABLE_EMBEDDED_WORKER: "false"
       WORKER_READINESS_REQUIRED: "false"
@@ -27,7 +27,7 @@ services:
       - narra-media:/data/media
     networks: [test-station]
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:3000/image-workstation/api/healthz"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/image-workstation/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -48,7 +48,7 @@ services:
     depends_on:
       narra-image: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8081/readyz"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12

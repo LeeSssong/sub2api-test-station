@@ -1,0 +1,12 @@
+import importlib.util,unittest,pathlib
+p=pathlib.Path(__file__).resolve().parents[2]/'ops/deploy-narra-test-station.py'
+spec=importlib.util.spec_from_file_location('narra_deploy',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class TargetTests(unittest.TestCase):
+ def test_test_station_identity_is_fixed(self):
+  self.assertEqual(str(m.ROOT),'/opt/sub2api-test-station')
+  self.assertEqual(m.PROJECT,'sub2api-test-station')
+ def test_loads_existing_release_controller(self):
+  base=m.load_base(p.parent/'deploy-sub2api-test-station-api.py')
+  c=':80 {\n  reverse_proxy test-station-api-green:8080\n}\n'
+  self.assertIn('test-station-api-blue:8080',base.change_upstream(c,'test-station-api-green','test-station-api-blue'))
+if __name__=='__main__':unittest.main()

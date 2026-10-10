@@ -558,7 +558,17 @@ func (w *Worker) processJob(parent context.Context, job GenerationJob) {
 		"generation_type", job.GenerationType,
 	)
 
-	ctx, cancel := context.WithTimeout(parent, w.cfg.JobTimeout)
+	timeout := w.cfg.JobTimeout
+	if os.Getenv("SITE_INTERNAL_ORIGIN") != "" {
+		var created time.Time
+		if err := w.pool.QueryRow(parent, `SELECT "createdAt" FROM "User" WHERE id=$1`, job.UserID).Scan(&created); err != nil {
+			return
+		}
+		if remaining := time.Until(created.Add(6 * time.Hour)); remaining < timeout {
+			timeout = remaining
+		}
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	stopHeartbeat := make(chan struct{})

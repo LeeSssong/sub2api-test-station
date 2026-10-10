@@ -29,13 +29,28 @@ def dump(pg,path):
 
 def restore(pg,path,database):
     with path.open('rb') as data:
-        p=subprocess.run(['docker','exec','-i',pg,'sh','-c','exec pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d '+database],stdin=data,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        p=subprocess.run(['docker','exec','-i',pg,'sh','-c','exec pg_restore --exit-on-error --no-owner --no-privileges --clean --if-exists -U "$POSTGRES_USER" -d '+database],stdin=data,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     if p.returncode:
         error_path=path.parent/'restore-error.log';error_path.write_bytes(p.stderr);error_path.chmod(0o600)
         raise RuntimeError('database restore failed; protected diagnostics saved')
 
 def native_migrate(image,env_path):
-    run(['docker','run','--rm','--network',PROJECT+'-network','--env-file',str(env_path),'-v',PROJECT+'-app-data:/app/data',image,'/app/sub2api','--migrate-only'])
+    args=['docker','run','--rm','--network',PROJECT+'-network','--env-file',str(env_path),'-v',PROJECT+'-app-data:/app/data',image,'/app/sub2api','--migrate-only']
+    p=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    if p.returncode:
+        log=env_path.parent/'migration-error.log';log.write_bytes(p.stdout+p.stderr);log.chmod(0o600)
+        raise RuntimeError('native migration failed; protected diagnostics saved')
+
+def validate_restore_proof(proof, manifest, actual_backup_sha):
+    if proof.get('result') != 'passed':
+        raise RuntimeError('successful full restore proof required')
+    for key in ('binary_sha256', 'migration_set_sha256'):
+        if proof.get(key) != manifest.get(key):
+            raise RuntimeError('restore proof does not match candidate '+key)
+    if proof.get('backup_sha256') != actual_backup_sha:
+        raise RuntimeError('restored backup checksum mismatch')
+    if proof.get('restored_table_count', 0) < 100:
+        raise RuntimeError('restore proof did not verify complete database contents')
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('bundle',type=Path);args=parser.parse_args()
@@ -58,18 +73,31 @@ def main():
     backup=ROOT/'backups'/('narra-'+manifest['source_commit'][:12]);backup.mkdir(mode=0o700,exist_ok=False)
     api_env=base.inspect(old_api)['Config']['Env']
     base.private_write(backup/'migration.env','\n'.join(api_env)+'\n')
+    source_dump=ROOT/'backups/narra-73592d943fd8/preflight.dump'
+    backup_sha=hashlib.sha256(source_dump.read_bytes()).hexdigest()
+    if backup_sha != 'caec0a6936c9b98587746757ef2212eb6ae7b77850b703d3c7d7e01444742bf1':
+        raise RuntimeError('previous complete rehearsal backup changed')
+    database_bytes=int(db_command(pg,'SELECT pg_database_size(current_database());').strip())
+    if __import__('shutil').disk_usage(ROOT).free < database_bytes+2*1024**3:
+        raise RuntimeError('insufficient disk space for full restore and WAL')
     rehearsal='narra_rehearsal_'+manifest['source_commit'][:12]
     base.private_write(backup/'rehearsal.env','\n'.join(e for e in api_env if not e.startswith('DATABASE_DBNAME='))+'\nDATABASE_DBNAME='+rehearsal+'\n')
-    started=time.monotonic();print('test_station maintenance=preparation restore_rehearsal=started',flush=True)
-    dump(pg,backup/'preflight.dump')
+    started=time.monotonic();print('test_station restore_rehearsal=started',flush=True)
     db_command(pg,'CREATE DATABASE '+rehearsal+';')
     try:
-        restore(pg,backup/'preflight.dump',rehearsal)
+        restore(pg,source_dump,rehearsal)
+        table_count=int(db_command(pg,"SELECT count(*) FROM information_schema.tables WHERE table_schema='public';",rehearsal).strip())
+        print('test_station restore_rehearsal=restored tables='+str(table_count),flush=True)
         native_migrate(image,backup/'rehearsal.env')
         rows=db_command(pg,"SELECT filename || '|' || checksum FROM schema_migrations ORDER BY filename;",rehearsal)
         base.verify_migration_checksums(manifest['migration_checksums'],rows)
-    finally:db_command(pg,'DROP DATABASE '+rehearsal+' WITH (FORCE);')
-    print('test_station restore_rehearsal=passed seconds='+str(round(time.monotonic()-started,2)),flush=True)
+        proof={'result':'passed','backup_sha256':backup_sha,'binary_sha256':manifest['binary_sha256'],'migration_set_sha256':manifest['migration_set_sha256'],'restored_table_count':table_count,'seconds':round(time.monotonic()-started,2)}
+        validate_restore_proof(proof,manifest,backup_sha)
+        base.save(backup/'restore-proof.json',proof)
+    finally:
+        db_command(pg,'DROP DATABASE '+rehearsal+' WITH (FORCE);')
+        db_command(pg,'CHECKPOINT;')
+    print('test_station restore_and_native_migrations=passed',flush=True)
     downtime=time.monotonic();migrated=False;promoted=False
     try:
         print('test_station maintenance=stopping_business',flush=True)

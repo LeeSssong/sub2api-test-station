@@ -9,4 +9,11 @@ class TargetTests(unittest.TestCase):
   base=m.load_base(p.parent/'deploy-sub2api-test-station-api.py')
   c=':80 {\n  reverse_proxy test-station-api-green:8080\n}\n'
   self.assertIn('test-station-api-blue:8080',base.change_upstream(c,'test-station-api-green','test-station-api-blue'))
+class RestoreProofTests(unittest.TestCase):
+ def test_accepts_only_matching_complete_restore(self):
+  manifest={'binary_sha256':'binary','migration_set_sha256':'migrations'}
+  proof={**manifest,'result':'passed','backup_sha256':'backup','restored_table_count':150}
+  m.validate_restore_proof(proof,manifest,'backup')
+  for patch in ({'result':'failed'},{'binary_sha256':'other'},{'migration_set_sha256':'other'},{'backup_sha256':'other'},{'restored_table_count':0}):
+   with self.assertRaises(RuntimeError):m.validate_restore_proof({**proof,**patch},manifest,'backup')
 if __name__=='__main__':unittest.main()

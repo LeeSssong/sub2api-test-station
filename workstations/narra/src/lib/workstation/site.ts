@@ -1,6 +1,8 @@
 import 'server-only';
+import {headers} from 'next/headers';
 export async function siteProfile(token: string) {
- const response = await fetch(`${process.env.SITE_INTERNAL_ORIGIN}/api/v1/user/profile`, {headers:{Authorization:`Bearer ${token}`}, cache:'no-store', signal:AbortSignal.timeout(10000), redirect:'error'});
+ const incoming=await headers();
+ const response = await fetch(`${process.env.SITE_INTERNAL_ORIGIN}/api/v1/user/profile`, {headers:{Authorization:`Bearer ${token}`,'User-Agent':incoming.get('user-agent')||'site-workstation'}, cache:'no-store', signal:AbortSignal.timeout(10000), redirect:'error'});
  if (!response.ok) throw new Error('本站登录已失效，请返回本站重新登录');
  const result = await response.json(); const user = result.data;
  if (!user || !Number.isSafeInteger(user.id) || !['user','admin'].includes(user.role)) throw new Error('本站身份校验失败');

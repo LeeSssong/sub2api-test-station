@@ -20,6 +20,7 @@ type HistoryRailItem = {
 };
 
 type HistoryRailProps = {
+  title?: string;
   images: HistoryRailItem[];
   onPickImage: (url: string) => void;
   onUseForEdit?: (url: string) => void;
@@ -32,7 +33,7 @@ type ContextMenuState = {
   y: number;
 } | null;
 
-export function HistoryRail({ images, onPickImage, onUseForEdit, onReuseConfig }: HistoryRailProps) {
+export function HistoryRail({ title="历史图片", images, onPickImage, onUseForEdit, onReuseConfig }: HistoryRailProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
 
   useEffect(() => {
@@ -82,7 +83,7 @@ export function HistoryRail({ images, onPickImage, onUseForEdit, onReuseConfig }
   return (
     <aside className="hidden h-full w-72 shrink-0 flex-col overflow-hidden bg-[#f6efe6]/82 px-4 py-5 backdrop-blur-xl md:flex xl:w-80">
       <div className="mb-4 flex items-center justify-between border-b border-[var(--line)] pb-4">
-        <h3 className="text-base font-semibold text-[#24170f]">历史图片</h3>
+        <h3 className="text-base font-semibold text-[#24170f]">{title}</h3>
         <span className="text-xs text-[var(--ink-soft)]/70">最近生成</span>
       </div>
       {images.length === 0 ? (

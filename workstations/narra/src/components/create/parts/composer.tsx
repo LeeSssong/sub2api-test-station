@@ -23,6 +23,7 @@ import { HISTORY_IMAGE_DRAG_MIME, SIZE_OPTIONS } from "../constants";
 import type { ChannelInfo, ProviderSelectionMode, ReferenceImage } from "../types";
 
 type ComposerProps = {
+  sizeOptions?: {value:string;label:string;detail?:string}[];
   prompt: string;
   onChangePrompt: (value: string) => void;
   onPaste: (e: React.ClipboardEvent) => void;
@@ -398,7 +399,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
                   onChange={(event) => onSizeSelect(event.target.value)}
                   className="min-w-0 max-w-[9.5rem] bg-transparent text-xs font-medium text-[var(--ink)] outline-none sm:max-w-none"
                 >
-                  {SIZE_OPTIONS.map((option) => (
+                  {(props.sizeOptions ?? SIZE_OPTIONS).map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.detail ? `${option.label} · ${option.detail}` : option.label}
                     </option>
@@ -418,7 +419,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
               </button>
             </div>
 
-            <div className="hidden items-center gap-3 md:flex">
+            <div className="flex items-center gap-3">
               {providerMode === "built_in" ? (
                 <>
                   {channels.length > 1 && (
@@ -433,10 +434,12 @@ export const Composer = forwardRef<HTMLTextAreaElement, ComposerProps>(function 
                     </select>
                   )}
                   <select
+                    aria-label="生图模型"
                     value={model}
                     onChange={(e) => onChangeModel(e.target.value)}
                     className="cursor-pointer rounded-xl border border-[var(--line)] bg-[#fffaf2]/72 px-4 py-2 text-sm font-medium text-[var(--ink)] shadow-sm outline-none"
                   >
+                    {!model && <option value="" disabled>{modelOptions.length ? "请选择生图模型" : "请先加载模型"}</option>}
                     {modelOptions.map((m) => (
                       <option key={m} value={m}>{m}</option>
                     ))}

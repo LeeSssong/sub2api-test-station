@@ -1,3 +1,4 @@
+import {imageCapability,validateImageOptions,type ImageFamily} from '@/lib/workstation/capabilities';
 import { GenerationStatus } from '@prisma/client';
 import { db } from '@/lib/db';
 import { requireCurrentUserRecord } from '@/lib/server/current-user';
@@ -11,6 +12,7 @@ export async function POST(request:Request){try{
  const user=await requireCurrentUserRecord();if(Number(request.headers.get('content-length')||0)>32*1024*1024)throw new Error('上传总大小不能超过 32 MB');const body=await parseGenerateRequest(request);if(body.images.reduce((sum,file)=>sum+file.size,0)>32*1024*1024)throw new Error('参考图总大小不能超过 32 MB');
  if(!['text_to_image','image_to_image'].includes(body.generationType))throw new Error('仅支持图片生成');
  const key=body.customProvider?.apiKey?.trim();if(!key)throw new Error('请填写本站 Key');await checkSiteKey(key);
+ const capability=imageCapability(body.model,(JSON.parse(process.env.WORKSTATION_MODEL_FAMILIES||'{}') as Record<string,ImageFamily>)[body.model]);if(!capability)throw new Error('当前模型尚未配置生图能力');validateImageOptions(capability,{size:body.size,quality:body.quality,outputFormat:body.outputFormat,count:body.count,referenceCount:body.images.length});
  if(body.imageUrls.length)throw new Error('请上传参考图，不接受外部图片地址');
  if(await db.generationJob.count({where:{userId:user.id,status:{in:['PENDING','PROCESSING']}}})>=3)throw new Error('最多同时排队 3 个任务');
  const urls:string[]=[];for(const image of body.images){urls.push(await persistGeneratedImage({buffer:Buffer.from(await image.arrayBuffer()),fileExtension:image.type==='image/jpeg'?'jpg':image.type==='image/webp'?'webp':'png',mimeType:image.type,userId:user.id}));}

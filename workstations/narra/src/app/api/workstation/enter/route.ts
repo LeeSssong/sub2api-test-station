@@ -12,7 +12,7 @@ export async function POST(request:Request) {
   const profile = await siteProfile(token); const id = `site_${profile.id}_${randomUUID()}`;
   await db.user.create({data:{id,email:`${id}@session.invalid`,nickname:String(profile.id),role:profile.role==='admin'?'ADMIN':'USER',credits:0}});
   const response = NextResponse.json({expiresAt:Date.now()+SESSION_SECONDS*1000});
-  const options={httpOnly:true,sameSite:'strict' as const,secure:new URL(process.env.APP_URL!).protocol==='https:',path:'/image-workstation',maxAge:SESSION_SECONDS};
+  const options={httpOnly:true,sameSite:'strict' as const,secure:request.headers.get('x-forwarded-proto')==='https' || request.headers.get('origin')?.startsWith('https://')===true,path:'/image-workstation',maxAge:SESSION_SECONDS};
   response.cookies.set(SESSION_COOKIE_NAME,await createSessionToken({userId:id,role:profile.role},process.env.AUTH_SECRET!),options);
   response.cookies.set('site_identity',await encryptProviderSecret(token,process.env.AUTH_SECRET!),options);
   return response;

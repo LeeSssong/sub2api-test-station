@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -25,5 +26,12 @@ func TestSiteLocalStorageProtectedURL(t *testing.T) {
 	}
 	if _, err := os.Stat(os.Getenv("LOCAL_MEDIA_ROOT") + "/" + image.StorageKey); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStorageFailureDoesNotExposeSignedURL(t *testing.T) {
+	failure := ResultPersistError{Cause: fmt.Errorf("Get https://images.example/image.png?X-Amz-Signature=private-signature: TLS failure")}
+	if strings.Contains(failure.Error(), "private-signature") {
+		t.Fatal("signed download credentials leaked in public task error")
 	}
 }

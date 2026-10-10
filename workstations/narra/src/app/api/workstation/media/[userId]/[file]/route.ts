@@ -1,0 +1,4 @@
+import { requireCurrentUserRecord } from '@/lib/server/current-user';
+import { readMedia } from '@/lib/workstation/files';
+import { db } from '@/lib/db';
+export async function GET(_request:Request,{params}:{params:Promise<{userId:string;file:string}>}){try{const user=await requireCurrentUserRecord();const p=await params;const owner=await db.user.findUnique({where:{id:p.userId},select:{createdAt:true}});if(!owner||Date.now()-owner.createdAt.getTime()>=21600000||(user.id!==p.userId&&user.role!=='ADMIN'))return new Response('Not found',{status:404});const data=await readMedia(p.userId,p.file);return new Response(new Uint8Array(data),{headers:{'Content-Type':p.file.endsWith('.jpg')?'image/jpeg':`image/${p.file.split('.').pop()}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}})}catch{return new Response('Not found',{status:404})}}

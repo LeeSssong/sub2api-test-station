@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.build/
+.env
+*.tsbuildinfo
+source.tar.gz
+.codex-*
+.codex-dev-server.*
+.vite/
+.trellis/
+*.log

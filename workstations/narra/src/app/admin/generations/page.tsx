@@ -1,0 +1,5 @@
+import { requireAdminRecord } from '@/lib/server/current-user';
+import { db } from '@/lib/db';
+import { readMedia } from '@/lib/workstation/files';
+export const dynamic='force-dynamic';
+export default async function AdminGenerations(){let user;try{user=await requireAdminRecord()}catch{return <main className="shell">无权访问</main>};const records=await db.generationImage.findMany({where:{job:{user:{createdAt:{gt:new Date(Date.now()-21600000)}}}},include:{job:{select:{prompt:true,userId:true,createdAt:true,model:true}}},take:200,orderBy:{createdAt:'desc'}});const images=[];for(const image of records){try{const file=image.url.split('/').pop()!;await readMedia(image.job.userId,file);images.push(image)}catch{}}return <main className="shell"><header><h1>当前未清理图片</h1><a href="/image-workstation/create">返回创作台</a></header><p>管理员 {user.nickname} · 最近 6 小时，最多展示 200 张。刷新查看最新结果。</p><div className="site-gallery">{images.map(i=><article key={i.id}><a href={i.url} target="_blank" rel="noreferrer"><img src={i.url} alt={i.job.prompt}/></a><p>{i.job.model}</p><p>{i.job.prompt}</p><time>{i.createdAt.toISOString()}</time></article>)}</div>{!images.length&&<p>暂无未清理的生成图片。</p>}</main>}

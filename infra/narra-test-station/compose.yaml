@@ -1,0 +1,71 @@
+name: sub2api-test-station-narra
+services:
+  narra-image:
+    image: ${NARRA_IMAGE:?required}
+    environment: &narra-env
+      NODE_ENV: production
+      APP_URL: ${NARRA_APP_URL:?required}
+      AUTH_SECRET: ${NARRA_AUTH_SECRET:?required}
+      DATABASE_URL: ${NARRA_DATABASE_URL:?required}
+      SITE_INTERNAL_ORIGIN: http://test-station-api:8080
+      LOCAL_MEDIA_ROOT: /data/media
+      ENABLE_EMBEDDED_WORKER: "false"
+      WORKER_READINESS_REQUIRED: "false"
+      WORKER_RUNTIME_MODE: dedicated
+      WORKER_INTERNAL_URL: http://narra-worker:8081
+      WORKER_HTTP_ADDR: 0.0.0.0:8081
+      WORKER_CONCURRENCY: "1"
+      WORKER_MAX_ATTEMPTS: "1"
+      WORKER_MAX_ACTIVE_PER_USER: "1"
+      WORKER_CONTRACTS_V1_ENABLED: "true"
+      WORKER_JOB_TIMEOUT_SECONDS: "900"
+      BUILTIN_PROVIDER_BASE_URL: ""
+      BUILTIN_PROVIDER_API_KEY: ""
+      BUILTIN_PROVIDER_MODEL: gpt-image-2
+      PROMPT_SYNC_ENABLED: "false"
+    volumes:
+      - narra-media:/data/media
+    networks: [test-station]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:3000/image-workstation/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  narra-worker:
+    image: ${NARRA_IMAGE:?required}
+    command: ["/app/narra-worker"]
+    environment:
+      <<: *narra-env
+      WORKER_RUNTIME_MODE: dedicated
+      WORKER_HTTP_ADDR: 0.0.0.0:8081
+      WORKER_CONCURRENCY: "1"
+      WORKER_MAX_ATTEMPTS: "1"
+      WORKER_MAX_ACTIVE_PER_USER: "1"
+      WORKER_CONTRACTS_V1_ENABLED: "true"
+    volumes:
+      - narra-media:/data/media
+    networks: [test-station]
+    depends_on:
+      narra-image: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://127.0.0.1:8081/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  narra-cleanup:
+    image: ${NARRA_IMAGE:?required}
+    command: ["node", "/app/site-cleanup.mjs"]
+    environment:
+      DATABASE_URL: ${NARRA_DATABASE_URL:?required}
+      LOCAL_MEDIA_ROOT: /data/media
+    volumes:
+      - narra-media:/data/media
+    networks: [test-station]
+    depends_on:
+      narra-image: {condition: service_healthy}
+volumes:
+  narra-media: {name: sub2api-test-station-narra-media}
+networks:
+  test-station:
+    external: true
+    name: sub2api-test-station-network

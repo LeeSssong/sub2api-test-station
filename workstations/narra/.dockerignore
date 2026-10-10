@@ -1,0 +1,14 @@
+.git
+.env*
+!.env.example
+.next
+.playwright-mcp
+node_modules
+narra-image
+home.png
+login.png
+npm-debug.log
+pnpm-debug.log
+coverage
+dist
+tsconfig.tsbuildinfo

@@ -1,0 +1,561 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ProviderMode {
+  BUILT_IN
+  CUSTOM
+}
+
+enum GenerationStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum GenerationHandoffState {
+  NOT_STARTED
+  SUBMITTING
+  SUBMITTED
+  UNKNOWN
+  RESOLVED
+}
+
+enum GenerationAttemptStatus {
+  CLAIMED
+  SUBMITTING
+  SUBMITTED
+  SUCCEEDED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+  UNKNOWN
+}
+
+enum GenerationType {
+  TEXT_TO_IMAGE
+  IMAGE_TO_IMAGE
+  TEXT_TO_VIDEO
+  IMAGE_TO_VIDEO
+}
+
+enum GenerationClientSource {
+  WEB
+  API
+}
+
+enum ShowcaseStatus {
+  PRIVATE
+  PENDING
+  FEATURED
+  TAKEDOWN_PENDING
+}
+
+enum RedeemCodeMode {
+  SINGLE_USE
+  SHARED
+}
+
+enum PromptSourceStatus {
+  IDLE
+  SYNCING
+  SUCCESS
+  FAILED
+}
+
+model User {
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  passwordHash         String?
+  nickname             String?
+  avatarUrl            String?
+  oauthProvider        String?
+  oauthId              String?
+  bannedAt             DateTime?
+  role                 Role                 @default(USER)
+  credits              Int                  @default(500)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  inviteUsed           InviteCode?          @relation("InviteUsedBy")
+  inviteBatches        InviteBatch[]        @relation("InviteBatchCreatedBy")
+  createdInvites       InviteCode[]         @relation("InviteCreatedBy")
+  customProviderConfig SavedProviderConfig?
+  checkInRecords       CheckInRecord[]
+  generations          GenerationJob[]
+  featuredGenerations  GenerationJob[]      @relation("FeaturedByAdmin")
+  reviewedWorks        GenerationImage[]    @relation("ReviewedWorks")
+  reviewedVideos       GeneratedVideo[]     @relation("ReviewedVideos")
+  likedWorks           WorkLike[]
+  redeemBatches        RedeemCodeBatch[]    @relation("RedeemBatchCreatedBy")
+  createdRedeemCodes   RedeemCode[]         @relation("RedeemCodeCreatedBy")
+  redeemRedemptions    RedeemRedemption[]
+  conversations        Conversation[]
+  apiKeys              ApiKey[]
+  contentReviews       ContentReview[]
+
+  @@index([oauthProvider, oauthId])
+}
+
+model ContentReview {
+  id             String   @id @default(cuid())
+  userId         String
+  // 触发类别：sensitive_word（敏感词命中）| ai_moderation（AI 判定违规）
+  kind           String
+  prompt         String
+  negativePrompt String?
+  // 敏感词命中列表（kind=sensitive_word 时）
+  hitWords       String[] @default([])
+  // 词库类别或 AI 类别
+  category       String?
+  // AI 违规分数 0-1（kind=ai_moderation 时）
+  aiScore        Float?
+  aiModel        String?
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([kind, createdAt])
+  @@index([userId, createdAt])
+}
+
+model ModerationConfig {
+  id                    String   @id @default(cuid())
+  scope                 String   @unique @default("default")
+  isEnabled             Boolean  @default(false)
+  sensitiveWordsEnabled Boolean  @default(true)
+  aiEnabled             Boolean  @default(false)
+  aiBaseUrl             String?
+  aiApiKeyEncrypted     String?
+  aiModel               String?  @default("text-moderation-latest")
+  aiThreshold           Float    @default(0.5)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model InviteBatch {
+  id          String       @id @default(cuid())
+  title       String?
+  isPublic    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdById String?
+  createdBy   User?        @relation("InviteBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  inviteCodes InviteCode[]
+}
+
+model BenefitConfig {
+  id                  String   @id @default(cuid())
+  scope               String   @unique @default("default")
+  checkInReward       Int      @default(50)
+  autoApproveShowcase Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model TurnstileConfig {
+  id                  String   @id @default(cuid())
+  scope               String   @unique @default("default")
+  isEnabled           Boolean  @default(false)
+  siteKey             String?
+  secretEncrypted     String?
+  protectLogin        Boolean  @default(true)
+  protectRegister     Boolean  @default(true)
+  protectInviteRedeem Boolean  @default(true)
+  protectGenerate     Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ApiConfig {
+  id                String   @id @default(cuid())
+  scope             String   @unique @default("default")
+  isEnabled         Boolean  @default(true)
+  requestsPerMinute Int      @default(20)
+  requestsPerDay    Int      @default(500)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model LoginCoverConfig {
+  id        String   @id @default(cuid())
+  scope     String   @unique @default("default")
+  mode      String   @default("featured")
+  customUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PromptSource {
+  id            String              @id @default(cuid())
+  slug          String              @unique
+  name          String
+  description   String?
+  sourceUrl     String
+  rawBaseUrl    String
+  parser        String
+  isEnabled     Boolean             @default(true)
+  sortOrder     Int                 @default(0)
+  status        PromptSourceStatus  @default(IDLE)
+  lastSyncedAt  DateTime?
+  lastSyncError String?
+  itemCount     Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  prompts       PromptLibraryItem[]
+
+  @@index([isEnabled, sortOrder])
+}
+
+model PromptLibraryItem {
+  id          String       @id @default(cuid())
+  sourceId    String
+  remoteId    String
+  title       String
+  prompt      String       @db.Text
+  coverUrl    String?
+  preview     String?      @db.Text
+  previewUrls String[]     @default([])
+  tags        String[]     @default([])
+  sortOrder   Int          @default(0)
+  source      PromptSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  syncedAt    DateTime     @default(now())
+
+  @@unique([sourceId, remoteId])
+  @@index([sourceId, sortOrder])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model OAuthProvider {
+  id           String   @id @default(cuid())
+  type         String   @unique
+  displayName  String
+  clientId     String
+  clientSecret String
+  isEnabled    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model CheckInRecord {
+  id            String   @id @default(cuid())
+  userId        String
+  dateKey       String
+  rewardCredits Int
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dateKey])
+}
+
+/// @deprecated — 旧表保留避免 prisma db push 数据丢失，新逻辑已迁移至 ProviderChannel
+model BuiltInProviderConfig {
+  id              String   @id @default(cuid())
+  scope           String   @unique @default("default")
+  name            String
+  baseUrl         String
+  apiKeyEncrypted String
+  model           String
+  models          String[] @default([])
+  creditCost      Int      @default(5)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ProviderChannel {
+  id              String   @id @default(cuid())
+  name            String
+  slug            String   @unique
+  baseUrl         String
+  apiKeyEncrypted String
+  defaultModel    String
+  models          String[] @default([])
+  creditCost      Int      @default(5)
+  videoCreditCost Int      @default(20)
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model InviteCode {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  note        String?
+  batchId     String?
+  claimedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  usedAt      DateTime?
+  createdById String?
+  usedById    String?      @unique
+  batch       InviteBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  createdBy   User?        @relation("InviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  usedBy      User?        @relation("InviteUsedBy", fields: [usedById], references: [id], onDelete: SetNull)
+}
+
+model WorkLike {
+  id        String           @id @default(cuid())
+  workId    String?
+  videoId   String?
+  userId    String
+  createdAt DateTime         @default(now())
+  work      GenerationImage? @relation(fields: [workId], references: [id], onDelete: Cascade)
+  video     GeneratedVideo?  @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workId, userId])
+  @@unique([videoId, userId])
+  @@index([userId])
+  @@index([workId])
+  @@index([videoId])
+}
+
+model RedeemCodeBatch {
+  id             String         @id @default(cuid())
+  title          String?
+  mode           RedeemCodeMode @default(SINGLE_USE)
+  rewardCredits  Int
+  maxRedemptions Int?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  createdById    String?
+  createdBy      User?          @relation("RedeemBatchCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  codes          RedeemCode[]
+}
+
+model RedeemCode {
+  id             String             @id @default(cuid())
+  code           String             @unique
+  note           String?
+  mode           RedeemCodeMode
+  rewardCredits  Int
+  maxRedemptions Int
+  redeemedCount  Int                @default(0)
+  isActive       Boolean            @default(true)
+  batchId        String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  batch          RedeemCodeBatch?   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  createdBy      User?              @relation("RedeemCodeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  redemptions    RedeemRedemption[]
+
+  @@index([batchId])
+  @@index([isActive])
+}
+
+model RedeemRedemption {
+  id            String     @id @default(cuid())
+  codeId        String
+  userId        String
+  rewardCredits Int
+  createdAt     DateTime   @default(now())
+  code          RedeemCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([codeId, userId])
+  @@index([userId])
+  @@index([codeId])
+}
+
+model SavedProviderConfig {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  label           String?
+  baseUrl         String
+  apiKeyEncrypted String
+  model           String
+  models          String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id          String          @id @default(cuid())
+  userId      String
+  name        String
+  keyHash     String          @unique
+  keyPrefix   String
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generations GenerationJob[]
+
+  @@index([userId])
+  @@index([revokedAt])
+}
+
+model GenerationJob {
+  id                      String                  @id @default(cuid())
+  userId                  String
+  apiKeyId                String?
+  workerManaged           Boolean                 @default(false)
+  workerId                String?
+  lockedAt                DateTime?
+  startedAt               DateTime?
+  completedAt             DateTime?
+  attemptCount            Int                     @default(0)
+  contractVersion         Int                     @default(0)
+  errorCode               String?
+  nextAttemptAt           DateTime?
+  handoffState            GenerationHandoffState?
+  cancelRequestedAt       DateTime?
+  refundAppliedAt         DateTime?
+  conversationId          String?
+  clientSource            GenerationClientSource  @default(WEB)
+  generationType          GenerationType          @default(TEXT_TO_IMAGE)
+  providerMode            ProviderMode
+  providerChannelId       String?
+  providerBaseUrl         String?
+  providerApiKeyEncrypted String?
+  providerRemember        Boolean                 @default(false)
+  providerLabel           String?
+  providerModels          String[]                @default([])
+  model                   String
+  prompt                  String
+  negativePrompt          String?
+  size                    String
+  quality                 String                  @default("auto")
+  outputFormat            String                  @default("png")
+  outputCompression       Int?
+  moderation              String                  @default("auto")
+  seed                    Int?
+  sourceImageUrls         String[]                @default([])
+  durationSeconds         Int?
+  aspectRatio             String?
+  count                   Int
+  status                  GenerationStatus        @default(PENDING)
+  errorMessage            String?
+  creditsSpent            Int                     @default(0)
+  featuredAt              DateTime?
+  featuredById            String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKey                  ApiKey?                 @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  featuredBy              User?                   @relation("FeaturedByAdmin", fields: [featuredById], references: [id], onDelete: SetNull)
+  conversation            Conversation?           @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  images                  GenerationImage[]
+  videos                  GeneratedVideo[]
+  attempts                GenerationAttempt[]
+
+  @@index([apiKeyId])
+  @@index([apiKeyId, clientSource, createdAt])
+  @@index([clientSource])
+  @@index([conversationId])
+  @@index([providerChannelId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@index([userId, status, createdAt])
+  @@index([workerManaged, status, nextAttemptAt, createdAt])
+  @@index([workerManaged, status, lockedAt, createdAt])
+}
+
+model GenerationAttempt {
+  id                  String                  @id @default(cuid())
+  jobId               String
+  ordinal             Int
+  workerId            String
+  operation           String
+  providerChannelId   String?
+  model               String
+  idempotencyKey      String
+  status              GenerationAttemptStatus @default(CLAIMED)
+  providerRequestId   String?
+  upstreamSubmittedAt DateTime?
+  nextRetryAt         DateTime?
+  errorCode           String?
+  errorMessage        String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  completedAt         DateTime?
+  job                 GenerationJob           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, ordinal])
+  @@index([jobId, createdAt])
+  @@index([status, updatedAt])
+  @@index([providerRequestId])
+  @@index([nextRetryAt])
+}
+
+/// 对话会话：把多次生成 (GenerationJob) 归到一个用户可视会话内。
+/// 取代旧的 localStorage `narra_sessions` 设计，支持跨设备一致与服务端管理。
+model Conversation {
+  id          String          @id @default(cuid())
+  userId      String
+  title       String          @default("新对话")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generations GenerationJob[]
+
+  @@index([userId, createdAt])
+}
+
+model GenerationImage {
+  id               String         @id @default(cuid())
+  jobId            String
+  url              String
+  width            Int?
+  height           Int?
+  mediaStorage     String?
+  storageKey       String?
+  showcaseStatus   ShowcaseStatus @default(PRIVATE)
+  showPromptPublic Boolean        @default(false)
+  submittedAt      DateTime?
+  featuredAt       DateTime?
+  reviewedAt       DateTime?
+  reviewNote       String?
+  reviewedById     String?
+  createdAt        DateTime       @default(now())
+  job              GenerationJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reviewedBy       User?          @relation("ReviewedWorks", fields: [reviewedById], references: [id], onDelete: SetNull)
+  likes            WorkLike[]
+
+  @@index([showcaseStatus, featuredAt(sort: Desc), id(sort: Desc)])
+  @@index([jobId, createdAt])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+}
+
+model GeneratedVideo {
+  id               String         @id @default(cuid())
+  jobId            String
+  url              String
+  posterUrl        String?
+  width            Int?
+  height           Int?
+  durationSeconds  Int?
+  mediaStorage     String?
+  storageKey       String?
+  showcaseStatus   ShowcaseStatus @default(PRIVATE)
+  showPromptPublic Boolean        @default(false)
+  submittedAt      DateTime?
+  featuredAt       DateTime?
+  reviewedAt       DateTime?
+  reviewNote       String?
+  reviewedById     String?
+  createdAt        DateTime       @default(now())
+  job              GenerationJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reviewedBy       User?          @relation("ReviewedVideos", fields: [reviewedById], references: [id], onDelete: SetNull)
+  likes            WorkLike[]
+
+  @@index([showcaseStatus, featuredAt(sort: Desc), id(sort: Desc)])
+  @@index([jobId, createdAt])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+}

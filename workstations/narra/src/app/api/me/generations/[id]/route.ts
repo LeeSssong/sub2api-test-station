@@ -1,0 +1,7 @@
+import { GenerationStatus } from '@prisma/client';
+import { db } from '@/lib/db';
+import { serializeGeneration } from '@/lib/prisma-mappers';
+import { getCurrentUserRecord } from '@/lib/server/current-user';
+import { jsonError, jsonOk } from '@/lib/server/http';
+export async function GET(_request:Request,{params}:{params:Promise<{id:string}>}){const user=await getCurrentUserRecord();if(!user)return jsonError('未登录',401);const {id}=await params;const job=await db.generationJob.findFirst({where:{id,userId:user.id},include:{images:{orderBy:{createdAt:'asc'}},videos:{orderBy:{createdAt:'asc'}}}});if(!job)return jsonError('任务不存在',404);return jsonOk({generation:serializeGeneration(job)})}
+export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){const user=await getCurrentUserRecord();if(!user)return jsonError('未登录',401);const {id}=await params;const job=await db.generationJob.findFirst({where:{id,userId:user.id},select:{id:true,status:true,handoffState:true}});if(!job)return jsonError('任务不存在',404);if(job.status!==GenerationStatus.PENDING||job.handoffState!=='NOT_STARTED')return jsonError('任务已经提交，无法取消',409,'GENERATION_ALREADY_SUBMITTED');await db.generationJob.update({where:{id},data:{status:GenerationStatus.FAILED,errorMessage:'用户取消生成。',completedAt:new Date(),providerApiKeyEncrypted:null}});return jsonOk({generation:null})}

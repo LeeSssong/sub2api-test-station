@@ -564,6 +564,7 @@ const routes: RouteRecordRaw[] = [
     path: '/monitor',
     redirect: '/custom/performance-monitor',
   },
+  { path: '/image-studio', name: 'ImageWorkstation', component: () => import('@/views/user/ImageWorkstationView.vue'), meta: { requiresAuth: true, requiresAdmin: false, title: '生图工作站' } },
   { path: '/pelican-showcase', redirect: '/intelligence-test' },
   {
     path: '/intelligence-test', name: 'IntelligenceTest',

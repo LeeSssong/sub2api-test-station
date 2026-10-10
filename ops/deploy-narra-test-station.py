@@ -30,7 +30,9 @@ def dump(pg,path):
 def restore(pg,path,database):
     with path.open('rb') as data:
         p=subprocess.run(['docker','exec','-i',pg,'sh','-c','exec pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d '+database],stdin=data,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    if p.returncode:raise RuntimeError('database restore failed')
+    if p.returncode:
+        error_path=path.parent/'restore-error.log';error_path.write_bytes(p.stderr);error_path.chmod(0o600)
+        raise RuntimeError('database restore failed; protected diagnostics saved')
 
 def native_migrate(image,env_path):
     run(['docker','run','--rm','--network',PROJECT+'-network','--env-file',str(env_path),'-v',PROJECT+'-app-data:/app/data',image,'/app/sub2api','--migrate-only'])

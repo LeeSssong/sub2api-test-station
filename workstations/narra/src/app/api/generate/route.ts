@@ -8,7 +8,7 @@ import { persistGeneratedImage } from '@/lib/storage/persist-generated-image';
 import { serializeGeneration,toPrismaGenerationType } from '@/lib/prisma-mappers';
 import { jsonError,jsonOk } from '@/lib/server/http';
 export async function POST(request:Request){try{
- const user=await requireCurrentUserRecord();const body=await parseGenerateRequest(request);
+ const user=await requireCurrentUserRecord();if(Number(request.headers.get('content-length')||0)>32*1024*1024)throw new Error('上传总大小不能超过 32 MB');const body=await parseGenerateRequest(request);if(body.images.reduce((sum,file)=>sum+file.size,0)>32*1024*1024)throw new Error('参考图总大小不能超过 32 MB');
  if(!['text_to_image','image_to_image'].includes(body.generationType))throw new Error('仅支持图片生成');
  const key=body.customProvider?.apiKey?.trim();if(!key)throw new Error('请填写本站 Key');await checkSiteKey(key);
  if(body.imageUrls.length)throw new Error('请上传参考图，不接受外部图片地址');

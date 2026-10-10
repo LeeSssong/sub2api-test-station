@@ -20,6 +20,9 @@ func TestSiteLocalStorageProtectedURL(t *testing.T) {
 	if !strings.HasPrefix(image.URL, "/image-workstation/api/workstation/media/") {
 		t.Fatalf("unprotected URL %s", image.URL)
 	}
+	if image.MediaStorage != MediaStorageLocal {
+		t.Fatal("local media must report LOCAL storage")
+	}
 	if _, err := os.Stat(os.Getenv("LOCAL_MEDIA_ROOT") + "/" + image.StorageKey); err != nil {
 		t.Fatal(err)
 	}

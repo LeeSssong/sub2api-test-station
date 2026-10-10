@@ -40,6 +40,7 @@ type MediaStorage string
 const (
 	MediaStorageB64      MediaStorage = "B64"
 	MediaStorageS3       MediaStorage = "S3"
+	MediaStorageLocal    MediaStorage = "LOCAL"
 	MediaStorageUpstream MediaStorage = "UPSTREAM"
 )
 
@@ -149,7 +150,7 @@ func (s *Storage) PersistImage(ctx context.Context, userID string, data []byte, 
 		if err := os.WriteFile(filepath.Join(root, key), data, 0600); err != nil {
 			return PersistedMedia{}, err
 		}
-		return PersistedMedia{URL: "/image-workstation/api/workstation/media/" + key, MediaStorage: MediaStorageS3, StorageKey: key}, nil
+		return PersistedMedia{URL: "/image-workstation/api/workstation/media/" + key, MediaStorage: MediaStorageLocal, StorageKey: key}, nil
 	}
 	if s.client != nil && s.cfg.S3Bucket != "" {
 		fileName := fmt.Sprintf("%s/%s.%s", userID, randomHex(16), extension)

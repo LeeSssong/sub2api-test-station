@@ -510,7 +510,7 @@ export default {
     latencyFirstToken: 'First',
     latencyDuration: 'Total',
     latencyTps: 'TPS',
-    latencyTpsHint: 'Output speed = output tokens ÷ (total − first token)',
+    latencyTpsHint: 'Average TPS = output tokens ÷ total duration (seconds). Includes waiting time and any reasoning tokens reported in output usage; not model generation speed.',
     latencyTpsHintNoFirstToken: 'Output speed = output tokens ÷ total (no first-token data, so waiting time is included)',
     time: 'Time',
     ws: 'WS',

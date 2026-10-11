@@ -1626,6 +1626,10 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			exclude("platform_mismatch")
 			continue
 		}
+		if s.service.isExcelBPSModelCoolingDown(account, req.RequestedModel) {
+			filterStats.exclude(excelBPSModelPermissionFilterReason)
+			continue
+		}
 		if s.service.isExcelBPSCoolingDown(account, req.RequestedModel) {
 			exclude(excelBPSRateLimitedFilterReason)
 			continue

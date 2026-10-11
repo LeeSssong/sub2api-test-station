@@ -544,7 +544,8 @@ type OpenAIGatewayService struct {
 	openAITurnStateWorkerOwner    string
 	openAITurnStateRouteIndex     atomic.Uint64
 	costEvidenceRegistrar         UsageCostEvidenceRegisterer
-	excelOAuthReauth *OpenAIOAuthReauthService
+	excelOAuthReauth              *OpenAIOAuthReauthService
+	excelBPSModelCooldowns        excelBPSModelCooldowns
 
 	openaiWSPoolOnce               sync.Once
 	openaiWSStateStoreOnce         sync.Once

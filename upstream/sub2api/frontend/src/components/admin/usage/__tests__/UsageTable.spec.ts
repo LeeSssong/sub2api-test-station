@@ -158,7 +158,7 @@ describe('admin UsageTable tooltip', () => {
       },
       global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
     })
-    expect(wrapper.findAll('[data-testid="latency-tps"]').map(cell => cell.text())).toEqual(['100 t/s', '-', '-'])
+    expect(wrapper.findAll('[data-testid="latency-tps"]').map(cell => cell.text())).toEqual(['50.0 t/s', '-', '-'])
     expect(wrapper.text()).toContain('Avg TPS')
   })
 
@@ -938,14 +938,14 @@ describe('admin UsageTable latency TPS', () => {
   const barClasses = (wrapper: ReturnType<typeof mountLatency>, requestId: string) =>
     wrapper.find(`[data-row="${requestId}"] [data-testid="latency-bar"]`).classes()
 
-  it('shows output speed after the first token for streaming rows', () => {
+  it('shows average output throughput for streaming rows', () => {
     const wrapper = mountLatency([
       { request_id: 'req-tps-stream', output_tokens: 872, duration_ms: 31_260, first_token_ms: 2_910 },
     ])
 
     expect(wrapper.text()).toContain('Avg TPS')
     const cell = tpsCell(wrapper, 'req-tps-stream')
-    expect(cell.text()).toBe('30.8 t/s')
+    expect(cell.text()).toBe('27.9 t/s')
     expect(cell.attributes('title')).toBe('usage.latencyTpsHint')
     expect(cell.classes()).toContain('text-emerald-600')
   })
@@ -953,9 +953,9 @@ describe('admin UsageTable latency TPS', () => {
   it('colors the TPS text and the bottom bar segment red below 5 t/s and yellow below 8 t/s', () => {
     const wrapper = mountLatency([
       // first token 12s (warn), total 17s (good), 4 t/s (critical)
-      { request_id: 'req-tps-slow', output_tokens: 20, duration_ms: 17_000, first_token_ms: 12_000 },
+      { request_id: 'req-tps-slow', output_tokens: 68, duration_ms: 17_000, first_token_ms: 12_000 },
       // first token 2s (good), total 12s (good), 7.5 t/s (warn)
-      { request_id: 'req-tps-mid', output_tokens: 75, duration_ms: 12_000, first_token_ms: 2_000 },
+      { request_id: 'req-tps-mid', output_tokens: 90, duration_ms: 12_000, first_token_ms: 2_000 },
     ])
 
     expect(tpsCell(wrapper, 'req-tps-slow').text()).toBe('4.0 t/s')
@@ -987,14 +987,14 @@ describe('admin UsageTable latency TPS', () => {
     )
   })
 
-  it('uses the total duration and a different hint when first token is missing', () => {
+  it('uses the same total-duration hint when first token is missing', () => {
     const wrapper = mountLatency([
       { request_id: 'req-tps-sync', output_tokens: 500, duration_ms: 10_000, first_token_ms: null },
     ])
 
     const cell = tpsCell(wrapper, 'req-tps-sync')
     expect(cell.text()).toBe('50.0 t/s')
-    expect(cell.attributes('title')).toBe('usage.latencyTpsHintNoFirstToken')
+    expect(cell.attributes('title')).toBe('usage.latencyTpsHint')
   })
 
   it('renders a placeholder when TPS cannot be computed', () => {
@@ -1016,10 +1016,10 @@ describe('admin UsageTable latency TPS', () => {
 })
 
 describe('ordinary-user latency layout', () => {
-  it('keeps TPS and timing controls absent unless explicitly enabled by the admin view', () => {
+  it('shows user TPS without exposing admin timing controls', () => {
     const wrapper = mount(UsageTable, { props: { data: [{ request_id: 'user-row', output_tokens: 100, duration_ms: 10000, first_token_ms: 2000 }], columns: [{ key: 'latency', label: 'Latency' }], showAccountBilling: false }, global: { stubs: { DataTable: DataTableStubWithLatency, EmptyState: true, Icon: true, Teleport: true } } })
-    expect(wrapper.find('[data-testid="latency-tps"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="latency-bar"]').classes()).toContain('from-40%')
+    expect(wrapper.get('[data-testid="latency-tps"]').text()).toBe('10.0 t/s')
+    expect(wrapper.get('[data-testid="latency-bar"]').classes()).toContain('from-30%')
     expect(wrapper.find('button[aria-label="requestTiming.title"]').exists()).toBe(false)
     wrapper.unmount()
   })

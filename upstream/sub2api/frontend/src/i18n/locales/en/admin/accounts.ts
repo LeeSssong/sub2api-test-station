@@ -759,6 +759,10 @@ export default {
       },
       // OpenAI specific hints
       openai: {
+        requestTimezone: 'Request timezone',
+        requestTimezoneDesc: 'Applies when Bind request timezone is enabled in system settings. Defaults to Asia/Singapore.',
+        requestTimezoneLoadFailed: 'Could not load timezones. Please retry later.',
+
         baseUrlHint: 'Leave default for official OpenAI API',
         prismBrowser: 'Use Prism browser protocol automatically',
         prismBrowserDesc: 'Uses this OpenAI OAuth account with the server-managed Prism adapter. No separate credentials are needed. Supports text for these four models and client function/custom tools for 6.1 Sol.',
@@ -1742,6 +1746,7 @@ export default {
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal
+      testRequestStarted: 'Test request started; waiting for an upstream response',
       testAccountConnection: 'Test Account Connection',
       errorPrefix: 'Error: {message}',
       imagePreviewAlt: 'Test image {index}',
@@ -1751,6 +1756,16 @@ export default {
       connectingToApi: 'Connecting to API...',
       testCompleted: 'Test completed successfully!',
       testFailed: 'Test failed',
+      bpsCredentialState: {
+        unknown: 'Excel / BPS authorization unknown',
+        pending: 'Excel / BPS authorization pending',
+        not_expired: 'Excel / BPS token not expired (upstream unverified)',
+        expired: 'Excel / BPS token expired',
+        revoked: 'Excel / BPS token revoked',
+        auth_failed: 'Excel / BPS authentication failed',
+        expiresAt: 'Token expiry',
+        manualResume: 'Account is disabled or paused; restoring authorization does not enable it.',
+      },
       connectedToApi: 'Connected to API',
       usingModel: 'Using model: {model}',
       sendingTestMessage: 'Sending test message: "hi"',

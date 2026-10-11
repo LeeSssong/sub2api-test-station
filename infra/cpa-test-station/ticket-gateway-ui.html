@@ -112,7 +112,7 @@
   <script id="ticket-console-script">
   (function (root) {
     'use strict';
-    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关（网关执行）","version":"1.5.3"};
+    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关（网关执行）","version":"1.5.4"};
     const ID = PRODUCT.id;
     const CONFIG = '/v8/management/config/plugins/configs/' + ID;
     const MANAGEMENT = '/v0/management/plugins/' + ID;
@@ -133,7 +133,7 @@
     const numbers = new Set(['relay_active_accounts','relay_no_ticket_minutes','lease_seconds','sync_seconds','request_timeout_seconds']);
     const waitingFields = ['ticketWaitMode','ticketWaitSeconds','requeueOnStateReplace','businessRetryAttempts'];
     const errorLabels = Object.freeze({
-      worker_selection_invalid:'请选择网关分配，或从列表中选择一个工作节点入口。',worker_selection_unsupported:'当前网关暂不支持节点选择和测速，请联系管理员升级。已保存的选择会保留。',worker_selection_unavailable:'所选节点暂不可用，请稍后重新测试或切回网关分配。',worker_directory_invalid:'节点列表暂时无法确认，已保留当前选择与上次结果。',worker_directory_unavailable:'暂时无法读取节点列表，请稍后再试。已保留当前选择与上次结果。',worker_probe_failed:'暂时无法完成测速，请稍后再试。已保留上次结果。',worker_probe_busy:'已有测速正在进行，请等待完成或停止后再试。',
+      worker_selection_invalid:'请选择网关分配，或从列表中选择一个工作节点入口。',worker_selection_unconfirmed:'节点选择尚未确认保存，请刷新配置后再试。当前更改已保留。',worker_selection_unsupported:'当前网关暂不支持节点选择和测速，请联系管理员升级。已保存的选择会保留。',worker_selection_unavailable:'所选节点暂不可用，请稍后重新测试或切回网关分配。',worker_directory_invalid:'节点列表暂时无法确认，已保留当前选择与上次结果。',worker_directory_unavailable:'暂时无法读取节点列表，请稍后再试。已保留当前选择与上次结果。',worker_probe_failed:'暂时无法完成测速，请稍后再试。已保留上次结果。',worker_probe_busy:'已有测速正在进行，请等待完成或停止后再试。',waiting_policy_unconfirmed:'等待与重试设置尚未确认保存，请刷新配置后再试。当前更改已保留。',
       preflight_state_replaced:'发送前票据状态已变化，本次请求尚未发送。',
       waiting_policy_invalid:'等待时间须为 0–3600 的整数，业务请求重试次数须为 0–100 的整数，请选择降智回复时的处理方式。',waiting_policy_unsupported:'当前网关或执行节点不支持此等待设置，请联系管理员升级。',ticket_wait_timeout:'等待可用票据已超时，请检查等待设置、重试次数和账号状态。',
       business_retry_unsupported:'当前网关或执行节点不支持所选业务重试次数，请联系管理员升级。账号仍会继续准备。',
@@ -208,9 +208,14 @@
     function list(value) { return Array.isArray(value) ? value : []; }
     function sorted(value) { return list(value).filter(v=>typeof v==='string').slice().sort(); }
     function waitingPolicySignature(value) { const seconds=value?.ticket_wait_seconds,retries=value?.business_retry_attempts;return JSON.stringify([typeof seconds==='number'&&!Number.isFinite(seconds)?'invalid':seconds??null,value?.requeue_on_state_replace??true,typeof retries==='number'&&!Number.isFinite(retries)?'invalid':retries??10]); }
-    function workerSelection(value) { return value==null||(value.mode==null||value.mode===''||value.mode==='auto')&&!value.worker_id&&!value.ingress?{mode:'auto'}:{mode:value.mode,worker_id:value.worker_id,ingress:value.ingress}; }
+    function workerSelection(value) { return value==null||value.mode==='auto'||(value.mode==null||value.mode==='')&&!value.worker_id&&!value.ingress?{mode:'auto'}:{mode:value.mode,worker_id:value.worker_id,ingress:value.ingress}; }
     function workerID(value) { return typeof value==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(value); }
     function workerSelectionSignature(value) { const selection=workerSelection(value);return JSON.stringify([selection.mode,selection.worker_id||'',selection.ingress||'']); }
+    function workerSelectionSaved(value,expected) {
+      const selection=workerSelection(expected);
+      if(selection.mode==='auto')return value==null||object(value)&&(value.mode==null||value.mode===''||value.mode==='auto')&&!value.worker_id&&!value.ingress;
+      return object(value)&&workerSelectionSignature(value)===workerSelectionSignature(selection);
+    }
     function normalConfig(value) {
       if (!object(value)) throw new ConsoleError('config_invalid');
       value={...value};delete value.probe_model;delete value.probe_effort;
@@ -716,7 +721,7 @@
         text('waitingRequests',observedWaiting?'等待可用账号 · '+count(waiting)+' 个请求':'');show('waitingRequests',observedWaiting);
         const balance=status&&status.balance, confirmed=object(balance)&&balance.installation_id===saved.installation_id&&typeof balance.authorization_id==='string'&&balance.authorization_id.length>0;
         const compatible=confirmed&&monetary(balance);
-        const runtimeNote=status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'插件余额不足，请充值后继续使用。':!stale&&status&&['gateway_unavailable','gateway_transport_error','relay_unavailable','egress_unavailable'].includes(status.last_error)?'网关连接暂时中断，正在重试。':'';
+        const runtimeNote=status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'插件余额不足，请充值后继续使用。':!stale&&status&&['gateway_unavailable','gateway_transport_error','relay_unavailable','egress_unavailable'].includes(status.last_error)?'网关连接暂时中断，正在重试。':'';
         text('runtimeNotice',runtimeNote);show('runtimeNotice',!!runtimeNote);
         text('available',compatible?usd(balance.available_usd):'—'); text('consumed',compatible?usd(balance.consumed_usd):'—');
         for(const id of ['available','consumed'])el(id).dataset.compact=String(el(id).textContent.length>14);
@@ -1060,9 +1065,13 @@
           }
           generated=identityFor(latest,env.crypto,generated);
           const patch={...draft,...cleanup}; if(!latest.installation_id){patch.installation_id=generated.installation_id;patch.installation_secret=generated.installation_secret;}
+          // CPA v8 PATCH recursively merges objects. Explicit leaves are needed
+          // to remove the previous manual choice or a previous waiting limit.
+          if(PRODUCT.mode==='gateway'&&workerSelection(draft.worker_selection).mode==='auto')patch.worker_selection={mode:'auto',worker_id:'',ingress:''};
+          if(configStyle==='v8'&&draft.waiting_policy?.ticket_wait_seconds==null)patch.waiting_policy={...draft.waiting_policy,ticket_wait_seconds:null};
           const merged={...latest,...patch};for(const retired of Object.keys(cleanup))delete merged[retired];
-          const next=normalConfig(merged);
-          if(!Object.keys(cleanup).length&&list(latest.relay_models).length&&status&&status.configured===true&&configMatches(latest,next)&&configMatches(status.config,next)){
+          let next=normalConfig(merged);
+          if(!Object.keys(cleanup).length&&list(latest.relay_models).length&&status&&status.configured===true&&configMatches(latest,next)&&configMatches(status.config,next)&&(PRODUCT.mode!=='gateway'||workerSelectionSaved(latest.worker_selection,draft.worker_selection))){
             // Every native config write triggers a host reload. An unchanged
             // Save and Connect only resumes/synchronizes the existing runtime.
             if(released||status&&status.paused===true){
@@ -1082,11 +1091,12 @@
             return;
           }
           await api(configPath,{method:'PATCH',body:patch}); if(!current(generation))return;
-          if(Object.keys(cleanup).length){
-            const confirmed=await readConfig();if(!current(generation))return;
-            checkInstallation(confirmed);
-            if(Object.keys(cleanup).some(retired=>Object.hasOwn(confirmed,retired)))throw new ConsoleError('legacy_config_cleanup_failed');
-          }
+          const confirmed=await readConfig();if(!current(generation))return;
+          checkInstallation(confirmed);
+          if(Object.keys(cleanup).some(retired=>Object.hasOwn(confirmed,retired)))throw new ConsoleError('legacy_config_cleanup_failed');
+          if(PRODUCT.mode==='gateway'&&!workerSelectionSaved(confirmed.worker_selection,draft.worker_selection))throw new ConsoleError('worker_selection_unconfirmed');
+          if(waitingPolicySignature(confirmed.waiting_policy)!==waitingPolicySignature(draft.waiting_policy))throw new ConsoleError('waiting_policy_unconfirmed');
+          next=normalConfig(confirmed);
           mutationVersion++; saved=next; awaiting=next; released=false;workerLoaded=false;
           recordActivity('连接配置已保存，等待生效');
           if(editVersion===version)fill(saved);

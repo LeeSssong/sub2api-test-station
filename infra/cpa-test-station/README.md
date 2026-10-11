@@ -2,7 +2,7 @@
 
 目标为 `ubuntu@43.133.75.82`。独立 Compose project、network、数据卷和运行目录均以 `cpa-test-station` 命名。运行目录为 `/opt/cpa-test-station`。
 
-复用本地版本的 Linux AMD64 制品：CPA v8.0.20、CPAMP v1.14.4、Ticket Gateway v1.5.3。镜像按 digest 固定；管理页使用 CPAMP v1.14.4 的官方 `management.html`，SHA256 为 `98476e174f8f74001c2d1b576091106a49f00b476843ed2a54d38a9f9f04e4ae`。插件下载地址为 `https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.3/cliproxy-ticket-gateway-1.5.3-linux-amd64.store.zip`，压缩包 SHA256 为 `511e37ca72711b34fbbb52926f8df47fc0bbbf70cce7cddce631e92b20fe535e`，包内 `cliproxy-ticket-gateway.so` SHA256 为 `ad36021f923858c46f932b26abd481c9c37fcb4c5163e27b74d9989f31b86955`。
+复用本地版本的 Linux AMD64 制品：CPA v8.0.20、CPAMP v1.14.4、Ticket Gateway v1.5.4。镜像按 digest 固定；管理页使用 CPAMP v1.14.4 的官方 `management.html`，SHA256 为 `98476e174f8f74001c2d1b576091106a49f00b476843ed2a54d38a9f9f04e4ae`。插件下载地址为 `https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.4/cliproxy-ticket-gateway-1.5.4-linux-amd64.store.zip`，压缩包 SHA256 为 `0739ece56aad758d4a87f7fdf3dd8d282711437a6192ae40c9e182c22e573dfa`，包内 `cliproxy-ticket-gateway.so` SHA256 为 `76fd4bde1a5d517ecfade6f6fcc779a73ee339e83aed7c20cf7f63142d7028c3`。
 
 CPA 管理入口为 `http://43.133.75.82:8317/management.html`；完整 CPAMP 管理入口为 `http://43.133.75.82:18317/management.html`。分别使用 CPA Management Key 与 CPAMP Admin Key。服务器及云防火墙需要允许这两个 TCP 端口。
 
@@ -10,7 +10,7 @@ CPA 管理入口为 `http://43.133.75.82:8317/management.html`；完整 CPAMP �
 
 ## 初始化
 
-插件页面兼容补丁 `ticket-gateway-ui.html` 来自已校验 Ticket Gateway v1.5.3 Linux AMD64 制品的 `/v0/resource/plugins/cliproxy-ticket-gateway/ui`，保留原页面和业务逻辑，仅增加 CPAMP v1.14.4 `enc::v2::` 原生会话格式读取。原始页面 SHA256 见发布记录。将该文件与 Caddyfile 一起安装到 edge 目录，边缘仅替换这一资源路径；插件 API 和后端鉴权继续由 Manager/CPA 提供，不另存管理凭据。插件仍要求原生登录时启用记住凭证。回归命令：`node --test tests/infra/ticket-plugin-session.test.cjs`。
+插件页面兼容补丁 `ticket-gateway-ui.html` 来自已校验 Ticket Gateway v1.5.4 Linux AMD64 制品的 `/v0/resource/plugins/cliproxy-ticket-gateway/ui`，保留原页面和业务逻辑，仅增加 CPAMP v1.14.4 `enc::v2::` 原生会话格式读取。原始页面 SHA256 见发布记录。将该文件与 Caddyfile 一起安装到 edge 目录，边缘仅替换这一资源路径；插件 API 和后端鉴权继续由 Manager/CPA 提供，不另存管理凭据。插件仍要求原生登录时启用记住凭证。回归命令：`node --test tests/infra/ticket-plugin-session.test.cjs`。
 
 只从已推送、干净且与 `origin/main` commit/tree 一致的根目录 main 推广 Compose 和 `infra/cpa-production/config.example.yaml`。将模板中的管理密钥替换为测试站独立随机密钥。使用全新 auths、插件状态目录、Manager 数据卷和独立密钥，密钥文件权限为 0600，目录权限为 0700。
 
@@ -26,7 +26,7 @@ docker compose -f /opt/cpa-test-station/compose.yaml run --rm --no-deps \
 docker compose -f /opt/cpa-test-station/compose.yaml up -d --wait --wait-timeout 90
 ```
 
-验证两容器健康、管理页校验和、两套密钥鉴权、CPAMP 到 CPA 的连接、插件 v1.5.3 注册及原有 Sub2API 健康。插件初装无默认网关地址；业务账号、网关绑定、CDK 激活和真实模型请求需使用测试站独立凭据另行配置和验收。
+验证两容器健康、管理页校验和、两套密钥鉴权、CPAMP 到 CPA 的连接、插件 v1.5.4 注册及原有 Sub2API 健康。插件初装无默认网关地址；业务账号、网关绑定、CDK 激活和真实模型请求需使用测试站独立凭据另行配置和验收。
 
 首次安装回退时仅停止该 Compose project，保留运行目录和数据卷；升级时保留前一版配置、插件和镜像，切回已验证兼容的制品。不得用删除卷的方式回退。
 

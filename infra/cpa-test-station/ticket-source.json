@@ -1,15 +1,15 @@
 {
-  "version": "1.5.3",
+  "version": "1.5.4",
   "artifact": {
     "goos": "linux",
     "goarch": "amd64",
-    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.3/cliproxy-ticket-gateway-1.5.3-linux-amd64.store.zip",
-    "sha256": "511e37ca72711b34fbbb52926f8df47fc0bbbf70cce7cddce631e92b20fe535e",
-    "size": 39303205
+    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.4/cliproxy-ticket-gateway-1.5.4-linux-amd64.store.zip",
+    "sha256": "0739ece56aad758d4a87f7fdf3dd8d282711437a6192ae40c9e182c22e573dfa",
+    "size": 39334841
   },
-  "binary_sha256": "ad36021f923858c46f932b26abd481c9c37fcb4c5163e27b74d9989f31b86955",
-  "ui_sha256": "aa89dcef4c7637b630fed8a913db21e6a81bbf9b4068fabddc4c4fa976f78406",
+  "binary_sha256": "76fd4bde1a5d517ecfade6f6fcc779a73ee339e83aed7c20cf7f63142d7028c3",
+  "ui_sha256": "b773067b15889f126ea0599653a25158d5f0be8d0040fc7d3d634f0809505b1f",
   "ui_source": "HTML template and font/favicon extracted from the verified official binary; nativeStoredValue retains CPAMP enc::v2 compatibility",
-  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.5.3.so",
+  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.5.4.so",
   "procedure": "update/prepare, install versioned host file, PATCH store.version, wait for registration, update/confirm; no container restart"
 }

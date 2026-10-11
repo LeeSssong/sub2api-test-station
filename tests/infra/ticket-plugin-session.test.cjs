@@ -6,7 +6,8 @@ const { test } = require('node:test');
 
 const file = process.env.TICKET_PLUGIN_UI || path.join(__dirname, '../../infra/cpa-test-station/ticket-gateway-ui.html');
 const html = fs.readFileSync(file, 'utf8');
-const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/)[1];
+const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]).find(source => source.includes('root.TicketPluginUI'));
+assert.ok(script, 'plugin application script exists');
 const context = vm.createContext({ URL, TextEncoder, TextDecoder });
 vm.runInContext(script, context);
 const { nativeSession } = context.TicketPluginUI;

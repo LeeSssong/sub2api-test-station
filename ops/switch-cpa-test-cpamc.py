@@ -42,6 +42,13 @@ run('docker','volume','rm','cpa-test-station-manager-data')
 atomic(B/'legacy-entry.Caddyfile',R/'edge/legacy-entry.Caddyfile');atomic(B/'compose.yaml',R/'compose.yaml')
 run('docker','compose','-f',str(R/'compose.yaml'),'up','-d','--no-deps','cpa-legacy-entry')
 assert before==run('docker','inspect','cpa-test-station-cpa-gateway-1','--format','{{.State.StartedAt}}')
-assert get('/management.html',base='http://127.0.0.1:18317')[0]==200
+deadline=time.monotonic()+30
+while True:
+ try:
+  assert get('/management.html',base='http://127.0.0.1:18317')[0]==200
+  break
+ except (OSError, AssertionError):
+  if time.monotonic()>=deadline:raise
+  time.sleep(0.25)
 record.update(result='success',total_seconds=round(time.monotonic()-start,2),gateway_not_restarted=True,deleted_volume='cpa-test-station-manager-data',rollback='Restore saved Caddyfile/pages and old compose; CPAMP would start with an empty database. Historical data deliberately deleted.')
 (backup/'release.json').write_text(json.dumps(record,indent=2)+'\n');print(json.dumps(record))

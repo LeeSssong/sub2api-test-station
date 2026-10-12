@@ -51,7 +51,7 @@ cpa-test.xingqiaolab.top {
 		file_server
 	}
 	handle {
-		reverse_proxy cpa-manager:18317 {
+		reverse_proxy cpa-gateway:8317 {
 			transport http {
 				dial_timeout 5s
 				response_header_timeout 2m

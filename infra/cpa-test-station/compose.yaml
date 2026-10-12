@@ -28,46 +28,17 @@ services:
     logging:
       options: {max-size: "10m", max-file: "3"}
 
-  cpa-manager:
-    image: seakee/cpa-manager-plus@sha256:37933b2b64dd60c7a1696096d738ad7cf9f0a7475fd7bc12c2eb7a0124b2f7f9
+  cpa-legacy-entry:
+    image: caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     restart: unless-stopped
     ports:
       - "${CPA_BIND_ADDRESS:-0.0.0.0}:18317:18317"
-    environment:
-      HTTP_ADDR: "0.0.0.0:18317"
-      USAGE_DB_PATH: "/data/usage.sqlite"
-      CPA_MANAGER_DATA_KEY_PATH: "/data/data.key"
-      CPA_MANAGER_ADMIN_KEY_FILE: "/run/secrets/cpamp_admin_key"
-      USAGE_COLLECTOR_MODE: "auto"
-      USAGE_RESP_QUEUE: "usage"
-      USAGE_RESP_POP_SIDE: "right"
-      USAGE_BATCH_SIZE: "100"
-      USAGE_POLL_INTERVAL_MS: "500"
-      USAGE_QUERY_LIMIT: "50000"
-      USAGE_CORS_ORIGINS: "http://43.133.75.82:8317,http://43.133.75.82:18317"
     volumes:
-      - cpa-manager-data:/data
-    secrets: [cpamp_admin_key]
+      - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/edge/legacy-entry.Caddyfile:/etc/caddy/Caddyfile:ro
     networks: [cpa-test]
-    depends_on:
-      cpa-gateway: {condition: service_healthy}
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:18317/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 5s
     logging:
       options: {max-size: "10m", max-file: "3"}
 
 networks:
   cpa-test:
     name: cpa-test-station-network
-
-volumes:
-  cpa-manager-data:
-    name: cpa-test-station-manager-data
-
-secrets:
-  cpamp_admin_key:
-    file: ${CPA_TEST_ROOT:-/opt/cpa-test-station}/secrets/cpamp-admin-key

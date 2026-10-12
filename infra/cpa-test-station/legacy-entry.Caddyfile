@@ -1,0 +1,3 @@
+http://:18317 {
+	redir https://cpa-test.xingqiaolab.top{uri} 302
+}

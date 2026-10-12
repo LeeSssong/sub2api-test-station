@@ -1,5 +1,15 @@
 # CPA 测试站
 
+## 当前管理入口（2026-10-12）
+
+管理界面已改用官方 CPAMC v1.26.1（`cpamc/source.json` 记录制品来源和 SHA256），兼容既有 CPA v8.0.20。域名入口为 `https://cpa-test.xingqiaolab.top/management.html`，8317 端口提供相同页面，旧 18317 入口重定向到域名。登录使用 CPA Management Key；CPAMP Admin Key 和旧会话不再适用。Ticket Gateway 插件及 Keeper 保持独立运行。
+
+`compose.yaml` 不再定义 CPAMP；其容器、SQLite 数据卷及历史采集数据在切换验证后删除。删除不涉及 CPA 凭证、Ticket Gateway、Keeper 或 Sub2API。旧 CPAMP 制品和路由配置仅保留作软件回退，历史数据库不备份、不恢复。浏览器旧 CPAMP 本地存储仍属各客户端，服务器无法远程清除所有设备。
+
+后续部署只推广干净且已推送的 main；静态页面、Caddyfile 使用原子替换和 Caddy 平滑 reload，无需重启 CPA。切换流程见 `ops/switch-cpa-test-cpamc.py`。下方为旧部署说明，仅用于历史参考，不得据此重新启用 CPAMP。
+
+## 历史部署说明
+
 目标为 `ubuntu@43.133.75.82`。独立 Compose project、network、数据卷和运行目录均以 `cpa-test-station` 命名。运行目录为 `/opt/cpa-test-station`。
 
 复用本地版本的 Linux AMD64 制品：CPA v8.0.20、CPAMP v1.14.4、Ticket Gateway v1.5.4。镜像按 digest 固定；管理页使用 CPAMP v1.14.4 的官方 `management.html`，SHA256 为 `98476e174f8f74001c2d1b576091106a49f00b476843ed2a54d38a9f9f04e4ae`。插件下载地址为 `https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.4/cliproxy-ticket-gateway-1.5.4-linux-amd64.store.zip`，压缩包 SHA256 为 `0739ece56aad758d4a87f7fdf3dd8d282711437a6192ae40c9e182c22e573dfa`，包内 `cliproxy-ticket-gateway.so` SHA256 为 `76fd4bde1a5d517ecfade6f6fcc779a73ee339e83aed7c20cf7f63142d7028c3`。

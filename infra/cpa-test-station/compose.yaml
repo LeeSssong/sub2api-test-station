@@ -10,7 +10,7 @@ services:
       - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/config.yaml:/CLIProxyAPI/config.yaml
       - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/auths:/root/.cli-proxy-api
       - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/logs:/CLIProxyAPI/logs
-      - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/plugins:/CLIProxyAPI/plugins:ro
+      - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/plugins:/CLIProxyAPI/plugins:rw
       - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/static:/CLIProxyAPI/static:ro
       - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/cliproxyapi/ticket-gateway-data:/var/lib/cliproxy-ticket-gateway
     networks: [cpa-test]

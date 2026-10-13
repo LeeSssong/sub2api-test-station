@@ -39,14 +39,15 @@ type qualityJudgeSlots interface {
 }
 
 type QualityJudgeService struct {
-	accounts qualityJudgeAccounts
-	groups   qualityJudgeGroups
-	slots    qualityJudgeSlots
-	request  func(context.Context, int64, string, string) (string, error)
+	accounts     qualityJudgeAccounts
+	groups       qualityJudgeGroups
+	slots        qualityJudgeSlots
+	request      func(context.Context, int64, string, string) (string, error)
+	requestImage func(context.Context, int64, string, string, string) (string, error)
 }
 
 func NewQualityJudgeService(accounts AccountRepository, groups GroupRepository, slots *ConcurrencyService, tests *AccountTestService) *QualityJudgeService {
-	return &QualityJudgeService{accounts: accounts, groups: groups, slots: slots, request: tests.runQualityJudgeRequest}
+	return &QualityJudgeService{accounts: accounts, groups: groups, slots: slots, requestImage: tests.runDrawingJudgeRequest, request: tests.runQualityJudgeRequest}
 }
 
 func (s *QualityJudgeService) Judge(ctx context.Context, testedAccount int64, cfg *PelicanTestConfig, answer string) *QualityJudgment {

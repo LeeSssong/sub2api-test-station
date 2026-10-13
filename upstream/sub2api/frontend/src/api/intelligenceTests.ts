@@ -1,5 +1,7 @@
 import { apiClient } from "./client";
+export interface DrawingJudgment { status: "pending" | "passed" | "incorrect" | "unknown"; reason?: string; model_id?: string; deadline?: string; finished_at?: string }
 export interface IntelligenceResult {
+  drawing_judgment?: DrawingJudgment;
   source?: "quality_ops" | "intelligence_live";
   valid_until?: string;
   source_result_id?: number;

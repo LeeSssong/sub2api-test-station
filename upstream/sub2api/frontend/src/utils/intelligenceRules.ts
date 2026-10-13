@@ -42,6 +42,7 @@ export function intelligenceRuleFromPlans(
     expected_answer: rule.candy?.quality?.expected_answer || "21",
     judge: rule.candy?.quality?.judge ? {...rule.candy.quality.judge} : undefined,
     candy_models: [...(rule.candy_models?.length ? rule.candy_models : INTELLIGENCE_CANDY_MODELS)],
+    drawing_judge: rule.drawing_judge ? { ...rule.drawing_judge } : undefined,
     drawing_prompt: first.pelican_config.prompt,
     actions: [...rule.actions],
     scenes: [...rule.scenes],

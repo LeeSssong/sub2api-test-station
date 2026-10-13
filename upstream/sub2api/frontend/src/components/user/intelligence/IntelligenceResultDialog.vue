@@ -37,10 +37,11 @@
         <p v-if="result.source === 'intelligence_live'" class="iq-source-detail">分组真实检测 · 使用本轮智商监测配置</p>
         <div v-if="html" class="iq-detail-art">
           <PelicanArtworkPreview :html="html" title="检测画作" />
+          <IntelligenceDrawingRibbon :judgment="result.drawing_judgment" />
         </div>
         <div class="iq-result-line">
           <span class="iq-status" :class="result.verdict"
-            >● {{ intelligenceVerdictLabel[result.verdict]
+            >● {{ result.kind === "pelican" && result.verdict === "passed" ? "生成成功" : intelligenceVerdictLabel[result.verdict]
             }}<template v-if="result.error_kind === 'no_available_account'">
               · 没有可用账号</template
             ><template v-if="result.error_kind === 'judge_inconclusive'">
@@ -52,6 +53,7 @@
               : [result.action, result.scene].filter(Boolean).join(" · ")
           }}</span>
         </div>
+        <p v-if="result.drawing_judgment?.reason" class="iq-question">图片判定：{{ result.drawing_judgment.reason }}</p>
         <h3>发送给模型的题目</h3>
         <div class="iq-question">{{ result.prompt }}</div>
         <div class="iq-metrics">
@@ -96,6 +98,7 @@
 import { computed, onMounted, ref } from "vue";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
+import IntelligenceDrawingRibbon from "./IntelligenceDrawingRibbon.vue";
 import PelicanArtworkPreview from "@/components/user/pelican/PelicanArtworkPreview.vue";
 import type {
   IntelligenceGroup,
@@ -117,7 +120,7 @@ const props = defineProps<{
 defineEmits<{ close: []; retry: [] }>();
 const dialog = ref<HTMLDialogElement | null>(null);
 const html = computed(() =>
-  props.result?.kind === "pelican" && props.result.verdict === "passed"
+  props.result?.kind === "pelican"
     ? extractPelicanHtml(props.result.response_text || "")
     : "",
 );

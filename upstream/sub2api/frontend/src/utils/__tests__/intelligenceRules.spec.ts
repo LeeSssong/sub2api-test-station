@@ -22,6 +22,7 @@ describe("intelligence rules", () => {
       parallel_count: 1,
       intelligence: {
         id: "r",
+        drawing_judge: { group_id: 8, model_id: "vision", prompt: "" },
         name: "Rule",
         actions: ["a"],
         scenes: ["s"],
@@ -53,6 +54,9 @@ describe("intelligence rules", () => {
     expect(draft.expected_answer).toBe("42");
     expect(draft.candy_schedules).toEqual([{ group_id: 1, cron_expression: "*/30 * * * *" }, { group_id: 2, cron_expression: "*/30 * * * *" }]);
     expect(draft.candy_models).toEqual(["gpt-6-astra", "gpt-6.1-sol"]);
+    expect(draft.drawing_judge?.model_id).toBe("vision");
+    draft.drawing_judge!.model_id="changed";
+    expect(config.intelligence.drawing_judge.model_id).toBe("vision");
     draft.actions.push("b");
     expect(config.intelligence.actions).toEqual(["a"]);
   });

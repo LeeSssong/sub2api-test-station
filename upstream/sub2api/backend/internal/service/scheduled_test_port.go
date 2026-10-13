@@ -7,6 +7,7 @@ import (
 
 // PelicanTestConfig stores intelligence test inputs; a missing kind preserves legacy HTML plans.
 type PelicanTestConfig struct {
+	DrawingJudge       *QualityJudgeConfig         `json:"drawing_judge,omitempty"`
 	Intelligence       *IntelligenceRuleConfig     `json:"intelligence,omitempty"`
 	IntelligenceResult *IntelligenceResultMetadata `json:"intelligence_result,omitempty"`
 	// Filled only on saved result snapshots, never used to configure a rule.

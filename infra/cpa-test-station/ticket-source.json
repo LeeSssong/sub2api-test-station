@@ -1,16 +1,15 @@
 {
-  "version": "1.5.5",
+  "version": "1.5.6",
   "artifact": {
     "goos": "linux",
     "goarch": "amd64",
-    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.5/cliproxy-ticket-gateway-1.5.5-linux-amd64.store.zip",
-    "sha256": "09b4b2e44b24023134221cb34974365df53e4d3c2c6ef0183ef95d246cdb78d2",
-    "size": 39414278
+    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.6/cliproxy-ticket-gateway-1.5.6-linux-amd64.store.zip",
+    "sha256": "5ce94844dba85de60cb93f688da956f160cd9eaf34e7ed221bace83ea2b6a640",
+    "size": 39443063
   },
-  "binary_sha256": "614f3d9d997bebca5a407b9a2bfb824bdf8108b92bf732286cfec4b744e8754a",
-  "ui_sha256": "7422d55eb11cb1ac1d078029eb06fb441dcc220e5f948cbf2c513ace58d54523",
-  "ui_source": "HTML template and font/favicon extracted from the verified official binary; nativeStoredValue retains CPAMP enc::v2 compatibility",
-  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.5.5.so",
-  "procedure": "update/prepare, install versioned host file, PATCH store.version, wait for registration, update/confirm; no container restart",
-  "official_ui_sha256": "6f24d2fc43dac5809e73ddd9bff7ab9ea2051744c16a8a266f0893bd94596d42"
+  "binary_sha256": "28692acd4ae177399fe050ca75fd80032766dcced6e86a47ae3668e6ffca7a8c",
+  "ui_sha256": "90f7b3a6a005396e7a10e097d49b4df91db253991baf6e606b4e8d58d6ed76bf",
+  "ui_source": "HTML template extracted from verified official binary; existing font/favicon and nativeStoredValue enc::v2 compatibility retained",
+  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.5.6.so",
+  "procedure": "Install verified versioned artifact, update store.version and restart CPA if draining cannot complete; verify registration and handoff, retain previous artifacts."
 }

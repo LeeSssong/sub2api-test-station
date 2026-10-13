@@ -829,6 +829,8 @@ func ProvideScheduledTestRunnerService(
 	svc.groupTests = groupTests
 	if groupTests != nil {
 		groupTests.judgeQuality = judge.Judge
+		groupTests.judgeDrawing = judge.JudgeDrawing
+		groupTests.renderDrawing = renderIntelligenceDrawing
 	}
 	svc.candyMonitor = monitor.candy
 	startBackgroundService(cfg, svc)

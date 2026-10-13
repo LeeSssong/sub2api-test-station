@@ -18,6 +18,7 @@ const pelicanClaudeMaxTokens = 32000
 type pelicanTestContextKey struct{}
 
 type pelicanTestOptions struct {
+	imageDataURL    string
 	prompt          string
 	reasoningEffort string
 	testChannel     string

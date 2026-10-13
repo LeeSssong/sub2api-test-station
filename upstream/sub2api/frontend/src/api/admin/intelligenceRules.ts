@@ -17,6 +17,7 @@ export interface IntelligenceRuleInput {
   candy_prompt?: string;
   expected_answer?: string;
   judge?: IntelligenceJudge;
+  drawing_judge?: IntelligenceJudge;
   drawing_prompt: string;
   actions: string[];
   scenes: string[];

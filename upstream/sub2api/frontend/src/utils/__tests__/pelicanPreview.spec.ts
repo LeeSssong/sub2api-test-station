@@ -160,6 +160,26 @@ describe('Pelican sandbox measurement runtime', () => {
     expect(root.style.zoom).toBe('0.48')
   })
 
+  it.each(['unzoomed', 'zoomed'] as const)('keeps portrait bounds stable when the browser returns %s DOMRects', async (rectMode) => {
+    // Old WebKit returns pre-zoom coordinates; current browsers return painted
+    // coordinates. jsdom has no layout, so model only this browser boundary.
+    start('<html><body><div id="art">Portrait</div></body></html>', 1024, 1600, undefined, (frame) => {
+      frame.HTMLElement.prototype.getBoundingClientRect = function () {
+        const rootZoom = parseFloat(frame.document.documentElement.style.zoom) || 1
+        const ownZoom = this === frame.document.documentElement ? 1 : parseFloat(this.style.zoom) || 1
+        const scale = rectMode === 'zoomed' ? rootZoom * ownZoom : 1
+        const width = (parseFloat(this.style.width) || 1024) * scale
+        const height = (parseFloat(this.style.height) || 1600) * scale
+        return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() {} } as DOMRect
+      }
+    })
+    sandbox.document.getElementById('art')!.append('Updated caption')
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(reports).toEqual([expect.objectContaining({ width: 1024, height: 1600 })])
+    expect(sandbox.document.documentElement.style.zoom).toBe('0.48')
+  })
+
   it('preserves the author root zoom while applying its own reduction', () => {
     // jsdom does not parse the zoom declaration; provide the browser's property.
     start('<html style="zoom:2"><body>Artwork</body></html>', 1600, 1200, undefined, (frame) => { frame.document.documentElement.style.zoom = '2' })

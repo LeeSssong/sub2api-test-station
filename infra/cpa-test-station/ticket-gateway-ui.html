@@ -23,6 +23,7 @@
     .usage-original{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;margin-bottom:16px;border:1px solid var(--line);border-radius:9px;background:var(--soft)}.usage-original h3{font-size:13px;margin:0 0 4px}.usage-original-value{font-size:24px;line-height:1.4;font-weight:550;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0;text-align:right}.usage-cost{display:block;font-size:11px;color:var(--muted);margin-top:5px;overflow-wrap:anywhere}.usage-money{min-width:120px;overflow-wrap:anywhere}.usage-money .usage-state{margin-top:3px}.usage-daily{min-width:510px}.usage-dialog .usage-table:not(.usage-daily){min-width:680px}
     .usage-estimate{border:1px solid var(--line);border-radius:9px;padding:18px;margin-bottom:18px}.usage-estimate h3{font-size:14px;margin-bottom:7px}.usage-estimate .usage-facts{margin:10px 0}.usage-estimate dd{font-variant-numeric:tabular-nums}.usage-estimate .usage-disclosure{margin-top:10px}
     @media(max-width:740px){.usage-original{align-items:flex-start;flex-direction:column;gap:10px}.usage-original-value{text-align:left;font-size:25px}.usage-cost{font-size:11px}}
+    .metric{container-type:inline-size}#available{white-space:nowrap;overflow-wrap:normal;font-size:clamp(18px,11cqi,32px)}#available[data-compact=true]{font-size:clamp(11px,8cqi,22px)}
     @media(max-width:740px){.usage-toolbar{padding-left:18px;padding-right:18px;gap:10px}.usage-snapshot{order:3;flex-basis:100%}.usage-toolbar>button{margin-left:auto}.usage-col{min-width:148px}.usage-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.usage-dialog .dialog-head{padding:20px 18px 14px}.usage-dialog .dialog-body{padding:0 18px 20px}.usage-dialog .metric{padding:15px}.usage-dialog .metric-value{font-size:25px}.usage-facts{grid-template-columns:1fr}.usage-detail-actions{align-items:flex-start}.account-observation{margin-left:18px;margin-right:18px}}
 
 .model-choices{border:0;padding:0;margin:0;min-width:0}.model-choices legend{padding:0;margin-bottom:10px;font-size:13px;font-weight:600}.model-choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.model-choice{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:11px;min-width:0;font:inherit}.model-choice span{overflow-wrap:anywhere}.model-choice input{width:16px;height:16px;flex:none;accent-color:var(--ink)}.model-readiness{display:grid;gap:4px;margin-top:9px;font-size:11px;line-height:1.5;white-space:normal}.readiness-policy{color:var(--muted);font-size:10px}.model-readiness-item{display:block;overflow-wrap:anywhere}.model-readiness-item[data-ready="true"]{font-weight:600}@media(max-width:600px){.model-choice-grid{grid-template-columns:1fr}}
@@ -50,10 +51,10 @@
       <section id="page-overview" role="tabpanel" aria-labelledby="pageTab-overview" tabindex="0">
       <div id="setupSteps" class="steps" aria-label="设置进度" hidden><div id="stepConfig" class="step"><span class="step-num">1</span><span>保存连接配置</span></div><div id="stepActivate" class="step"><span class="step-num">2</span><span>用 CDK 充值余额</span></div><div id="stepReady" class="step"><span class="step-num">3</span><span>开始使用，自动路由</span></div></div>
       <section class="metrics" aria-label="当前状态">
-        <div class="metric"><div class="metric-label">网关连接 <svg aria-hidden="true"><use href="#icon-settings"/></svg></div><div id="gatewayState" class="metric-value word">—</div><div id="gatewayNote" class="metric-note">等待读取</div></div>
-        <div class="metric"><div class="metric-label">实际可服务账号 <svg aria-hidden="true"><use href="#icon-accounts"/></svg></div><div id="readyCount" class="metric-value">—</div><div id="readyNote" class="metric-note">等待读取</div></div>
-        <div class="metric"><div class="metric-label">可用余额 <svg aria-hidden="true"><use href="#icon-balance"/></svg></div><div id="available" class="metric-value money">—</div><div class="metric-note">USD · 以确认余额为准</div></div>
-        <div class="metric"><div class="metric-label">正在处理 <svg aria-hidden="true"><use href="#icon-activity"/></svg></div><div id="requestMetric" class="metric-value">—</div><div id="requestMetricNote" class="metric-note">在途请求尚未确认</div><div id="waitingRequests" class="metric-note" hidden></div></div>
+        <div class="metric"><div class="metric-label">服务连接 <svg aria-hidden="true"><use href="#icon-settings"/></svg></div><div id="gatewayState" class="metric-value word">—</div><div id="gatewayNote" class="metric-note">等待读取</div><div id="workerServiceNote" class="metric-note" hidden></div></div>
+        <div class="metric"><div class="metric-label"><span id="readyLabel">实际可服务账号</span> <svg aria-hidden="true"><use href="#icon-accounts"/></svg></div><div id="readyCount" class="metric-value">—</div><div id="readyNote" class="metric-note">等待读取</div></div>
+        <div class="metric"><div class="metric-label">服务可用额度 <svg aria-hidden="true"><use href="#icon-balance"/></svg></div><div id="available" class="metric-value money">—</div><div id="availableNote" class="metric-note">尚未确认服务额度</div></div>
+        <div class="metric"><div class="metric-label"><span id="requestMetricLabel">正在处理</span> <svg aria-hidden="true"><use href="#icon-activity"/></svg></div><div id="requestMetric" class="metric-value">—</div><div id="requestMetricNote" class="metric-note">在途请求尚未确认</div><div id="waitingRequests" class="metric-note" hidden></div></div>
       </section>
         <div class="workspace"><div class="stack"><section class="card" aria-labelledby="servingTitle"><div class="card-head"><div><h2 id="servingTitle">正在提供服务</h2><p id="overviewAccountSummary">优先使用已就绪账号，其他账号按配置参与准备。</p></div><button id="overviewManageAccounts" type="button" class="quiet small">管理账号 →</button></div><div class="card-body"><ul id="overviewAccounts" class="serving-list"></ul><p id="overviewAccountsEmpty" class="callout">选择账号并保存后，服务状态会显示在这里。</p></div><div class="card-foot"><span id="overviewReadySummary" class="hint">就绪不等于仅仅勾选</span><span id="overviewModeBadge" class="badge">—</span></div></section><section class="card" aria-labelledby="clientTitle">
             <div class="card-head"><div><h2 id="clientTitle">继续使用现有客户端</h2><p>访问地址、API Key 和模型名称沿用现有配置。</p></div></div>
@@ -87,7 +88,7 @@
         <form id="configForm" class="workspace"><div class="card"><section class="form-section"><h2 id="settingsTitle">连接网关</h2><p class="section-description">填写网关地址与持久数据目录，保留此安装的专属身份。</p>              <div class="field"><label for="gatewayURL">网关地址</label><input id="gatewayURL" type="url" required placeholder="填写你的网关 HTTPS 地址" autocomplete="off" spellcheck="false"><p class="hint">填写网关首页地址，使用 HTTPS。</p></div>
               <div class="field"><label for="dataDir">插件数据目录</label><input id="dataDir" type="text" required placeholder="填写此插件的持久数据绝对路径" autocomplete="off" spellcheck="false"><p class="hint">CLIProxyAPI 服务器上的可写绝对路径。Docker 部署时请挂载为持久目录。</p></div>
 
-              <details><summary>高级设置</summary><div class="two-col"><div class="field"><label for="leaseSeconds">连接有效期（秒）</label><input id="leaseSeconds" type="number" min="30" max="120" required></div><div class="field"><label for="syncSeconds">同步间隔（秒）</label><input id="syncSeconds" type="number" min="2" max="40" required></div></div><div class="field"><label for="requestTimeout">请求超时（秒）</label><input id="requestTimeout" type="number" min="5" max="3600" required><p class="hint">默认 1,800 秒，可容纳较长的推理请求。</p></div><p id="installationInfo" class="identity"></p></details>
+              <details><summary>高级设置</summary><div class="two-col"><div class="field"><label for="leaseSeconds">连接有效期（秒）</label><input id="leaseSeconds" type="number" min="30" max="120" required></div><div class="field"><label for="syncSeconds">同步间隔（秒）</label><input id="syncSeconds" type="number" min="2" max="40" required></div></div><div class="two-col"><div class="field"><label for="controlTimeout">连接操作超时（秒）</label><input id="controlTimeout" type="number" min="5" max="300" step="1" required><p class="hint">默认 30 秒，适用于连接状态等操作。</p></div><div class="field"><label for="syncTimeout">账号同步超时（秒）</label><input id="syncTimeout" type="number" min="30" max="900" step="1" required><p class="hint">默认 180 秒，不得小于连接操作超时。</p></div></div><div class="field"><label for="requestTimeout">请求超时（秒）</label><input id="requestTimeout" type="number" min="5" max="3600" required><p class="hint">默认 1,800 秒，可容纳较长的推理请求。</p></div><p id="installationInfo" class="identity"></p></details>
 </section><section class="form-section"><h2>模型与计费</h2><p class="section-description">模型名称保持原样，按网关确认的计费方式结算。</p><div class="field"><label for="chargeMode">计费方式</label><select id="chargeMode"><option value="token">按 Token</option><option value="request">按成功请求次数</option></select><p id="chargeModeStatus" class="hint">计费方式尚待网关确认。</p><p id="requestPriceStatus" class="hint"></p></div><div class="field"><fieldset id="relayModels" class="model-choices" aria-describedby="relayModelsHelp"><legend>业务模型</legend><div id="relayModelChoices" class="model-choice-grid"></div></fieldset><p id="relayModelsHelp" class="hint">勾选的模型由票据网关服务处理。未勾选及其他模型交给 CPA 原生转发。至少选择一个模型，保存后生效。</p><p id="supportedModelsNote" class="hint"></p></div></section></div><div class="stack"><section class="card form-section"><h2>账号调度</h2><p class="section-description">持续按你的配置准备可服务账号。</p>
               <div class="field"><label for="ticketMode">打票模式</label><select id="ticketMode"><option value="personal">个人模式</option><option value="relay">中转模式</option></select><p id="ticketModeHint" class="hint">个人模式持续准备一个可用账号，票据到期后自动补充。</p><p id="ticketModeStatus" class="hint"></p></div>
               <div id="concurrencyModeControl" class="field" hidden><label for="relayConcurrencyMode">并发方式</label><select id="relayConcurrencyMode"><option value="manual">手动设置</option><option value="auto">自动设置</option></select><p id="autoConcurrencySummary" class="hint" aria-live="polite" hidden></p></div>
@@ -108,7 +109,7 @@
         </section></form>
         <p id="configValidation" class="notice" data-kind="error" role="alert" hidden></p>
       </section>
-      <section id="page-balance" role="tabpanel" aria-labelledby="pageTab-balance" tabindex="0" hidden><div class="workspace"><section class="card" aria-labelledby="balanceTitle"><div class="card-head"><div><h2 id="balanceTitle">可用余额</h2><p id="balanceFreshness">尚未取得已确认的余额。</p></div><span class="counter">USD</span></div><div class="card-body"><div id="balanceAvailable" class="money-large">—</div><dl class="facts"><div><dt>累计充值</dt><dd id="balanceGranted">—</dd></div><div><dt>已确认消费</dt><dd><span id="consumed">—</span><span id="balanceConsumed" hidden>—</span></dd></div><div><dt>预留金额</dt><dd id="balanceHeld">—</dd></div><div><dt>计费方式</dt><dd id="balanceMode">—</dd></div><div><dt>费率</dt><dd id="balanceRate">—</dd></div></dl><p id="balanceNote" class="hint"></p><p id="grantedNote" class="hint"></p><p id="consumedNote" class="hint"></p><p id="multiplierNote" class="hint"></p></div></section><section class="card" aria-labelledby="redeemTitle">
+      <section id="page-balance" role="tabpanel" aria-labelledby="pageTab-balance" tabindex="0" hidden><div class="workspace"><section class="card" aria-labelledby="balanceTitle"><div class="card-head"><div><h2 id="balanceTitle">已确认服务额度</h2><p id="balanceFreshness">尚未取得已确认的服务额度。</p></div><span class="counter">USD</span></div><div class="card-body"><div id="balanceAvailable" class="money-large">—</div><dl class="facts"><div><dt>服务累计额度</dt><dd id="balanceGranted">—</dd></div><div><dt>服务已结算</dt><dd><span id="consumed">—</span><span id="balanceConsumed" hidden>—</span></dd></div><div><dt>服务预留额度</dt><dd id="balanceHeld">—</dd></div><div><dt>计费方式</dt><dd id="balanceMode">—</dd></div><div><dt>费率</dt><dd id="balanceRate">—</dd></div></dl><p id="balanceNote" class="hint"></p><p id="grantedNote" class="hint"></p><p id="consumedNote" class="hint"></p><p id="multiplierNote" class="hint"></p></div></section><section class="card" aria-labelledby="redeemTitle">
             <div class="card-head"><div><h2 id="redeemTitle">使用 CDK 充值</h2><p id="billingSummary">CDK 充值美元余额；成功业务按已确认的计费方式扣费。</p></div></div>
             <form id="redeemForm" class="card-body"><div class="field"><label for="redeemCode">CDK 兑换码</label><input id="redeemCode" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 TG- 开头的完整兑换码"><p class="hint" id="redeemHint">先保存连接配置，再提交兑换码。</p></div><button id="redeemButton" class="primary" type="submit">确认激活 / 充值</button><p id="redeemMessage" class="redeem-message" role="status" aria-live="polite" hidden></p></form>
           </section></div></section>
@@ -125,14 +126,14 @@
   <script id="ticket-console-script">
   (function (root) {
     'use strict';
-    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.5.7","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
+    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.6.0","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
     const ID = PRODUCT.id;
     const CONFIG = '/v8/management/config/plugins/configs/' + ID;
     const MANAGEMENT = '/v0/management/plugins/' + ID;
     const PLUS_CONFIG = MANAGEMENT + '/config';
     const ticketModels = Object.freeze(Array.isArray(PRODUCT.ticket_models)?PRODUCT.ticket_models.slice():[]);
-    const defaults = Object.freeze({ticket_mode:'personal',charge_mode:'token',relay_concurrency_mode:'manual',relay_active_accounts:0,relay_no_ticket_minutes:0,relay_models:ticketModels, selected_auth_indexes:[], lease_seconds:90, sync_seconds:15, request_timeout_seconds:1800});
-    const fields = Object.freeze({ticket_mode:'ticketMode',charge_mode:'chargeMode',relay_concurrency_mode:'relayConcurrencyMode',relay_active_accounts:'relayActiveAccounts',relay_no_ticket_minutes:'relayNoTicketMinutes',gateway_url:'gatewayURL', data_dir:'dataDir',relay_models:'relayModels', lease_seconds:'leaseSeconds', sync_seconds:'syncSeconds', request_timeout_seconds:'requestTimeout'});
+    const defaults = Object.freeze({ticket_mode:'personal',charge_mode:'token',relay_concurrency_mode:'manual',relay_active_accounts:0,relay_no_ticket_minutes:0,relay_models:ticketModels, selected_auth_indexes:[], lease_seconds:90, sync_seconds:15, request_timeout_seconds:1800,control_timeout_seconds:30,sync_timeout_seconds:180});
+    const fields = Object.freeze({ticket_mode:'ticketMode',charge_mode:'chargeMode',relay_concurrency_mode:'relayConcurrencyMode',relay_active_accounts:'relayActiveAccounts',relay_no_ticket_minutes:'relayNoTicketMinutes',gateway_url:'gatewayURL', data_dir:'dataDir',relay_models:'relayModels', lease_seconds:'leaseSeconds', sync_seconds:'syncSeconds', request_timeout_seconds:'requestTimeout',control_timeout_seconds:'controlTimeout',sync_timeout_seconds:'syncTimeout'});
     const accountGroups = Object.freeze([['all','全部'],['ready','可用'],['waiting','待用'],['rate','OpenAI 限流'],['quota','额度用完'],['action','需要处理'],['off','未启用']]);
     const accountPageSize = 50;
     const workspacePages = Object.freeze([
@@ -144,9 +145,10 @@
     ]);
     const themeStorageKey = 'ticket-console-theme';
     const updateSourceURL='https://ticket.codingmiao.site/downloads/cliproxy-ticket/stable.json';
-    const numbers = new Set(['relay_active_accounts','relay_no_ticket_minutes','lease_seconds','sync_seconds','request_timeout_seconds']);
+    const numbers = new Set(['relay_active_accounts','relay_no_ticket_minutes','lease_seconds','sync_seconds','request_timeout_seconds','control_timeout_seconds','sync_timeout_seconds']);
     const waitingFields = ['ticketWaitMode','ticketWaitSeconds','requeueOnStateReplace','businessRetryAttempts'];
     const errorLabels = Object.freeze({
+      worker_service_expired:'服务连接需要重新确认，正在自动恢复。',worker_reply_invalid:'工作节点回复暂未确认，正在自动恢复。',worker_protocol_unavailable:'当前工作节点暂不可用，正在自动恢复；持续出现时请联系管理员。',worker_transport_error:'工作节点连接暂时中断，正在自动重连。',worker_allocation_draining:'正在完成原节点的请求，请稍后重试切换。',worker_allocation_unavailable:'服务额度暂未确认，正在自动恢复。',worker_allocation_exhausted:'当前服务额度不足，正在自动更新；持续出现时请检查充值状态。',worker_allocation_invalid:'服务额度需要重新确认，正在自动恢复。',control_timeouts_invalid:'连接操作超时须为 5–300 秒，账号同步超时须为 30–900 秒，且不得小于连接操作超时。',
       worker_selection_invalid:'请选择网关分配，或从列表中选择一个工作节点入口。',worker_selection_unconfirmed:'节点选择尚未确认保存，请刷新配置后再试。当前更改已保留。',worker_selection_unsupported:'当前网关暂不支持节点选择和测速，请联系管理员升级。已保存的选择会保留。',worker_selection_unavailable:'所选节点暂不可用，请稍后重新测试或切回网关分配。',worker_directory_invalid:'节点列表暂时无法确认，已保留当前选择与上次结果。',worker_directory_unavailable:'暂时无法读取节点列表，请稍后再试。已保留当前选择与上次结果。',worker_probe_failed:'暂时无法完成测速，请稍后再试。已保留上次结果。',worker_probe_busy:'已有测速正在进行，请等待完成或停止后再试。',waiting_policy_unconfirmed:'等待与重试设置尚未确认保存，请刷新配置后再试。当前更改已保留。',
       preflight_state_replaced:'账号暂不可用，本次请求尚未发送。',
       waiting_policy_invalid:'等待时间须为 0–3600 的整数，业务请求重试次数须为 0–100 的整数，请选择降智回复时的处理方式。',waiting_policy_unsupported:'当前服务不支持此等待设置，请联系管理员升级。',ticket_wait_timeout:'等待可用票据已超时，请检查等待设置、重试次数和账号状态。',
@@ -233,6 +235,7 @@
     function normalConfig(value) {
       if (!object(value)) throw new ConsoleError('config_invalid');
       value={...value};delete value.probe_model;delete value.probe_effort;
+      for(const field of ['control_timeout_seconds','sync_timeout_seconds'])if(value[field]==null||value[field]===0)value[field]=defaults[field];
       return {...defaults,...value,charge_mode:value.charge_mode||'token',relay_concurrency_mode:value.relay_concurrency_mode||'manual',relay_active_accounts:value.relay_active_accounts??0,relay_no_ticket_minutes:Number(value.relay_active_accounts||0)>0||value.relay_concurrency_mode==='auto'?(value.relay_no_ticket_minutes||5):0,ticket_mode:typeof value.ticket_mode==='string'&&value.ticket_mode.trim()?value.ticket_mode.trim():'personal', gateway_url:typeof value.gateway_url==='string'?value.gateway_url.trim().replace(/\/+$/,''):'', relay_models:Array.isArray(value.relay_models)?value.relay_models.filter(model=>ticketModels.includes(model)):defaults.relay_models.slice(), selected_auth_indexes:list(value.selected_auth_indexes).slice()};
     }
     // Keep large ledger integers exact without changing digits inside JSON strings.
@@ -346,6 +349,13 @@
     }
     function decimal(value) { return typeof value==='string'&&/^-?(?:0|[1-9]\d*)(?:\.\d{1,9})?$/.test(value); }
     function usd(value) { return decimal(value)?'$'+value+(value.includes('.')?'0'.repeat(Math.max(0,2-value.split('.')[1].length)):'.00'):'—'; }
+    function summaryUSD(value) {
+      const amount=moneyValue(value);if(amount===null)return '—';
+      const negative=amount<0n,magnitude=negative?-amount:amount;
+      if(magnitude>0n&&magnitude<100000n)return negative?'欠款 <$0.0001':'<$0.0001';
+      const rounded=(magnitude+50000n)/100000n,whole=rounded/10000n,fraction=(rounded%10000n).toString().padStart(4,'0').replace(/0+$/,'').padEnd(2,'0');
+      return '$'+(negative?'-':'')+whole.toString()+'.'+fraction;
+    }
     function moneyValue(value) {
       if(!decimal(value))return null;
       const [whole,fraction='']=value.replace(/^-/,'').split('.'), magnitude=BigInt(whole)*1000000000n+BigInt(fraction.padEnd(9,'0')), amount=value.startsWith('-')?-magnitude:magnitude;
@@ -387,6 +397,8 @@
       const validModel=model=>ticketModels.includes(model);
       if (new Set(draft.relay_models).size!==draft.relay_models.length||draft.relay_models.some(s=>!validModel(s))) throw new ConsoleError('relay_models_invalid');
       if (!Number.isInteger(draft.lease_seconds)||draft.lease_seconds<30||draft.lease_seconds>120||!Number.isInteger(draft.sync_seconds)||draft.sync_seconds<2||draft.sync_seconds>40||draft.sync_seconds*3>draft.lease_seconds||!Number.isInteger(draft.request_timeout_seconds)||draft.request_timeout_seconds<5||draft.request_timeout_seconds>3600) throw new ConsoleError('config_limits_invalid');
+      draft.control_timeout_seconds=draft.control_timeout_seconds??defaults.control_timeout_seconds;draft.sync_timeout_seconds=draft.sync_timeout_seconds??defaults.sync_timeout_seconds;
+      if(!Number.isInteger(draft.control_timeout_seconds)||draft.control_timeout_seconds<5||draft.control_timeout_seconds>300||!Number.isInteger(draft.sync_timeout_seconds)||draft.sync_timeout_seconds<30||draft.sync_timeout_seconds>900||draft.sync_timeout_seconds<draft.control_timeout_seconds)throw new ConsoleError('control_timeouts_invalid');
       // URL parsing validates the origin, but its canonical serializer changes
       // hostname case/default ports. The saved spelling is also the native
       // ownership scope, so an unchanged Save must not rewrite that identity.
@@ -604,7 +616,7 @@
         const limitedWait=el('ticketWaitMode').value==='timeout';show('ticketWaitSecondsControl',limitedWait);el('ticketWaitSeconds').disabled=!limitedWait;el('ticketWaitSeconds').required=limitedWait;
         const unsupportedWait=status&&status.waiting_policy_supported===false&&(limitedWait||el('requeueOnStateReplace').value==='false');show('waitingPolicyStatus',unsupportedWait);text('waitingPolicyStatus',unsupportedWait?'当前网关不支持此等待设置，对应请求会报错。账号仍会继续准备，请联系管理员升级。':'');
         const retries=Number(el('businessRetryAttempts').value),retrySupport=!stale&&!awaiting?status?.business_retry_supported:null;
-        text('businessRetryStatus',retrySupport===true?'业务重试能力已由网关确认。':retrySupport===false&&retries!==10?'当前网关不支持此重试次数，对应业务请求会报错；账号仍会继续准备，请联系管理员升级。':retrySupport===false?'当前网关未确认新版重试能力；默认 10 次设置按旧版本策略兼容。':'重试能力尚待网关确认。');
+        text('businessRetryStatus',retrySupport===true?'业务重试能力已由网关确认。':retrySupport===false&&retries!==10?'当前网关不支持此重试次数，对应业务请求会报错；账号仍会继续准备，请联系管理员升级。':retrySupport===false?'当前重试设置尚待服务确认。':'重试能力尚待网关确认。');
         show('concurrencyModeControl',relay);show('rotationControls',relay&&!automatic);show('rotationMinutesControl',relay&&(automatic||limited));show('autoConcurrencySummary',relay&&automatic);
         text('autoConcurrencySummary',selected.size===0?'尚未选择账号，保存后不会启动。':'已选择 '+selected.size+' 个账号，自动同时使用 '+calculated.accounts+' 个，可轮换 '+calculated.rounds+' 轮');
         // Hidden number controls still participate in native form validation.
@@ -646,7 +658,8 @@
         if (timer!==null) env.clearTimeout(timer); timer=null;
         for (const controller of controllers) controller.abort(); controllers.clear();
         for (const id of [...Object.values(fields),...waitingFields,'redeemCode','accountSearch']) el(id).value='';
-        for (const id of ['notice','redeemMessage','installationInfo','clientConfig','clientHint','selectionCount','searchCount','gatewayState','gatewayNote','available','balanceNote','grantedNote','multiplierNote','readyCount','readyNote','waitingRequests','consumed','consumedNote','supportedModelsNote','ticketModeStatus','chargeModeStatus','requestPriceStatus','billingSummary','redeemHint','refreshNote','saveNote']) text(id,'');
+        for (const id of ['notice','redeemMessage','installationInfo','clientConfig','clientHint','selectionCount','searchCount','gatewayState','gatewayNote','workerServiceNote','available','availableNote','balanceNote','grantedNote','multiplierNote','readyCount','readyNote','waitingRequests','consumed','consumedNote','supportedModelsNote','ticketModeStatus','chargeModeStatus','requestPriceStatus','billingSummary','redeemHint','refreshNote','saveNote']) text(id,'');
+        el('available').setAttribute('title','');el('available').setAttribute('aria-label','');show('workerServiceNote',false);
         rows.clear(); el('accountRows').replaceChildren(); el('modelTags').replaceChildren();
         el('overviewAccounts').replaceChildren();
         for(const id of ['overviewAccountSummary','overviewMode','overviewConcurrency','overviewWait','overviewRequeue','overviewRetries','overviewInflight','overviewBilling','overviewReadySummary','overviewModeBadge','requestMetric','requestMetricNote','balanceAvailable','balanceGranted','balanceConsumed','balanceHeld','balanceMode','balanceRate','balanceFreshness','businessRetryStatus'])text(id,'');
@@ -961,11 +974,22 @@
       }
       function readConfig() { return api(configPath,{allowMissing:configStyle==='v8'}); }
       function freshRelay() {
-        if (stale||awaiting||!status||status.last_error||released||status.paused===true||status.relay_fresh===false||status.update_confirmation_required===true||status.update_requires_reconnect===true||status.update_handoff_state==='pending') return false;
+        if (stale||awaiting||!status||released||status.paused===true||status.update_confirmation_required===true||status.update_requires_reconnect===true||status.update_handoff_state==='pending') return false;
+        if(typeof status.worker_status_fresh==='boolean')return status.worker_status_fresh&&status.activated===true&&configMatches(status.config,saved);
+        if(status.last_error||status.relay_fresh===false)return false;
         if(status.relay_observation&&status.relay_observation!=='fresh')return false;
         if (status.relay_fresh===true) return true;
         const at=Date.parse(status.relay_at); return Number.isFinite(at)&&at>0&&Math.max(0,env.Date.now()-at)<Math.max(30,(saved&&saved.sync_seconds||15)*3)*1000;
       }
+      function workerServiceConfirmed() {
+        if(stale||awaiting||released||!status||status.paused===true||status.enabled===false||status.activated!==true||status.worker_service_confirmed!==true||!configMatches(status.config,saved)||status.update_confirmation_required===true||status.update_requires_reconnect===true||status.update_handoff_state==='pending')return false;
+        const at=Date.parse(status.worker_service_observed_at);return Number.isFinite(at)&&at>0&&at<=env.Date.now();
+      }
+      function confirmedAccountObservation(account) {
+        return workerServiceConfirmed()&&account?.service_confirmed===true&&object(account.last_confirmed)?account.last_confirmed:null;
+      }
+      function gatewaySyncDelayed() { return ['gateway_unavailable','gateway_transport_error','gateway_reply_invalid','relay_unavailable'].includes(status?.last_error); }
+      function workerControlError() { return ['worker_service_expired','worker_reply_invalid','worker_protocol_unavailable','worker_transport_error','worker_allocation_draining','worker_allocation_unavailable','worker_allocation_exhausted','worker_allocation_invalid'].includes(status?.last_error); }
       function renderOverview(fresh,compatible) {
         const indexes=list(saved.selected_auth_indexes),statuses=new Map(list(status&&status.accounts).map(account=>[account.auth_index,account])),names=new Map(directory.map(account=>[account.auth_index,account]));
         const policy=saved.waiting_policy||{},seconds=policy.ticket_wait_seconds,automatic=saved.relay_concurrency_mode==='auto';
@@ -975,11 +999,11 @@
         text('overviewRequeue',policy.requeue_on_state_replace===false?'直接报错':'重新等待可用票据');
         const retryBudget=policy.business_retry_attempts??10,retryCapability=!stale&&!awaiting?status?.business_retry_supported:null;
         text('overviewRetries',(retryBudget===0?'不重试':'额外 '+retryBudget+' 次')+(retryCapability===true?'':retryCapability===false&&retryBudget!==10?' · 网关不支持':' · 能力未确认'));
-        const observed=indexes.map(index=>statuses.get(index)),complete=fresh&&observed.every(account=>account&&(!account.observation||account.observation==='fresh')&&Number.isSafeInteger(account.in_flight)&&account.in_flight>=0);
+        const historical=!fresh&&workerServiceConfirmed(),observed=indexes.map(index=>historical?confirmedAccountObservation(statuses.get(index)):statuses.get(index)),complete=(fresh||historical)&&observed.every(account=>account&&(historical||!account.observation||account.observation==='fresh')&&Number.isSafeInteger(account.in_flight)&&account.in_flight>=0);
         const inflight=complete?observed.reduce((total,account)=>total+account.in_flight,0):null,known=Number.isSafeInteger(inflight)&&inflight>=0;
-        text('overviewInflight',known?count(inflight)+' 个':'尚未确认');text('requestMetric',known?count(inflight):'—');
-        text('requestMetricNote',known?'个在途 · 以实际观测为准':'在途请求尚未确认');
-        text('overviewAccountSummary',fresh?'优先使用已就绪账号，其他账号按配置参与准备。':'可用状态尚未确认，等待网关同步。');
+        text('overviewInflight',known?(historical?'上次确认 ':'')+count(inflight)+' 个':'尚未确认');text('requestMetric',known?count(inflight):'—');text('requestMetricLabel',known&&historical?'上次在途观测':'正在处理');
+        text('requestMetricNote',known?historical?'上次确认 · '+usageTime(status.worker_service_observed_at):'个在途 · 以实际观测为准':'在途请求尚未确认');
+        text('overviewAccountSummary',fresh?'优先使用已就绪账号，其他账号按配置参与准备。':historical?'已确认的服务连接仍有效，以下保留最近确认的账号状态。':'可用状态尚未确认，正在更新节点服务状态。');
         text('overviewReadySummary','已保存 '+indexes.length+' 个账号 · 就绪与选择分别统计');text('overviewModeBadge',saved.ticket_mode==='relay'?'中转模式':'个人模式');
         const summary=el('overviewAccounts');summary.replaceChildren();
         for(const index of indexes.slice(0,3)){
@@ -993,7 +1017,7 @@
         show('overviewAccountsEmpty',indexes.length===0);text('overviewAccountsEmpty','尚未选择账号。打开“账号”页选择账号，再保存并连接。');
         const balance=status&&status.balance,old=stale||!fresh;
         text('balanceAvailable',compatible?usd(balance.available_usd):'—');el('balanceAvailable').dataset.compact=String(el('balanceAvailable').textContent.length>16);
-        text('balanceFreshness',compatible?old?'上次确认的余额，等待新的网关观测。':'已由网关确认。':'尚未取得已确认的余额。');
+        text('balanceFreshness',compatible?old?'上次确认的服务额度，正在自动更新。':'已由工作节点确认，仅包含当前节点的服务额度。':'尚未取得已确认的服务额度。');
         for(const [id,key] of [['balanceGranted','granted_usd'],['balanceConsumed','consumed_usd'],['balanceHeld','held_usd']])text(id,compatible?usd(balance[key]):'—');
         text('balanceMode',compatible?balance.charge_mode==='request'?'按成功请求次数':'按 Token':'尚未确认');
         text('balanceRate',compatible?balance.charge_mode==='request'&&moneyValue(balance.request_price_usd)!==null?usd(balance.request_price_usd)+' / 次':balance.charge_mode==='request'?'单价尚未确认':rate(balance.effective_multiplier)+(balance.client_multiplier==null?' · 继承全局':' · 客户端倍率'):'尚未确认');
@@ -1007,33 +1031,44 @@
         if (!saved) return;
         ensureUsageScope();
         if (awaiting&&status&&configMatches(status.config,awaiting)) { awaiting=null; notice(status.activated===true?'配置已生效，可继续使用原模型名发起请求。':'配置已生效，请在“余额充值”页充值后开始使用。','success'); }
-        const configured=!!status&&status.configured===true, fresh=freshRelay(), accounts=list(status&&status.accounts);
+        const configured=!!status&&status.configured===true, fresh=freshRelay(), serviceConfirmed=workerServiceConfirmed(),accounts=list(status&&status.accounts);
         show('setupSteps',!stale&&(!configured||status?.activated!==true));
         const chosenIndexes=new Set(list(saved.selected_auth_indexes)),disabledIndexes=new Set(directory.filter(a=>a.disabled).map(a=>a.auth_index));
         const ready=accounts.filter(a=>a.ready===true&&accountReadiness(a,fresh).rows.some(row=>row.phase==='ready')&&fresh&&(!a.observation||a.observation==='fresh')&&chosenIndexes.has(a.auth_index)&&!disabledIndexes.has(a.auth_index)&&!['rate_limited','quota_exhausted'].includes(a.upstream_state)).length;
+        const historicalComplete=serviceConfirmed&&[...chosenIndexes].every(index=>disabledIndexes.has(index)||confirmedAccountObservation(accounts.find(a=>a.auth_index===index)));
+        const historicalReady=historicalComplete?accounts.filter(a=>{const prior=confirmedAccountObservation(a);return prior?.ready===true&&modelReadiness(prior,env.Date.now(),list(saved.relay_models)).rows.some(row=>row.phase==='ready')&&chosenIndexes.has(a.auth_index)&&!disabledIndexes.has(a.auth_index)&&!['rate_limited','quota_exhausted'].includes(prior.upstream_state);}).length:null;
         let label='未配置', note='先完成连接配置';
         if (awaiting) { label='正在应用'; note='等待插件重新加载'; }
         else if (released||status&&status.paused===true) { label='已暂停'; note='可在页尾恢复已保存配置'; }
         else if (stale) { label='状态待确认'; note='服务状态暂时无法读取'; }
         else if (configured&&status.activated!==true) { label='未激活'; note='使用 CDK 充值余额'; }
-        else if (configured&&status.last_error) { label='同步异常'; note=message(status.last_error); }
-        else if (configured&&fresh) { label='已连接'; note='网关正在维护所选账号'; }
-        else if (configured) { label='等待同步'; note='稍后自动刷新状态'; }
+        else if (configured&&serviceConfirmed) { label='服务已连接'; note='工作节点服务连接已确认 · 上次确认 '+usageTime(status.worker_service_observed_at); }
+        else if (configured&&status.last_error&&!gatewaySyncDelayed()) { label='连接待恢复'; note=message(status.last_error); }
+        else if (configured) { label='连接待确认'; note='正在确认工作节点的服务连接。'; }
         const policy=status&&status.ticket_policy, effective=fresh&&policy&&policy.ticket_mode;
-        text('ticketModeStatus',effective?(effective==='personal'?'个人模式':'中转模式')+' · '+(policy.ticket_mode_support==='full'?'已确认生效':'旧版本部分兼容，请升级插件'):'打票模式尚待网关确认');
+        text('ticketModeStatus',effective?(effective==='personal'?'个人模式':'中转模式')+' · '+(policy.ticket_mode_support==='full'?'已确认生效':'尚待服务确认'):'打票模式尚待网关确认');
         text('chargeModeStatus',fresh&&policy&&policy.charge_mode?(policy.charge_mode==='request'?'按成功请求次数':'按 Token')+' · 已确认生效':'计费方式尚待网关确认');
         text('requestPriceStatus',status&&monetary(status.balance)&&moneyValue(status.balance.request_price_usd)!==null?'成功请求单价：$'+status.balance.request_price_usd+'；仅按次数计费时使用。':'成功请求单价尚待网关确认');
-        text('gatewayState',label); text('gatewayNote',note); text('readyCount',stale||!fresh&&!released&&status?.paused!==true?'—':ready+' / '+list(saved.selected_auth_indexes).length); text('readyNote',fresh?(effective==='personal'?'个人模式 · 自动保持可用账号':'中转模式 · 自动准备所选账号'):'可用状态尚未确认');
+        const historical=!fresh&&serviceConfirmed;
+        text('gatewayState',label); text('gatewayNote',note);
+        const serviceNote=configured&&!stale&&!awaiting&&!released&&status?.paused!==true?(gatewaySyncDelayed()?'状态更新暂时延迟，正在自动恢复。':workerControlError()?message(status.last_error):''):'';
+        text('workerServiceNote',serviceNote);show('workerServiceNote',!!serviceNote);
+        text('readyLabel',historical&&historicalComplete?'上次可用账号':'实际可服务账号');text('readyCount',historical?historicalComplete?historicalReady+' / '+list(saved.selected_auth_indexes).length:'—':stale||!fresh&&!released&&status?.paused!==true?'—':ready+' / '+list(saved.selected_auth_indexes).length);
+        text('readyNote',fresh?(effective==='personal'?'个人模式 · 自动保持可用账号':'中转模式 · 自动准备所选账号'):historical?'上次确认 · '+usageTime(status.worker_service_observed_at):'可用状态尚未确认');
         const waiting=status&&status.waiting_requests, observedWaiting=!stale&&!awaiting&&!released&&status&&status.paused!==true&&Number.isSafeInteger(waiting)&&waiting>0;
         text('waitingRequests',observedWaiting?'等待可用账号 · '+count(waiting)+' 个请求':'');show('waitingRequests',observedWaiting);
         const balance=status&&status.balance, confirmed=object(balance)&&balance.installation_id===saved.installation_id&&typeof balance.authorization_id==='string'&&balance.authorization_id.length>0;
         const compatible=confirmed&&monetary(balance);
-        const runtimeNote=status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'插件余额不足，请充值后继续使用。':!stale&&status&&['gateway_unavailable','gateway_transport_error','relay_unavailable','egress_unavailable'].includes(status.last_error)?'网关连接暂时中断，正在重试。':'';
+        const runtimeNote=status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'当前服务额度不足，正在自动更新；持续出现时请检查充值状态。':!stale&&workerControlError()?message(status.last_error):!stale&&gatewaySyncDelayed()?'网关状态更新暂时延迟，正在自动恢复。'+(serviceConfirmed?'已确认的服务连接仍有效。':'节点服务状态尚待确认。'):!stale&&status?.last_error==='egress_unavailable'?'当前服务连接暂不可用，正在重试。':'';
         text('runtimeNotice',runtimeNote);show('runtimeNotice',!!runtimeNote);
-        text('available',compatible?usd(balance.available_usd):'—'); text('consumed',compatible?usd(balance.consumed_usd):'—');
-        for(const id of ['available','consumed'])el(id).dataset.compact=String(el(id).textContent.length>14);
-        text('balanceNote',compatible?(stale||!fresh?'上次确认的余额 · ':'')+'预留 '+usd(balance.held_usd):confirmed?'当前版本暂不兼容，请联系管理员更新服务与插件':'尚未确认余额');
-        text('grantedNote',compatible?'累计充值 '+usd(balance.granted_usd):'');
+        text('available',compatible?summaryUSD(balance.available_usd):'—'); text('consumed',compatible?usd(balance.consumed_usd):'—');
+        const balanceAt=Date.parse(status?.balance_observed_at),balanceStamp=Number.isFinite(balanceAt)&&balanceAt>0&&balanceAt<=env.Date.now()?' · '+usageTime(status.balance_observed_at):'';
+        text('availableNote',compatible?(stale||!fresh?'上次确认的服务额度':'已确认服务额度')+' · USD'+balanceStamp:'尚未确认服务额度');
+        const exactBalance=compatible?'精确服务额度 '+usd(balance.available_usd)+(stale||!fresh?'（上次确认）':''):'';
+        el('available').setAttribute('title',exactBalance);el('available').setAttribute('aria-label',exactBalance);
+        el('available').dataset.compact=String(el('available').textContent.length>11||el('available').textContent.startsWith('欠款'));el('consumed').dataset.compact=String(el('consumed').textContent.length>14);
+        text('balanceNote',compatible?(stale||!fresh?'上次确认的服务额度 · ':'')+'服务预留 '+usd(balance.held_usd):confirmed?'当前版本暂不兼容，请联系管理员更新服务与插件':'尚未确认余额');
+        text('grantedNote',compatible?'服务累计额度 '+usd(balance.granted_usd):'');
         const requestBilling=compatible&&balance.charge_mode==='request';
         const requestPrice=requestBilling&&moneyValue(balance.request_price_usd)!==null?usd(balance.request_price_usd)+' / 次':'单价待确认';
         text('consumedNote',requestBilling?'成功请求费用 · '+requestPrice:'成功业务 Token 费用');
@@ -1042,8 +1077,8 @@
         text('supportedModelsNote',compatible&&Array.isArray(balance.supported_models)?(balance.supported_models.length?'网关支持的业务模型：'+balance.supported_models.join('、'):requestBilling?'网关未限制业务模型名单':'网关允许所有可定价业务模型')+'。已勾选模型仍需符合网关定价与授权。':'');
         el('stepConfig').dataset.complete=String(configured&&!awaiting); el('stepActivate').dataset.complete=String(!!status&&status.activated===true); el('stepReady').dataset.complete=String(ready>0);
         if (status&&typeof status.pending_activation_operation_id==='string') remotePending=status.pending_activation_operation_id;
-        const at=Date.parse(status&&status.relay_at); text('refreshNote',fresh&&Number.isFinite(at)?'最近网关同步 '+new env.Date(at).toLocaleTimeString('zh-CN')+' · 状态每 5 秒刷新':'状态每 5 秒刷新；表单草稿会保留。');
-        const observed=Date.parse(status?.relay_observed_at||status?.relay_at),observationNote=!fresh&&!released&&status?.paused!==true?(Number.isFinite(observed)&&env.Date.now()-observed<=usageMaxAge?'连接状态待确认 · 上次确认 '+usageTime(new env.Date(observed).toISOString())+'。旧状态仅供查看，当前可用票仍待网关确认。':'连接状态待确认，正在自动恢复。账号选择和优先级草稿会保留。'):'';
+        const at=Date.parse(status&&status.relay_at); text('refreshNote',fresh&&Number.isFinite(at)?'最近服务状态同步 '+new env.Date(at).toLocaleTimeString('zh-CN')+' · 状态每 5 秒刷新':'状态每 5 秒刷新；表单草稿会保留。');
+        const observed=Date.parse(status?.relay_observed_at||status?.relay_at),observationNote=!fresh&&!released&&status?.paused!==true?(Number.isFinite(observed)&&env.Date.now()-observed<=usageMaxAge?'上次确认 '+usageTime(new env.Date(observed).toISOString())+'。旧状态仅供查看，新状态正在自动更新。':'连接状态待确认，正在自动恢复。账号选择和优先级草稿会保留。'):'';
         text('accountObservation',observationNote);show('accountObservation',!!observationNote);
         text('priorityHelp',status?.account_priority_supported===false?'优先级暂未确认，已保存的设置会在恢复后自动生效；账号选择和停用设置仍然有效。':'优先级数字越小越优先；相同数字由系统自动选优。保存并获服务确认后生效，不会中断正在使用的账号。');
         renderAccounts(); renderOverview(fresh,compatible); actions();
@@ -1451,7 +1486,8 @@
           actions();
           const receipt=await api(MANAGEMENT+'/redeem',{method:'POST',body:{code:pending.code,operation_id:pending.operation_id}}); if(!current(generation))return;
           if(!validReceipt(receipt,pending.installation_id))throw new ConsoleError('invalid_response');
-          mutationVersion++;confirmedOperation=pending.operation_id;pending=null;remotePending='';el('redeemCode').value='';status={...status,balance:receipt.balance,activated:receipt.balance.enabled===true,pending_activation_operation_id:''};
+          mutationVersion++;confirmedOperation=pending.operation_id;pending=null;remotePending='';el('redeemCode').value='';
+          status=typeof status?.worker_status_fresh==='boolean'?{...status,worker_status_fresh:false,pending_activation_operation_id:''}:{...status,balance:receipt.balance,activated:receipt.balance.enabled===true,pending_activation_operation_id:''};
           text('redeemMessage','已确认充值 '+usd(receipt.added_usd)+'。兑换码已从当前页面清除。');show('redeemMessage',true);renderStatus();await refresh(false);
           if(current(generation))recordActivity('CDK 充值已确认：'+usd(receipt.added_usd));
         }catch(error){if(current(generation)){
@@ -1501,7 +1537,7 @@
       el('configForm').addEventListener('invalid',event=>{
         setPage('settings',true);
         const target=event.target,details=target.closest('details');if(details)details.open=true;
-        const code={gatewayURL:'gateway_url_invalid',dataDir:'data_dir_absolute_required',relayModels:'relay_models_invalid',relayActiveAccounts:'rotation_policy_invalid',relayNoTicketMinutes:'rotation_policy_invalid',ticketWaitSeconds:'waiting_policy_invalid',businessRetryAttempts:'waiting_policy_invalid',leaseSeconds:'config_limits_invalid',syncSeconds:'config_limits_invalid',requestTimeout:'config_limits_invalid'}[target.id]||'config_invalid';
+        const code={gatewayURL:'gateway_url_invalid',dataDir:'data_dir_absolute_required',relayModels:'relay_models_invalid',relayActiveAccounts:'rotation_policy_invalid',relayNoTicketMinutes:'rotation_policy_invalid',ticketWaitSeconds:'waiting_policy_invalid',businessRetryAttempts:'waiting_policy_invalid',leaseSeconds:'config_limits_invalid',syncSeconds:'config_limits_invalid',requestTimeout:'config_limits_invalid',controlTimeout:'control_timeouts_invalid',syncTimeout:'control_timeouts_invalid'}[target.id]||'config_invalid';
         const value=message(code);notice(value,'error');text('configValidation',value);show('configValidation',true);
       },true);
       bind('configForm','submit',event=>{event.preventDefault();void save();});bind('redeemForm','submit',event=>{event.preventDefault();void redeem();});

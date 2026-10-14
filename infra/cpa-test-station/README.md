@@ -8,9 +8,9 @@
 
 后续部署只推广干净且已推送的 main；静态页面、Caddyfile 使用原子替换和 Caddy 平滑 reload，无需重启 CPA。切换流程见 `ops/switch-cpa-test-cpamc.py`。下方为旧部署说明，仅用于历史参考，不得据此重新启用 CPAMP。
 
-## 当前票据网关（2026-10-13）
+## 当前票据网关（2026-10-14）
 
-后端与边缘兼容页面均升级为官方 v1.5.6，来源和校验和记录在 `ticket-source.json`。`ticket-gateway-ui.html` 来自已校验的官方 Linux AMD64 插件包，保留已有 `enc::v2::` 原生会话适配。该页面由 Caddy 静态提供，因此后续插件升级必须同时核对并更新边缘页面，不能只验证后端注册版本。页面更新使用干净且已推送 main 的文件原子替换，无需重启 CPA 或 Caddy。
+后端与边缘兼容页面均升级为官方 v1.5.7，来源和校验和记录在 `ticket-source.json`。`ticket-gateway-ui.html` 来自已校验的官方 Linux AMD64 插件包，保留已有 `enc::v2::` 原生会话适配。该页面由 Caddy 静态提供，因此后续插件升级必须同时核对并更新边缘页面，不能只验证后端注册版本。页面更新使用干净且已推送 main 的文件原子替换，无需重启 CPA 或 Caddy。
 
 ## 历史部署说明
 
@@ -44,7 +44,7 @@ docker compose -f /opt/cpa-test-station/compose.yaml up -d --wait --wait-timeout
 
 首次安装回退时仅停止该 Compose project，保留运行目录和数据卷；升级时保留前一版配置、插件和镜像，切回已验证兼容的制品。不得用删除卷的方式回退。
 
-当前插件目录为只读挂载，页面插件商店安装会返回 `create plugin directory: read-only file system`。升级使用官方校验包，先通过插件 `update/prepare` 排空请求，再安装带版本号的宿主持久插件文件，通过原生配置 API 的 `store.version` 触发热加载，验证新版本注册及 `update/confirm` 接管；不重启 CPA/CPAMP。保留旧插件用于失败恢复。保留原配置、安装身份、auth 和数据目录；同步本目录的 CPAMP 会话兼容页面。
+当前插件目录为可写挂载，支持原生插件商店安装。页面更新会先通过 `update/prepare` 等待当前请求结束；在途请求未排空时可能持续等待。本次用户授权暂时不可用，采用停止 CPA 网关、安装已校验版本化插件文件、只更新 `store.version`、同步边缘页面再启动的方式。保留原配置、安装身份、auth 和数据目录，以及上一版插件和页面用于失败恢复。后续升级仍须核对实时挂载权限和注册版本，不按历史只读说明推断。
 
 ## Keeper
 

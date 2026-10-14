@@ -1,15 +1,15 @@
 {
-  "version": "1.5.6",
+  "version": "1.5.7",
   "artifact": {
     "goos": "linux",
     "goarch": "amd64",
-    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.6/cliproxy-ticket-gateway-1.5.6-linux-amd64.store.zip",
-    "sha256": "5ce94844dba85de60cb93f688da956f160cd9eaf34e7ed221bace83ea2b6a640",
-    "size": 39443063
+    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.5.7/cliproxy-ticket-gateway-1.5.7-linux-amd64.store.zip",
+    "sha256": "ad62e88dc6e5fb4b84898e3802503941c34772d6e63e61fe5f47d9721131bd9c",
+    "size": 39446027
   },
-  "binary_sha256": "28692acd4ae177399fe050ca75fd80032766dcced6e86a47ae3668e6ffca7a8c",
-  "ui_sha256": "90f7b3a6a005396e7a10e097d49b4df91db253991baf6e606b4e8d58d6ed76bf",
+  "binary_sha256": "bbd8f48f9b31ab77aac57e1ec685b9d1d46c10fdaef71de170ba3dd54bb58e99",
+  "ui_sha256": "0f615d7d6ba31e1eef679a006436612b4e227bec8a10b4848d6c77b729626b54",
   "ui_source": "HTML template extracted from verified official binary; existing font/favicon and nativeStoredValue enc::v2 compatibility retained",
-  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.5.6.so",
-  "procedure": "Install verified versioned artifact, update store.version and restart CPA if draining cannot complete; verify registration and handoff, retain previous artifacts."
+  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.5.7.so",
+  "procedure": "User-authorized brief CPA outage: stop gateway, install verified versioned host artifact, update only store.version, atomically update edge UI, start gateway and verify registration/readiness; retain previous artifact and configuration for rollback."
 }

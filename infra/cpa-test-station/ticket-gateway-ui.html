@@ -125,7 +125,7 @@
   <script id="ticket-console-script">
   (function (root) {
     'use strict';
-    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.5.6","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
+    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.5.7","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
     const ID = PRODUCT.id;
     const CONFIG = '/v8/management/config/plugins/configs/' + ID;
     const MANAGEMENT = '/v0/management/plugins/' + ID;
@@ -155,7 +155,7 @@
       account_auth_invalidated:'账号授权已确认失效，插件已自动排除该凭据并保留原账号文件。',
       auth_quarantine_persist_failed:'已停止使用失效凭据，正在自动重试保存排除记录。',
       native_auth_disabled:'账号已在 CLIProxyAPI 中停用。',native_auth_cooldown:'重试中',native_auth_recovering:'原生账号状态尚未恢复。',
-      update_handoff_unsupported:'当前版本暂不支持保留账号状态更新，请通过 CPA 插件管理完成首次升级。',update_handoff_expired:'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_conflict:'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_unconfirmed:'账号状态尚未恢复，正在确认。',update_busy:'当前请求尚未结束，请稍后再更新。',update_metadata_unavailable:'暂时无法检查新版本，请稍后重试。',update_metadata_invalid:'更新包信息无法确认，请稍后重试。',update_version_changed:'新版本信息已变化，请重新检查更新。',update_not_available:'当前没有可用的新版本。',update_source_setup:'请先在 CPA 插件商店添加官方插件源，再重新检查更新。',update_host_unavailable:'当前 CPA 暂不支持在这里更新，请通过插件管理更新。',update_catalog_unconfirmed:'CPA 尚未确认新版本，请稍后再试。',relay_concurrency_mode_invalid:'请选择手动或自动设置并发。',account_priorities_invalid:'优先级须为 0–999999 的整数。',rotation_policy_invalid:'并发账号数需为 0–1000；开启后连续无票分钟数需为 1–1440。',rotation_policy_unsupported:'当前服务暂不支持并发账号设置，请联系管理员升级。',rotation_policy_mismatch:'并发设置尚未获网关确认，请稍后刷新。',charge_mode_invalid:'请选择按 Token 或按成功请求次数计费。',billing_selection_unsupported:'当前网关暂不支持按成功请求计费，请联系管理员升级。',billing_selection_mismatch:'所选计费方式尚未获网关确认。',billing_mode_changed:'计费方式已变更，请稍后重新发起尚未发送的请求。',ticket_mode_invalid:'请选择个人模式或中转模式。',ticket_mode_unsupported:'当前服务不支持此模式，请联系管理员升级。',ticket_mode_mismatch:'所选模式尚未生效，请稍后刷新。',ticket_policy_unavailable:'模式设置暂时无法保存，请稍后重试或联系管理员。',personal_acquisition_deferred:'当前账号暂不可用，正在等待恢复。',
+      update_handoff_unsupported:'当前版本暂不支持保留账号状态更新，请通过 CPA 插件管理完成首次升级。',update_handoff_expired:'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_conflict:'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_unconfirmed:'账号状态尚未恢复，正在确认。',update_busy:'当前请求尚未结束，请稍后再更新。',update_metadata_unavailable:'暂时无法检查新版本，请稍后重试。',update_metadata_invalid:'更新包信息无法确认，请稍后重试。',update_version_changed:'新版本信息已变化，请重新检查更新。',update_not_available:'当前没有可用的新版本。',update_source_setup:'请先在 CPA 插件商店添加官方插件源，再重新检查更新。',update_host_unavailable:'当前 CPA 暂不支持在这里更新，请通过插件管理更新。',update_catalog_unconfirmed:'CPA 尚未确认新版本，请稍后再试。',relay_concurrency_mode_invalid:'请选择手动或自动设置并发。',account_priorities_invalid:'优先级须为 0–999999 的整数。',account_priority_unsupported:'优先级暂未确认，已保存的设置会在恢复后自动生效。',account_priority_mismatch:'优先级尚未获服务确认，正在重新同步。',rotation_policy_invalid:'并发账号数需为 0–1000；开启后连续无票分钟数需为 1–1440。',rotation_policy_unsupported:'并发账号设置暂未确认，已保留你的配置并等待恢复。',rotation_policy_mismatch:'并发设置尚未获网关确认，请稍后刷新。',charge_mode_invalid:'请选择按 Token 或按成功请求次数计费。',billing_selection_unsupported:'当前网关暂不支持按成功请求计费，请联系管理员升级。',billing_selection_mismatch:'所选计费方式尚未获网关确认。',billing_mode_changed:'计费方式已变更，请稍后重新发起尚未发送的请求。',ticket_mode_invalid:'请选择个人模式或中转模式。',ticket_mode_unsupported:'当前服务不支持此模式，请联系管理员升级。',ticket_mode_mismatch:'所选模式尚未生效，请稍后刷新。',ticket_policy_unavailable:'模式设置暂时无法保存，请稍后重试或联系管理员。',personal_acquisition_deferred:'当前账号暂不可用，正在等待恢复。',
       state_product_mismatch:'该数据目录属于另一个插件，请使用此插件独立的数据目录。',
 
 
@@ -987,7 +987,7 @@
           const row=doc.createElement('li'),name=doc.createElement('div'),detail=doc.createElement('span'),badge=doc.createElement('span'),avatar=doc.createElement('span');
           avatar.className='avatar';avatar.textContent=String(indexes.indexOf(index)+1).padStart(2,'0');
           name.className='name';name.textContent=account.label||'未命名 Codex 账号';
-          detail.className='subline';detail.textContent='优先级 '+(saved.account_priorities?.[index]??observedAccount?.scheduling_priority??0)+(view.detail?' · '+view.detail:'');
+          detail.className='subline';detail.textContent='优先级 '+(saved.account_priorities?.[index]??observedAccount?.scheduling_priority??0)+(status?.account_priority_supported===false?'（待确认）':'')+(view.detail?' · '+view.detail:'');
           const modelStates=doc.createElement('div');modelStates.className='model-readiness';renderModelReadiness(modelStates,observedAccount,fresh,!account.disabled&&!released&&status?.paused!==true);name.append(detail,modelStates);badge.className='badge';badge.dataset.ready=String(view.group==='ready');badge.textContent=view.label;row.append(avatar,name,badge);summary.append(row);
         }
         show('overviewAccountsEmpty',indexes.length===0);text('overviewAccountsEmpty','尚未选择账号。打开“账号”页选择账号，再保存并连接。');
@@ -1045,6 +1045,7 @@
         const at=Date.parse(status&&status.relay_at); text('refreshNote',fresh&&Number.isFinite(at)?'最近网关同步 '+new env.Date(at).toLocaleTimeString('zh-CN')+' · 状态每 5 秒刷新':'状态每 5 秒刷新；表单草稿会保留。');
         const observed=Date.parse(status?.relay_observed_at||status?.relay_at),observationNote=!fresh&&!released&&status?.paused!==true?(Number.isFinite(observed)&&env.Date.now()-observed<=usageMaxAge?'连接状态待确认 · 上次确认 '+usageTime(new env.Date(observed).toISOString())+'。旧状态仅供查看，当前可用票仍待网关确认。':'连接状态待确认，正在自动恢复。账号选择和优先级草稿会保留。'):'';
         text('accountObservation',observationNote);show('accountObservation',!!observationNote);
+        text('priorityHelp',status?.account_priority_supported===false?'优先级暂未确认，已保存的设置会在恢复后自动生效；账号选择和停用设置仍然有效。':'优先级数字越小越优先；相同数字由系统自动选优。保存并获服务确认后生效，不会中断正在使用的账号。');
         renderAccounts(); renderOverview(fresh,compatible); actions();
       }
       function makeRow(index) {

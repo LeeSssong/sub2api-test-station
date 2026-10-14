@@ -126,7 +126,7 @@
   <script id="ticket-console-script">
   (function (root) {
     'use strict';
-    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.6.0","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
+    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.6.2","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
     const ID = PRODUCT.id;
     const CONFIG = '/v8/management/config/plugins/configs/' + ID;
     const MANAGEMENT = '/v0/management/plugins/' + ID;
@@ -235,8 +235,11 @@
     function normalConfig(value) {
       if (!object(value)) throw new ConsoleError('config_invalid');
       value={...value};delete value.probe_model;delete value.probe_effort;
-      for(const field of ['control_timeout_seconds','sync_timeout_seconds'])if(value[field]==null||value[field]===0)value[field]=defaults[field];
-      return {...defaults,...value,charge_mode:value.charge_mode||'token',relay_concurrency_mode:value.relay_concurrency_mode||'manual',relay_active_accounts:value.relay_active_accounts??0,relay_no_ticket_minutes:Number(value.relay_active_accounts||0)>0||value.relay_concurrency_mode==='auto'?(value.relay_no_ticket_minutes||5):0,ticket_mode:typeof value.ticket_mode==='string'&&value.ticket_mode.trim()?value.ticket_mode.trim():'personal', gateway_url:typeof value.gateway_url==='string'?value.gateway_url.trim().replace(/\/+$/,''):'', relay_models:Array.isArray(value.relay_models)?value.relay_models.filter(model=>ticketModels.includes(model)):defaults.relay_models.slice(), selected_auth_indexes:list(value.selected_auth_indexes).slice()};
+      // Native configuration expands omitted/null/zero timing values before
+      // publishing status. Compare that same meaning without rewriting storage.
+      for(const field of ['lease_seconds','sync_seconds','request_timeout_seconds','control_timeout_seconds','sync_timeout_seconds'])if(value[field]==null||value[field]===0)value[field]=defaults[field];
+      if(typeof value.installation_id==='string')value.installation_id=value.installation_id.trim();
+      return {...defaults,...value,charge_mode:value.charge_mode||'token',relay_concurrency_mode:value.relay_concurrency_mode||'manual',relay_active_accounts:value.relay_active_accounts??0,relay_no_ticket_minutes:Number(value.relay_active_accounts||0)>0||value.relay_concurrency_mode==='auto'?(value.relay_no_ticket_minutes||5):0,ticket_mode:typeof value.ticket_mode==='string'&&value.ticket_mode.trim()?value.ticket_mode.trim():'personal', gateway_url:typeof value.gateway_url==='string'?value.gateway_url.trim().replace(/\/+$/,''):'', relay_models:Array.isArray(value.relay_models)?value.relay_models.filter(model=>ticketModels.includes(model)):value.relay_models===null?[]:defaults.relay_models.slice(), selected_auth_indexes:list(value.selected_auth_indexes).slice()};
     }
     // Keep large ledger integers exact without changing digits inside JSON strings.
     function parseJSON(source) {
@@ -983,13 +986,19 @@
       }
       function workerServiceConfirmed() {
         if(stale||awaiting||released||!status||status.paused===true||status.enabled===false||status.activated!==true||status.worker_service_confirmed!==true||!configMatches(status.config,saved)||status.update_confirmation_required===true||status.update_requires_reconnect===true||status.update_handoff_state==='pending')return false;
-        const at=Date.parse(status.worker_service_observed_at);return Number.isFinite(at)&&at>0&&at<=env.Date.now();
+        // The current authenticated runtime owns confirmation expiry; a browser
+        // clock offset must not turn its valid service confirmation into failure.
+        const at=Date.parse(status.worker_service_observed_at);return Number.isFinite(at)&&at>0;
       }
       function confirmedAccountObservation(account) {
         return workerServiceConfirmed()&&account?.service_confirmed===true&&object(account.last_confirmed)?account.last_confirmed:null;
       }
       function gatewaySyncDelayed() { return ['gateway_unavailable','gateway_transport_error','gateway_reply_invalid','relay_unavailable'].includes(status?.last_error); }
       function workerControlError() { return ['worker_service_expired','worker_reply_invalid','worker_protocol_unavailable','worker_transport_error','worker_allocation_draining','worker_allocation_unavailable','worker_allocation_exhausted','worker_allocation_invalid'].includes(status?.last_error); }
+      function activationKnown() {
+        if(typeof status?.activated_known==='boolean')return status.activated_known;
+        const balance=status?.balance;return object(balance)&&balance.installation_id===saved?.installation_id&&typeof balance.authorization_id==='string'&&balance.authorization_id.length>0;
+      }
       function renderOverview(fresh,compatible) {
         const indexes=list(saved.selected_auth_indexes),statuses=new Map(list(status&&status.accounts).map(account=>[account.auth_index,account])),names=new Map(directory.map(account=>[account.auth_index,account]));
         const policy=saved.waiting_policy||{},seconds=policy.ticket_wait_seconds,automatic=saved.relay_concurrency_mode==='auto';
@@ -1030,9 +1039,9 @@
       function renderStatus() {
         if (!saved) return;
         ensureUsageScope();
-        if (awaiting&&status&&configMatches(status.config,awaiting)) { awaiting=null; notice(status.activated===true?'配置已生效，可继续使用原模型名发起请求。':'配置已生效，请在“余额充值”页充值后开始使用。','success'); }
+        if (awaiting&&status&&configMatches(status.config,awaiting)) { awaiting=null; notice(status.activated===true?'配置已生效，可继续使用原模型名发起请求。':activationKnown()?'配置已生效，请在“余额充值”页充值后开始使用。':'配置已生效，正在恢复已有授权并读取服务额度。','success'); }
         const configured=!!status&&status.configured===true, fresh=freshRelay(), serviceConfirmed=workerServiceConfirmed(),accounts=list(status&&status.accounts);
-        show('setupSteps',!stale&&(!configured||status?.activated!==true));
+        show('setupSteps',!stale&&(!configured||activationKnown()&&status?.activated!==true));
         const chosenIndexes=new Set(list(saved.selected_auth_indexes)),disabledIndexes=new Set(directory.filter(a=>a.disabled).map(a=>a.auth_index));
         const ready=accounts.filter(a=>a.ready===true&&accountReadiness(a,fresh).rows.some(row=>row.phase==='ready')&&fresh&&(!a.observation||a.observation==='fresh')&&chosenIndexes.has(a.auth_index)&&!disabledIndexes.has(a.auth_index)&&!['rate_limited','quota_exhausted'].includes(a.upstream_state)).length;
         const historicalComplete=serviceConfirmed&&[...chosenIndexes].every(index=>disabledIndexes.has(index)||confirmedAccountObservation(accounts.find(a=>a.auth_index===index)));
@@ -1041,7 +1050,8 @@
         if (awaiting) { label='正在应用'; note='等待插件重新加载'; }
         else if (released||status&&status.paused===true) { label='已暂停'; note='可在页尾恢复已保存配置'; }
         else if (stale) { label='状态待确认'; note='服务状态暂时无法读取'; }
-        else if (configured&&status.activated!==true) { label='未激活'; note='使用 CDK 充值余额'; }
+        else if (configured&&status.activated!==true&&activationKnown()) { label='未激活'; note='使用 CDK 充值余额'; }
+        else if (configured&&status.activated!==true) { label='连接待确认'; note='正在恢复已有授权并读取服务额度，请稍候。'; }
         else if (configured&&serviceConfirmed) { label='服务已连接'; note='工作节点服务连接已确认 · 上次确认 '+usageTime(status.worker_service_observed_at); }
         else if (configured&&status.last_error&&!gatewaySyncDelayed()) { label='连接待恢复'; note=message(status.last_error); }
         else if (configured) { label='连接待确认'; note='正在确认工作节点的服务连接。'; }
@@ -1052,14 +1062,14 @@
         const historical=!fresh&&serviceConfirmed;
         text('gatewayState',label); text('gatewayNote',note);
         const serviceNote=configured&&!stale&&!awaiting&&!released&&status?.paused!==true?(gatewaySyncDelayed()?'状态更新暂时延迟，正在自动恢复。':workerControlError()?message(status.last_error):''):'';
-        text('workerServiceNote',serviceNote);show('workerServiceNote',!!serviceNote);
+        text('workerServiceNote',serviceNote===note?'':serviceNote);show('workerServiceNote',!!serviceNote&&serviceNote!==note);
         text('readyLabel',historical&&historicalComplete?'上次可用账号':'实际可服务账号');text('readyCount',historical?historicalComplete?historicalReady+' / '+list(saved.selected_auth_indexes).length:'—':stale||!fresh&&!released&&status?.paused!==true?'—':ready+' / '+list(saved.selected_auth_indexes).length);
         text('readyNote',fresh?(effective==='personal'?'个人模式 · 自动保持可用账号':'中转模式 · 自动准备所选账号'):historical?'上次确认 · '+usageTime(status.worker_service_observed_at):'可用状态尚未确认');
         const waiting=status&&status.waiting_requests, observedWaiting=!stale&&!awaiting&&!released&&status&&status.paused!==true&&Number.isSafeInteger(waiting)&&waiting>0;
         text('waitingRequests',observedWaiting?'等待可用账号 · '+count(waiting)+' 个请求':'');show('waitingRequests',observedWaiting);
         const balance=status&&status.balance, confirmed=object(balance)&&balance.installation_id===saved.installation_id&&typeof balance.authorization_id==='string'&&balance.authorization_id.length>0;
         const compatible=confirmed&&monetary(balance);
-        const runtimeNote=status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'当前服务额度不足，正在自动更新；持续出现时请检查充值状态。':!stale&&workerControlError()?message(status.last_error):!stale&&gatewaySyncDelayed()?'网关状态更新暂时延迟，正在自动恢复。'+(serviceConfirmed?'已确认的服务连接仍有效。':'节点服务状态尚待确认。'):!stale&&status?.last_error==='egress_unavailable'?'当前服务连接暂不可用，正在重试。':'';
+        const runtimeNote=status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'当前服务额度不足，正在自动更新；持续出现时请检查充值状态。':!stale&&status?.last_error==='egress_unavailable'?'当前服务连接暂不可用，正在重试。':'';
         text('runtimeNotice',runtimeNote);show('runtimeNotice',!!runtimeNote);
         text('available',compatible?summaryUSD(balance.available_usd):'—'); text('consumed',compatible?usd(balance.consumed_usd):'—');
         const balanceAt=Date.parse(status?.balance_observed_at),balanceStamp=Number.isFinite(balanceAt)&&balanceAt>0&&balanceAt<=env.Date.now()?' · '+usageTime(status.balance_observed_at):'';

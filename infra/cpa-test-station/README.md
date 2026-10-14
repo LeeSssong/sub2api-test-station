@@ -8,9 +8,9 @@
 
 后续部署只推广干净且已推送的 main；静态页面、Caddyfile 使用原子替换和 Caddy 平滑 reload，无需重启 CPA。切换流程见 `ops/switch-cpa-test-cpamc.py`。下方为旧部署说明，仅用于历史参考，不得据此重新启用 CPAMP。
 
-## 当前票据网关（2026-10-14）
+## 当前票据网关（2026-10-15）
 
-后端与边缘兼容页面均升级为官方 v1.6.0，来源和校验和记录在 `ticket-source.json`。`ticket-gateway-ui.html` 来自已校验的官方 Linux AMD64 插件包，保留已有 `enc::v2::` 原生会话适配。该页面由 Caddy 静态提供，因此后续插件升级必须同时核对并更新边缘页面，不能只验证后端注册版本。页面更新使用干净且已推送 main 的文件原子替换，无需重启 CPA 或 Caddy。
+后端与边缘兼容页面均升级为官方 v1.6.2，来源和校验和记录在 `ticket-source.json`。`ticket-gateway-ui.html` 来自已校验的官方 Linux AMD64 插件包，保留已有 `enc::v2::` 原生会话适配。该页面由 Caddy 静态提供，因此后续插件升级必须同时核对并更新边缘页面，不能只验证后端注册版本。页面更新使用干净且已推送 main 的文件原子替换，无需重启 CPA 或 Caddy。
 
 ## 历史部署说明
 

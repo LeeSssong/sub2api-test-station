@@ -42,6 +42,19 @@ def verify_files(root, manifest):
             raise ValueError('artifact mismatch: ' + name)
 
 
+def config_identity(value):
+    """Ignore only Caddy's automatic self-config hide path, derived from input name."""
+    if isinstance(value, list):
+        return [config_identity(item) for item in value]
+    if isinstance(value, dict):
+        result = {key: config_identity(item) for key, item in value.items()}
+        if result.get('handler') == 'file_server' and result.get('hide') in (
+                ['./-'], ['/etc/caddy/Caddyfile']):
+            result['hide'] = ['<automatic-config-input>']
+        return result
+    return value
+
+
 def public_checks(manifest):
     for path in ('/health', '/readyz'):
         with urllib.request.urlopen('http://127.0.0.1' + path, timeout=15) as response:
@@ -75,7 +88,7 @@ def deploy(bundle):
     old = config_path.read_text()
     adapted = json.loads(run(['docker', 'exec', '-i', cid, 'caddy', 'adapt', '--config', '-', '--adapter', 'caddyfile'], old.encode()))
     loaded = json.loads(run(['docker', 'exec', cid, 'wget', '-qO-', 'http://127.0.0.1:2019/config/']))
-    if adapted != loaded:
+    if config_identity(adapted) != config_identity(loaded):
         raise ValueError('persisted routing differs from live routing')
     service = 'docs-' + commit[:12]
     config = docs_route(old, service)

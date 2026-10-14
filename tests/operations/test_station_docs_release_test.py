@@ -13,6 +13,14 @@ BASE = (REPO / 'infra/independent-test-station/Caddyfile').read_text()
 
 
 class DocsReleaseTest(unittest.TestCase):
+    def test_config_input_filename_is_not_a_route_change(self):
+        identity = MODULE['config_identity']
+        stdin = {'handler': 'file_server', 'hide': ['./-']}
+        filename = {'handler': 'file_server', 'hide': ['/etc/caddy/Caddyfile']}
+        self.assertEqual(identity(stdin), identity(filename))
+        self.assertNotEqual(identity(stdin), identity({'handler': 'file_server', 'hide': ['/private']}))
+        self.assertNotEqual(identity(stdin), identity(dict(filename, root='/other-root')))
+
     def test_route_changes_only_docs_and_supports_next_release(self):
         route = MODULE['docs_route']
         candidate = route(BASE, 'docs-0123456789ab')

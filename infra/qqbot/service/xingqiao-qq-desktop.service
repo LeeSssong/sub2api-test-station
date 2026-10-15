@@ -1,0 +1,10 @@
+[Unit]
+Description=QQ interactive desktop over local SSH tunnel
+After=xingqiao-qq.service
+[Service]
+ExecStart=/usr/bin/python3 /opt/qqbot-native/current/infra/qqbot/service/qq-desktop.py
+Restart=always
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,10 @@
+[Unit]
+Description=Local-only browser access to QQ desktop
+After=xingqiao-qq-desktop.service
+[Service]
+ExecStart=/usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:16097 127.0.0.1:15900
+Restart=on-failure
+RestartSec=2
+[Install]
+WantedBy=multi-user.target
+

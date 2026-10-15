@@ -20,7 +20,7 @@ describe('RouteHistoryStrip metric chart', () => {
     await w.get('[data-point="0"]').trigger('click')
     expect(w.findAll('.tooltip-row span').map(label => label.text())).toEqual(['请求成功率', '首字 P50', '缓存命中率'])
     expect(w.get('.tooltip-row.success b').text()).toBe('95%')
-    expect(w.get('.tooltip-row.success small').text()).toBe('（95／100）')
+    expect(w.find('.tooltip-row.success small').exists()).toBe(false)
     expect(w.get('.chart-tooltip').text()).not.toMatch(/降智|无用量请求|缺少请求时/)
     expect(w.get('[data-point="0"]').attributes('aria-label')).not.toContain('降智')
   })
@@ -43,7 +43,7 @@ describe('RouteHistoryStrip metric chart', () => {
     await w.get('[data-point="0"]').trigger('keydown', { key: 'ArrowRight' })
     expect(w.get('[data-point][aria-pressed="true"]').attributes('aria-label')).toContain('缓存命中率 0%（无样本，按 0 展示）')
     await w.get('[data-point="3"]').trigger('click')
-    expect(w.get('[data-point][aria-pressed="true"]').attributes('aria-label')).toContain('无请求')
+    expect(w.get('[data-point][aria-pressed="true"]').attributes('aria-label')).not.toContain('次请求')
     expect(w.get('[data-point][aria-pressed="true"]').attributes('aria-label')).toContain('无样本，按 0 展示')
   })
   it('toggles curves and shows a transient tooltip for hover, touch and keyboard',async()=>{

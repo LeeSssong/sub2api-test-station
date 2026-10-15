@@ -129,6 +129,13 @@
           </fieldset>
           <fieldset class="rule-section">
             <legend>画图配置</legend>
+            <p class="rule-help">每幅作品用一张截图自动判断动作、场景和明显结构错误；每次最多请求一次，不检查动画。未单独配置时沿用糖果题判题模型（需支持看图）。</p>
+            <label class="judge-switch"><input type="checkbox" :checked="!!draft.drawing_judge" @change="draft.drawing_judge = ($event.target as HTMLInputElement).checked ? { group_id: 0, model_id: '', prompt: '' } : undefined" />单独配置视觉判题模型</label>
+            <div v-if="draft.drawing_judge" class="rule-fields candy-field">
+              <label>视觉判题分组<select v-model.number="draft.drawing_judge.group_id" class="input" required><option :value="0" disabled>选择分组</option><option v-for="g in groups.filter(g => ['openai','anthropic'].includes(g.platform))" :key="g.id" :value="g.id">{{ g.name }}</option></select></label>
+              <label>视觉判题模型<input v-model.trim="draft.drawing_judge.model_id" class="input" required maxlength="100" /></label>
+            </div>
+            <p v-if="!draft.drawing_judge && !useJudge" class="rule-help">尚未配置视觉判题模型；作品会显示判定异常，糖果题仍使用内置校验。</p>
             <div class="flex justify-between">
               <span>提示词模板</span
               ><button
@@ -352,6 +359,7 @@ async function save() {
   if (useJudge.value && (!judge.value.group_id || !judge.value.model_id || !judge.value.prompt)) {
     formError.value = "请填写判题分组、模型与提示词"; return;
   }
+  if (draft.value.drawing_judge && (!draft.value.drawing_judge.group_id || !draft.value.drawing_judge.model_id)) { formError.value = "请填写视觉判题分组和模型"; return; }
   if (
     !draft.value.drawing_prompt.includes("{动作}") ||
     !draft.value.drawing_prompt.includes("{场景}")

@@ -55,3 +55,11 @@ describe("intelligence detail", () => {
     wrapper.unmount();
   });
 });
+it('shows drawing failure separately from successful generation and preserves preview', () => {
+ const drawing: IntelligenceResult = {...result,kind:'pelican',verdict:'passed',source:'intelligence_live',response_text:'<svg viewBox="0 0 100 100"><circle r="20"/></svg>',drawing_judgment:{status:'incorrect',reason:'人物与载具分离'}};
+ const w=mount(Dialog,{props:{group,summary:drawing,result:drawing,loading:false,error:''}});
+ expect(w.find('iframe').exists()).toBe(true);
+ expect(w.find('.iq-drawing-ribbon').text()).toBe('未通过');
+ expect(w.find('.iq-result-line').text()).toContain('生成成功');
+ expect(w.text()).toContain('人物与载具分离');w.unmount();
+});

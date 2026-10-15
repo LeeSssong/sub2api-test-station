@@ -1,0 +1,15 @@
+{
+  "version": "1.6.3",
+  "artifact": {
+    "goarch": "amd64",
+    "goos": "linux",
+    "sha256": "6474dd829babbf4206ffb5bb45a50a9a75a69d1cce681b74f9440afd1ae2a747",
+    "size": 7082235,
+    "url": "https://ticket.codingmiao.site/downloads/cliproxy-ticket/1.6.3/cliproxy-ticket-gateway-1.6.3-linux-amd64.store.zip"
+  },
+  "binary_sha256": "bf32141706c970738c740b90d544b9c118c8dbadf5d83830e89e84aad1735e2c",
+  "ui_sha256": "06e9756ed9f62a1d1639453ea75edb0c52c2af991f5c30e1d34cfb40a172d0fe",
+  "ui_source": "Compatibility UI rebuilt from the verified official 1.6.3 Linux AMD64 release; nativeStoredValue enc::v2 compatibility retained",
+  "hot_load_path": "plugins/cliproxy-ticket-gateway-v1.6.3.so",
+  "procedure": "User-authorized brief CPA outage: stop gateway, install verified versioned host artifact, update only store.version, atomically update edge UI, start gateway and verify registration/readiness; retain previous artifact and configuration for rollback."
+}

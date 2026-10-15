@@ -182,6 +182,13 @@ async function load() {
   loading.value = true;
   try {
     view.value = await intelligenceTestsAPI.dashboard(controller.signal);
+    if (selection.value) {
+      const fresh = view.value.groups.find(g => g.id === selection.value?.group.id)?.results.find(r => r.id === selection.value?.summary.id);
+      if (fresh) {
+        selection.value = { ...selection.value, summary: fresh };
+        if (detail.value?.id === fresh.id) detail.value = { ...detail.value, verdict: fresh.verdict, error_kind: fresh.error_kind, drawing_judgment: fresh.drawing_judgment };
+      }
+    }
     updated.value = Date.now();
     error.value = "";
   } catch {

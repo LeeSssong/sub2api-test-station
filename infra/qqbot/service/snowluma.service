@@ -1,0 +1,22 @@
+[Unit]
+Description=SnowLuma official QQ protocol service
+After=network-online.target xingqiao-qq.service
+Wants=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=/opt/qqbot-native/runtime
+Environment=HOME=/opt/qqbot-native/home
+Environment=SNOWLUMA_ACCEPT_EULA=1
+Environment=SNOWLUMA_ACCEPT_PRIVACY=1
+Environment=SNOWLUMA_HOOK_AUTOLOAD=1
+Environment=SNOWLUMA_WEBUI_HOST=127.0.0.1
+Environment=SNOWLUMA_WEBUI_PORT=16098
+UMask=0077
+ExecStart=/opt/qqbot-native/runtime/launcher.sh
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/opt/qqbot-native/logs/snowluma.log
+StandardError=append:/opt/qqbot-native/logs/snowluma.log
+[Install]
+WantedBy=multi-user.target
+

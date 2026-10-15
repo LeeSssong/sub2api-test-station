@@ -145,14 +145,16 @@ type pelicanGroupTestGroups interface {
 }
 
 type PelicanGroupTestService struct {
-	judgeQuality func(context.Context, int64, *PelicanTestConfig, string) *QualityJudgment
-	repo         PelicanGroupTestRepository
-	groups       pelicanGroupTestGroups
-	router       pelicanGroupRouter
-	runAccount   func(ctx context.Context, accountID int64, model string, cfg *PelicanTestConfig) (*ScheduledTestResult, error)
-	showcase     *PelicanShowcaseService
-	billing      *BillingService
-	now          func() time.Time
+	judgeDrawing  func(context.Context, int64, *PelicanTestConfig, string) *QualityJudgment
+	renderDrawing func(context.Context, string) (string, error)
+	judgeQuality  func(context.Context, int64, *PelicanTestConfig, string) *QualityJudgment
+	repo          PelicanGroupTestRepository
+	groups        pelicanGroupTestGroups
+	router        pelicanGroupRouter
+	runAccount    func(ctx context.Context, accountID int64, model string, cfg *PelicanTestConfig) (*ScheduledTestResult, error)
+	showcase      *PelicanShowcaseService
+	billing       *BillingService
+	now           func() time.Time
 	// runs tracks background runs so tests can wait for them.
 	runs sync.WaitGroup
 }
@@ -372,18 +374,27 @@ func (s *PelicanGroupTestService) execute(plan *PelicanGroupTestPlan, until time
 	// Persist with a fresh context so timeout failures are still recorded.
 	saveCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
+	var drawings []*PelicanGroupTestResult
 	for _, result := range results {
+		prepareDrawingJudgment(result)
 		saved, err := s.repo.CreateResult(saveCtx, result)
 		if err != nil {
 			logger.LegacyPrintf("service.pelican_group_test", "plan=%d save failed: %v", plan.ID, err)
 			continue
 		}
 		s.showcase.PublishGroupResult(saveCtx, plan.GroupID, saved)
+		drawings = append(drawings, saved)
 	}
-	if err := s.repo.PruneResults(saveCtx, plan.ID, intelligenceHistoryKeep(plan)); err != nil {
+	for _, saved := range drawings {
+		s.completeDrawingJudgment(saved)
+	}
+	// Judging may outlive the initial save context.
+	finishCtx, finishCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer finishCancel()
+	if err := s.repo.PruneResults(finishCtx, plan.ID, intelligenceHistoryKeep(plan)); err != nil {
 		logger.LegacyPrintf("service.pelican_group_test", "plan=%d prune failed: %v", plan.ID, err)
 	}
-	if err := s.repo.Finish(saveCtx, plan.ID, until, s.now()); err != nil {
+	if err := s.repo.Finish(finishCtx, plan.ID, until, s.now()); err != nil {
 		logger.LegacyPrintf("service.pelican_group_test", "plan=%d finish failed: %v", plan.ID, err)
 	}
 }

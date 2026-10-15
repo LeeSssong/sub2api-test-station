@@ -436,6 +436,9 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	} else if priority < 1 {
 		return nil, errors.New("priority must be >= 1")
 	}
+	if err := ValidateOpenAIRequestTimezoneExtra(input.Platform, accountExtra); err != nil {
+		return nil, err
+	}
 	accountExtra = MergeOpenAICodexTicketExtra(accountExtra, nil)
 	if input.Platform == PlatformTypeSafe && input.Type != AccountTypeAPIKey {
 		return nil, errors.New("typesafe accounts only support apikey credentials")
@@ -700,6 +703,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		normalizedExtra, err = normalizeOpenAIAutoResetCreditExtra(account.Platform, effectiveType, account.IsShadow(), normalizedExtra)
 		if err != nil {
+			return nil, err
+		}
+		if err := ValidateOpenAIRequestTimezoneExtra(account.Platform, normalizedExtra); err != nil {
 			return nil, err
 		}
 		if err := ValidateUpstreamRequestIDHeaderExtra(normalizedExtra); err != nil {

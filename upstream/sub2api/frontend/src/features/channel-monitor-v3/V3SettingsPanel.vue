@@ -188,9 +188,6 @@
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV3.admin.preview') }}</h3>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('channelMonitorV3.admin.previewHint') }}</p>
           </div>
-          <router-link v-if="siteMode === 'v3'" to="/monitor" target="_blank" class="btn btn-secondary btn-sm">
-            <Icon name="externalLink" size="xs" />{{ t('channelMonitorV3.admin.openUserPage') }}
-          </router-link>
         </div>
         <div class="bg-gray-50/80 p-4 dark:bg-dark-900/40 sm:p-5">
           <StatusPage :status="preview" :loading="previewLoading" @refresh="loadPreview(previewEnd)" @navigate="loadPreview" @open-incidents="showIncidents = true" />

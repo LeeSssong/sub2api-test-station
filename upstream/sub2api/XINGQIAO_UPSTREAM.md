@@ -28,3 +28,13 @@ this snapshot and must be reviewed when importing a newer upstream release.
 - Previous imported source: `11be589504b482d77827ab383b4b53f777241238` (2.10.1)
 - Method: 510 changed files imported from verified Git snapshots with three-way content merges; external history remains outside project main. Local billing/quota/admission, singleton roles, monitor-v4/SLA and user shell retained; Ent and Wire regenerated. Existing migration SQL bytes preserved.
 - This release uses the user-authorized exact online migration pair `10a94ee6…` → `e5d79ffa…`; four new migrations have bounded lock/statement timeouts. Backward application recovery keeps schema/data and blocks incompatible active TOTP/Excel work, restart renewal orders and new provider platforms.
+
+## Current fork integration — 2026-10-12
+
+- Repository: `https://github.com/ranxi2001/sub2api`
+- Release: `v2.10.5`
+- Source commit: `d977e7a5e24e5536db6ce8b8478743e0c4b11f77`
+- Previous imported source: `ff9198947a70a83c59b8448f5ef13909119cfe7c` (2.10.4).
+- Three-way source snapshot import: 97 changed upstream files; preserve local billing/quota/admission, Fast scheduler capabilities, singleton roles, monitoring and user shell. Migration SQL and runtime dependency inputs unchanged.
+- Restore ordinary-user TPS using upstream total-duration throughput, independent of admin-only timing details. Align calculator, hints and boundary tests with this release.
+- Production branch commits after v2.10.5 are excluded. Test station is not part of this deployment.

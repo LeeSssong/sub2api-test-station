@@ -83,6 +83,11 @@ func intelligencePublicResult(r *PelicanGroupTestResult, detail bool) *Intellige
 		out.ModelID = cfg.ModelID
 		out.ReasoningEffort = cfg.ReasoningEffort
 		out.IntelligenceResultMetadata = cfg.IntelligenceResult
+		if cfg.IntelligenceResult != nil {
+			m := *cfg.IntelligenceResult
+			m.DrawingJudgment = drawingJudgmentForDisplay(cfg.IntelligenceResult)
+			out.IntelligenceResultMetadata = &m
+		}
 		if cfg.QuestionKind != "" {
 			out.Kind = cfg.QuestionKind
 		}

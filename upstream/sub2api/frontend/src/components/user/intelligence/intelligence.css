@@ -118,7 +118,7 @@ button.iq-bar:hover { filter: brightness(1.2); }
 .iq-close { position: absolute; right: 12px; top: 12px; width: 36px; height: 36px; font-size: 24px; color: var(--xq-secondary, var(--iq-secondary)); background: transparent; border: 0; line-height: 1; border-radius: 8px; }
 .iq-close:hover { color: var(--xq-text, var(--iq-text)); background: var(--xq-raised, var(--iq-raised)); }
 .iq-dialog-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px 24px; scrollbar-color: var(--xq-border, var(--iq-border)) var(--xq-surface, var(--iq-surface)); scrollbar-width: thin; }
-.iq-detail-art { width: 100%; aspect-ratio: 1.94; margin-bottom: 20px; overflow: hidden; background: var(--xq-depth, var(--iq-depth)); border-radius: 8px; }
+.iq-detail-art { position: relative; width: 100%; aspect-ratio: 1.94; margin-bottom: 20px; overflow: hidden; background: var(--xq-depth, var(--iq-depth)); border-radius: 8px; }
 .iq-result-line { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
 .iq-dialog h3 { color: var(--xq-secondary, var(--iq-secondary)); font-size: 14px; font-weight: 600; margin: 24px 0 8px; }
 .iq-question, .iq-answer { background: var(--xq-depth, var(--iq-depth)); border: 1px solid var(--xq-line, var(--iq-line)); border-radius: 8px; padding: 12px 16px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }

@@ -1,0 +1,36 @@
+name: cpa-test-station-keeper
+
+services:
+  cpa-usage-keeper:
+    image: ghcr.io/willxup/cpa-usage-keeper@sha256:227b8755e201e3cad58c414cca3291836f27cd0d5e2a5bbd3e1181767a0955bc
+    restart: unless-stopped
+    env_file:
+      - ${CPA_TEST_ROOT:-/opt/cpa-test-station}/secrets/keeper.env
+    environment:
+      CPA_BASE_URL: http://cpa-gateway:8317
+      CPA_PUBLIC_URL: https://cpa-test.xingqiaolab.top
+      APP_BASE_PATH: /keeper
+      APP_PORT: "8080"
+      AUTH_ENABLED: "true"
+      WORK_DIR: /data
+      TZ: Asia/Shanghai
+    volumes:
+      - keeper-data:/data
+    networks: [cpa-test]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, "http://127.0.0.1:8080/keeper/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    logging:
+      options: {max-size: "10m", max-file: "3"}
+
+networks:
+  cpa-test:
+    external: true
+    name: cpa-test-station-network
+
+volumes:
+  keeper-data:
+    name: cpa-test-station-keeper-data

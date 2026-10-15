@@ -245,3 +245,93 @@ func TestOpenAIStreamTimingRetainsUnsupportedContentEvidenceWithoutPayload(t *te
 		require.Zero(t, s.Streams[0].Events[0].TTFTCount)
 	})
 }
+
+func TestOpenAIChatBridgeStreamTimingEvidence(t *testing.T) {
+	for _, async := range []bool{false, true} {
+		for _, disconnected := range []bool{false, true} {
+			t.Run(fmt.Sprintf("async=%v/disconnected=%v", async, disconnected), func(t *testing.T) {
+				gin.SetMode(gin.TestMode)
+				collector := requesttiming.New(time.Now(), 0)
+				ctx := requesttiming.With(context.Background(), collector)
+				req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
+				req, outer := requesttiming.StartAttempt(req, 541, 0)
+				req, physical := requesttiming.StartTransport(req)
+				wire := "data: {\"type\": \"response.created\"}\n\ndata: {\"type\": \"response.output_text.delta\", \"delta\": \"private-answer\"}\n\ndata: {\"type\": \"response.completed\", \"response\": {\"usage\": {\"input_tokens\": 10, \"output_tokens\": 20}}}\n\n"
+				resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(wire)), Request: req}
+				physical.Response(resp, nil)
+				outer.Response(resp, nil)
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = req
+				if disconnected {
+					c.Writer = &openAIChatFailingWriter{ResponseWriter: c.Writer, failAfter: 0}
+				}
+				cfg := &config.Config{}
+				if async {
+					cfg.Gateway.StreamKeepaliveInterval = 1
+				}
+				svc := &OpenAIGatewayService{cfg: cfg}
+				result, err := svc.handleChatStreamingResponse(ctx, resp, c, &Account{ID: 541, Platform: PlatformOpenAI}, "model", "model", "model", time.Now(), 0)
+				require.NoError(t, err)
+				require.Equal(t, 20, result.Usage.OutputTokens)
+				require.NotNil(t, result.FirstTokenMs)
+				collector.Finish(200, false)
+				collector.WhenFinished(func(s requesttiming.Snapshot) {
+					require.Len(t, s.Streams, 1, "Chat to Responses bridge needs read and event evidence")
+					require.Equal(t, 2, s.Streams[0].Attempt)
+					require.EqualValues(t, len(wire), s.Streams[0].ReadBytes)
+					require.NotNil(t, s.Streams[0].FirstReadMS)
+					require.Equal(t, 3, s.Streams[0].EventCount)
+					require.Equal(t, "first_data", s.TTFTMode)
+					require.Equal(t, 1, s.Streams[0].Events[0].TTFTCount)
+					require.Equal(t, "completed", s.Terminal)
+					require.Equal(t, disconnected, s.ClientDisconnect)
+					if disconnected {
+						require.Equal(t, "client_disconnected", s.Outcome)
+						require.Contains(t, s.Events, "client_write_error")
+						require.NotContains(t, s.Events, "first_output_flush")
+					} else {
+						require.Equal(t, "success", s.Outcome)
+						require.Contains(t, s.Events, "first_output_flush")
+					}
+					raw, err := json.Marshal(s)
+					require.NoError(t, err)
+					require.NotContains(t, string(raw), "private-answer")
+				})
+			})
+		}
+	}
+}
+
+func TestOpenAIChatBridgeDistinguishesReadFromFrameDelay(t *testing.T) {
+	for _, fragmented := range []bool{false, true} {
+		t.Run(fmt.Sprintf("fragmented=%v", fragmented), func(t *testing.T) {
+			collector := requesttiming.New(time.Now(), 0)
+			ctx := requesttiming.With(context.Background(), collector)
+			first := "data: {\"type\":\"response.created\"}\n\n"
+			tail := "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":2}}}\n\n"
+			body := &stagedTimingBody{steps: []string{first, tail}, delays: []time.Duration{35 * time.Millisecond, 0}}
+			if fragmented {
+				body.steps = []string{first[:8], first[8:] + tail}
+				body.delays = []time.Duration{0, 35 * time.Millisecond}
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
+			resp := &http.Response{StatusCode: 200, Header: http.Header{}, Body: body}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}}
+			_, err := svc.handleChatStreamingResponse(ctx, resp, c, &Account{ID: 541, Platform: PlatformOpenAI}, "model", "model", "model", time.Now(), 0)
+			require.NoError(t, err)
+			collector.Finish(200, false)
+			collector.WhenFinished(func(s requesttiming.Snapshot) {
+				require.Len(t, s.Streams, 1)
+				stream := s.Streams[0]
+				require.NotNil(t, stream.FirstReadMS)
+				require.GreaterOrEqual(t, stream.MaxReadWaitMS, float64(25))
+				if fragmented {
+					require.GreaterOrEqual(t, stream.Samples[0].AtMS-*stream.FirstReadMS, float64(25))
+				} else {
+					require.GreaterOrEqual(t, *stream.FirstReadMS, float64(25))
+				}
+			})
+		})
+	}
+}

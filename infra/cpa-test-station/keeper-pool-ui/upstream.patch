@@ -1,0 +1,332 @@
+diff --git a/web/src/components/usage/pool/PoolQuotaCard.module.scss b/web/src/components/usage/pool/PoolQuotaCard.module.scss
+new file mode 100644
+index 0000000..096f3ad
+--- /dev/null
++++ b/web/src/components/usage/pool/PoolQuotaCard.module.scss
+@@ -0,0 +1,11 @@
++.card { margin-top: 20px; }
++.actions { display: flex; gap: 8px; flex-wrap: wrap; }
++.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding: 10px 0 22px; }
++.metrics > div { min-width: 0; }
++.metrics span { display: block; font-size: 13px; opacity: .7; margin-bottom: 10px; }
++.metrics strong { display: block; font-size: clamp(21px, 2.6vw, 32px); line-height: 1.25; font-variant-numeric: tabular-nums; }
++.remaining strong { color: #22c55e; }
++.footer { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 24px; align-items: center; border-top: 1px solid rgba(128,128,128,.2); padding-top: 16px; }
++.footer p { margin: 0; font-size: 12px; line-height: 1.8; opacity: .7; }
++.error { color: #ef4444; font-size: 13px; }
++@media (max-width: 700px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; } .footer { grid-template-columns: 1fr; gap: 12px; } }
+diff --git a/web/src/components/usage/pool/PoolQuotaCard.tsx b/web/src/components/usage/pool/PoolQuotaCard.tsx
+new file mode 100644
+index 0000000..54101d7
+--- /dev/null
++++ b/web/src/components/usage/pool/PoolQuotaCard.tsx
+@@ -0,0 +1,144 @@
++import { useCallback, useEffect, useRef, useState } from 'react'
++import { fetchPricing, fetchPricingRules, fetchUsageEvents, fetchUsageIdentities, fetchUsageQuotaCache, refreshUsageQuotas } from '@/lib/api'
++import type { UsageEvent, UsageQuotaCacheItem } from '@/lib/types'
++import { Card } from '@/components/ui/Card'
++import { Button } from '@/components/ui/Button'
++import { Input } from '@/components/ui/Input'
++import { estimatePool, needsNewBaseline, sumSampleCost, type PoolBaseline } from './poolMath'
++import styles from './PoolQuotaCard.module.scss'
++
++const KEY = 'xingqiao-keeper-pool-baseline-v1'
++const BASE_PATH = () => window.__APP_BASE_PATH__ || ''
++const key = () => `${KEY}:${BASE_PATH()}`
++const usd = (value: number | null) => value === null ? '等待采样' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: value > 0 && value < 0.01 ? 4 : 2 }).format(value)
++interface Sample { at: number; fingerprint: string; remaining: number[]; count: number }
++interface View { base: PoolBaseline; sample: Sample; cost: number; estimate: ReturnType<typeof estimatePool> }
++function readBase(): PoolBaseline | null {
++  try {
++    const v = JSON.parse(window.localStorage.getItem(key()) || 'null') as PoolBaseline | null
++    return v && Number.isFinite(v.at) && typeof v.fingerprint === 'string' && Array.isArray(v.remaining) ? v : null
++  } catch { return null }
++}
++function sampleFrom(items: UsageQuotaCacheItem[], indexes: string[], pricingKey: string): Sample {
++  const members = indexes.map(id => {
++    const item = items.find(v => v.auth_index === id)
++    const quota = item?.quota?.quota.find(v => v.scope === 'window' && v.window?.seconds === 604800)
++    const at = Date.parse(item?.refreshed_at || '')
++    if (item?.status !== 'completed' || !quota || !quota.resetAt || !Number.isFinite(at)
++      || Date.now() - at > 6 * 60 * 1000 || at > Date.now() + 30000
++      || !Number.isFinite(quota.usedPercent) || quota.usedPercent! < 0 || quota.usedPercent! > 100) {
++      throw new Error('有账号的周配额尚未更新，请点击刷新采样')
++    }
++    return { id, at, reset: quota.resetAt, plan: item.quota?.subscription?.plan || '', remaining: 1 - quota.usedPercent! / 100 }
++  })
++  if (new Set(members.map(v => v.plan)).size > 1) throw new Error('账号套餐不同，暂不按等容量号池估算')
++  if (Math.max(...members.map(v => v.at)) - Math.min(...members.map(v => v.at)) > 30000) {
++    throw new Error('配额采样时间未对齐，请点击刷新采样')
++  }
++  return { at: Math.min(...members.map(v => v.at)), fingerprint: JSON.stringify([pricingKey, members.map(({ id, reset, plan }) => [id, reset, plan])]), remaining: members.map(v => v.remaining), count: members.length }
++}
++async function sampleEvents(start: number, signal: AbortSignal): Promise<UsageEvent[]> {
++  let cursor: string | undefined
++  const events: UsageEvent[] = []
++  for (let page = 0; page < 100; page++) {
++    const data = await fetchUsageEvents({ range: '30d' }, signal, { pageSize: 100, cursorMode: true, cursor })
++    events.push(...data.events)
++    if (!data.has_more || data.events.some(v => Date.parse(v.timestamp) < start)) return events
++    if (!data.next_cursor || data.next_cursor === cursor) throw new Error('用量分页异常，暂无法估算')
++    cursor = data.next_cursor
++  }
++  throw new Error('本次采样请求超过 10000 条，请重新建立基线')
++}
++export function PoolQuotaCard() {
++  const baseRef = useRef<PoolBaseline | null>(readBase())
++  const busy = useRef(false)
++  const controller = useRef<AbortController | null>(null)
++  const lastRefresh = useRef(0)
++  const [view, setView] = useState<View | null>(null)
++  const [error, setError] = useState('')
++  const [loading, setLoading] = useState(false)
++  const [multiplier, setMultiplier] = useState(() => {
++    try { return window.localStorage.getItem(`${key()}:multiplier`) || '0.2' } catch { return '0.2' }
++  })
++  const load = useCallback(async (force = false, reset = false) => {
++    if (busy.current || document.hidden) return
++    busy.current = true
++    setLoading(true)
++    const abort = new AbortController()
++    controller.current = abort
++    try {
++      const [identities, pricing] = await Promise.all([fetchUsageIdentities(abort.signal), fetchPricing(abort.signal)])
++      const indexes = identities.identities.filter(v => v.auth_type === 1 && v.type === 'codex' && !v.disabled && !v.is_deleted).map(v => v.identity).sort()
++      if (!indexes.length) throw new Error('当前没有启用的 Codex 账号')
++      if (!pricing.pricing.length || pricing.pricing.some(v => v.price_multiplier !== 1)) {
++        throw new Error('请先在模型价格中配置价格，并将价格倍率设为 1；扣费倍率在此单独输入')
++      }
++      const rules = await Promise.all(pricing.pricing.map(v => fetchPricingRules(v.model, abort.signal)))
++      if (rules.some(v => (v.rules ?? []).some(r => r.multiplier !== 1))) throw new Error('模型价格存在额外倍率规则，请先统一为 1×')
++      const pricingKey = JSON.stringify(pricing.pricing.slice().sort((a, b) => a.model.localeCompare(b.model)))
++      if (force || Date.now() - lastRefresh.current > 4 * 60 * 1000) {
++        const submittedAt = Date.now() - 1000
++        const tasks = await refreshUsageQuotas(indexes, abort.signal)
++        if ((tasks.rejected ?? []).some(v => !['duplicate', 'duplicate_request'].includes(v.error))) throw new Error('部分账号配额刷新被拒绝，请检查凭证状态')
++        lastRefresh.current = Date.now()
++        // The native refresh queue is asynchronous. Read only completed, newly refreshed cache entries.
++        for (let attempt = 0; attempt < 30; attempt++) {
++          const cache = await fetchUsageQuotaCache(indexes, abort.signal)
++          if (indexes.every(id => cache.items.some(v => v.auth_index === id && v.status === 'completed' && Date.parse(v.refreshed_at || '') >= submittedAt))) break
++          if (attempt === 29) throw new Error('配额刷新尚未完成，请稍后重试')
++          await new Promise<void>((resolve, reject) => {
++            const timer = setTimeout(resolve, 1000)
++            abort.signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')) }, { once: true })
++          })
++        }
++      }
++      const cache = await fetchUsageQuotaCache(indexes, abort.signal)
++      const sample = sampleFrom(cache.items, indexes, pricingKey)
++      let base = baseRef.current
++      if (reset || !base || needsNewBaseline(base, sample.fingerprint, sample.remaining) || sample.at - base.at > 8 * 86400000) {
++        base = { at: sample.at, fingerprint: sample.fingerprint, remaining: sample.remaining }
++        baseRef.current = base
++        try { window.localStorage.setItem(key(), JSON.stringify(base)) } catch { /* Session state continues without persistent storage. */ }
++      }
++      if (sample.at < base.at) throw new Error('配额采样时间早于基线，请刷新采样')
++      const events = sample.at === base.at ? [] : await sampleEvents(base.at, abort.signal)
++      const cost = sumSampleCost(events, base.at, sample.at)
++      if (abort.signal.aborted) return
++      setView({ base, sample, cost, estimate: estimatePool(base, sample.remaining, cost) })
++      setError('')
++    } catch (e) {
++      if (!abort.signal.aborted) { setError(e instanceof Error ? e.message : '号池数据读取失败'); setView(null) }
++    } finally {
++      busy.current = false
++      if (!abort.signal.aborted) setLoading(false)
++    }
++  }, [])
++  useEffect(() => {
++    void load()
++    const timer = setInterval(() => { void load() }, 60000)
++    const onVisible = () => { if (!document.hidden) void load() }
++    document.addEventListener('visibilitychange', onVisible)
++    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); controller.current?.abort() }
++  }, [load])
++  const rate = multiplier.trim() === '' ? NaN : Number(multiplier)
++  const validRate = Number.isFinite(rate) && rate >= 0
++  return <Card title="号池额度 · 1×" subtitle="所有 API Key · 当前启用的 Codex 周额度号池" className={styles.card}
++    extra={<div className={styles.actions}><Button variant="secondary" onClick={() => void load(true)} disabled={loading} loading={loading}>刷新采样</Button><Button variant="ghost" onClick={() => void load(true, true)} disabled={loading}>重新开始采样</Button></div>}>
++    {error && <p role="alert" className={styles.error}>{error}</p>}
++    <div className={styles.metrics}>
++      <div><span>采样期标准用量</span><strong>{usd(view?.cost ?? null)}</strong></div>
++      <div><span>预计号池总额度</span><strong>{usd(view?.estimate.total ?? null)}</strong></div>
++      <div className={styles.remaining}><span>预计剩余额度</span><strong>{usd(view?.estimate.remaining ?? null)}</strong></div>
++      <div><span>按倍率推算扣费</span><strong>{usd(view && validRate ? view.cost * rate : null)}</strong></div>
++    </div>
++    <div className={styles.footer}><Input label="模拟扣费倍率" value={multiplier} type="number" min="0" step="0.01" onChange={e => {
++      setMultiplier(e.target.value)
++      try { window.localStorage.setItem(`${key()}:multiplier`, e.target.value) } catch { /* Keep the input usable. */ }
++    }} error={validRate ? undefined : '请输入不小于 0 的倍率'} />
++      <p>{view ? `${view.sample.count} 个账号 · 平均剩余 ${(view.estimate.averageRemaining * 100).toFixed(1)}% · 采样下降 ${view.estimate.dropPoints.toFixed(1)} 个百分点` : '正在读取号池配额'}<br />
++        {view && <>采样起点 {new Date(view.base.at).toLocaleString()} · 更新 {new Date(view.sample.at).toLocaleTimeString()}<br /></>}
++        按账号容量相近估算；扣费为模拟值。基线保存在当前浏览器。新号、配额重置或价格变化后重新采样。
++      </p>
++    </div>
++  </Card>
++}
+diff --git a/web/src/components/usage/pool/poolMath.ts b/web/src/components/usage/pool/poolMath.ts
+new file mode 100644
+index 0000000..2a7b0fc
+--- /dev/null
++++ b/web/src/components/usage/pool/poolMath.ts
+@@ -0,0 +1,34 @@
++import type { UsageEvent } from '@/lib/types'
++export interface PoolBaseline { at: number; fingerprint: string; remaining: number[] }
++export function needsNewBaseline(base: PoolBaseline, fingerprint: string, remaining: number[]): boolean {
++  return base.fingerprint !== fingerprint || base.remaining.length !== remaining.length
++    || remaining.some((value, index) => value > base.remaining[index] + 0.00001)
++}
++export function estimatePool(base: PoolBaseline, remaining: number[], cost: number) {
++  if (!remaining.length || base.remaining.length !== remaining.length || !Number.isFinite(cost) || cost < 0
++    || [...base.remaining, ...remaining].some(value => !Number.isFinite(value) || value < 0 || value > 1)) {
++    throw new Error('号池采样数据无效')
++  }
++  const drop = base.remaining.reduce((sum, value, index) => sum + value - remaining[index], 0)
++  const left = remaining.reduce((sum, value) => sum + value, 0)
++  const ready = drop > 0.00001 && cost > 0
++  return { dropPoints: Math.max(0, drop * 100), averageRemaining: left / remaining.length,
++    total: ready ? cost / drop * remaining.length : null,
++    remaining: ready ? cost / drop * left : null }
++}
++export function sumSampleCost(events: Pick<UsageEvent, 'id' | 'timestamp' | 'cost_usd' | 'cost_available'>[], start: number, end: number): number {
++  const seen = new Set<string>()
++  let cost = 0
++  for (const event of events) {
++    const at = Date.parse(event.timestamp)
++    if (!Number.isFinite(at)) throw new Error('请求时间无效，暂无法估算')
++    if (at < start || at >= end) continue
++    if (event.id && seen.has(event.id)) continue
++    if (event.id) seen.add(event.id)
++    if (!event.cost_available || !Number.isFinite(event.cost_usd) || (event.cost_usd ?? -1) < 0) {
++      throw new Error('采样期有请求缺少价格，请先补齐模型价格')
++    }
++    cost += event.cost_usd!
++  }
++  return cost
++}
+diff --git a/web/src/components/usage/pool/test/PoolQuotaCard.test.tsx b/web/src/components/usage/pool/test/PoolQuotaCard.test.tsx
+new file mode 100644
+index 0000000..38fbda4
+--- /dev/null
++++ b/web/src/components/usage/pool/test/PoolQuotaCard.test.tsx
+@@ -0,0 +1,55 @@
++// @vitest-environment happy-dom
++import { act } from 'react'
++import { createRoot, type Root } from 'react-dom/client'
++import { afterEach, beforeEach, expect, it, vi } from 'vitest'
++import { PoolQuotaCard } from '../PoolQuotaCard'
++const pricing = vi.fn()
++const cache = vi.fn()
++const refresh = vi.fn()
++vi.mock('@/lib/api', () => ({
++  fetchPricing: (...args: unknown[]) => pricing(...args),
++  fetchPricingRules: async () => ({ rules: null }),
++  fetchUsageIdentities: async () => ({ identities: [
++    { auth_type: 1, type: 'codex', disabled: false, is_deleted: false, identity: 'b' },
++    { auth_type: 1, type: 'codex', disabled: false, is_deleted: false, identity: 'a' },
++    { auth_type: 1, type: 'codex', disabled: true, is_deleted: false, identity: 'disabled' },
++  ] }),
++  fetchUsageQuotaCache: (...args: unknown[]) => cache(...args),
++  refreshUsageQuotas: (...args: unknown[]) => refresh(...args),
++  fetchUsageEvents: async () => ({ events: [], has_more: false }),
++}))
++let container: HTMLDivElement
++let root: Root
++beforeEach(() => {
++  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
++  const values = new Map<string, string>()
++  Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), clear: () => values.clear() } })
++  pricing.mockResolvedValue({ pricing: [{ model: 'model', price_multiplier: 1 }] })
++  refresh.mockResolvedValue({ accepted: 2, tasks: [], rejected: null })
++  cache.mockImplementation(async () => ({ items: ['a', 'b'].map(id => ({ auth_index: id, status: 'completed', refreshed_at: new Date().toISOString(), quota: { subscription: { plan: 'same' }, quota: [{ scope: 'window', window: { seconds: 604800 }, usedPercent: 5, resetAt: '2026-10-18T00:00:00Z' }] } })) }))
++  container = document.createElement('div')
++  document.body.appendChild(container)
++  root = createRoot(container)
++})
++afterEach(async () => { await act(async () => root.unmount()); container.remove() })
++it('starts a new pool baseline using all enabled Codex identities, never credential token stats', async () => {
++  await act(async () => { root.render(<PoolQuotaCard />) })
++  expect(refresh.mock.calls[0][0]).toEqual(['a', 'b'])
++  expect(container.textContent).toContain('2 个账号')
++  expect(container.textContent).toContain('等待采样')
++  expect(container.textContent).toContain('采样下降 0.0 个百分点')
++  expect(container.textContent).toContain('模拟扣费倍率')
++  expect(window.localStorage.getItem('xingqiao-keeper-pool-baseline-v1:')).not.toBeNull()
++})
++it('never labels multiplied prices as 1x standard usage', async () => {
++  pricing.mockResolvedValue({ pricing: [{ model: 'model', price_multiplier: 0.2 }] })
++  await act(async () => root.render(<PoolQuotaCard />))
++  expect(container.querySelector('[role=alert]')?.textContent).toContain('价格倍率设为 1')
++  expect(window.localStorage.getItem('xingqiao-keeper-pool-baseline-v1:')).toBeNull()
++})
++it('refuses missing weekly windows instead of dropping accounts from the pool', async () => {
++  cache.mockResolvedValue({ items: [] })
++  refresh.mockResolvedValue({ tasks: [], rejected: [{ authIndex: 'a', error: 'not_found' }] })
++  await act(async () => root.render(<PoolQuotaCard />))
++  expect(container.querySelector('[role=alert]')?.textContent).toContain('部分账号')
++})
+diff --git a/web/src/components/usage/pool/test/poolMath.test.ts b/web/src/components/usage/pool/test/poolMath.test.ts
+new file mode 100644
+index 0000000..556809b
+--- /dev/null
++++ b/web/src/components/usage/pool/test/poolMath.test.ts
+@@ -0,0 +1,41 @@
++import { describe, expect, it } from 'vitest'
++import { estimatePool, needsNewBaseline, sumSampleCost } from '../poolMath'
++const base = { at: 1000, fingerprint: 'same-pool', remaining: [0.94, 0.95] }
++describe('pool quota estimates', () => {
++  it('uses only quota consumption since a mid-cycle baseline', () => {
++    const result = estimatePool(base, [0.70, 0.95], 55.75484226)
++    expect(result.total).toBeCloseTo(464.6236855)
++    expect(result.remaining).toBeCloseTo(383.31454054)
++    expect(result.dropPoints).toBeCloseTo(24)
++  })
++  it('supports simultaneous consumption by several accounts', () => {
++    const result = estimatePool({ ...base, remaining: [1, 1] }, [0.8, 0.9], 120)
++    expect(result.total).toBeCloseTo(800)
++    expect(result.remaining).toBeCloseTo(680)
++  })
++  it('does not invent a dollar estimate before percentage changes', () => {
++    expect(estimatePool(base, base.remaining, 10).remaining).toBeNull()
++    expect(estimatePool(base, [0.7, 0.95], 0).total).toBeNull()
++  })
++  it('shows zero remaining after an observed depletion', () => {
++    expect(estimatePool({ ...base, remaining: [1, 1] }, [0, 0], 800).remaining).toBe(0)
++  })
++  it('starts over on member, price, window or percentage reset', () => {
++    expect(needsNewBaseline(base, 'changed', [0.7, 0.95])).toBe(true)
++    expect(needsNewBaseline(base, base.fingerprint, [1, 0.95])).toBe(true)
++    expect(needsNewBaseline(base, base.fingerprint, [0.7, 0.95])).toBe(false)
++  })
++  it('excludes pre-baseline and post-observation requests and deduplicates', () => {
++    const rows = [
++      { id: '1', timestamp: new Date(999).toISOString(), cost_usd: 99, cost_available: true },
++      { id: '2', timestamp: new Date(1000).toISOString(), cost_usd: 3, cost_available: true },
++      { id: '2', timestamp: new Date(1000).toISOString(), cost_usd: 3, cost_available: true },
++      { id: '3', timestamp: new Date(2000).toISOString(), cost_usd: 99, cost_available: true },
++    ]
++    expect(sumSampleCost(rows, 1000, 2000)).toBe(3)
++  })
++  it('refuses unpriced or non-finite sample costs', () => {
++    expect(() => sumSampleCost([{ timestamp: new Date(1500).toISOString(), cost_available: false }], 1000, 2000)).toThrow()
++    expect(() => estimatePool(base, [NaN, 0.9], 10)).toThrow()
++  })
++})
+diff --git a/web/src/pages/UsagePage.tsx b/web/src/pages/UsagePage.tsx
+index f940a0f..dbab29d 100644
+--- a/web/src/pages/UsagePage.tsx
++++ b/web/src/pages/UsagePage.tsx
+@@ -1,3 +1,4 @@
++import { PoolQuotaCard } from '@/components/usage/pool/PoolQuotaCard';
+ import { CredentialEditModal } from '@/components/usage/credentials/CredentialEditModal';
+ import { UsageComparisonCharts } from '@/components/usage/UsageComparisonCharts';
+ import { useState, useMemo, useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+@@ -2265,6 +2266,7 @@ export function UsagePage({ onAuthRequired }: { onAuthRequired?: () => void }) {
+                   }}
+                 />
+ 
++                <PoolQuotaCard />
+                 <RecentActivityPanel
+                   activity={activity}
+                   loading={activityLoading}

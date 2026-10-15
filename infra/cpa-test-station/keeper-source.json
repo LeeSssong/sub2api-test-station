@@ -1,0 +1,10 @@
+{
+  "keeper_version": "v1.15.10",
+  "keeper_source_commit": "b3592bff1e342c246d1324bcd99ba9b77232f315",
+  "image": "ghcr.io/willxup/cpa-usage-keeper@sha256:227b8755e201e3cad58c414cca3291836f27cd0d5e2a5bbd3e1181767a0955bc",
+  "plugin_version": "v0.1.0",
+  "plugin_url": "https://github.com/Willxup/cpa-plugin-usage-keeper/releases/download/v0.1.0/keeper_0.1.0_linux_amd64.zip",
+  "plugin_sha256": "01b7dc9db9411d56daa8de624f7882ccea076597d8f0f5507e48dbb81bfaf09c",
+  "checksums_url": "https://github.com/Willxup/cpa-plugin-usage-keeper/releases/download/v0.1.0/checksums.txt",
+  "previous_caddy_sha256": "6b0df0fb3c2e58f6dda968ba877c5c580654e6ed5155ef893fb1874c6a0e6f35"
+}

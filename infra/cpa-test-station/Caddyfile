@@ -10,6 +10,25 @@ cpa-test.xingqiaolab.top {
 	}
 	encode zstd gzip
 	redir / /management.html 302
+	redir /keeper /keeper/ 308
+	@keeper_assets path /keeper/assets/*
+	handle @keeper_assets {
+		uri strip_prefix /keeper
+		root * /etc/caddy/keeper-current
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	@keeper_ui path /keeper/ /keeper/overview /keeper/realtime /keeper/analysis /keeper/ranking /keeper/request-events /keeper/auth-files /keeper/ai-provider /keeper/settings /keeper/key-overview /keeper/key-realtime /keeper/key-analysis /keeper/key-ranking
+	handle @keeper_ui {
+		root * /etc/caddy/keeper-current
+		rewrite * /index.html
+		header Cache-Control "no-store"
+		header Content-Security-Policy "frame-ancestors 'self'"
+		file_server
+	}
+	handle /keeper/* {
+		reverse_proxy cpa-usage-keeper:8080
+	}
 	handle /v1/* {
 		reverse_proxy cpa-gateway:8317 {
 			transport http {
@@ -32,7 +51,7 @@ cpa-test.xingqiaolab.top {
 		file_server
 	}
 	handle {
-		reverse_proxy cpa-manager:18317 {
+		reverse_proxy cpa-gateway:8317 {
 			transport http {
 				dial_timeout 5s
 				response_header_timeout 2m

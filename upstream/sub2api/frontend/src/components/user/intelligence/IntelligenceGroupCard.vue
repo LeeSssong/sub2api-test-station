@@ -34,6 +34,7 @@
           }}</span>
         </div>
         <div class="iq-art">
+          <IntelligenceDrawingRibbon v-if="artwork" :judgment="artwork.drawing_judgment" />
           <PelicanArtworkPreview
             v-if="html"
             :html="html"
@@ -41,7 +42,7 @@
             :interactive="false"
           />
           <p v-else role="status">
-            {{ artError || (artwork ? "正在加载画作…" : "暂无成功画作") }}
+            {{ artError || (artwork ? "正在加载画作…" : "暂无画作") }}
           </p>
           <button
             v-if="html && artwork"
@@ -62,6 +63,7 @@
 import { computed, ref, watch } from "vue";
 import Icon from "@/components/icons/Icon.vue";
 import PelicanArtworkPreview from "@/components/user/pelican/PelicanArtworkPreview.vue";
+import IntelligenceDrawingRibbon from "./IntelligenceDrawingRibbon.vue";
 import IntelligenceTimeline from "./IntelligenceTimeline.vue";
 import type {
   IntelligenceGroup,
@@ -108,9 +110,9 @@ watch(
   },
 );
 const artwork = computed(() =>
-  selected.value?.kind === "pelican" && selected.value.verdict === "passed"
-    ? selected.value
-    : drawing.value.filter((r) => r.verdict === "passed").at(-1),
+  selected.value?.kind === "pelican"
+    ? drawing.value.find(r => r.id === selected.value?.id)
+    : drawing.value.at(-1),
 );
 const html = ref("");
 const artError = ref("");

@@ -28,7 +28,7 @@ describe('原型AI工具交互',()=>{
   const firstCard=()=>w.findAll('.route-detail-card').find(c=>c.get('h3').text()==='GPT-Pro')!
   const first=firstCard()
   expect(firstCard().get('.success-rate').text()).toBe('83.33%')
-  expect(first.get('.detail-request-sample').text()).toContain('10 / 12')
+  expect(first.find('.detail-request-sample').exists()).toBe(false)
   expect(first.get('.detail-quality-label').attributes('title')).toContain('SLA')
   expect(cards.find(c=>c.get('h3').text()==='未关联线路')!.get('.success-rate').text()).toBe('0%')
   // Detail status follows the same selected-window SLA counts as its percentage.
@@ -93,23 +93,13 @@ describe('原型AI工具交互',()=>{
   }
   w.unmount()
  })
- it('reveals request counts only on success-rate hover or focus and associates the selected route',async()=>{
+ it('hides request counts from route detail while keeping the selected route',async()=>{
   const w=make();await flushPromises()
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
   const cards=w.findAll('article.route-detail-card')
   expect(cards).toHaveLength(2)
-  expect(cards[0].get('.detail-request-sample').text()).toBe('98 / 100 次请求成功（后台 SLA，排除业务限制及客户端取消）')
-  const sample=cards[0].get('.detail-request-sample')
-  const success=cards[0].get('.detail-success-hover')
-  // Detached jsdom fixtures cache computed styles; verify the v-show state directly.
-  const hidden=()=> (sample.element as HTMLElement).style.display==='none'
-  expect(hidden()).toBe(true)
-  expect(success.attributes('aria-describedby')).toBe(sample.attributes('id'))
-  await success.trigger('mouseenter');expect(hidden()).toBe(false)
-  await success.trigger('mouseleave');expect(hidden()).toBe(true)
-  await success.trigger('focusin');expect(hidden()).toBe(false)
-  await success.trigger('keydown',{key:'Escape'});expect(hidden()).toBe(true)
-  await success.trigger('focusin');await success.trigger('focusout');expect(hidden()).toBe(true)
+  expect(cards[0].find('.detail-request-sample').exists()).toBe(false)
+  expect(cards[0].find('.detail-success-hover').exists()).toBe(false)
   expect(cards[0].find('.detail-card-metrics').exists()).toBe(false)
   expect(cards[0].text()).not.toContain('耗时 P50')
   expect(cards[0].text()).not.toContain('本次检查')
@@ -191,8 +181,8 @@ describe('原型AI工具交互',()=>{
   const cards=w.findAll('.route-detail-card')
   const zero=cards.find(c=>c.text().includes('GPT-Pro'))!
   const missing=cards.find(c=>c.text().includes('未关联线路'))!
-  expect(zero.get('.detail-request-sample').text()).toBe('0 / 0 次请求成功（后台 SLA，排除业务限制及客户端取消）')
-  expect(missing.get('.detail-request-sample').text()).toBe('— / — 次请求成功（后台 SLA，排除业务限制及客户端取消）')
+  expect(zero.find('.detail-request-sample').exists()).toBe(false)
+  expect(missing.find('.detail-request-sample').exists()).toBe(false)
   expect(zero.get('.success-rate').text()).toBe('暂无数据')
   expect(missing.get('.success-rate').text()).toBe('暂无数据')
   w.unmount()
@@ -310,7 +300,7 @@ describe('原型AI工具交互',()=>{
   expect(cards[1].find('button').attributes('disabled')).toBeUndefined()
   w.unmount()
  })
- it('preserves the last successful detail metrics after a same-window refresh fails',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();mocks.snapshot.mockRejectedValue(new Error('offline'));await w.findAll('button').find(b=>b.text()==='近 24 小时')!.trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).toContain('98 / 100 次请求成功');expect(w.get('[role="dialog"]').text()).toContain('98%');w.unmount()})
+ it('preserves the last successful detail metrics after a same-window refresh fails',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();mocks.snapshot.mockRejectedValue(new Error('offline'));await w.findAll('button').find(b=>b.text()==='近 24 小时')!.trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).not.toContain('次请求成功');expect(w.get('[role="dialog"]').text()).toContain('98%');w.unmount()})
 
  it('shows current tool models newest first with native prices without changing group fees',async()=>{
   mocks.rates.mockResolvedValue({1:0.12})

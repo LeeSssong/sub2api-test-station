@@ -23,34 +23,37 @@ type IntelligenceCandySchedule struct {
 }
 
 type IntelligenceRuleConfig struct {
-	CandyCronExpression string             `json:"candy_cron_expression"`
-	CandyNextRunAt      *time.Time         `json:"candy_next_run_at,omitempty"`
-	DrawingNextRunAt    *time.Time         `json:"drawing_next_run_at,omitempty"`
-	RunningKinds        []string           `json:"running_kinds,omitempty"`
-	QualityTemplateID   int64              `json:"quality_template_id"`
-	CandyModels         []string           `json:"candy_models"`
-	ID                  string             `json:"id"`
-	Name                string             `json:"name"`
-	Candy               *PelicanTestConfig `json:"candy"`
-	Actions             []string           `json:"actions"`
-	Scenes              []string           `json:"scenes"`
+	DrawingJudge        *QualityJudgeConfig `json:"drawing_judge,omitempty"`
+	CandyCronExpression string              `json:"candy_cron_expression"`
+	CandyNextRunAt      *time.Time          `json:"candy_next_run_at,omitempty"`
+	DrawingNextRunAt    *time.Time          `json:"drawing_next_run_at,omitempty"`
+	RunningKinds        []string            `json:"running_kinds,omitempty"`
+	QualityTemplateID   int64               `json:"quality_template_id"`
+	CandyModels         []string            `json:"candy_models"`
+	ID                  string              `json:"id"`
+	Name                string              `json:"name"`
+	Candy               *PelicanTestConfig  `json:"candy"`
+	Actions             []string            `json:"actions"`
+	Scenes              []string            `json:"scenes"`
 }
 
 type IntelligenceResultMetadata struct {
-	Source           string     `json:"source,omitempty"`
-	SourceResultID   int64      `json:"source_result_id,omitempty"`
-	SourceTemplateID int64      `json:"source_template_id,omitempty"`
-	SourceStartedAt  *time.Time `json:"source_started_at,omitempty"`
-	SourceFinishedAt *time.Time `json:"source_finished_at,omitempty"`
-	Verdict          string     `json:"quality_verdict,omitempty"`
-	Action           string     `json:"action,omitempty"`
-	Scene            string     `json:"scene,omitempty"`
-	FirstTokenMs     *int64     `json:"first_token_ms,omitempty"`
-	InputTokens      *int       `json:"input_tokens,omitempty"`
-	OutputTokens     *int       `json:"output_tokens,omitempty"`
+	DrawingJudgment  *DrawingJudgment `json:"drawing_judgment,omitempty"`
+	Source           string           `json:"source,omitempty"`
+	SourceResultID   int64            `json:"source_result_id,omitempty"`
+	SourceTemplateID int64            `json:"source_template_id,omitempty"`
+	SourceStartedAt  *time.Time       `json:"source_started_at,omitempty"`
+	SourceFinishedAt *time.Time       `json:"source_finished_at,omitempty"`
+	Verdict          string           `json:"quality_verdict,omitempty"`
+	Action           string           `json:"action,omitempty"`
+	Scene            string           `json:"scene,omitempty"`
+	FirstTokenMs     *int64           `json:"first_token_ms,omitempty"`
+	InputTokens      *int             `json:"input_tokens,omitempty"`
+	OutputTokens     *int             `json:"output_tokens,omitempty"`
 }
 
 type IntelligenceRuleInput struct {
+	DrawingJudge         *QualityJudgeConfig         `json:"drawing_judge,omitempty"`
 	CandySchedules       []IntelligenceCandySchedule `json:"candy_schedules"`
 	CandyReasoningEffort string                      `json:"candy_reasoning_effort"`
 	QualitySources       []IntelligenceQualitySource `json:"quality_sources"`
@@ -139,6 +142,11 @@ func (s *PelicanGroupTestService) intelligencePlans(ctx context.Context, id stri
 	if effort == "" {
 		return invalid("invalid candy reasoning effort")
 	}
+	if in.DrawingJudge != nil {
+		if in.DrawingJudge.GroupID <= 0 || strings.TrimSpace(in.DrawingJudge.ModelID) == "" || len(in.DrawingJudge.ModelID) > 100 {
+			return invalid("drawing judge group and model are required")
+		}
+	}
 	candy := &PelicanTestConfig{QuestionKind: "candy", Prompt: in.CandyPrompt, ReasoningEffort: effort, ParallelCount: 1, Quality: &QualityPolicy{ExpectedAnswer: in.ExpectedAnswer, Judge: in.Judge, Action: QualityActionObserveOnly}}
 	if err := validateQualityPolicy(&ScheduledTestPlan{PelicanConfig: candy}); err != nil {
 		return invalid(err.Error())
@@ -199,7 +207,7 @@ func (s *PelicanGroupTestService) intelligencePlans(ctx context.Context, id stri
 			return invalid(err.Error())
 		}
 		drawingNext := *p.NextRunAt
-		p.PelicanConfig.Intelligence = &IntelligenceRuleConfig{ID: id, Name: in.Name, Candy: candy, CandyModels: models, CandyCronExpression: expression, CandyNextRunAt: &candyNext, DrawingNextRunAt: &drawingNext, Actions: append([]string(nil), in.Actions...), Scenes: append([]string(nil), in.Scenes...)}
+		p.PelicanConfig.Intelligence = &IntelligenceRuleConfig{DrawingJudge: in.DrawingJudge, ID: id, Name: in.Name, Candy: candy, CandyModels: models, CandyCronExpression: expression, CandyNextRunAt: &candyNext, DrawingNextRunAt: &drawingNext, Actions: append([]string(nil), in.Actions...), Scenes: append([]string(nil), in.Scenes...)}
 		if candyNext.Before(drawingNext) {
 			p.NextRunAt = &candyNext
 		}
@@ -229,6 +237,10 @@ func (s *PelicanGroupTestService) intelligenceSamplePlans(plan *PelicanGroupTest
 	drawing := *cfg
 	drawing.Intelligence = nil
 	drawing.QuestionKind = "pelican"
+	drawing.DrawingJudge = rule.DrawingJudge
+	if drawing.DrawingJudge == nil && rule.Candy != nil && rule.Candy.Quality != nil {
+		drawing.DrawingJudge = rule.Candy.Quality.Judge
+	}
 	drawing.IntelligenceResult = &IntelligenceResultMetadata{Action: intelligenceChoice(rule.Actions), Scene: intelligenceChoice(rule.Scenes)}
 	drawing.Prompt = strings.NewReplacer("{动作}", drawing.IntelligenceResult.Action, "{场景}", drawing.IntelligenceResult.Scene).Replace(cfg.Prompt)
 	drawingPlan.PelicanConfig = &drawing

@@ -1,0 +1,23 @@
+{
+  "upstream": "https://github.com/Willxup/cpa-usage-keeper",
+  "tag": "v1.15.10",
+  "source_url": "https://codeload.github.com/Willxup/cpa-usage-keeper/tar.gz/refs/tags/v1.15.10",
+  "source_sha256": "30875b4fdde63e6c51a45a1dc8eca41d371d9ac8c9e6bf21970cc546d8d8e7cf",
+  "patch_sha256": "fe6d23ab29143f6790564f829b8068e8032669f18c95d790b8a0adc9e5fad1d4",
+  "web_sha256": "d13b59e1a4bd2710d054948b97c715512907339ea975686a361fcb4a38d95f06",
+  "base_path": "/keeper",
+  "build_command": "npm ci --ignore-scripts --no-audit --no-fund; npm run build -- --base=/keeper/; replace index.html APP_BASE_PATH placeholder with /keeper; tar dist files",
+  "validation": "10 focused Vitest tests passed; TypeScript check, targeted ESLint and Vite build passed",
+  "baseline_storage": "browser localStorage, scoped by base path",
+  "backend_changes": false,
+  "api_scope": "all CPA API keys; enabled Codex identities with matching subscription plan",
+  "estimation": "sample standard cost / summed remaining-fraction decline; total=per-account estimate*count, remaining=per-account estimate*sum remaining fractions",
+  "file_sha256": {
+    "assets/antigravity-DvGkpdRw.svg": "0b911f0ba819e5a4f4c1d59f28a6ead23f65cfdc86b0a41b380a9fc09498e383",
+    "assets/avatar-catalog-DXLd-2JB.webp": "36b70d8a9d0d3b44b794172ab0ae97354d79d013c29138bbd2b761f00d3693f9",
+    "assets/index-B9lsCVnU.css": "3cc3d1f01d4e82c22e69ca13d96c51568e00b4e70e696b3d22e2bc04ae46dc71",
+    "assets/index-BQsHGLJ5.js": "c742394c16c37d1e806f6d6dc8d438354c9111fda51bb91aa943ace1effb2910",
+    "index.html": "b60eb27255f2003e85bad9ae28ebb8044c6842c8f13cb66e702229d9c728ef22"
+  },
+  "previous_caddy_sha256": "70f4921d27cf806ff908f80c786729ffc5bd58d9f5d80f889bf8f4ba08fc3aa2"
+}

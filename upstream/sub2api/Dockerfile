@@ -130,6 +130,10 @@ FROM ${GPT56_VENDOR_IMAGE} AS gpt56-v411-vendor
 # -----------------------------------------------------------------------------
 FROM ${RUNTIME_IMAGE}
 
+# One isolated offline screenshot per intelligence drawing; app remains unprivileged.
+RUN apk add --no-cache chromium font-noto-cjk
+ENV INTELLIGENCE_CHROMIUM_PATH=/usr/bin/chromium-browser
+
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
 LABEL description="Sub2API - AI API Gateway Platform"

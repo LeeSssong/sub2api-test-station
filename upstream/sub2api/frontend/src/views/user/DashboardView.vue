@@ -63,10 +63,9 @@
               <span v-else class="muted detail-unavailable">不可配置</span>
             </header>
             <div class="detail-card-quality">
-              <div class="detail-quality-value detail-success-hover" tabindex="0" role="group" :aria-describedby="`detail-request-sample-${group.id}`" @mouseenter="detailSampleGroup=group.id" @mouseleave="detailSampleGroup=null" @focusin="detailSampleGroup=group.id" @focusout="detailSampleGroup=null" @click="detailSampleGroup=group.id" @keydown.esc.stop="detailSampleGroup=null">
+              <div class="detail-quality-value" role="group">
                 <span class="detail-quality-label" title="与后台对应分组的 SLA 一致，排除业务限制及客户端取消">请求成功率</span>
                 <strong class="success-rate success-rate-tone" :data-tone="routeHealthTone(detailSLAHealth(group))">{{ timelineLoading || timelineError ? '—' : routeSuccessLabel(detailSLAHealth(group)) }}</strong>
-                <span v-show="detailSampleGroup===group.id" :id="`detail-request-sample-${group.id}`" class="detail-request-sample" role="tooltip">{{ detailSLACounts.get(group.id)?.success_count ?? '—' }} / {{ detailSLACounts.get(group.id)?.request_count ?? '—' }} 次请求成功（后台 SLA，排除业务限制及客户端取消）</span>
               </div>
             </div>
             <RouteHistoryStrip :points="timelinePoints.filter(point=>point.group_id===group.id)" :loading="timelineLoading" :error="timelineError" />
@@ -120,7 +119,6 @@ const metricsGeneratedAt=ref<string|null>(cachedWorkspace?.metricsGeneratedAt||n
 const rankingMetricsGeneratedAt=ref<string|null>(cachedWorkspace?.rankingMetricsGeneratedAt||null)
 const loading=ref(false), loaded=ref(!!cachedWorkspace), workspaceError=ref(''), statsFailed=ref(false), statsError=ref(''), rankingFailed=ref(false), checking=ref(false), checkError=ref('')
 const checks=ref<Record<number,LineCheck>>({}), detailWindow=ref<MonitorV4Window>('24h'), detailGranularity=ref<'hour'|'day'>('hour'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
-const detailSampleGroup=ref<number|null>(null)
 let loadController:AbortController|undefined, detailController:AbortController|undefined, checkController:AbortController|undefined
 const detailCache=new Map<MonitorV4Window,MonitorV4Group[]>()
 let returnToDetailGroup:number|undefined
@@ -198,8 +196,8 @@ async function loadWorkspace(){
     cacheWorkspace()
   }finally{if(!c.signal.aborted)loading.value=false}
 }
-async function openDetails(tool:ToolCard){detailsTrigger=document.activeElement as HTMLElement;selectedTool.value=tool;detailSampleGroup.value=null;detailGranularity.value='hour';await loadDetails('24h')}
-function closeDetails(){detailController?.abort();selectedTool.value=null;detailSampleGroup.value=null;nextTick(()=>detailsTrigger?.focus())}
+async function openDetails(tool:ToolCard){detailsTrigger=document.activeElement as HTMLElement;selectedTool.value=tool;detailGranularity.value='hour';await loadDetails('24h')}
+function closeDetails(){detailController?.abort();selectedTool.value=null;nextTick(()=>detailsTrigger?.focus())}
 async function loadDetails(window:MonitorV4Window){
   detailController?.abort();const c=new AbortController();detailController=c
   detailWindow.value=window;void loadTimeline(window,c.signal)

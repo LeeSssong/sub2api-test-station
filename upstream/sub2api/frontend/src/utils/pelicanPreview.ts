@@ -67,6 +67,7 @@ export function installPelicanMeasurement(target: Window & typeof globalThis, ch
   let offsetY = 0
   let innerScale = 1
   let authorZoom = 1
+  let rectIncludesZoom = true
   let originalTranslate = ['0px', '0px']
   let resizeObserver: ResizeObserver | undefined
   let mutationObserver: MutationObserver | undefined
@@ -110,14 +111,32 @@ export function installPelicanMeasurement(target: Window & typeof globalThis, ch
     return elements
   }
 
+  function detectZoomedRects() {
+    // Older WebKit paints zoom but reports pre-zoom DOMRects. Probe the actual
+    // behavior rather than a browser version; ancestor zoom/transforms cancel
+    // in the ratio. Remove the out-of-flow probe before observing the artwork.
+    const probe = doc.createElement('div')
+    probe.style.cssText = 'all:initial!important;position:absolute!important;display:block!important;width:100px!important;height:100px!important;padding:0!important;border:0!important;visibility:hidden!important;zoom:1!important'
+    doc.documentElement.append(probe)
+    try {
+      const nativeWidth = probe.getBoundingClientRect().width
+      probe.style.setProperty('zoom', '0.5', 'important')
+      const zoomedWidth = probe.getBoundingClientRect().width
+      rectIncludesZoom = nativeWidth <= 0 || zoomedWidth < nativeWidth * 0.75
+    } finally {
+      probe.remove()
+    }
+  }
+
   function measure() {
     timer = 0
     if (disposed || !doc.body || sent >= 120) return
     const elements = prepareElements()
     const root = doc.documentElement
-    // Body scroll metrics remain in authored CSS pixels under root zoom; DOMRects
-    // are painted pixels and need the inverse of only our own reduction. Root
-    // scroll metrics have a viewport-sized floor and would create a feedback loop.
+    // Body scroll metrics remain in authored CSS pixels under root zoom. Modern
+    // DOMRects include zoom; older WebKit needs author zoom applied instead of
+    // undoing our reduction, otherwise each measurement grows the canvas again.
+    // Root scroll metrics have a viewport-sized floor and create a feedback loop.
     let width = Math.max(viewport.width, doc.body.scrollWidth * authorZoom)
     let height = Math.max(viewport.height, doc.body.scrollHeight * authorZoom)
     let left = 0
@@ -129,10 +148,11 @@ export function installPelicanMeasurement(target: Window & typeof globalThis, ch
       const svg = element.closest('svg')
       if (svg && svg !== element) continue
       const rect = element.getBoundingClientRect()
-      left = Math.min(left, (rect.left + target.scrollX) / innerScale - offsetX)
-      top = Math.min(top, (rect.top + target.scrollY) / innerScale - offsetY)
-      width = Math.max(width, (rect.right + target.scrollX) / innerScale - offsetX)
-      height = Math.max(height, (rect.bottom + target.scrollY) / innerScale - offsetY)
+      const rectScale = rectIncludesZoom ? 1 / innerScale : authorZoom
+      left = Math.min(left, (rect.left + target.scrollX) * rectScale - offsetX)
+      top = Math.min(top, (rect.top + target.scrollY) * rectScale - offsetY)
+      width = Math.max(width, (rect.right + target.scrollX) * rectScale - offsetX)
+      height = Math.max(height, (rect.bottom + target.scrollY) * rectScale - offsetY)
     }
     const nextX = Math.min(limit, Math.max(offsetX, Math.ceil(-left)))
     const nextY = Math.min(limit, Math.max(offsetY, Math.ceil(-top)))
@@ -184,6 +204,7 @@ export function installPelicanMeasurement(target: Window & typeof globalThis, ch
     // height:100% document while the measurement zoom settles.
     root.style.setProperty('width', `${width}px`, 'important')
     root.style.setProperty('height', `${height}px`, 'important')
+    detectZoomedRects()
     if (target.ResizeObserver) resizeObserver = new target.ResizeObserver(schedule)
     if (target.MutationObserver) {
       mutationObserver = new target.MutationObserver(schedule)

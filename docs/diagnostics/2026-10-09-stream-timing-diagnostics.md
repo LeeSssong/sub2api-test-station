@@ -75,3 +75,23 @@ go test -race -tags unit ./internal/service -run 'TestOpenAI(ResponsesStreamTimi
 服务测试使用仓库 `Makefile test-unit` 规定的 `unit` 标签。初次不带该标签的 service 测试因现有 `openai_apikey_cache_protocol_test.go` 引用只在 unit 文件定义的 `rawChatCompletionsTestAccount` 而编译失败；本次未修改这项既有测试组织问题。
 
 验证环境为本地 Darwin/ARM64。未构建生产镜像、未部署、未进行真实上游或线上采集验证；部署后的请求才能用于实际问题定位。
+
+
+## Chat → Responses 流式转换补充（2026-10-15，本地候选）
+
+Chat Completions 转换为 Responses 再转换回 Chat 的流式路径接入相同读取与事件摘要，包括共用处理器的 Grok bridge。同步和异步读取都在扫描前包装响应体，绑定物理 HTTP attempt。不能补采历史请求。
+
+该路径保留首个 data 文档计时的首字定义，记录为 ttft_mode=first_data，元数据也可命中 TTFT。first_visible 记录原始上游可见内容被解析时刻；first_output_flush 记录应用输出 Flush，均不保证远端已接收。
+
+分别记录上游 terminal 和下游 outcome/client_disconnect，使上游完成但写回失败同时可见。events.client_write_error 和 events.upstream_read_error 标记首次观察到的错误时间；写错误时间不等于实际断开时间。HTTP 200、上游 completed、消费记录不能单独证明交付成功。用户取消、网络中断、代理超时仍需客户端/代理日志判因。
+
+只保存类型白名单、长度、时间和结果，不保存正文、推理、工具参数或凭据。沿用现有大小与保留期限限制，不修改计费、首字、输出和重试行为，无数据库迁移。
+
+
+## 大请求流式保活修复（2026-10-16，本地候选，未部署）
+
+Chat → Responses → Chat 流式处理在收到上游响应头后，沿用现有 stream_keepalive_interval 定时发送 SSE 注释心跳。取消静默拒绝检测对心跳的抑制；检测仍可扣留元数据并识别空完成。心跳不设置 first_token_ms、不算语义输出、不改变 usage 或余额结算。新增 events.first_keepalive 标记第一次成功 Write/Flush 后的应用时间，不证明客户端实际接收。
+
+兼容性取舍：心跳已提交 HTTP 200，此后不能再改 HTTP 状态或透明重放。现有 Chat handler 检查转发前后 Writer.Size，向客户端发送 SSE 错误并终止，而非跨账号重试。未发送心跳且未输出时仍保留既有 failover。keepalive=0仍表示禁用。本修复只覆盖已定位的 Responses→Chat 流处理器，不覆盖等待上游响应头阶段，不保证上游变快或消除所有网络超时。
+
+本次不部署、不退款、不改计费策略。已新增回归覆盖大请求在正文前收到心跳、心跳不提前TTFT、空完成仍返回失败、心跳后handler返回SSE错误。诊断回归覆盖同步/异步、断连、迟到正文与迟到完整事件。

@@ -72,3 +72,10 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__=='__main__': unittest.main()
 
+
+class EventAccountTests(unittest.TestCase):
+ def test_foreign_account_events_are_rejected(self):
+  from infra.qqbot.service.protocol import route_event
+  cfg={'self_id':'9','allowed_groups':['12345'],'admins':[],'wake_prefix':['/']}
+  e={'post_type':'message','message_type':'group','self_id':10,'user_id':8,'group_id':12345,'message_id':1,'message':[{'type':'text','data':{'text':'/help'}}]}
+  self.assertIsNone(route_event(e,cfg))

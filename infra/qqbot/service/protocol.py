@@ -7,6 +7,8 @@ import uuid
 logger=logging.getLogger(__name__)
 
 def route_event(event,cfg):
+    if cfg.get('self_id') and str(event.get('self_id'))!=str(cfg['self_id']):
+        return None
     if event.get('post_type')!='message' or str(event.get('user_id'))==str(event.get('self_id')):
         return None
     kind=event.get('message_type')

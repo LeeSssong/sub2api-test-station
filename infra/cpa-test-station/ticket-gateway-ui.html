@@ -48,18 +48,19 @@
       <div class="context"><span><span id="productVersion" class="tag">PLUGIN WORKSPACE</span><span>客户端工作台</span></span></div><div class="page-heading"><div><p id="pageEyebrow" class="eyebrow">YOUR WORKSPACE</p><h1 id="productTitle">票据网关</h1><p id="pageDescription" class="subtitle">连接网关并选择账号，现有客户端即可继续使用。</p></div><div class="heading-actions"><span id="settingsState" class="badge" hidden>已保存</span><button id="sync" type="button" hidden>同步账号</button><button id="refresh" type="button">刷新状态</button></div></div>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
       <div id="runtimeNotice" class="notice" role="status" aria-live="polite" hidden></div>
+      <div id="stateDirectoryRecovery" class="callout spaced" hidden><button id="retryStateDirectory" class="small" type="button">重试打开原数据目录</button><details><summary>原数据目录排查步骤</summary><ul><li>保留原数据目录和连接配置。不要改用空目录、删除目录中的文件或重复充值。</li><li>核对 CPA 实际运行账户。Docker 部署请确认原数据卷仍挂载到原路径，挂载可写，容器 UID/GID 能访问。</li><li>Linux 仅为该运行账户设置专用目录权限 0700、目录内文件权限 0600；不要使用 chmod 777。</li><li>Windows 为实际运行 CPA 的账户授予原目录“修改”权限，检查目录和文件只读属性；不要向所有人开放权限。</li><li>目录被占用时，先停止重复运行的 CPA 实例。不要删除数据目录中的文件。修复后点击“重试打开原数据目录”。</li></ul></details></div>
       <section id="page-overview" role="tabpanel" aria-labelledby="pageTab-overview" tabindex="0">
       <div id="setupSteps" class="steps" aria-label="设置进度" hidden><div id="stepConfig" class="step"><span class="step-num">1</span><span>保存连接配置</span></div><div id="stepActivate" class="step"><span class="step-num">2</span><span>用 CDK 充值余额</span></div><div id="stepReady" class="step"><span class="step-num">3</span><span>开始使用，自动路由</span></div></div>
       <section class="metrics" aria-label="当前状态">
         <div class="metric"><div class="metric-label">服务连接 <svg aria-hidden="true"><use href="#icon-settings"/></svg></div><div id="gatewayState" class="metric-value word">—</div><div id="gatewayNote" class="metric-note">等待读取</div><div id="workerServiceNote" class="metric-note" hidden></div></div>
         <div class="metric"><div class="metric-label"><span id="readyLabel">实际可服务账号</span> <svg aria-hidden="true"><use href="#icon-accounts"/></svg></div><div id="readyCount" class="metric-value">—</div><div id="readyNote" class="metric-note">等待读取</div></div>
         <div class="metric"><div class="metric-label">服务可用额度 <svg aria-hidden="true"><use href="#icon-balance"/></svg></div><div id="available" class="metric-value money">—</div><div id="availableNote" class="metric-note">尚未确认服务额度</div></div>
-        <div class="metric"><div class="metric-label"><span id="requestMetricLabel">正在处理</span> <svg aria-hidden="true"><use href="#icon-activity"/></svg></div><div id="requestMetric" class="metric-value">—</div><div id="requestMetricNote" class="metric-note">在途请求尚未确认</div><div id="waitingRequests" class="metric-note" hidden></div></div>
+        <div class="metric"><div class="metric-label"><span id="requestMetricLabel">正在处理</span> <svg aria-hidden="true"><use href="#icon-activity"/></svg></div><div id="requestMetric" class="metric-value">—</div><div id="requestMetricNote" class="metric-note">正在处理的请求尚未确认</div><div id="waitingRequests" class="metric-note" hidden></div></div>
       </section>
         <div class="workspace"><div class="stack"><section class="card" aria-labelledby="servingTitle"><div class="card-head"><div><h2 id="servingTitle">正在提供服务</h2><p id="overviewAccountSummary">优先使用已就绪账号，其他账号按配置参与准备。</p></div><button id="overviewManageAccounts" type="button" class="quiet small">管理账号 →</button></div><div class="card-body"><ul id="overviewAccounts" class="serving-list"></ul><p id="overviewAccountsEmpty" class="callout">选择账号并保存后，服务状态会显示在这里。</p></div><div class="card-foot"><span id="overviewReadySummary" class="hint">就绪不等于仅仅勾选</span><span id="overviewModeBadge" class="badge">—</span></div></section><section class="card" aria-labelledby="clientTitle">
             <div class="card-head"><div><h2 id="clientTitle">继续使用现有客户端</h2><p>访问地址、API Key 和模型名称沿用现有配置。</p></div></div>
             <div class="card-body"><div id="modelTags" class="model-tags"></div><pre id="clientConfig" class="code-example"></pre><div class="inline-actions"><span id="clientHint" class="hint">保存配置后生成示例。</span><button id="copyConfig" class="small" type="button">复制配置示例</button></div></div>
-          </section></div><aside class="stack"><section class="card" aria-labelledby="strategyTitle"><div class="card-head"><div><h2 id="strategyTitle">当前策略</h2><p>使用已保存的配置，运行状态由网关确认。</p></div></div><div class="card-body"><dl class="facts"><div><dt>打票模式</dt><dd id="overviewMode">—</dd></div><div><dt>并发账号</dt><dd id="overviewConcurrency">—</dd></div><div><dt>无票时</dt><dd id="overviewWait">—</dd></div><div><dt>降智回复时</dt><dd id="overviewRequeue">—</dd></div><div><dt>业务重试</dt><dd id="overviewRetries">—</dd></div><div><dt>计费</dt><dd id="overviewBilling">—</dd></div><div hidden><dt>在途请求</dt><dd id="overviewInflight">—</dd></div></dl><button id="overviewSettings" class="link spaced" type="button">调整连接与策略 →</button></div></section><section class="card"><div class="card-head"><div><h2>最近动态</h2><p>仅展示本次会话中已确认的变化。</p></div></div><div class="card-body"><ol id="recentActivity" class="activity"></ol><p id="activityEmpty" class="hint">暂无已确认的操作记录。</p></div></section></aside></div>
+          </section></div><aside class="stack"><section class="card" aria-labelledby="strategyTitle"><div class="card-head"><div><h2 id="strategyTitle">当前策略</h2><p>使用已保存的配置，运行状态由网关确认。</p></div></div><div class="card-body"><dl class="facts"><div><dt>打票模式</dt><dd id="overviewMode">—</dd></div><div><dt>并发账号</dt><dd id="overviewConcurrency">—</dd></div><div><dt>无票时</dt><dd id="overviewWait">—</dd></div><div><dt>降智回复时</dt><dd id="overviewRequeue">—</dd></div><div><dt>业务重试</dt><dd id="overviewRetries">—</dd></div><div><dt>计费</dt><dd id="overviewBilling">—</dd></div><div hidden><dt>正在处理的请求</dt><dd id="overviewInflight">—</dd></div></dl><button id="overviewSettings" class="link spaced" type="button">调整连接与策略 →</button></div></section><section class="card"><div class="card-head"><div><h2>最近动态</h2><p>仅展示本次会话中已确认的变化。</p></div></div><div class="card-body"><ol id="recentActivity" class="activity"></ol><p id="activityEmpty" class="hint">暂无已确认的操作记录。</p></div></section></aside></div>
         <div class="quicklinks"><button id="quickAccounts" type="button">选择服务账号 <svg aria-hidden="true"><use href="#icon-arrow"/></svg></button><button id="quickBalance" type="button">兑换 CDK 充值 <svg aria-hidden="true"><use href="#icon-arrow"/></svg></button><button id="quickUpdates" type="button">查看插件更新 <svg aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
       </section>
       <section id="page-accounts" role="tabpanel" aria-labelledby="pageTab-accounts" tabindex="0" hidden><section class="card" aria-labelledby="accountsTitle">
@@ -85,18 +86,18 @@
             </div>
             </section><div class="callout spaced"><p id="priorityHelp" class="hint priority-help">优先级数字越小越优先；相同数字由系统自动选优。保存后生效，不会中断正在使用的账号。</p></div><div class="account-footer"><div><span id="accountFoot" class="hint">勾选后点击“保存并连接”生效。</span><br><a id="openAccounts" href="/management.html#/oauth" target="_top" class="hint">在 CPA 中登录账号 →</a></div></div></section>
       <section id="page-settings" role="tabpanel" aria-labelledby="pageTab-settings" tabindex="0" hidden>
-        <form id="configForm" class="workspace"><div class="card"><section class="form-section"><h2 id="settingsTitle">连接网关</h2><p class="section-description">填写网关地址与持久数据目录，保留此安装的专属身份。</p>              <div class="field"><label for="gatewayURL">网关地址</label><input id="gatewayURL" type="url" required placeholder="填写你的网关 HTTPS 地址" autocomplete="off" spellcheck="false"><p class="hint">填写网关首页地址，使用 HTTPS。</p></div>
+        <form id="configForm" class="workspace"><div class="card"><section class="form-section"><h2 id="settingsTitle">连接网关</h2><p class="section-description">填写网关地址和数据目录，保存后可继续使用现有客户端。</p>              <div class="field"><label for="gatewayURL">网关地址</label><input id="gatewayURL" type="url" required placeholder="填写你的网关 HTTPS 地址" autocomplete="off" spellcheck="false"><p class="hint">填写网关首页地址，使用 HTTPS。</p></div>
               <div class="field"><label for="dataDir">插件数据目录</label><input id="dataDir" type="text" required placeholder="填写此插件的持久数据绝对路径" autocomplete="off" spellcheck="false"><p class="hint">CLIProxyAPI 服务器上的可写绝对路径。Docker 部署时请挂载为持久目录。</p></div>
 
               <details><summary>高级设置</summary><div class="two-col"><div class="field"><label for="leaseSeconds">连接有效期（秒）</label><input id="leaseSeconds" type="number" min="30" max="120" required></div><div class="field"><label for="syncSeconds">同步间隔（秒）</label><input id="syncSeconds" type="number" min="2" max="40" required></div></div><div class="two-col"><div class="field"><label for="controlTimeout">连接操作超时（秒）</label><input id="controlTimeout" type="number" min="5" max="300" step="1" required><p class="hint">默认 30 秒，适用于连接状态等操作。</p></div><div class="field"><label for="syncTimeout">账号同步超时（秒）</label><input id="syncTimeout" type="number" min="30" max="900" step="1" required><p class="hint">默认 180 秒，不得小于连接操作超时。</p></div></div><div class="field"><label for="requestTimeout">请求超时（秒）</label><input id="requestTimeout" type="number" min="5" max="3600" required><p class="hint">默认 1,800 秒，可容纳较长的推理请求。</p></div><p id="installationInfo" class="identity"></p></details>
-</section><section class="form-section"><h2>模型与计费</h2><p class="section-description">模型名称保持原样，按网关确认的计费方式结算。</p><div class="field"><label for="chargeMode">计费方式</label><select id="chargeMode"><option value="token">按 Token</option><option value="request">按成功请求次数</option></select><p id="chargeModeStatus" class="hint">计费方式尚待网关确认。</p><p id="requestPriceStatus" class="hint"></p></div><div class="field"><fieldset id="relayModels" class="model-choices" aria-describedby="relayModelsHelp"><legend>业务模型</legend><div id="relayModelChoices" class="model-choice-grid"></div></fieldset><p id="relayModelsHelp" class="hint">勾选的模型由票据网关服务处理。未勾选及其他模型交给 CPA 原生转发。至少选择一个模型，保存后生效。</p><p id="supportedModelsNote" class="hint"></p></div></section></div><div class="stack"><section class="card form-section"><h2>账号调度</h2><p class="section-description">持续按你的配置准备可服务账号。</p>
+</section><section class="form-section"><h2>模型与计费</h2><p class="section-description">模型名称保持原样，按网关确认的计费方式结算。</p><div class="field"><label for="chargeMode">计费方式</label><select id="chargeMode"><option value="token">按 Token</option><option value="request">按成功请求次数</option></select><p id="chargeModeStatus" class="hint">计费方式尚待网关确认。</p><p id="requestPriceStatus" class="hint"></p></div><div class="field"><fieldset id="relayModels" class="model-choices" aria-describedby="relayModelsHelp"><legend>业务模型</legend><div id="relayModelChoices" class="model-choice-grid"></div></fieldset><p id="relayModelsHelp" class="hint">勾选的模型由票据网关服务处理。未勾选及其他模型按 CPA 原有配置处理。至少选择一个模型，保存后生效。</p><p id="supportedModelsNote" class="hint"></p></div></section></div><div class="stack"><section class="card form-section"><h2>账号调度</h2><p class="section-description">持续按你的配置准备可服务账号。</p>
               <div class="field"><label for="ticketMode">打票模式</label><select id="ticketMode"><option value="personal">个人模式</option><option value="relay">中转模式</option></select><p id="ticketModeHint" class="hint">个人模式持续准备一个可用账号，票据到期后自动补充。</p><p id="ticketModeStatus" class="hint"></p></div>
               <div id="concurrencyModeControl" class="field" hidden><label for="relayConcurrencyMode">并发方式</label><select id="relayConcurrencyMode"><option value="manual">手动设置</option><option value="auto">自动设置</option></select><p id="autoConcurrencySummary" class="hint" aria-live="polite" hidden></p></div>
               <div id="rotationControls" class="field" hidden><label for="relayActiveAccounts">并发账号数（0为全部）</label><input id="relayActiveAccounts" type="number" min="0" max="1000" step="1" value="0"><p class="hint">同时工作的账号数量</p></div><div id="rotationMinutesControl" class="field" hidden><label for="relayNoTicketMinutes">连续无票分钟数</label><input id="relayNoTicketMinutes" type="number" min="1" max="1440" step="1" value="5"><p class="hint">达到后自动换一个账号尝试。</p></div>
 
 </section><section class="card form-section"><h2>等待与重试</h2><p class="section-description">控制业务请求取得可用票据前的等待与失败处理。</p>              <div class="field"><label for="ticketWaitMode">无票时</label><select id="ticketWaitMode"><option value="wait">继续等待</option><option value="timeout">限时等待，超时重试</option></select><p class="hint">整个请求仍受请求超时限制。</p><p id="waitingPolicyStatus" class="notice" data-kind="error" role="status" hidden></p></div>
               <div id="ticketWaitSecondsControl" class="field" hidden><label for="ticketWaitSeconds">每轮最多等待（秒）</label><input id="ticketWaitSeconds" type="number" min="0" max="3600" step="1" value="0"><p class="hint">可设置 0–3600 秒。0 秒表示无票立即报错，不因无票反复等待；大于 0 时，每轮只累计实际排队时间，生成耗时不计入。等待超时也会消耗一次业务重试次数，下一轮重新计时。</p></div>
-              <div class="field"><label for="requeueOnStateReplace">降智回复时</label><select id="requeueOnStateReplace"><option value="true">重新等待可用票据</option><option value="false">直接报错</option></select><p class="hint">收到异常回复时，尚未输出内容且符合重试条件的请求可重新等待；已输出内容或执行结果不明的请求不会自动重发。不会取消其他在途请求。</p></div>
+              <div class="field"><label for="requeueOnStateReplace">降智回复时</label><select id="requeueOnStateReplace"><option value="true">重新等待可用票据</option><option value="false">直接报错</option></select><p class="hint">收到异常回复时，尚未输出内容且符合重试条件的请求可重新等待；已输出内容或执行结果不明的请求不会自动重发。不会取消其他正在处理的请求。</p></div>
 <div class="field"><label for="businessRetryAttempts">业务请求重试次数</label><input id="businessRetryAttempts" type="number" min="0" max="100" step="1" value="10" required><p class="hint">默认额外重试 10 次，0 表示不重试。可重试的业务失败、等待超时和网络重连共用这一个次数上限。已返回部分内容时，重连后继续接收原请求，不重新生成或重复内容；结果不明时不会另发请求。</p><p id="businessRetryStatus" class="hint" role="status" aria-live="polite">重试能力尚待网关确认。</p></div></section></div>
         <section id="workerSettings" class="card worker-card" aria-labelledby="workerTitle" hidden>
           <div class="card-head"><div><h2 id="workerTitle">工作节点</h2><p>默认由网关分配，也可选择指定节点和入口。</p></div><div class="worker-tools"><button id="refreshWorkers" type="button" class="small">刷新列表</button><button id="probeAllWorkers" type="button" class="small">测试全部</button><button id="stopWorkerProbe" type="button" class="small" hidden>停止测速</button></div></div>
@@ -115,7 +116,7 @@
           </section></div></section>
       <section id="page-updates" role="tabpanel" aria-labelledby="pageTab-updates" tabindex="0" hidden><div class="workspace"><section class="card" aria-labelledby="updateTitle">
             <div class="card-head"><div><h2 id="updateTitle">票据网关 · 原生插件</h2><p>自动检查新版本，点击后才会更新。</p></div></div>
-            <div class="card-body"><div class="version-box"><div class="version-icon"><svg aria-hidden="true"><use href="#icon-logo"/></svg></div><div><span class="hint">当前运行版本</span><div id="updateCurrentVersion" class="version-number">—</div></div></div><p id="updateStatus" class="update-status" role="status" aria-live="polite">正在检查更新…</p><progress id="updateProgress" class="update-progress" aria-label="更新进度" hidden></progress><div class="update-actions"><button id="installUpdate" class="primary small" type="button" hidden>立即更新</button><button id="checkUpdate" class="small" type="button">检查更新</button><button id="reloadUpdate" class="small" type="button" hidden>刷新页面</button><button id="updateReconnect" class="small" type="button" hidden>重新连接账号</button></div><p id="updateHint" class="hint" style="margin-top:12px">每 5 分钟检查一次。</p><details id="updateManualHelp" hidden><summary>手动更新方法</summary><p class="hint">在 CPA 的插件管理中添加官方插件源，选择票据网关更新。旧版插件首次升级后，按 CPA 提示重启一次。</p><a class="hint" href="https://ticket.codingmiao.site/downloads/cliproxy-ticket/stable.json" target="_blank" rel="noopener noreferrer">官方插件源</a></details></div>
+            <div class="card-body"><div class="version-box"><div class="version-icon"><svg aria-hidden="true"><use href="#icon-logo"/></svg></div><div><span class="hint">当前运行版本</span><div id="updateCurrentVersion" class="version-number">—</div></div></div><p id="updateStatus" class="update-status" role="status" aria-live="polite">正在检查更新…</p><progress id="updateProgress" class="update-progress" aria-label="更新进度" hidden></progress><div class="update-actions"><button id="installUpdate" class="primary small" type="button" hidden>立即更新</button><button id="checkUpdate" class="small" type="button">检查更新</button><button id="cancelUpdate" class="small" type="button" hidden>取消更新并恢复服务</button><button id="reloadUpdate" class="small" type="button" hidden>刷新页面</button><button id="updateReconnect" class="small" type="button" hidden>重新连接账号</button></div><p id="updateHint" class="hint" style="margin-top:12px">每 5 分钟检查一次。</p><details id="updateManualHelp" hidden><summary>手动更新方法</summary><p class="hint">在 CPA 的插件管理中添加官方插件源，选择票据网关更新。旧版插件首次升级后，按 CPA 提示重启一次。</p><a class="hint" href="https://ticket.codingmiao.site/downloads/cliproxy-ticket/stable.json" target="_blank" rel="noopener noreferrer">官方插件源</a></details></div>
           </section><section class="card"><div class="card-head"><div><h2>更新方式</h2><p>先检查版本，再由你确认安装。</p></div></div><div class="card-body"><ol class="activity"><li>发现可用版本<small>自动检查或手动点击检查。</small></li><li>你确认“立即更新”<small>展示版本与影响，再开始安装。</small></li><li>确认恢复服务<small>区分安装完成与运行版本确认。</small></li></ol><a id="openPluginManagement" href="/management.html#/plugins" target="_top" class="hint">打开 CPA 插件管理 →</a></div></section></div></section>
       <div id="saveBar" class="save-bar" hidden><div><strong id="saveSummary">连接配置与账号选择</strong><span id="saveNote" class="save-note">首次配置</span><span id="dirtyIndicator" class="counter" hidden>未保存</span></div><div class="save-actions"><button id="discardDraft" type="button">放弃更改</button><button id="saveButton" class="primary" type="submit" form="configForm">保存并连接</button></div></div>
       <footer class="footer"><p id="refreshNote">状态每 5 秒刷新；表单草稿会保留。</p><button id="release" class="quiet small" type="button">释放账号并暂停</button></footer>
@@ -126,7 +127,7 @@
   <script id="ticket-console-script">
   (function (root) {
     'use strict';
-    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.6.2","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
+    const PRODUCT = {"id":"cliproxy-ticket-gateway","mode":"gateway","name":"票据网关","version":"1.6.3","ticket_models":["gpt-6-astra","gpt-6-sol","gpt-6.1-sol","gpt-5.5","gpt-5.6-sol","gpt-5.6-terra"]};
     const ID = PRODUCT.id;
     const CONFIG = '/v8/management/config/plugins/configs/' + ID;
     const MANAGEMENT = '/v0/management/plugins/' + ID;
@@ -153,11 +154,11 @@
       preflight_state_replaced:'账号暂不可用，本次请求尚未发送。',
       waiting_policy_invalid:'等待时间须为 0–3600 的整数，业务请求重试次数须为 0–100 的整数，请选择降智回复时的处理方式。',waiting_policy_unsupported:'当前服务不支持此等待设置，请联系管理员升级。',ticket_wait_timeout:'等待可用票据已超时，请检查等待设置、重试次数和账号状态。',
       business_retry_unsupported:'当前服务不支持所选业务重试次数，请联系管理员升级。账号仍会继续准备。',
-      account_auth_revoked:'账号授权已被撤销，插件已自动排除该凭据并保留原账号文件。',
-      account_auth_invalidated:'账号授权已确认失效，插件已自动排除该凭据并保留原账号文件。',
+      account_auth_revoked:'账号授权已被撤销，插件已停止使用该账号，CPA 中的账号信息仍保留。',
+      account_auth_invalidated:'账号授权已确认失效，插件已停止使用该账号，CPA 中的账号信息仍保留。',
       auth_quarantine_persist_failed:'已停止使用失效凭据，正在自动重试保存排除记录。',
-      native_auth_disabled:'账号已在 CLIProxyAPI 中停用。',native_auth_cooldown:'重试中',native_auth_recovering:'原生账号状态尚未恢复。',
-      update_handoff_unsupported:'当前版本暂不支持保留账号状态更新，请通过 CPA 插件管理完成首次升级。',update_handoff_expired:'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_conflict:'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_unconfirmed:'账号状态尚未恢复，正在确认。',update_busy:'当前请求尚未结束，请稍后再更新。',update_metadata_unavailable:'暂时无法检查新版本，请稍后重试。',update_metadata_invalid:'更新包信息无法确认，请稍后重试。',update_version_changed:'新版本信息已变化，请重新检查更新。',update_not_available:'当前没有可用的新版本。',update_source_setup:'请先在 CPA 插件商店添加官方插件源，再重新检查更新。',update_host_unavailable:'当前 CPA 暂不支持在这里更新，请通过插件管理更新。',update_catalog_unconfirmed:'CPA 尚未确认新版本，请稍后再试。',relay_concurrency_mode_invalid:'请选择手动或自动设置并发。',account_priorities_invalid:'优先级须为 0–999999 的整数。',account_priority_unsupported:'优先级暂未确认，已保存的设置会在恢复后自动生效。',account_priority_mismatch:'优先级尚未获服务确认，正在重新同步。',rotation_policy_invalid:'并发账号数需为 0–1000；开启后连续无票分钟数需为 1–1440。',rotation_policy_unsupported:'并发账号设置暂未确认，已保留你的配置并等待恢复。',rotation_policy_mismatch:'并发设置尚未获网关确认，请稍后刷新。',charge_mode_invalid:'请选择按 Token 或按成功请求次数计费。',billing_selection_unsupported:'当前网关暂不支持按成功请求计费，请联系管理员升级。',billing_selection_mismatch:'所选计费方式尚未获网关确认。',billing_mode_changed:'计费方式已变更，请稍后重新发起尚未发送的请求。',ticket_mode_invalid:'请选择个人模式或中转模式。',ticket_mode_unsupported:'当前服务不支持此模式，请联系管理员升级。',ticket_mode_mismatch:'所选模式尚未生效，请稍后刷新。',ticket_policy_unavailable:'模式设置暂时无法保存，请稍后重试或联系管理员。',personal_acquisition_deferred:'当前账号暂不可用，正在等待恢复。',
+      native_auth_disabled:'账号已在 CLIProxyAPI 中停用。',native_auth_cooldown:'重试中',native_auth_recovering:'CPA 中的账号状态尚未恢复。',
+      update_handoff_unsupported:'当前版本暂不支持保留账号状态更新，请通过 CPA 插件管理完成首次升级。',update_handoff_expired:'账号连接未能恢复，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_conflict:'账号连接未能恢复，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。',update_handoff_unconfirmed:'账号状态尚未恢复，正在确认。',update_busy:'当前请求尚未结束，请稍后再更新。',update_metadata_unavailable:'暂时无法检查新版本，请稍后重试。',update_metadata_invalid:'更新包信息无法确认，请稍后重试。',update_version_changed:'新版本信息已变化，请重新检查更新。',update_not_available:'当前没有可用的新版本。',update_source_setup:'请先在 CPA 插件商店添加官方插件源，再重新检查更新。',update_host_unavailable:'当前 CPA 暂不支持在这里更新，请通过插件管理更新。',update_catalog_unconfirmed:'CPA 尚未确认新版本，请稍后再试。',relay_concurrency_mode_invalid:'请选择手动或自动设置并发。',account_priorities_invalid:'优先级须为 0–999999 的整数。',account_priority_unsupported:'优先级暂未确认，已保存的设置会在恢复后自动生效。',account_priority_mismatch:'优先级尚未获服务确认，正在重新同步。',rotation_policy_invalid:'并发账号数需为 0–1000；开启后连续无票分钟数需为 1–1440。',rotation_policy_unsupported:'并发账号设置暂未确认，已保留你的配置并等待恢复。',rotation_policy_mismatch:'并发设置尚未获网关确认，请稍后刷新。',charge_mode_invalid:'请选择按 Token 或按成功请求次数计费。',billing_selection_unsupported:'当前网关暂不支持按成功请求计费，请联系管理员升级。',billing_selection_mismatch:'所选计费方式尚未获网关确认。',billing_mode_changed:'计费方式已变更，请稍后重新发起尚未发送的请求。',ticket_mode_invalid:'请选择个人模式或中转模式。',ticket_mode_unsupported:'当前服务不支持此模式，请联系管理员升级。',ticket_mode_mismatch:'所选模式尚未生效，请稍后刷新。',ticket_policy_unavailable:'模式设置暂时无法保存，请稍后重试或联系管理员。',personal_acquisition_deferred:'当前账号暂不可用，正在等待恢复。',
       state_product_mismatch:'该数据目录属于另一个插件，请使用此插件独立的数据目录。',
 
 
@@ -191,8 +192,19 @@
       billing_protocol_incompatible:'当前版本暂不兼容，请联系管理员更新服务与插件，并保留现有配置和数据目录。', billing_price_unavailable:'此业务模型暂无可用定价，请联系管理员核对。', billing_model_unavailable:'此业务模型暂无可用定价，请联系管理员核对。', billing_model_not_supported:'此业务模型未获网关允许，请选择获准模型或联系管理员；打票不受影响。', balance_insufficient:'可用美元余额不足，请充值后继续。',
       billing_unavailable:'计费服务暂不可用，请联系网关管理员。', model_pricing_unavailable:'此业务模型暂无可用定价，请联系管理员核对。', model_not_supported:'此业务模型未获网关允许，请选择获准模型或联系管理员；打票不受影响。', billing_evidence_conflict:'业务用量与计费记录待核对，请联系管理员，不要重复发送请求。', worker_billing_unsupported:'当前服务暂不支持所选计费方式，请联系管理员更新。',
       license_invalid_request:'网关未接受此次充值参数，请检查安装配置和兑换码。', ledger_overflow:'网关余额已达到可记录上限，请联系管理员。',
-      plugin_unconfigured:'请先保存完整的连接配置。', plugin_inactive:'插件尚未连接，请保存配置后继续。', gateway_transport_error:'网关连接暂时中断，请检查服务后重试。', gateway_redirect_rejected:'网关地址发生跳转，请填写最终的 HTTPS 地址。', gateway_rejected:'网关拒绝了此操作，请检查网关授权和服务状态。', unauthorized:'网关尚未授权，请使用 CDK 激活。', license_unauthorized:'网关尚未授权，请使用 CDK 激活。', license_disabled:'网关授权已停用，请联系网关管理员。', license_revoked:'网关授权已撤销，请联系网关管理员。', insufficient_quota:'可用余额不足，请充值后继续。', cdk_unavailable:'兑换码不存在、已停用或已被使用，请检查原始 CDK。', code_consumed:'兑换码已被使用，请检查余额或联系管理员。', code_already_redeemed:'兑换码已兑换，请检查当前余额。', installation_conflict:'安装身份与网关记录不一致，请恢复原安装配置。', activation_request_invalid:'充值信息不完整，请检查原始兑换码。', activation_pending:'上次充值尚待确认，请输入同一兑换码完成确认。', activation_reply_unconfirmed:'充值回复不完整，请使用同一笔操作重试确认。', activation_state_write_failed:'充值已确认，页面状态正在恢复，请勿重复充值。', activation_history_full:'暂时无法继续充值，请联系管理员处理。', state_directory_unavailable:'数据目录不可用，请检查路径和写入权限。', state_directory_permissions:'数据目录权限不符合要求，请检查服务器目录权限。', state_directory_in_use:'数据目录正在被另一个插件实例使用。', state_write_failed:'插件数据未能写入，请检查数据目录和磁盘空间。', native_auth_unavailable:'暂时无法读取 CLIProxyAPI 账号状态。', native_auth_ineligible:'原生账号目前不可用，正在等待账号状态更新。', native_auth_file_unavailable:'原生账号文件暂不可读。', native_credentials_invalid:'原生账号凭据不完整。', native_token_expired:'账号登录已过期，等待原生凭据刷新。', native_expiry_invalid:'账号有效期无法识别，请重新登录。', native_auth_identity_mismatch:'账号标识发生变化，请重新选择该账号。', account_not_ready:'网关正在准备可用票据。', relay_not_ready:'网关尚未就绪，请稍后刷新。', route_epoch_stale:'账号连接已更新，等待重新同步。', route_released:'账号已释放，保存配置后可恢复连接。', upstream_state_changed:'当前服务暂不可用，请等待重新准备后刷新；反复出现时请联系管理员。', upstream_error:'上游请求暂时失败，请稍后刷新。', revision_conflict:'账号配置发生变化，等待重新同步。', operation_exists:'该操作已有记录，请用同一兑换码继续确认。', route_not_found:'插件接口不可用，请核对安装版本。',
-      config_invalid:'配置格式不正确，请检查填写内容。', gateway_url_invalid:'请填写不含路径、参数或账号密码的网关首页地址。', gateway_https_required:'网关地址须使用 HTTPS；本机调试可使用 HTTP。', data_dir_absolute_required:'请填写服务器上的绝对数据目录路径。', installation_identity_required:'安装身份不完整，请从原配置恢复身份与密钥，避免重复创建。', config_limits_invalid:'高级设置超出范围，或同步间隔大于连接有效期的三分之一。', config_selection_invalid:'请至少勾选一个业务模型，账号最多选择 1,000 个。', relay_models_invalid:'请选择列表中的业务模型，不支持重复选择。', auth_selection_invalid:'所选账号信息已变化，请刷新账号目录。', plugin_not_configured:'请先保存完整的连接配置。', plugin_disabled:'插件尚未启用。', plugin_paused:'已暂停，请保存配置后恢复连接。', plugin_closed:'插件正在重新加载，请稍后刷新。', host_unavailable:'CLIProxyAPI 管理服务暂不可用。', host_callback_failed:'读取 CLIProxyAPI 账号失败，请稍后刷新。', host_reply_invalid:'CLIProxyAPI 返回了无法识别的账号信息。', network_error:'连接暂时中断，请检查服务后重试。', request_timeout:'请求超时，请检查当前状态后重试。', invalid_response:'服务回复不完整，请刷新状态后确认。', gateway_unavailable:'网关暂时不可达，请检查网关服务与地址。', relay_unavailable:'网关暂时不可达，请检查网关服务与地址。', gateway_reply_invalid:'网关回复不完整，请稍后重试。', release_unconfirmed:'释放结果尚未确认，请检查网关后再次释放。', authorization_invalid:'网关尚未授权，请使用 CDK 激活。', authorization_not_found:'网关尚未授权，请使用 CDK 激活。', authorization_disabled:'网关授权已停用，请联系网关管理员。', quota_exhausted:'可用余额不足，请充值后继续。', code_invalid:'兑换码无效，请粘贴完整的原始 CDK。', invalid_code:'兑换码无效，请粘贴完整的原始 CDK。', code_not_found:'未找到该兑换码，请检查是否完整。', code_used:'兑换码已被使用，请检查余额或联系管理员。', code_redeemed:'兑换码已被使用，请检查余额或联系管理员。', code_revoked:'兑换码已被撤销，请联系管理员。', activation_intent_mismatch:'待确认操作与兑换码不匹配，请输入上次提交的同一 CDK。', operation_conflict:'此操作与上次提交不匹配，请使用同一兑换码确认。', operation_invalid:'无法确认充值操作，请刷新后重试。', directory_unavailable:'账号目录暂不可用，请稍后刷新。', credential_missing:'账号需要重新登录。', credentials_invalid:'账号凭据不可用，请重新登录。', account_disabled:'账号已在 CLIProxyAPI 中停用。', account_unavailable:'账号暂不可用。', proxy_invalid:'账号代理配置不可用。', proxy_unavailable:'账号代理暂时不可达。', pool_unavailable:'正在准备可用服务。', pool_empty:'正在准备可用服务。', probe_rejected:'服务暂不可用，正在重试。', upstream_rate_limited:'OpenAI 限流', upstream_cooldown:'重试中', waiting_for_pool:'正在准备可用服务。', ticket_not_ready:'正在准备可用票据。', ticket_unavailable:'正在准备可用票据。', sync_failed:'与网关同步失败，请检查连接。', not_found:'此管理接口不可用，请核对插件版本。', management_denied:'管理密钥无效或远程管理未开放，请检查 CLIProxyAPI 管理设置。', config_changed:'配置已被其他管理会话修改，请重新登录后再操作。', randomness_unavailable:'浏览器无法生成安全身份，请使用现代浏览器或 HTTPS 打开此页。'
+      plugin_unconfigured:'请先保存完整的连接配置。', plugin_inactive:'插件尚未连接，请保存配置后继续。', gateway_transport_error:'网关连接暂时中断，请检查服务后重试。', gateway_redirect_rejected:'网关地址发生跳转，请填写最终的 HTTPS 地址。', gateway_rejected:'网关拒绝了此操作，请检查网关授权和服务状态。', unauthorized:'网关尚未授权，请使用 CDK 激活。', license_unauthorized:'网关尚未授权，请使用 CDK 激活。', license_disabled:'网关授权已停用，请联系网关管理员。', license_revoked:'网关授权已撤销，请联系网关管理员。', insufficient_quota:'可用余额不足，请充值后继续。', cdk_unavailable:'兑换码不存在、已停用或已被使用，请检查原始 CDK。', code_consumed:'兑换码已被使用，请检查余额或联系管理员。', code_already_redeemed:'兑换码已兑换，请检查当前余额。', installation_conflict:'当前连接配置与网关记录不一致，请恢复原连接配置。', activation_request_invalid:'充值信息不完整，请检查原始兑换码。', activation_pending:'上次充值尚待确认，请输入同一兑换码完成确认。', activation_reply_unconfirmed:'充值回复不完整，请使用同一笔操作重试确认。', activation_state_write_failed:'充值已确认，页面状态正在恢复，请勿重复充值。', activation_history_full:'暂时无法继续充值，请联系管理员处理。', state_directory_unavailable:'数据目录不可用，请检查路径和写入权限。', state_directory_permissions:'数据目录权限不符合要求，请检查服务器目录权限。', state_directory_in_use:'数据目录正在被另一个插件实例使用。', state_write_failed:'插件数据未能写入，请检查数据目录和磁盘空间。', native_auth_unavailable:'暂时无法读取 CLIProxyAPI 账号状态。', native_auth_ineligible:'CPA 中的账号目前不可用，正在等待账号状态更新。', native_auth_file_unavailable:'暂时无法读取 CPA 中的账号信息。', native_credentials_invalid:'CPA 中的账号登录信息不完整。', native_token_expired:'账号登录已过期，正在等待 CPA 刷新登录状态。', native_expiry_invalid:'账号有效期无法识别，请重新登录。', native_auth_identity_mismatch:'账号标识发生变化，请重新选择该账号。', account_not_ready:'网关正在准备可用票据。', relay_not_ready:'网关尚未就绪，请稍后刷新。', route_epoch_stale:'账号连接已更新，等待重新同步。', route_released:'账号已释放，保存配置后可恢复连接。', upstream_state_changed:'当前服务暂不可用，请等待重新准备后刷新；反复出现时请联系管理员。', upstream_error:'上游请求暂时失败，请稍后刷新。', revision_conflict:'账号配置发生变化，等待重新同步。', operation_exists:'该操作已有记录，请用同一兑换码继续确认。', route_not_found:'插件接口不可用，请核对安装版本。',
+      config_invalid:'配置格式不正确，请检查填写内容。', gateway_url_invalid:'请填写不含路径、参数或账号密码的网关首页地址。', gateway_https_required:'网关地址须使用 HTTPS；本机调试可使用 HTTP。', data_dir_absolute_required:'请填写服务器上的绝对数据目录路径。', installation_identity_required:'连接配置不完整，请恢复原有完整配置，避免重复设置。', config_limits_invalid:'高级设置超出范围，或同步间隔大于连接有效期的三分之一。', config_selection_invalid:'请至少勾选一个业务模型，账号最多选择 1,000 个。', relay_models_invalid:'请选择列表中的业务模型，不支持重复选择。', auth_selection_invalid:'所选账号信息已变化，请刷新账号目录。', plugin_not_configured:'请先保存完整的连接配置。', plugin_disabled:'插件尚未启用。', plugin_paused:'已暂停，请保存配置后恢复连接。', plugin_closed:'插件正在重新加载，请稍后刷新。', host_unavailable:'CLIProxyAPI 管理服务暂不可用。', host_callback_failed:'读取 CLIProxyAPI 账号失败，请稍后刷新。', host_reply_invalid:'CLIProxyAPI 返回了无法识别的账号信息。', network_error:'连接暂时中断，请检查服务后重试。', request_timeout:'请求超时，请检查当前状态后重试。', invalid_response:'服务回复不完整，请刷新状态后确认。', gateway_unavailable:'网关暂时不可达，请检查网关服务与地址。', relay_unavailable:'网关暂时不可达，请检查网关服务与地址。', gateway_reply_invalid:'网关回复不完整，请稍后重试。', release_unconfirmed:'释放结果尚未确认，请检查网关后再次释放。', authorization_invalid:'网关尚未授权，请使用 CDK 激活。', authorization_not_found:'网关尚未授权，请使用 CDK 激活。', authorization_disabled:'网关授权已停用，请联系网关管理员。', quota_exhausted:'可用余额不足，请充值后继续。', code_invalid:'兑换码无效，请粘贴完整的原始 CDK。', invalid_code:'兑换码无效，请粘贴完整的原始 CDK。', code_not_found:'未找到该兑换码，请检查是否完整。', code_used:'兑换码已被使用，请检查余额或联系管理员。', code_redeemed:'兑换码已被使用，请检查余额或联系管理员。', code_revoked:'兑换码已被撤销，请联系管理员。', activation_intent_mismatch:'待确认操作与兑换码不匹配，请输入上次提交的同一 CDK。', operation_conflict:'此操作与上次提交不匹配，请使用同一兑换码确认。', operation_invalid:'无法确认充值操作，请刷新后重试。', directory_unavailable:'账号目录暂不可用，请稍后刷新。', credential_missing:'账号需要重新登录。', credentials_invalid:'账号凭据不可用，请重新登录。', account_disabled:'账号已在 CLIProxyAPI 中停用。', account_unavailable:'账号暂不可用。', proxy_invalid:'账号代理配置不可用。', proxy_unavailable:'账号代理暂时不可达。', pool_unavailable:'正在准备可用服务。', pool_empty:'正在准备可用服务。', probe_rejected:'服务暂不可用，正在重试。', upstream_rate_limited:'OpenAI 限流', upstream_cooldown:'重试中', waiting_for_pool:'正在准备可用服务。', ticket_not_ready:'正在准备可用票据。', ticket_unavailable:'正在准备可用票据。', sync_failed:'与网关同步失败，请检查连接。', not_found:'此管理接口不可用，请核对插件版本。', management_denied:'管理密钥无效或远程管理未开放，请检查 CLIProxyAPI 管理设置。', config_changed:'配置已被其他管理会话修改，请重新登录后再操作。', randomness_unavailable:'当前浏览器无法完成连接设置，请使用现代浏览器或 HTTPS 打开此页。'
+    });
+    const stateRecoveryLabels=Object.freeze({
+      state_directory_permissions:'CPA 运行账户无法读写原数据目录。请核对该账户的目录权限及容器 UID/GID，修复后重试打开。',
+      state_directory_read_only:'原数据目录所在卷或容器挂载只读。请恢复原卷的写入权限，再重试打开。',
+      state_directory_in_use:'原数据目录正被另一 CPA 实例使用。请停止重复实例后重试，不要删除数据目录中的文件。',
+      state_directory_unsafe:'原数据目录暂不可用。请确认该目录由此插件专用，实际运行账户可以读写，其他账户没有访问权限。保留原有数据。',
+      state_directory_unavailable:'原数据目录不可用。请核对原路径、数据卷挂载和 CPA 运行账户的访问权限。',
+      state_read_failed:'无法读取原有数据。请检查磁盘和目录权限，保留原文件并从可靠备份恢复。',
+      state_write_failed:'无法保存数据。请检查磁盘空间、目录权限和磁盘是否正常后重试。',
+      state_invalid:'原有数据无法读取。请保留原文件并从可靠备份恢复，不要删除数据或重复充值。',
+      state_product_mismatch:'该数据目录属于另一个插件。请核对此插件原有目录的映射，恢复原有独立的数据目录，保留原有数据和连接配置。'
     });
     class ConsoleError extends Error { constructor(code, status) { super(code); this.code=code; this.status=status||0; } }
     // Pinned original/Plus host contracts: these errors precede file replacement.
@@ -219,7 +231,7 @@
       error.installRetryable=label==='update_download_failed'&&temporary||code==='plugin_store_rate_limited'&&retryAfter>0&&retryAfter<=10000;
       error.restartRequired=code==='plugin_update_requires_restart';return error;
     }
-    function message(error) { return errorLabels[error && error.code || error] || '操作暂未完成，请检查服务状态后重试。'; }
+    function message(error) { const code=error&&error.code||error;return stateRecoveryLabels[code]||errorLabels[code]||'操作暂未完成，请检查服务状态后重试。'; }
     function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
     function list(value) { return Array.isArray(value) ? value : []; }
     function sorted(value) { return list(value).filter(v=>typeof v==='string').slice().sort(); }
@@ -453,6 +465,7 @@
     }
     function validUpdate(value) {
       const version=value&&value.current_version;if(!object(value)||typeof value.supported!=='boolean'||typeof version!=='string'||!/^\d+\.\d+\.\d+$/.test(version))return false;
+      if(value.metadata_error)return ['update_metadata_unavailable','update_metadata_invalid'].includes(value.metadata_error)&&value.update_available===false&&!value.artifact;
       if(!value.supported)return true;
       if(value.update_available){const a=value.artifact,p=value.platform;if(!object(a)||!object(p)||a.url!=='https://ticket.codingmiao.site/downloads/cliproxy-ticket/'+value.latest_version+'/'+ID+'-'+value.latest_version+'-'+p.goos+'-'+p.goarch+'.store.zip'||!/^([a-f0-9]{64})$/.test(a.sha256)||!Number.isSafeInteger(a.size)||a.size<=0)return false;}
       return value.source_url===updateSourceURL&&/^source-[a-f0-9]{12}$/.test(value.source_id)&&typeof value.latest_version==='string'&&/^\d+\.\d+\.\d+$/.test(value.latest_version)&&typeof value.update_available==='boolean'&&object(value.platform);
@@ -634,18 +647,19 @@
         el('discardDraft').disabled=!!busy||!!pending||!!remotePending||!changed;
         text('ticketModeHint',el('ticketMode').value==='relay'?'中转模式按设定的并发账号数持续准备账号，长时间未能准备好的账号会自动替换。':'个人模式持续准备一个可用账号，票据到期后自动补充；长时间未能准备好时自动尝试其他账号。');
         el('saveButton').disabled=!!busy||!!pending||!!remotePending;
-        el('redeemButton').disabled=!!busy||!configured||changed||paused;
+        el('redeemButton').disabled=!!busy||!configured||changed||paused||stateRecoveryRequired();
         el('redeemCode').readOnly=!!pending;
         el('redeemButton').textContent=remotePending&&remotePending===confirmedOperation?'确认充值记录':pending||remotePending?'重试确认同一笔充值':'确认激活 / 充值';
-        el('sync').disabled=!!busy||!configured||paused||reconnect;
-        el('release').disabled=!!busy||!configured||((paused||reconnect)&&changed);
-        el('release').textContent=reconnect?'重新连接账号':paused?'恢复已保存配置':'释放账号并暂停';
+        el('sync').disabled=!!busy||!configured||paused||reconnect||stateRecoveryRequired();
+        el('release').disabled=!!busy||!configured||((paused||reconnect||stateRecoveryRequired())&&changed);
+        el('release').textContent=stateRecoveryRequired()?'重试打开原数据目录':reconnect?'重新连接账号':paused?'恢复已保存配置':'释放账号并暂停';
+        el('retryStateDirectory').disabled=!!busy||!configured||changed;
         el('saveButton').textContent=paused?'保存配置':'保存并连接';
         el('copyConfig').disabled=!saved||!saved.installation_id;
         text('saveNote',busy==='save'?'正在保存…':awaiting?'正在应用配置…':changed?'有未保存的更改':saved&&saved.installation_id?'配置已保存':'首次配置');
         renderWorkerControls();
         renderUpdate();
-        text('redeemHint',remotePending&&remotePending===confirmedOperation?'充值已入账，本地记录尚待清理。可重新粘贴同一兑换码确认，不会重复增加余额。':pending?'结果尚未确认。点击重试会沿用同一笔充值编号。':remotePending?'上次充值尚未确认。请重新粘贴同一兑换码后点击重试。':changed?'请先保存当前配置，再激活或充值。':!configured?'先保存连接配置，再提交兑换码。':'仅在点击下方按钮后提交充值。');
+        text('redeemHint',remotePending&&remotePending===confirmedOperation?'充值已入账，页面结果仍待确认。可重新粘贴同一兑换码确认，不会重复增加余额。':pending?'结果尚未确认。点击重试会沿用同一笔充值编号。':remotePending?'上次充值尚未确认。请重新粘贴同一兑换码后点击重试。':changed?'请先保存当前配置，再激活或充值。':!configured?'先保存连接配置，再提交兑换码。':'仅在点击下方按钮后提交充值。');
         if(activePage==='settings'&&!workerLoaded&&!workerOperation&&!busy)void loadWorkers();
       }
       function clearSession(reason) {
@@ -653,7 +667,7 @@
         workerSequence++;if(workerOperation)workerOperation.controller.abort();workerOperation=null;workerNodes=[];workerRows.clear();workerResults.clear();workerDraft={mode:'auto'};workerSupported=null;workerLoaded=false;workerScope='';workerMessage='';workerAssigned='';
         el('workerCFList').replaceChildren();el('workerDirectList').replaceChildren();el('workerSelectionMode').value='auto';
         for(const id of ['workerSelectionSummary','workerAssignment','workerContext','workerSelectionStatus'])text(id,'');show('workerSelectionStatus',false);show('stopWorkerProbe',false);
-        updateFailureNote='';updateResumeNeeded=false;
+        updateFailureNote='';updateResumeNeeded=false;updateDirectoryRetries=0;
         closeDialog();
         activity=[];el('recentActivity').replaceChildren();show('activityEmpty',true);
         epoch++; key=''; nativeBinding=null; configPath=CONFIG; configStyle='v8'; session=false; saved=null; selected=new Set(); directory=[]; status=null; stale=true; awaiting=null; generated=null; pending=null; remotePending=''; confirmedOperation=''; released=false; busy=''; refreshing=false; priorities={};prioritiesExplicit=false;accountFilter='all';accountPage=1;updateInfo=null;updatePhase='idle';updateNote='';checkingUpdate=false;updateTarget='';updateOldVersion='';updateInstallSent=false;updateAttempts=0;updateRecovery='';verifyingUpdate=false;
@@ -667,7 +681,7 @@
         el('overviewAccounts').replaceChildren();
         for(const id of ['overviewAccountSummary','overviewMode','overviewConcurrency','overviewWait','overviewRequeue','overviewRetries','overviewInflight','overviewBilling','overviewReadySummary','overviewModeBadge','requestMetric','requestMetricNote','balanceAvailable','balanceGranted','balanceConsumed','balanceHeld','balanceMode','balanceRate','balanceFreshness','businessRetryStatus'])text(id,'');
         text('configValidation','');show('configValidation',false);
-        show('consoleView',false); show('workspaceNav',false);show('session',false); show('entryView',true); show('notice',false); show('redeemMessage',false); show('waitingRequests',false);text('runtimeNotice','');show('runtimeNotice',false);
+        show('consoleView',false); show('workspaceNav',false);show('session',false); show('entryView',true); show('notice',false); show('redeemMessage',false); show('waitingRequests',false);text('runtimeNotice','');show('runtimeNotice',false);show('stateDirectoryRecovery',false);
         text('entryMessage',reason||''); show('entryMessage',!!reason);
       }
       async function api(path,options) {
@@ -685,6 +699,7 @@
           if (!response.ok) { if (options&&options.allowMissing&&response.status===404&&errorCode(body)==='not_found') return {}; if(options&&options.discoverConfig&&response.status===404)throw new ConsoleError('config_endpoint_missing',404); if(!parsed)throw new ConsoleError('invalid_response',response.status); if(options&&options.updateInstall)throw updateInstallError(body,response.status); throw new ConsoleError(errorCode(body)||'network_error',response.status); }
           if(options&&options.raw)return source;
           if(!parsed)throw new ConsoleError('invalid_response',response.status);
+          if(options&&options.updateInstall&&(body?.ok===false||errorCode(body)))throw updateInstallError(body,response.status);
           return body;
         } catch (error) { if (error instanceof ConsoleError) throw error; throw new ConsoleError(timedOut?'request_timeout':'network_error'); }
         finally { env.clearTimeout(deadline); controllers.delete(controller);if(externalSignal)externalSignal.removeEventListener('abort',abortExternal); }
@@ -995,7 +1010,9 @@
       }
       function gatewaySyncDelayed() { return ['gateway_unavailable','gateway_transport_error','gateway_reply_invalid','relay_unavailable'].includes(status?.last_error); }
       function workerControlError() { return ['worker_service_expired','worker_reply_invalid','worker_protocol_unavailable','worker_transport_error','worker_allocation_draining','worker_allocation_unavailable','worker_allocation_exhausted','worker_allocation_invalid'].includes(status?.last_error); }
+      function stateRecoveryRequired(value=status) { return !!value&&Object.hasOwn(stateRecoveryLabels,value.last_error); }
       function activationKnown() {
+        if(stateRecoveryRequired())return false;
         if(typeof status?.activated_known==='boolean')return status.activated_known;
         const balance=status?.balance;return object(balance)&&balance.installation_id===saved?.installation_id&&typeof balance.authorization_id==='string'&&balance.authorization_id.length>0;
       }
@@ -1011,7 +1028,7 @@
         const historical=!fresh&&workerServiceConfirmed(),observed=indexes.map(index=>historical?confirmedAccountObservation(statuses.get(index)):statuses.get(index)),complete=(fresh||historical)&&observed.every(account=>account&&(historical||!account.observation||account.observation==='fresh')&&Number.isSafeInteger(account.in_flight)&&account.in_flight>=0);
         const inflight=complete?observed.reduce((total,account)=>total+account.in_flight,0):null,known=Number.isSafeInteger(inflight)&&inflight>=0;
         text('overviewInflight',known?(historical?'上次确认 ':'')+count(inflight)+' 个':'尚未确认');text('requestMetric',known?count(inflight):'—');text('requestMetricLabel',known&&historical?'上次在途观测':'正在处理');
-        text('requestMetricNote',known?historical?'上次确认 · '+usageTime(status.worker_service_observed_at):'个在途 · 以实际观测为准':'在途请求尚未确认');
+        text('requestMetricNote',known?historical?'上次确认 · '+usageTime(status.worker_service_observed_at):'个在途 · 以实际观测为准':'正在处理的请求尚未确认');
         text('overviewAccountSummary',fresh?'优先使用已就绪账号，其他账号按配置参与准备。':historical?'已确认的服务连接仍有效，以下保留最近确认的账号状态。':'可用状态尚未确认，正在更新节点服务状态。');
         text('overviewReadySummary','已保存 '+indexes.length+' 个账号 · 就绪与选择分别统计');text('overviewModeBadge',saved.ticket_mode==='relay'?'中转模式':'个人模式');
         const summary=el('overviewAccounts');summary.replaceChildren();
@@ -1048,6 +1065,7 @@
         const historicalReady=historicalComplete?accounts.filter(a=>{const prior=confirmedAccountObservation(a);return prior?.ready===true&&modelReadiness(prior,env.Date.now(),list(saved.relay_models)).rows.some(row=>row.phase==='ready')&&chosenIndexes.has(a.auth_index)&&!disabledIndexes.has(a.auth_index)&&!['rate_limited','quota_exhausted'].includes(prior.upstream_state);}).length:null;
         let label='未配置', note='先完成连接配置';
         if (awaiting) { label='正在应用'; note='等待插件重新加载'; }
+        else if (stateRecoveryRequired()) { label='数据目录待恢复'; note=message(status.last_error); }
         else if (released||status&&status.paused===true) { label='已暂停'; note='可在页尾恢复已保存配置'; }
         else if (stale) { label='状态待确认'; note='服务状态暂时无法读取'; }
         else if (configured&&status.activated!==true&&activationKnown()) { label='未激活'; note='使用 CDK 充值余额'; }
@@ -1069,8 +1087,9 @@
         text('waitingRequests',observedWaiting?'等待可用账号 · '+count(waiting)+' 个请求':'');show('waitingRequests',observedWaiting);
         const balance=status&&status.balance, confirmed=object(balance)&&balance.installation_id===saved.installation_id&&typeof balance.authorization_id==='string'&&balance.authorization_id.length>0;
         const compatible=confirmed&&monetary(balance);
-        const runtimeNote=status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'现有连接未能接回，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'当前服务额度不足，正在自动更新；持续出现时请检查充值状态。':!stale&&status?.last_error==='egress_unavailable'?'当前服务连接暂不可用，正在重试。':'';
+        const runtimeNote=stateRecoveryRequired()?message(status.last_error)+' 原配置和客户端编号已保留，修复后可重试打开原数据目录。':status?.config_error==='worker_selection_invalid'?'节点选择配置需要修正。已保留原配置，新业务已暂停；请在“连接与策略 → 工作节点”中选择网关分配或重新选择节点，保存后恢复。':status&&status.update_requires_reconnect===true?'账号连接未能恢复，请在“插件更新”中点击“重新连接账号”。重新连接后会重新准备账号。':!stale&&status&&status.last_error==='quota_exhausted'||!stale&&compatible&&moneyValue(balance.available_usd)<=0n?'当前服务额度不足，正在自动更新；持续出现时请检查充值状态。':!stale&&status?.last_error==='egress_unavailable'?'当前服务连接暂不可用，正在重试。':'';
         text('runtimeNotice',runtimeNote);show('runtimeNotice',!!runtimeNote);
+        show('stateDirectoryRecovery',stateRecoveryRequired());
         text('available',compatible?summaryUSD(balance.available_usd):'—'); text('consumed',compatible?usd(balance.consumed_usd):'—');
         const balanceAt=Date.parse(status?.balance_observed_at),balanceStamp=Number.isFinite(balanceAt)&&balanceAt>0&&balanceAt<=env.Date.now()?' · '+usageTime(status.balance_observed_at):'';
         text('availableNote',compatible?(stale||!fresh?'上次确认的服务额度':'已确认服务额度')+' · USD'+balanceStamp:'尚未确认服务额度');
@@ -1208,16 +1227,18 @@
         text('updateCurrentVersion','v'+(updateInfo&&updateInfo.current_version||PRODUCT.version));
         text('updateStatus',updateNote||'正在检查更新…');show('updateProgress',pendingUpdate||checkingUpdate);
         show('installUpdate',!!updateInfo&&updateInfo.supported&&updateInfo.update_available&&!updateInstallSent&&updatePhase!=='updated'&&updatePhase!=='restart'&&updatePhase!=='failed');
-        el('installUpdate').disabled=!!busy||checkingUpdate||dirty()||pendingUpdate||!!(updateInfo&&updateInfo.prepared);
-        el('checkUpdate').disabled=checkingUpdate||pendingUpdate;show('reloadUpdate',updatePhase==='updated');
-        text('checkUpdate',updateInstallSent?'确认更新结果':'检查更新');
+        el('installUpdate').disabled=!!busy||checkingUpdate||dirty()||pendingUpdate||stateRecoveryRequired()||!!(updateInfo&&updateInfo.prepared);
+        el('checkUpdate').disabled=!!busy||checkingUpdate||pendingUpdate;show('reloadUpdate',updatePhase==='updated');
+        text('checkUpdate',updateInstallSent||updateInfo?.prepared?'继续确认更新结果':'检查更新');
+        show('cancelUpdate',canCancelUpdate()&&!updateInstallSent&&!pendingUpdate);
+        el('cancelUpdate').disabled=!!busy||checkingUpdate||dirty()||pendingUpdate;
         show('updateReconnect',updatePhase==='failed'||status?.update_requires_reconnect===true);
         el('updateReconnect').disabled=!!busy||dirty()||!status?.configured||status?.update_requires_reconnect!==true;
         text('updateHint',dirty()?'请先保存当前更改，再更新插件。':'每 5 分钟检查一次；点击后等待当前请求结束再更新。');
         show('updateManualHelp',updatePhase==='manual'||updatePhase==='restart');
       }
       function updateState(phase,note) { updatePhase=phase;updateNote=note;renderUpdate(); }
-      let updateFailureNote='',updateResumeNeeded=false;
+      let updateFailureNote='',updateResumeNeeded=false,updateDirectoryRetries=0;
       function temporaryUpdateRead(error) { return ['network_error','request_timeout','update_metadata_unavailable','update_catalog_unconfirmed'].includes(error.code)||[408,500,502,503,504].includes(error.status)&&!['update_metadata_invalid','stale_session'].includes(error.code); }
       async function updateDelay(ms,generation) {
         const controller=new env.AbortController();controllers.add(controller);
@@ -1240,28 +1261,32 @@
         if(updateTimer!==null)env.clearTimeout(updateTimer);
         if(current(generation)&&session)updateTimer=env.setTimeout(()=>checkUpdate(),updateInstallSent?30000:300000);
       }
-      async function checkUpdate() {
+      async function checkUpdate(force=false) {
         if(!session||checkingUpdate||busy==='update')return;
+        if(busy){scheduleUpdate(epoch);return;}
         if(updateInstallSent||updatePhase==='restart')return verifyUpdate();
         const generation=epoch;checkingUpdate=true;renderUpdate();
         try{
-          const info=await updateRead(MANAGEMENT+'/update');if(!current(generation))return;
+          const info=await updateRead(MANAGEMENT+(force?'/update/check':'/update'),force?{method:'POST',body:{}}:undefined);if(!current(generation)||busy)return;
           if(!validUpdate(info))throw new ConsoleError('update_metadata_invalid');updateInfo=info;
           if(info.requires_reconnect===true||info.handoff_state==='failed'){updateState('failed',message('update_handoff_conflict'));return;}
           if(info.handoff_state==='pending'||info.handoff_state==='preserved'&&info.confirmation_required===true){
             // Reopening the page may finish an already authorized update, never start one.
-            const actual=await loadedVersion();if(!current(generation))return;
+            const actual=await loadedVersion();if(!current(generation)||busy)return;
             if(actual!==info.current_version){updateState('uncertain','CPA 当前版本尚未确认，请稍后再试。');return;}
             updateTarget=actual;updateOldVersion=actual;updateInstallSent=true;updateAttempts=0;updateRecovery='';busy='update';await verifyUpdate();return;
           }
-          updateState(!info.supported?'manual':info.prepared?'manual':'idle',!info.supported?'当前环境无法在这里更新，请通过 CPA 插件管理更新。':info.prepared?'上次更新尚未完成，请先检查 CPA 插件状态。':info.update_available?'发现新版本 v'+info.latest_version+'。': '已是最新版本。');
+          if(info.prepared){updateState('manual',canCancelUpdate()?'上次更新尚未完成，可继续确认更新结果，或取消更新并恢复服务。':'上次更新尚未完成，请先检查 CPA 插件状态。');return;}
+          if(info.metadata_error){updateState('error',message(info.metadata_error)+' 页面会自动再次检查。');return;}
+          updateState(!info.supported?'manual':'idle',!info.supported?'当前环境无法在这里更新，请通过 CPA 插件管理更新。':info.update_available?'发现新版本 v'+info.latest_version+'。': '已是最新版本。');
         }catch(error){if(current(generation)){
           // Existing handoff recovery must not depend on the public registry.
           // This only finishes an already-started update; it never installs.
           try{
-            const observed=await api(MANAGEMENT+'/status'),state=handoffStatus(observed);
+            const observed=await api(MANAGEMENT+'/status'),state=handoffStatus(observed);if(busy)return;
+            if(state==='failed'){status=observed;stale=false;updateState('failed',message('update_handoff_conflict'));renderStatus();actions();return;}
             if(state==='pending'||state==='confirm'){
-              const actual=await loadedVersion();if(!current(generation))return;
+              const actual=await loadedVersion();if(!current(generation)||busy)return;
               if(actual){updateInfo={...updateInfo,current_version:actual};updateTarget=actual;updateOldVersion=actual;updateInstallSent=true;updateAttempts=0;updateRecovery='';busy='update';await verifyUpdate();return;}
             }
           }catch(_){}
@@ -1285,14 +1310,36 @@
           }else{
             const path='/v0/management/config.yaml',original=await updateRead(path,{raw:true}),amended=addUpdateSourceYAML(original,info.source_url),latest=await updateRead(path,{raw:true});
             if(latest!==original)throw new ConsoleError('config_changed');
-            try{await api(path,{method:'PUT',rawBody:amended});}catch(error){if(!temporaryUpdateRead(error)||await updateRead(path,{raw:true})!==amended)throw error;}
+            if(amended!==original)try{await api(path,{method:'PUT',rawBody:amended});}catch(error){if(!temporaryUpdateRead(error)||await updateRead(path,{raw:true})!==amended)throw error;}
           }
           catalog=await updateRead(updateStorePath());
         }
         const offered=()=>registered()&&list(catalog&&catalog.plugins).some(plugin=>plugin.id===ID&&plugin.source_id===info.source_id&&plugin.source_url===info.source_url&&plugin.version===info.latest_version&&list(plugin.platforms).some(platform=>platform.goos===info.platform.goos&&platform.goarch===info.platform.goarch));
         if(!offered())await retryUpdateStep(async()=>{catalog=await api(updateStorePath());if(!offered())throw new ConsoleError('update_catalog_unconfirmed');},temporaryUpdateRead,'正在刷新 CPA 插件目录…');
       }
-      async function resumeOldUpdate() { const result=await api(MANAGEMENT+'/update/cancel',{method:'POST',body:{}});if(!object(result)||result.resumed!==true||result.current_version!==updateOldVersion)throw new ConsoleError('invalid_response'); }
+      function canCancelUpdate(info=updateInfo) { return info?.prepared===true&&typeof info.prepared_version==='string'&&/^\d+\.\d+\.\d+$/.test(info.prepared_version)&&info.prepared_version!==info.current_version&&info.requires_reconnect!==true&&!['pending','failed'].includes(info.handoff_state)&&info.confirmation_required!==true; }
+      async function cancelUpdate() {
+        if(!session||busy||checkingUpdate||dirty()||updateInstallSent||!canCancelUpdate())return;
+        const generation=epoch,offer={...updateInfo};busy='update';updateState('preparing','正在核对待取消的更新…');actions();
+        try{
+          const info=await updateRead(MANAGEMENT+'/update');
+          if(!validUpdate(info)||!canCancelUpdate(info)||info.current_version!==offer.current_version||info.prepared_version!==offer.prepared_version)throw new ConsoleError('update_version_changed');
+          const actual=await loadedVersion();if(actual!==offer.current_version)throw new ConsoleError('update_version_changed');
+          if(!current(generation))return;
+          updateInfo=info;updateTarget=offer.prepared_version;updateOldVersion=offer.current_version;updateAttempts=0;updateFailureNote='';updateRecovery='cancel';updateResumeNeeded=true;updateInstallSent=true;
+          await verifyUpdate();
+        }catch(error){if(current(generation)){busy='';updateState('error',message(error));actions();scheduleUpdate(generation);}}
+      }
+      async function resumeOldUpdate() {
+        const observed=await api(MANAGEMENT+'/status'),state=handoffStatus(observed);
+        if(stateRecoveryRequired(observed)){status=observed;stale=false;throw new ConsoleError(observed.last_error);}
+        if(state==='failed')throw new ConsoleError('update_handoff_conflict');
+        // A host rollback may already have opened the old library and begun
+        // adopting its durable handoff. Finish that adoption without cancelling it.
+        if(state==='pending'||state==='confirm')return;
+        const result=await api(MANAGEMENT+'/update/cancel',{method:'POST',body:{expected_current_version:updateOldVersion,target_version:updateTarget}});
+        if(!object(result)||result.resumed!==true||result.current_version!==updateOldVersion)throw new ConsoleError('invalid_response');
+      }
       async function loadedVersion() {
         const result=await api('/v0/management/plugins');if(!object(result)||!Array.isArray(result.plugins))throw new ConsoleError('update_host_unavailable');
         const plugin=result.plugins.find(value=>value&&value.id===ID);
@@ -1309,6 +1356,7 @@
       async function confirmUpdateHandoff(expected) {
         let observed=await api(MANAGEMENT+'/status'),state=handoffStatus(observed);
         if(object(observed)){status=observed;stale=false;}
+        if(stateRecoveryRequired(observed))throw new ConsoleError(observed.last_error);
         if(state==='failed')throw new ConsoleError('update_handoff_conflict');
         if(state==='unknown'||state==='pending')return false;
         if(state==='confirm'){
@@ -1318,46 +1366,75 @@
           if(!object(result)||result.confirmed!==true||result.current_version!==expected)throw new ConsoleError('invalid_response');
           observed=await api(MANAGEMENT+'/status');state=handoffStatus(observed);
           if(object(observed)){status=observed;stale=false;}
+          if(stateRecoveryRequired(observed))throw new ConsoleError(observed.last_error);
           if(state==='failed')throw new ConsoleError('update_handoff_conflict');
           if(state!=='ready')return false;
         }
+        // Status and native metadata are separate reads. A concurrent host
+        // reload between them must not turn another version into our success.
+        if(await loadedVersion()!==expected)return false;
         status=observed;stale=false;return true;
+      }
+      async function confirmUpdateWithDirectoryRecovery(expected,generation,restoring) {
+        for(;;){
+          try{return await confirmUpdateHandoff(expected);}catch(error){
+            // Only this page's authorized upgrade may wait out the retiring
+            // runtime's lock. All other directory failures remain explicit.
+            if(error.code!=='state_directory_in_use'||restoring||!updateInstallSent||updateTarget===updateOldVersion||updateDirectoryRetries>=3||status?.paused!==true||status?.configured!==true||!configMatches(status.config,saved)||dirty())throw error;
+            updateDirectoryRetries++;
+            updateState('confirming','正在等待旧版本释放原数据目录…（自动恢复 '+updateDirectoryRetries+'/3）');
+            await updateDelay(updateDirectoryRetries*1000,generation);
+            if(busy!=='update'||await loadedVersion()!==expected)throw new ConsoleError('update_version_changed');
+            const observed=await api(MANAGEMENT+'/status');status=observed;stale=false;
+            if(!configMatches(observed?.config,saved)||dirty())throw new ConsoleError('config_changed');
+            if(observed.last_error!=='state_directory_in_use'||observed.paused!==true)continue;
+            if(await loadedVersion()!==expected)throw new ConsoleError('update_version_changed');
+            try{
+              const result=await api(MANAGEMENT+'/resume',{method:'POST',body:{}});
+              if(!object(result)||result.resumed!==true)throw new ConsoleError('invalid_response');
+            }catch(resumeError){if(resumeError.code!=='state_directory_in_use')throw resumeError;}
+          }
+        }
       }
       async function verifyUpdate() {
         if(!session||!updateTarget||verifyingUpdate)return;
-        const generation=epoch;verifyingUpdate=true;if(updatePoll!==null)env.clearTimeout(updatePoll);updatePoll=null;
+        const generation=epoch;if(busy&&busy!=='update'){scheduleUpdate(generation);return;}
+        verifyingUpdate=true;busy='update';actions();if(updatePoll!==null)env.clearTimeout(updatePoll);updatePoll=null;
         const restoring=updateRecovery!=='',expected=restoring?updateOldVersion:updateTarget;let progress=(updateFailureNote?updateFailureNote+' ':'')+'正在确认 CPA 是否已加载 v'+expected+'…';
         try{
           const actual=await loadedVersion();if(!current(generation))return;
           if(actual===expected){
             updateInfo={...updateInfo,current_version:actual};progress=restoring?'正在恢复原版本的账号状态…':'正在恢复账号状态…';updateState('confirming',progress);
             if(restoring&&updateResumeNeeded){await resumeOldUpdate();if(!current(generation))return;updateResumeNeeded=false;updateInfo={...updateInfo,prepared:false};}
-            if(await confirmUpdateHandoff(expected)){
+            if(await confirmUpdateWithDirectoryRecovery(expected,generation,restoring)){
               if(!current(generation))return;
               updateInstallSent=false;busy='';
-              if(restoring){const restart=updateRecovery==='restart';updateRecovery='';updateInfo={...updateInfo,prepared:false};updateState(restart?'restart':'error','已恢复原版本。'+(updateFailureNote||'本次更新未完成，可稍后再试。'));}
+              if(restoring){const restart=updateRecovery==='restart',cancelled=updateRecovery==='cancel';updateRecovery='';updateInfo={...updateInfo,prepared:false};updateState(restart?'restart':cancelled?'idle':'error','已恢复原版本。'+(cancelled?'本次更新已取消。':updateFailureNote||'本次更新未完成，可稍后再试。'));}
               else{updateInfo={...updateInfo,latest_version:actual,update_available:false,prepared:false};updateState('updated','已更新到 v'+actual+'，新版本已生效。');}
               renderStatus();actions();scheduleUpdate(generation);return;
             }
           }else if(restoring&&actual===updateTarget){
             // A later observation may prove the candidate did load. Never cancel it.
             updateRecovery='';updateResumeNeeded=false;
-          }else if(actual&&actual!==updateOldVersion){busy='';updateState('uncertain','CPA 当前加载的版本与本次更新不同，请在插件管理中确认。');actions();return;}
+          }else if(actual&&actual!==updateOldVersion){busy='';updateInfo={...updateInfo,current_version:actual};updateState('uncertain','CPA 当前加载的版本与本次更新不同，请在插件管理中确认。页面会继续核验更新结果。');actions();scheduleUpdate(generation);return;}
         }catch(error){
           if(!current(generation))return;
+          if(Object.hasOwn(stateRecoveryLabels,error.code)){
+            busy='';updateState('blocked',message(error)+' 修复后请重试打开原数据目录，页面会继续核验更新。');renderStatus();actions();scheduleUpdate(generation);return;
+          }
           if(['update_handoff_expired','update_handoff_conflict','update_handoff_unsupported'].includes(error.code)){
             busy='';updateState('failed',message(error));renderStatus();actions();scheduleUpdate(generation);return;
           }
         }finally{if(current(generation))verifyingUpdate=false;}
         if(!current(generation))return;
-        if(updatePhase==='restart'){scheduleUpdate(generation);return;}
+        if(updatePhase==='restart'){busy='';actions();scheduleUpdate(generation);return;}
         updateAttempts++;
         if(updateAttempts>=30){busy='';updateState('uncertain',(updateFailureNote?updateFailureNote+' ':'')+'更新结果尚未确认，页面会每 30 秒自动核验；无需重复安装。');actions();scheduleUpdate(generation);return;}
         updateState('confirming',progress);updatePoll=env.setTimeout(()=>verifyUpdate(),1000);
       }
       async function installUpdate() {
-        if(!session||busy||checkingUpdate||dirty()||!updateInfo||!updateInfo.update_available||updateInstallSent||updateInfo.prepared)return;
-        const generation=epoch,offer={...updateInfo};busy='update';updateFailureNote='';updateResumeNeeded=false;updateState('preparing','正在准备更新…');actions();let prepareAttempted=false,installRejected=false;
+        if(!session||busy||checkingUpdate||dirty()||stateRecoveryRequired()||!updateInfo||!updateInfo.supported||updateInfo.metadata_error||!updateInfo.update_available||updateInstallSent||updateInfo.prepared)return;
+        const generation=epoch,offer={...updateInfo};busy='update';updateFailureNote='';updateResumeNeeded=false;updateDirectoryRetries=0;updateState('preparing','正在准备更新…');actions();let prepareAttempted=false,installRejected=false;
         try{
           await ensureUpdateSource(offer);if(!current(generation))return;
           updateState('draining','正在等待当前请求完成…');
@@ -1393,7 +1470,7 @@
             }
           }
           if(!current(generation))return;
-          if(installed&&installed.restart_required===true){
+          if(installed&&installed.ok===true&&installed.restart_required===true){
             updateFailureNote='新版本已安装。请重启 CPA 后再确认版本。';updateRecovery='restart';updateResumeNeeded=true;await verifyUpdate();return;
           }
           await verifyUpdate();
@@ -1419,7 +1496,7 @@
           const config=await discoverConfig(); if(!current(generation))return;
           const result=await api(MANAGEMENT+'/status'); if(!object(result))throw new ConsoleError('invalid_response'); if(!current(generation))return;
           saved=normalConfig(config); status=result; stale=false; session=true; fill(saved); renderClient();
-          text('installationInfo',saved.installation_id?'安装身份：'+saved.installation_id:'身份将在首次保存时自动创建。');
+          text('installationInfo',saved.installation_id?'客户端编号：'+saved.installation_id:'首次保存后会显示客户端编号。');
           show('entryView',false);show('session',true);show('workspaceNav',true);show('consoleView',true);renderStatus();await Promise.allSettled([refresh(false),checkUpdate()]);
         }catch(error){if(current(generation))clearSession(message(error));}
       }
@@ -1480,13 +1557,13 @@
           mutationVersion++; saved=next; awaiting=next; released=false;workerLoaded=false;
           recordActivity('连接配置已保存，等待生效');
           if(editVersion===version)fill(saved);
-          text('installationInfo','安装身份：'+saved.installation_id);renderClient();notice('配置已保存，正在等待插件重新加载。','info');renderStatus();
+          text('installationInfo','客户端编号：'+saved.installation_id);renderClient();notice('配置已保存，正在等待插件重新加载。','info');renderStatus();
           await refresh(false);
         }catch(error){if(current(generation))notice(message(error),'error');}
         finally{if(current(generation)){busy='';actions();}}
       }
       async function redeem() {
-        if(!session||busy||awaiting||!status||status.configured!==true||dirty()||released||status.paused===true)return;
+        if(!session||busy||awaiting||!status||status.configured!==true||dirty()||released||status.paused===true||stateRecoveryRequired())return;
         const generation=epoch; busy='redeem';actions();
         try{
           const code=el('redeemCode').value.trim();
@@ -1508,12 +1585,12 @@
         }}finally{if(current(generation)){busy='';actions();}}
       }
       async function mutation(action) {
-        const paused=released||status&&status.paused===true,reconnect=status&&status.update_requires_reconnect===true;
-        if(!session||busy||awaiting||!status||status.configured!==true||(action!=='resume'&&(paused||reconnect))||(action==='resume'&&dirty()))return;
+        const paused=released||status&&status.paused===true,reconnect=status&&status.update_requires_reconnect===true,recoveringState=stateRecoveryRequired();
+        if(!session||busy||awaiting||!status||status.configured!==true||(action!=='resume'&&(paused||reconnect||recoveringState))||(action==='resume'&&dirty()))return;
         const generation=epoch;busy=action;actions();
         try{const result=await api(MANAGEMENT+'/'+action,{method:'POST',body:{}});if(!current(generation))return;
           if(action==='release'){if(!object(result)||result.released!==true)throw new ConsoleError('invalid_response');mutationVersion++;released=true;notice('账号已释放，网关连接已暂停。需要继续使用时，点击页尾“恢复已保存配置”。','success');}
-          else if(action==='resume'){if(!object(result)||result.resumed!==true)throw new ConsoleError('invalid_response');mutationVersion++;released=false;status={...status,paused:false};if(reconnect){if(updatePoll!==null)env.clearTimeout(updatePoll);updatePoll=null;updateInstallSent=false;updateTarget='';updateRecovery='';updateState('idle','已请求重新连接，账号正在重新准备。');notice('已请求重新连接，账号正在重新准备。','info');}else notice('已恢复保存的连接配置，账号状态将自动刷新。','success');}
+          else if(action==='resume'){if(!object(result)||result.resumed!==true)throw new ConsoleError('invalid_response');mutationVersion++;released=false;status={...status,paused:false};if(recoveringState){notice('原数据目录检查已完成，正在等待服务确认并核对原有授权和账号状态。','info');}else if(reconnect){if(updatePoll!==null)env.clearTimeout(updatePoll);updatePoll=null;updateInstallSent=false;updateTarget='';updateRecovery='';updateState('idle','已请求重新连接，账号正在重新准备。');notice('已请求重新连接，账号正在重新准备。','info');}else notice('已恢复保存的连接配置，账号状态将自动刷新。','success');}
           else notice('已请求同步账号，状态将自动刷新。','success');
           renderStatus();await refresh(false);
         }catch(error){if(current(generation))notice(message(error),'error');}
@@ -1551,20 +1628,29 @@
         const value=message(code);notice(value,'error');text('configValidation',value);show('configValidation',true);
       },true);
       bind('configForm','submit',event=>{event.preventDefault();void save();});bind('redeemForm','submit',event=>{event.preventDefault();void redeem();});
-      bind('checkUpdate','click',()=>checkUpdate());
+      bind('checkUpdate','click',()=>checkUpdate(true));
+      bind('cancelUpdate','click',()=>{
+        if(!canCancelUpdate()||dirty()||updateInstallSent)return;
+        const target=updateInfo.prepared_version,currentVersion=updateInfo.current_version;
+        confirmAction('取消更新并恢复服务？','请先确认 CPA 插件管理中已没有正在进行的安装。取消后会核对并恢复 v'+currentVersion+' 的账号服务；后续可重新发起更新。','取消更新并恢复服务',()=>{
+          if(!canCancelUpdate()||updateInfo.prepared_version!==target||updateInfo.current_version!==currentVersion){notice(message('update_version_changed'),'error');return;}
+          return cancelUpdate();
+        });
+      });
       bind('installUpdate','click',()=>{
         if(!updateInfo||!updateInfo.update_available||dirty())return;
         const target=updateInfo.latest_version,currentVersion=updateInfo.current_version;
-        confirmAction('确认更新到 v'+target+'？','插件会等待当前请求完成，安装后核对实际运行版本与账号状态。连接配置、账号选择和安装身份会保留。','确认更新',()=>{
+        confirmAction('确认更新到 v'+target+'？','插件会等待当前请求完成，安装后核对实际运行版本与账号状态。连接配置、账号选择和客户端编号会保留。','确认更新',()=>{
           if(!updateInfo||updateInfo.latest_version!==target||updateInfo.current_version!==currentVersion){notice(message('update_version_changed'),'error');return;}
           return installUpdate();
         });
       });
       bind('reloadUpdate','click',()=>{if(updatePhase==='updated'&&typeof env.location.reload==='function')env.location.reload();});
       bind('updateReconnect','click',()=>{if(status?.update_requires_reconnect===true)return mutation('resume');});
+      bind('retryStateDirectory','click',()=>{if(stateRecoveryRequired())return mutation('resume');});
       bind('refresh','click',()=>refresh(true));bind('sync','click',()=>mutation('sync'));
       bind('release','click',()=>{
-        if(released||status&&(status.paused===true||status.update_requires_reconnect===true))return mutation('resume');
+        if(released||stateRecoveryRequired()||status&&(status.paused===true||status.update_requires_reconnect===true))return mutation('resume');
         confirmAction('释放账号并暂停？','暂停此插件的账号准备与新业务请求。账号选择和连接配置会保留，之后可恢复已保存配置。','确认暂停',()=>mutation('release'));
       });
       bind('copyConfig','click',copyConfig);
@@ -1591,7 +1677,7 @@
         env.addEventListener('pagehide',()=>{clearSession();if(parent){parent.removeEventListener('hashchange',checkNative);parent.removeEventListener('popstate',checkNative);parent.removeEventListener('pagehide',closeNative);parent.removeEventListener('unauthorized',closeNative);}});
       }
       if(parent){parent.addEventListener('hashchange',checkNative);parent.addEventListener('popstate',checkNative);parent.addEventListener('pagehide',closeNative);parent.addEventListener('unauthorized',closeNative);}
-      return Object.freeze({connect,save,redeem,refresh,refreshUsage,refreshUsageDetail,checkUpdate,installUpdate,loadWorkers,probeWorkers,stopWorkerProbe,release:()=>mutation('release'),resume:()=>mutation('resume'),logout:()=>clearSession()});
+      return Object.freeze({connect,save,redeem,refresh,refreshUsage,refreshUsageDetail,checkUpdate,installUpdate,cancelUpdate,loadWorkers,probeWorkers,stopWorkerProbe,release:()=>mutation('release'),resume:()=>mutation('resume'),logout:()=>clearSession()});
     }
     root.TicketPluginUI=Object.freeze({createConsole,autoConcurrency,addUpdateSourceYAML,validUpdate,parseJSON,count,compactCount,usageRatio,usageResponse,nanoUSD,originalCost,quotaEstimate,usd,monetary,validateDraft,identityFor,configMatches,validReceipt,managementDenied,nativeSession,nativeContext});
     if(root.document)void createConsole(root).connect();

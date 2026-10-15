@@ -8,6 +8,14 @@ import sqlite3
 from pathlib import Path
 from .state import State
 
+def select_conversation(rows,selected):
+ if selected:
+  matches=[history for ident,history in rows if ident==selected]
+  if len(matches)==1:return matches[0]
+  raise ValueError('selected_conversation_missing')
+ if len(rows)!=1:raise ValueError('ambiguous_conversation_selection')
+ return rows[0][1]
+
 def migrate(source,dest):
  source=Path(source);dest=Path(dest)
  if (dest/'config.json').exists():raise RuntimeError('destination_already_configured')
@@ -28,15 +36,15 @@ def migrate(source,dest):
   if not persona:raise ValueError('missing_persona')
   platform=next(p for p in cfg['platform'] if p.get('enable') and p['type']=='aiocqhttp')['id']
   state=State(data/'state.sqlite3')
-  rows=db.execute('SELECT user_id,content FROM conversations WHERE platform_id=?',(platform,)).fetchall()
+  rows=db.execute('SELECT user_id,conversation_id,content FROM conversations WHERE platform_id=?',(platform,)).fetchall()
   # Prefer the selected conversation if multiple records exist for a session.
   prefs={r[0]:json.loads(r[1]) for r in db.execute("SELECT scope_id,value FROM preferences WHERE scope='umo' AND key='sel_conv_id'")}
-  for session,history in rows:
+  sessions={}
+  for session,ident,history in rows:sessions.setdefault(session,[]).append((ident,history))
+  for session,candidates in sessions.items():
    selected=prefs.get(session,{})
    if isinstance(selected,dict):selected=selected.get('val')
-   if selected:
-    r=db.execute('SELECT content FROM conversations WHERE conversation_id=? AND platform_id=? AND user_id=?',(selected,platform,session)).fetchone()
-    if r:history=r[0]
+   history=select_conversation(candidates,selected)
    messages=json.loads(history or '[]')
    messages=[m for m in messages if m.get('role') in ('user','assistant') and isinstance(m.get('content'),str) and m['content']]
    state.save_history(session,messages)

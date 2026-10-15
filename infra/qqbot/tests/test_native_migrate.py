@@ -22,3 +22,11 @@ class MigrationTests(unittest.TestCase):
    self.assertEqual((dest/'config.json').stat().st_mode&0o777,0o600)
    with self.assertRaises(RuntimeError):migrate(src,dest)
 
+
+class ConversationSelectionTests(unittest.TestCase):
+ def test_ambiguous_history_without_selection_is_rejected(self):
+  from infra.qqbot.service.migrate import select_conversation
+  with self.assertRaises(ValueError):select_conversation([('old','[]'),('new','[]')],None)
+ def test_selected_history_wins(self):
+  from infra.qqbot.service.migrate import select_conversation
+  self.assertEqual(select_conversation([('old','a'),('new','b')],'new'),'b')

@@ -1,0 +1,23 @@
+[Unit]
+Description=Xingqiao standalone QQ business service
+After=network-online.target snowluma.service
+Wants=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=/opt/qqbot-native/current
+Environment=HOME=/opt/qqbot-native/home
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/qqbot-native/browsers
+Environment=XINGQIAO_BOT_CONFIG=/opt/qqbot-native/config.json
+Environment=XINGQIAO_BOT_DATA=/opt/qqbot-native/data
+UMask=0077
+ExecStart=/opt/qqbot-native/venv/bin/python -m infra.qqbot.service.app
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=60
+StandardOutput=append:/opt/qqbot-native/logs/business.log
+StandardError=append:/opt/qqbot-native/logs/business.log
+[Install]
+WantedBy=multi-user.target
+

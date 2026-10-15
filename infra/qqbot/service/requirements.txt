@@ -1,0 +1,4 @@
+aiohttp>=3.10,<4
+Pillow>=9.2,<13
+playwright==1.55.0
+

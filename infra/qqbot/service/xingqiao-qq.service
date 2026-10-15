@@ -1,0 +1,20 @@
+[Unit]
+Description=Official QQ client for SnowLuma
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+Environment=HOME=/opt/qqbot-native/home
+Environment=XDG_CONFIG_HOME=/opt/qqbot-native/home/.config
+EnvironmentFile=/opt/qqbot-native/qq.env
+UMask=0077
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1080x760x24" /usr/bin/qq --no-sandbox -q ${QQ_ACCOUNT}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+StandardOutput=append:/opt/qqbot-native/logs/qq.log
+StandardError=append:/opt/qqbot-native/logs/qq.log
+[Install]
+WantedBy=multi-user.target
+

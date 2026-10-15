@@ -283,6 +283,9 @@ def deploy(bundle):
     save(release / 'previous-state.json', previous)
     private_write(release / 'previous-Caddyfile', caddy_config)
     private_write(release / '.env', old_env.read_text())
+    private_write(release / 'chromium-seccomp.json', (bundle / 'chromium-seccomp.json').read_text())
+    for name in [service] + (['test-station-worker'] if update_worker else []):
+        candidate['services'][name]['security_opt'] = ['seccomp=' + str(release / 'chromium-seccomp.json')]
     save(release / 'compose.yaml', candidate)
     if update_worker:
         save(release / 'previous-worker-compose.json', previous_worker_config)
@@ -290,7 +293,7 @@ def deploy(bundle):
     base_tag = previous['image_tag']
     if run(['docker', 'image', 'inspect', '--format', '{{.Id}}', base_tag]).strip() != manifest['base_image_id']:
         raise ValueError('base dependency identity mismatch')
-    (bundle / 'Dockerfile').write_text('FROM ' + base_tag + '\nCOPY --chown=1000:1000 --chmod=0555 sub2api /app/sub2api\nLABEL org.opencontainers.image.revision="' + commit + '"\n')
+    (bundle / 'Dockerfile').write_text('FROM ' + base_tag + '\nUSER root\nRUN apk add --no-cache chromium font-noto-cjk\nENV INTELLIGENCE_CHROMIUM_PATH=/usr/bin/chromium-browser\nUSER 1000:1000\nCOPY --chown=1000:1000 --chmod=0555 sub2api /app/sub2api\nLABEL org.opencontainers.image.revision="' + commit + '"\n')
     started = time.monotonic()
     run(['docker', 'build', '--pull=false', '-t', image, str(bundle)])
     image_id = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image]).strip()

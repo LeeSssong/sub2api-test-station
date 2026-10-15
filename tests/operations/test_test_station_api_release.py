@@ -259,6 +259,7 @@ class HostFlowTests(unittest.TestCase):
             (root / 'release-state.json').write_text(json.dumps(previous))
             bundle = Path(tmp) / 'bundle'
             bundle.mkdir()
+            (bundle / 'chromium-seccomp.json').write_text((ROOT / 'infra/security/chromium-seccomp.json').read_text())
             (bundle / 'sub2api').write_bytes(b'binary')
             (bundle / 'manifest.json').write_text(json.dumps({'source_commit': 'a' * 40, 'source_tree': 'd' * 40,
                 'previous_commit': 'b' * 40, 'base_image_id': 'base', 'update_worker': update_worker, 'migration_checksums': {'265.sql': 'a'*64}, 'migration_set_sha256': 'c'*64, 'binary_sha256': release.hashlib.sha256(b'binary').hexdigest()}))

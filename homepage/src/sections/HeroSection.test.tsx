@@ -34,7 +34,7 @@ describe('HeroSection', () => {
   it('routes signed-in users to the local documentation guide', () => {
     render(<HeroSection session={{ kind: 'admin', ctaLabel: '进入控制台', ctaHref: '/admin/dashboard', user: { id: 1, role: 'admin' } }} />)
 
-    expect(screen.getByRole('link', { name: '查看文档' })).toHaveAttribute('href', '/docs/')
+    expect(screen.getByRole('link', { name: '查看新手教程' })).toHaveAttribute('href', '/docs/')
   })
 
   it('keeps the signal field dense and fast without adding a heavy hero image', () => {

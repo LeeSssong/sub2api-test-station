@@ -22,10 +22,13 @@ describe('Header', () => {
     const user = userEvent.setup()
     render(<Header session={guest} theme="dark" onToggleTheme={() => {}} />)
 
-    expect(screen.getByRole('link', { name: '文档' })).toHaveAttribute('href', '/docs/')
+    expect(screen.getByRole('link', { name: '新手教程' })).toHaveAttribute('href', '/docs/')
 
     await user.click(screen.getByRole('button', { name: '打开导航菜单' }))
-    expect(screen.getAllByRole('link', { name: '文档' })[1]).toHaveAttribute('href', '/docs/')
+    expect(screen.getAllByRole('link', { name: '新手教程' })[1]).toHaveAttribute('href', '/docs/')
+    for (const label of ['模型', '状态', '文档']) {
+      expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument()
+    }
   })
 
   it('exposes the target theme and invokes the toggle action', async () => {

@@ -18,9 +18,7 @@ export function Header({ siteLogo, session, theme, onToggleTheme }: HeaderProps)
   const links = [
     { label: '首页', href: '/' },
     { label: '控制台', href: dashboardHref },
-    { label: '模型', href: '/admin/channels/pricing' },
-    { label: '状态', href: '/monitor' },
-    { label: '文档', href: '/docs/' },
+    { label: '新手教程', href: '/docs/' },
   ]
   const themeActionLabel = theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'
 

@@ -72,14 +72,12 @@ describe('App', () => {
     />)
 
     const navigation = screen.getByRole('navigation', { name: '主导航' })
-    for (const label of ['首页', '控制台', '模型', '状态', '文档']) {
+    for (const label of ['首页', '控制台', '新手教程']) {
       expect(within(navigation).getByText(label)).toBeInTheDocument()
     }
     expect(within(navigation).queryByText('关于')).not.toBeInTheDocument()
-    expect(within(navigation).getByRole('link', { name: '模型' })).toHaveAttribute(
-      'href',
-      '/admin/channels/pricing',
-    )
+    expect(within(navigation).queryByRole('link', { name: '模型' })).not.toBeInTheDocument()
+    expect(within(navigation).queryByRole('link', { name: '状态' })).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('星桥链接世界顶尖模型')
     expect(screen.getByText('首尔节点 · 稳定运行')).toBeInTheDocument()
     expect(screen.getByText('GPT、Claude、Gemini 一站接入。')).toBeInTheDocument()

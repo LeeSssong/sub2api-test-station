@@ -425,17 +425,6 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'customPage.title',
     }
   },
-  {
-    path: '/custom/performance-monitor',
-    name: 'PerformanceMonitor',
-    component: () => import('@/views/user/PerformanceMonitorView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Group Performance Monitor',
-      titleKey: 'nav.performanceMonitor',
-    }
-  },
 
   // ==================== Admin Routes ====================
   {
@@ -533,22 +522,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/channels',
-    redirect: '/admin/channels/pricing'
-  },
-  {
-    path: '/admin/channels/pricing',
-    name: 'AdminChannels',
-    component: () => import('@/views/admin/ChannelsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Channel Management',
-      titleKey: 'admin.channels.title',
-      descriptionKey: 'admin.channels.description'
-    }
-  },
-  {
     path: '/admin/channels/monitor',
     name: 'AdminChannelMonitor',
     component: () => import('@/views/admin/ChannelMonitorView.vue'),
@@ -559,10 +532,6 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'admin.channelMonitor.title',
       descriptionKey: 'admin.channelMonitor.description'
     }
-  },
-  {
-    path: '/monitor',
-    redirect: '/custom/performance-monitor',
   },
   { path: '/pelican-showcase', redirect: '/intelligence-test' },
   {
@@ -840,6 +809,8 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
+    // Reserve this retired URL so the generic custom-page route cannot revive it.
+    alias: ['/custom/performance-monitor'],
     component: () => import('@/views/NotFoundView.vue'),
     meta: {
       title: '404 Not Found'

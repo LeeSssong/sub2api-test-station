@@ -13,7 +13,11 @@ import (
 )
 
 func TestDrawingJudgeSingleRequest(t *testing.T) {
-	for _, reply := range []string{`{"verdict":"correct","reason":"符合动作和场景"}`, `{"verdict":"incorrect","reason":"人物与车身分离"}`, `broken`} {
+	for _, tc := range []struct{ reply, want string }{
+		{`{"subject":{"verdict":"correct","reason":"人物清晰"},"action":{"verdict":"correct","reason":"手持桨划船"},"scene":{"verdict":"correct","reason":"背景有沙丘"},"structure":{"verdict":"correct","reason":"人船完整"}}`, "correct"},
+		{`{"subject":{"verdict":"correct","reason":"人物清晰"},"action":{"verdict":"unknown","reason":"动作不可辨认"},"scene":{"verdict":"correct","reason":"背景有沙丘"},"structure":{"verdict":"incorrect","reason":"人物与船身分离"}}`, "incorrect"},
+		{`broken`, "unknown"},
+	} {
 		svc, cfg, accounts, slots := judgeFixture()
 		for i := range accounts.accounts {
 			accounts.accounts[i].Platform = PlatformOpenAI
@@ -24,18 +28,14 @@ func TestDrawingJudgeSingleRequest(t *testing.T) {
 			require.Contains(t, prompt, "划着小船")
 			require.Contains(t, prompt, "沙漠里")
 			require.Equal(t, "data:image/png;base64,fixture", image)
-			return reply, nil
+			return tc.reply, nil
 		}
 		cfg.Prompt = "请画山姆奥特曼划着小船在沙漠里"
 		cfg.IntelligenceResult = &IntelligenceResultMetadata{Action: "划着小船", Scene: "沙漠里"}
 		got := svc.JudgeDrawing(context.Background(), 99, cfg, "data:image/png;base64,fixture")
 		require.Equal(t, 1, calls)
 		require.Len(t, slots.released, 1)
-		if reply == "broken" {
-			require.Equal(t, "unknown", got.Verdict)
-		} else {
-			require.Contains(t, reply, got.Verdict)
-		}
+		require.Equal(t, tc.want, got.Verdict)
 	}
 }
 func TestDrawingJudgeDoesNotRetryPaidFailure(t *testing.T) {
@@ -53,6 +53,92 @@ func TestDrawingJudgeDoesNotRetryPaidFailure(t *testing.T) {
 	require.Equal(t, "unknown", got.Verdict)
 	require.Equal(t, "judge_request_failed", got.Reason)
 }
+
+func TestDrawingJudgeRequiresVisualEvidence(t *testing.T) {
+	// Only the external image request is replaced; account selection and result
+	// validation run normally. A bare overall "correct" must never authorize a pass.
+	for _, tc := range []struct {
+		name, dimension, verdict, reason, want string
+		omit                                   bool
+	}{
+		{name: "all four dimensions supported", want: "correct"},
+		{name: "severe obstruction", dimension: "structure", verdict: "incorrect", reason: "大块绿色图形严重遮挡巴士和人物", want: "incorrect"},
+		{name: "unidentifiable character", dimension: "subject", verdict: "unknown", reason: "只有通用小人，无法确认题目人物", want: "unknown"},
+		{name: "wrong character", dimension: "subject", verdict: "incorrect", reason: "画面主体是动物", want: "incorrect"},
+		{name: "unclear action", dimension: "action", verdict: "unknown", reason: "人物与载具关系不可辨认", want: "unknown"},
+		{name: "wrong action", dimension: "action", verdict: "incorrect", reason: "人物在行走，没有划船", want: "incorrect"},
+		{name: "unclear scene", dimension: "scene", verdict: "unknown", reason: "背景没有可辨认的场景特征", want: "unknown"},
+		{name: "wrong scene", dimension: "scene", verdict: "incorrect", reason: "背景是竹林而非沙漠", want: "incorrect"},
+		{name: "unclear structure", dimension: "structure", verdict: "unknown", reason: "遮挡处的结构无法确认", want: "unknown"},
+		{name: "missing structure", dimension: "structure", omit: true, want: "unknown"},
+		{name: "missing visual reason", dimension: "subject", verdict: "correct", reason: " ", want: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			checks := map[string]any{
+				"subject":   map[string]string{"verdict": "correct", "reason": "人物面容和发型具有题目人物的卡通化特征"},
+				"action":    map[string]string{"verdict": "correct", "reason": "人物坐在船内，双手持桨"},
+				"scene":     map[string]string{"verdict": "correct", "reason": "背景有沙丘和仙人掌"},
+				"structure": map[string]string{"verdict": "correct", "reason": "人物、船和船桨完整，主体清晰可见"},
+			}
+			if tc.dimension != "" {
+				if tc.omit {
+					delete(checks, tc.dimension)
+				} else {
+					checks[tc.dimension] = map[string]string{"verdict": tc.verdict, "reason": tc.reason}
+				}
+			}
+			body, err := json.Marshal(checks)
+			require.NoError(t, err)
+			svc, cfg, accounts, _ := judgeFixture()
+			for i := range accounts.accounts {
+				accounts.accounts[i].Platform = PlatformOpenAI
+			}
+			svc.requestImage = func(context.Context, int64, string, string, string) (string, error) {
+				return string(body), nil
+			}
+			got := svc.JudgeDrawing(context.Background(), 99, cfg, "data:image/png;base64,fixture")
+			require.Equal(t, tc.want, got.Verdict)
+			if tc.dimension != "" && !tc.omit && strings.TrimSpace(tc.reason) != "" {
+				require.Contains(t, got.Reason, tc.reason)
+			}
+		})
+	}
+	t.Run("legacy overall correct has no visual evidence", func(t *testing.T) {
+		svc, cfg, accounts, _ := judgeFixture()
+		for i := range accounts.accounts {
+			accounts.accounts[i].Platform = PlatformOpenAI
+		}
+		svc.requestImage = func(context.Context, int64, string, string, string) (string, error) {
+			return `{"verdict":"correct","reason":"符合动作和场景"}`, nil
+		}
+		got := svc.JudgeDrawing(context.Background(), 99, cfg, "data:image/png;base64,fixture")
+		require.Equal(t, "unknown", got.Verdict)
+	})
+}
+
+func TestDrawingJudgmentRejectsAmbiguousResponses(t *testing.T) {
+	const check = `{"verdict":"correct","reason":"可辨认的视觉证据"}`
+	const valid = `{"subject":` + check + `,"action":` + check + `,"scene":` + check + `,"structure":` + check + `}`
+	for _, tc := range []struct{ name, response string }{
+		{"duplicate dimension", strings.TrimSuffix(valid, "}") + `,"subject":` + check + `}`},
+		{"unexpected overall verdict", strings.TrimSuffix(valid, "}") + `,"verdict":"correct"}`},
+		{"duplicate nested verdict", strings.Replace(valid, check, `{"verdict":"incorrect","verdict":"correct","reason":"遮挡主体"}`, 1)},
+		{"unknown nested field", strings.Replace(valid, check, `{"verdict":"correct","reason":"人物清晰","extra":true}`, 1)},
+		{"invalid verdict", strings.Replace(valid, check, `{"verdict":"passed","reason":"人物清晰"}`, 1)},
+		{"missing reason", strings.Replace(valid, check, `{"verdict":"correct"}`, 1)},
+		{"null dimension", strings.Replace(valid, check, `null`, 1)},
+		{"extra JSON", valid + `{}`},
+		{"truncated JSON", strings.TrimSuffix(valid, "}")},
+		{"oversized response", strings.Repeat(" ", 8001) + valid},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseDrawingJudgment(tc.response)
+			require.Error(t, err)
+			require.Nil(t, got, "ambiguous evidence must not authorize a pass")
+		})
+	}
+}
+
 func TestDrawingPublicVerdictPreservesGeneration(t *testing.T) {
 	now := time.Now()
 	for _, tc := range []struct {

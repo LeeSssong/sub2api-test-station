@@ -49,6 +49,10 @@ func observeOpenAIStreamTiming(ctx context.Context, data, eventType, ttftMode st
 	} else {
 		o.TTFT = openAIStreamDataStartsTTFT(trimmed, eventType, ttftMode)
 	}
+	// The Chat bridge measures its first data document, including metadata.
+	if ttftMode == "first_data" {
+		o.TTFT = trimmed != "[DONE]"
+	}
 	requesttiming.StreamEvent(ctx, o)
 }
 

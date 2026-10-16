@@ -512,6 +512,8 @@ export default {
     latencyTps: 'TPS',
     latencyTpsHint: 'Average TPS = output tokens ÷ total duration (seconds). Includes waiting time and any reasoning tokens reported in output usage; not model generation speed.',
     latencyTpsHintNoFirstToken: 'Output speed = output tokens ÷ total (no first-token data, so waiting time is included)',
+    latencyCacheRate: 'Cache rate',
+    latencyCacheRateHint: 'Cache rate = cache read {read} ÷ (input {input} + cache read {read} + cache write {write}). Same definition as channel monitor and the usage trend.',
     time: 'Time',
     ws: 'WS',
     stream: 'Stream',

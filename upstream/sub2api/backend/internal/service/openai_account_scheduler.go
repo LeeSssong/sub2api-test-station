@@ -1987,6 +1987,9 @@ func (s *defaultOpenAIAccountScheduler) lookupShadowParentAccount(ctx context.Co
 			return account
 		}
 	}
+	if s.service.schedulerSnapshot != nil && s.service.schedulerSnapshot.localSnapshotReader != nil {
+		return nil
+	}
 	if s.service.accountRepo == nil {
 		return nil
 	}

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+readonly OCTOBER_16_OLD_MIGRATIONS_HASH=e5d79ffa00d518804211a877ede6c7cb54277ada8c76e975526dca622445a6de
+readonly OCTOBER_16_NEW_MIGRATIONS_HASH=457dde7e112bbb808dee1ba05ab2d99180c5b250ecf082cf24ea9f309741370d
 
 umask 077
 
@@ -216,6 +218,38 @@ PY_OCTOBER10_FENCE
   return 1
 }
 
+
+october16_guard_start() {
+  [[ -z "${october16_guard_pid:-}" ]] || return 1
+  october16_guard_marker="$record_root/.$attempt_id.october16-notifications"
+  local helper=/usr/local/libexec/october16-notification-guard.py
+  [[ -f "$helper" && ! -L "$helper" ]] || return 1
+  python3 "$helper" "$postgres_id" "$october16_guard_marker" &
+  october16_guard_pid=$!
+  local deadline=$((SECONDS+40))
+  while (( SECONDS < deadline )); do
+    kill -0 "$october16_guard_pid" 2>/dev/null || return 1
+    if [[ -f "$october16_guard_marker" ]]; then
+      [[ "$(cat "$october16_guard_marker")" == ready ]] && return 0
+      return 1
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+october16_guard_check() {
+  [[ "${migrations_hash:-}" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" && "${online_migration_transition:-false}" == true ]] || return 0
+  [[ -n "${october16_guard_pid:-}" ]] && kill -0 "$october16_guard_pid" 2>/dev/null && [[ "$(cat "$october16_guard_marker")" == ready ]]
+}
+october16_guard_end() {
+  [[ -n "${october16_guard_pid:-}" ]] || return 0
+  printf '%s' "$1" >"$october16_guard_marker.release"
+  local guard_result=0
+  wait "$october16_guard_pid" || guard_result=$?
+  october16_guard_pid=''
+  return "$guard_result"
+}
+
 rollback_committed_release() {
   [[ $# == 3 && "$1" == --rollback && "$2" == --record ]] || fail 'rollback requires --record <successful-release-record>'
   local record=$3 root=${RELEASE_RECORD_ROOT:?RELEASE_RECORD_ROOT is required}
@@ -259,7 +293,7 @@ rollback_committed_release() {
   previous_hash=$(jq -r '.previous.migrations_hash' "$record")
   current_hash=$(jq -r '.migrations_hash' "$state")
   if [[ "$previous_hash" != "$current_hash" ]]; then
-    if [[ ( "$previous_hash" == "$FUSION_2813_OLD_MIGRATIONS_HASH" && "$current_hash" == "$FUSION_2813_NEW_MIGRATIONS_HASH" ) \
+    if [[ ( "$previous_hash" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" && "$current_hash" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$FUSION_2813_OLD_MIGRATIONS_HASH" && "$current_hash" == "$FUSION_2813_NEW_MIGRATIONS_HASH" ) \
         || ( "$previous_hash" == "$SEPTEMBER_26_OLD_MIGRATIONS_HASH" && "$current_hash" == "$SEPTEMBER_26_NEW_MIGRATIONS_HASH" ) \
         || ( "$previous_hash" == "$BPS_OBSERVER_OLD_MIGRATIONS_HASH" && "$current_hash" == "$BPS_OBSERVER_NEW_MIGRATIONS_HASH" ) \
         || ( "$previous_hash" == "$SEPTEMBER_28_OLD_MIGRATIONS_HASH" && "$current_hash" == "$SEPTEMBER_28_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$SEPTEMBER_29_OLD_MIGRATIONS_HASH" && "$current_hash" == "$SEPTEMBER_29_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$SEPTEMBER_30_OLD_MIGRATIONS_HASH" && "$current_hash" == "$SEPTEMBER_30_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$OCTOBER_01_OLD_MIGRATIONS_HASH" && "$current_hash" == "$OCTOBER_01_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$OCTOBER_02_OLD_MIGRATIONS_HASH" && "$current_hash" == "$OCTOBER_02_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$OCTOBER_03_OLD_MIGRATIONS_HASH" && "$current_hash" == "$OCTOBER_03_NEW_MIGRATIONS_HASH" ) || ( "$previous_hash" == "$OCTOBER_10_OLD_MIGRATIONS_HASH" && "$current_hash" == "$OCTOBER_10_NEW_MIGRATIONS_HASH" ) ]]; then
@@ -380,6 +414,10 @@ rollback_committed_release() {
         [[ "$restored_status" == healthy && "$(docker inspect "$restored_id" --format '{{.Image}}')" == "$(docker image inspect --format '{{.Id}}' "$current_worker")" ]] || recovery_ok=false
       fi
     fi
+    if [[ -n "${october16_guard_pid:-}" ]]; then
+      october16_guard_end keep-paused || recovery_ok=false
+      printf '%s' 'Notifications remain paused after rollback; keep schema and new data.' >&2
+    fi
     october10_fence_release
     reauth_lifecycle resume || recovery_ok=false
     if [[ "$recovery_ok" != true ]]; then
@@ -402,6 +440,12 @@ rollback_committed_release() {
   cp "$state" "$original_state"
   chmod 0600 "$original_env" "$original_state"
 
+  if [[ "$previous_hash" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" && "$current_hash" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" ]]; then
+    record_root=$root attempt_id="october16-rollback-$$"
+    october16_guard_start || fail 'notification fence required before old API startup'
+    stop_worker_after_schedule_drain "$postgres_id" "$("${compose[@]}" ps -q sub2api-worker)" 90 || fail 'worker could not drain before rollback'
+    worker_changed=true
+  fi
   "${compose[@]}" up --no-deps -d "sub2api-$previous_slot" >/dev/null
   local deadline=$(( $(date -u +%s) + 90 )) status=''
   while true; do
@@ -1714,6 +1758,16 @@ on_exit() {
     jq '.drain = ((.drain // {}) + {status:"failed"})' "$record_path" >"$record_path.drain.tmp" &&
       chmod 0600 "$record_path.drain.tmp" && mv "$record_path.drain.tmp" "$record_path"
   fi
+  if [[ -n "${october16_guard_pid:-}" ]]; then
+    if [[ "$status" == 0 && "${drain_status:-}" == completed ]]; then
+      october16_guard_end restore || status=1
+    elif [[ "${migration_receipts_unknown:-false}" == false && "${rollback_migrations_hash:-}" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" ]]; then
+      october16_guard_end restore || status=1
+    else
+      october16_guard_end keep-paused || status=1
+      printf '%s\n' 'Account operations notifications remain paused; protected backup retained for compatible recovery.' >&2
+    fi
+  fi
   october10_fence_release
   if ! reauth_lifecycle resume; then
     printf 'Reauth resume failed; inspect dedicated worker before next release\n' >&2
@@ -2071,6 +2125,8 @@ if [[ "$migrations_hash" != "$state_migrations_hash" ]]; then
   elif [[ "$state_migrations_hash" == "$MONITOR_V4_OLD_MIGRATIONS_HASH" \
       && "$migrations_hash" == "$MONITOR_V4_NEW_MIGRATIONS_HASH" ]]; then
     online_migration_transition=true
+  elif [[ "$online_migrations_from_hash" == "$state_migrations_hash" && "$state_migrations_hash" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" && "$migrations_hash" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" ]]; then
+    online_migration_transition=true
   elif [[ "$online_migrations_from_hash" == "$state_migrations_hash" && "$state_migrations_hash" == "$OCTOBER_10_OLD_MIGRATIONS_HASH" && "$migrations_hash" == "$OCTOBER_10_NEW_MIGRATIONS_HASH" ]]; then
     online_migration_transition=true
   elif [[ "$online_migrations_from_hash" == "$state_migrations_hash" \
@@ -2105,6 +2161,9 @@ fi
 [[ -z "$online_migrations_from_hash" || "$online_migration_transition" == true ]] \
   || gate migration_set_changed 'online migration transition is not a reviewed migration pair' 300
 
+if [[ "$online_migration_transition" == true && "$migrations_hash" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" ]]; then
+  [[ "$drain_mode" == force && "$preserve_worker" == false && "$preserve_detector" == true ]] || gate october16_contract 'requires bounded drain, worker update, preserved detector' 300
+fi
 if [[ "$online_migration_transition" == true && "$migrations_hash" == "$OCTOBER_10_NEW_MIGRATIONS_HASH" ]]; then
   [[ "$drain_mode" == force && "$preserve_worker" == false && "$preserve_detector" == true ]] \
     || gate october10_online_contract 'October 10 requires bounded drain, new worker and preserved detector' 300
@@ -2320,6 +2379,13 @@ if [[ "$online_migration_transition" == true ]]; then
     [[ "$maintenance_backup_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'database backup checksum is invalid'
     trace_event 'online backup verified'
   fi
+  if [[ "$migrations_hash" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" ]]; then
+    failure_reason=october16_notification_pause_failed
+    october16_guard_start || fail 'notification pause fence failed; migration not started'
+    stop_worker_after_schedule_drain "$postgres_id" "$worker_container_id" 90 || fail 'worker drain failed before migration'
+    worker_update_started=true
+    october16_guard_check || fail 'notification fence lost before migration'
+  fi
   failure_reason=online_migration_failed
   if [[ "$preloaded_image" == false ]]; then
     run_post_stop_command "${compose_candidate[@]}" pull sub2api-worker >/dev/null
@@ -2343,6 +2409,7 @@ if [[ "$online_migration_transition" == true ]]; then
   write_partial migration_observed
   [[ "$migration_ok" == true && "$observed_schema_hash" == "$migrations_hash" ]] \
     || fail 'online migration incomplete; old readers retained with actual applied schema hash'
+  october16_guard_check || fail 'notification fence lost after migration'
   write_partial migration_prepared
 fi
 
@@ -2561,6 +2628,7 @@ if [[ "$preserve_worker" == false && "$maintenance_transition" == false && ( "$o
   write_partial worker_accepted
 fi
 
+october16_guard_check || fail 'notification fence lost before cutover'
 failure_reason=caddy_reload_failed
 cutover_attempted=true
 write_partial cutover_attempted

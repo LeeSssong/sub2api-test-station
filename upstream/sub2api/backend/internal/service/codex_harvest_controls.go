@@ -65,6 +65,7 @@ type CodexHarvestControlSnapshot struct {
 }
 
 type CodexHarvestService struct {
+	coverage harvestCoverageTracker
 	runtimeRedis     *redis.Client
 	runtimePublisher bool
 	nodes            CodexHarvestNodeRepository

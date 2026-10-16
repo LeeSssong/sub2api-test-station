@@ -24841,6 +24841,7 @@ type GroupMutation struct {
 	deleted_at                              *time.Time
 	name                                    *string
 	description                             *string
+	i18n                                    *domain.GroupI18n
 	rate_multiplier                         *float64
 	addrate_multiplier                      *float64
 	peak_rate_enabled                       *bool
@@ -25261,6 +25262,42 @@ func (m *GroupMutation) DescriptionCleared() bool {
 func (m *GroupMutation) ResetDescription() {
 	m.description = nil
 	delete(m.clearedFields, group.FieldDescription)
+}
+
+// SetI18n sets the "i18n" field.
+func (m *GroupMutation) SetI18n(di domain.GroupI18n) {
+	m.i18n = &di
+}
+
+// I18n returns the value of the "i18n" field in the mutation.
+func (m *GroupMutation) I18n() (r domain.GroupI18n, exists bool) {
+	v := m.i18n
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldI18n returns the old "i18n" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldI18n(ctx context.Context) (v domain.GroupI18n, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldI18n is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldI18n requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldI18n: %w", err)
+	}
+	return oldValue.I18n, nil
+}
+
+// ResetI18n resets all changes to the "i18n" field.
+func (m *GroupMutation) ResetI18n() {
+	m.i18n = nil
 }
 
 // SetRateMultiplier sets the "rate_multiplier" field.
@@ -28787,7 +28824,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 69)
+	fields := make([]string, 0, 70)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -28802,6 +28839,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.description != nil {
 		fields = append(fields, group.FieldDescription)
+	}
+	if m.i18n != nil {
+		fields = append(fields, group.FieldI18n)
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
@@ -29013,6 +29053,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case group.FieldDescription:
 		return m.Description()
+	case group.FieldI18n:
+		return m.I18n()
 	case group.FieldRateMultiplier:
 		return m.RateMultiplier()
 	case group.FieldPeakRateEnabled:
@@ -29160,6 +29202,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldName(ctx)
 	case group.FieldDescription:
 		return m.OldDescription(ctx)
+	case group.FieldI18n:
+		return m.OldI18n(ctx)
 	case group.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
 	case group.FieldPeakRateEnabled:
@@ -29331,6 +29375,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDescription(v)
+		return nil
+	case group.FieldI18n:
+		v, ok := value.(domain.GroupI18n)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetI18n(v)
 		return nil
 	case group.FieldRateMultiplier:
 		v, ok := value.(float64)
@@ -30305,6 +30356,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldDescription:
 		m.ResetDescription()
+		return nil
+	case group.FieldI18n:
+		m.ResetI18n()
 		return nil
 	case group.FieldRateMultiplier:
 		m.ResetRateMultiplier()
@@ -41265,6 +41319,7 @@ type ProxyMutation struct {
 	host                   *string
 	port                   *int
 	addport                *int
+	mihomo_node_id         *string
 	username               *string
 	password               *string
 	status                 *string
@@ -41667,6 +41722,55 @@ func (m *ProxyMutation) AddedPort() (r int, exists bool) {
 func (m *ProxyMutation) ResetPort() {
 	m.port = nil
 	m.addport = nil
+}
+
+// SetMihomoNodeID sets the "mihomo_node_id" field.
+func (m *ProxyMutation) SetMihomoNodeID(s string) {
+	m.mihomo_node_id = &s
+}
+
+// MihomoNodeID returns the value of the "mihomo_node_id" field in the mutation.
+func (m *ProxyMutation) MihomoNodeID() (r string, exists bool) {
+	v := m.mihomo_node_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMihomoNodeID returns the old "mihomo_node_id" field's value of the Proxy entity.
+// If the Proxy object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProxyMutation) OldMihomoNodeID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMihomoNodeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMihomoNodeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMihomoNodeID: %w", err)
+	}
+	return oldValue.MihomoNodeID, nil
+}
+
+// ClearMihomoNodeID clears the value of the "mihomo_node_id" field.
+func (m *ProxyMutation) ClearMihomoNodeID() {
+	m.mihomo_node_id = nil
+	m.clearedFields[proxy.FieldMihomoNodeID] = struct{}{}
+}
+
+// MihomoNodeIDCleared returns if the "mihomo_node_id" field was cleared in this mutation.
+func (m *ProxyMutation) MihomoNodeIDCleared() bool {
+	_, ok := m.clearedFields[proxy.FieldMihomoNodeID]
+	return ok
+}
+
+// ResetMihomoNodeID resets all changes to the "mihomo_node_id" field.
+func (m *ProxyMutation) ResetMihomoNodeID() {
+	m.mihomo_node_id = nil
+	delete(m.clearedFields, proxy.FieldMihomoNodeID)
 }
 
 // SetUsername sets the "username" field.
@@ -42162,7 +42266,7 @@ func (m *ProxyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProxyMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.created_at != nil {
 		fields = append(fields, proxy.FieldCreatedAt)
 	}
@@ -42183,6 +42287,9 @@ func (m *ProxyMutation) Fields() []string {
 	}
 	if m.port != nil {
 		fields = append(fields, proxy.FieldPort)
+	}
+	if m.mihomo_node_id != nil {
+		fields = append(fields, proxy.FieldMihomoNodeID)
 	}
 	if m.username != nil {
 		fields = append(fields, proxy.FieldUsername)
@@ -42227,6 +42334,8 @@ func (m *ProxyMutation) Field(name string) (ent.Value, bool) {
 		return m.Host()
 	case proxy.FieldPort:
 		return m.Port()
+	case proxy.FieldMihomoNodeID:
+		return m.MihomoNodeID()
 	case proxy.FieldUsername:
 		return m.Username()
 	case proxy.FieldPassword:
@@ -42264,6 +42373,8 @@ func (m *ProxyMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldHost(ctx)
 	case proxy.FieldPort:
 		return m.OldPort(ctx)
+	case proxy.FieldMihomoNodeID:
+		return m.OldMihomoNodeID(ctx)
 	case proxy.FieldUsername:
 		return m.OldUsername(ctx)
 	case proxy.FieldPassword:
@@ -42335,6 +42446,13 @@ func (m *ProxyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPort(v)
+		return nil
+	case proxy.FieldMihomoNodeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMihomoNodeID(v)
 		return nil
 	case proxy.FieldUsername:
 		v, ok := value.(string)
@@ -42445,6 +42563,9 @@ func (m *ProxyMutation) ClearedFields() []string {
 	if m.FieldCleared(proxy.FieldDeletedAt) {
 		fields = append(fields, proxy.FieldDeletedAt)
 	}
+	if m.FieldCleared(proxy.FieldMihomoNodeID) {
+		fields = append(fields, proxy.FieldMihomoNodeID)
+	}
 	if m.FieldCleared(proxy.FieldUsername) {
 		fields = append(fields, proxy.FieldUsername)
 	}
@@ -42473,6 +42594,9 @@ func (m *ProxyMutation) ClearField(name string) error {
 	switch name {
 	case proxy.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case proxy.FieldMihomoNodeID:
+		m.ClearMihomoNodeID()
 		return nil
 	case proxy.FieldUsername:
 		m.ClearUsername()
@@ -42514,6 +42638,9 @@ func (m *ProxyMutation) ResetField(name string) error {
 		return nil
 	case proxy.FieldPort:
 		m.ResetPort()
+		return nil
+	case proxy.FieldMihomoNodeID:
+		m.ResetMihomoNodeID()
 		return nil
 	case proxy.FieldUsername:
 		m.ResetUsername()

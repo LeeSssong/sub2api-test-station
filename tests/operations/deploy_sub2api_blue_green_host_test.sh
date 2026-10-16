@@ -586,6 +586,7 @@ run_executor() {
   local requested_image=$IMAGE
   if [[ "${PRELOADED_MODE:-false}" == true ]]; then
     requested_image=${PRELOADED_REQUESTED_IMAGE:?}
+    [[ "$expected_worker_image" != "$IMAGE" ]] || expected_worker_image=$requested_image
   fi
   local executor_args=(
     --mode "$executor_mode"

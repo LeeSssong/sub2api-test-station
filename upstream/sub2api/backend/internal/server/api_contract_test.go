@@ -924,9 +924,11 @@ func TestAPIContracts(t *testing.T) {
 						"table_page_size_options": [10, 20, 50, 100],
 					"min_claude_code_version": "",
 					"max_claude_code_version": "",
-					"openai_request_timezone_enabled": false,
+					"openai_request_timezone_enabled": true,
+					"openai_request_timezone_auto": true,
 					"openai_codex_ticket_enabled": false,
 					"openai_codex_ticket_fail_closed": false,
+					"openai_codex_ticket_candy_observation": false,
 					"openai_codex_ticket_strategy": "standby",
                     "openai_codex_ticket_harvest_scope": {"mode":"all","group_ids":[],"account_policy":"schedulable_only"},
 					"openai_codex_ticket_harvest_proxy_url": "",
@@ -1074,7 +1076,10 @@ func TestAPIContracts(t *testing.T) {
 					"wechat_connect_redirect_url": "",
 					"wechat_connect_frontend_redirect_url": "/auth/wechat/callback",
 					"wechat_connect_scopes": "snsapi_login",
-					"allow_user_view_error_requests": false
+					"allow_user_view_error_requests": false,
+					"usage_show_long_context_badge": true,
+					"usage_show_cache_rate": true,
+					"usage_show_cache_rate_to_users": false
 				}
 			}`,
 		},
@@ -1303,9 +1308,11 @@ func TestAPIContracts(t *testing.T) {
 					"rewrite_message_cache_control": false,
 					"enable_client_dateline_normalization": true,
 					"antigravity_user_agent_version": "",
-					"openai_request_timezone_enabled": false,
+					"openai_request_timezone_enabled": true,
+					"openai_request_timezone_auto": true,
 					"openai_codex_ticket_enabled": false,
 					"openai_codex_ticket_fail_closed": false,
+					"openai_codex_ticket_candy_observation": false,
 					"openai_codex_ticket_strategy": "standby",
                     "openai_codex_ticket_harvest_scope": {"mode":"all","group_ids":[],"account_policy":"schedulable_only"},
 					"openai_codex_ticket_harvest_proxy_url": "",
@@ -1475,7 +1482,10 @@ func TestAPIContracts(t *testing.T) {
 					"auth_source_default_dingtalk_grant_on_signup": false,
 					"auth_source_default_dingtalk_grant_on_first_bind": false,
 					"force_email_on_third_party_signup": false,
-					"allow_user_view_error_requests": false
+					"allow_user_view_error_requests": false,
+					"usage_show_long_context_badge": true,
+					"usage_show_cache_rate": true,
+					"usage_show_cache_rate_to_users": false
 				}
 			}`,
 		},

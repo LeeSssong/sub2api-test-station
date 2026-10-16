@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+readonly OCTOBER_16_OLD_MIGRATIONS_HASH=e5d79ffa00d518804211a877ede6c7cb54277ada8c76e975526dca622445a6de
+readonly OCTOBER_16_NEW_MIGRATIONS_HASH=457dde7e112bbb808dee1ba05ab2d99180c5b250ecf082cf24ea9f309741370d
 
 umask 077
 
@@ -89,7 +91,7 @@ done
 [[ "$maintenance_authorized" == false || "$mode" == production ]] || fail '--maintenance-authorized is only valid in production mode'
 [[ -z "$online_migrations_from_hash" || ( "$mode" == production && "$maintenance_authorized" == false ) ]] \
   || fail 'online migrations require production mode without maintenance'
-[[ -z "$online_migrations_from_hash" || "$online_migrations_from_hash" == dba4c4d272406097a3f39c27694f748c53fe0ad6cf4efb42e40786d12e327c54 || "$online_migrations_from_hash" == 9bdf03d2fe484a6cb2ff8a1cc9fb690cc523d3c17f6a142a9775daa7c8503f6b || "$online_migrations_from_hash" == "$SEPTEMBER_26_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$BPS_OBSERVER_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$SEPTEMBER_28_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$SEPTEMBER_29_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$SEPTEMBER_30_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_01_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_02_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_03_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$MONITOR_V4_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_09_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_10_OLD_MIGRATIONS_HASH" ]] \
+[[ -z "$online_migrations_from_hash" || "$online_migrations_from_hash" == dba4c4d272406097a3f39c27694f748c53fe0ad6cf4efb42e40786d12e327c54 || "$online_migrations_from_hash" == 9bdf03d2fe484a6cb2ff8a1cc9fb690cc523d3c17f6a142a9775daa7c8503f6b || "$online_migrations_from_hash" == "$SEPTEMBER_26_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$BPS_OBSERVER_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$SEPTEMBER_28_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$SEPTEMBER_29_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$SEPTEMBER_30_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_01_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_02_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_03_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$MONITOR_V4_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_09_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" || "$online_migrations_from_hash" == "$OCTOBER_10_OLD_MIGRATIONS_HASH" ]] \
   || fail 'online migration source hash is not a reviewed predecessor'
 maintenance_from_hash=${RELEASE_MAINTENANCE_FROM_HASH:-}
 if [[ "$maintenance_authorized" == true ]]; then
@@ -138,6 +140,9 @@ migrations_hash=$(ruby -rdigest -e '
   print digest.hexdigest
 ' "$migrations_dir") || fail 'could not compute migration hash'
 [[ "$migrations_hash" =~ ^[a-f0-9]{64}$ ]] || fail 'migration hash is invalid'
+if [[ "$online_migrations_from_hash" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" ]]; then
+  [[ "$migrations_hash" == "$OCTOBER_16_NEW_MIGRATIONS_HASH" && "$drain_mode" == force && "${RELEASE_PRESERVE_WORKER:-false}" == false && "${RELEASE_PRESERVE_DETECTOR:-false}" == true ]] || fail 'October 16 requires exact migration pair, bounded drain, new worker and preserved detector'
+fi
 if [[ "$online_migrations_from_hash" == "$OCTOBER_10_OLD_MIGRATIONS_HASH" ]]; then
   [[ "$migrations_hash" == "$OCTOBER_10_NEW_MIGRATIONS_HASH" && "$drain_mode" == force \
       && "${RELEASE_PRESERVE_WORKER:-false}" == false && "${RELEASE_PRESERVE_DETECTOR:-false}" == true ]] \

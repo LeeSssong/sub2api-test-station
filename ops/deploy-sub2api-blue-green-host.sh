@@ -1761,7 +1761,7 @@ on_exit() {
   if [[ -n "${october16_guard_pid:-}" ]]; then
     if [[ "$status" == 0 && "${drain_status:-}" == completed ]]; then
       october16_guard_end restore || status=1
-    elif [[ "${rollback_migrations_hash:-}" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" ]]; then
+    elif [[ "${migration_receipts_unknown:-false}" == false && "${rollback_migrations_hash:-}" == "$OCTOBER_16_OLD_MIGRATIONS_HASH" ]]; then
       october16_guard_end restore || status=1
     else
       october16_guard_end keep-paused || status=1

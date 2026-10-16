@@ -222,6 +222,36 @@ def verify_migration_checksums(expected, rows):
             raise ValueError('migration not applied with expected checksum: ' + name)
 
 
+
+OCT16_OLD = 'e5d79ffa00d518804211a877ede6c7cb54277ada8c76e975526dca622445a6de'
+OCT16_NEW = '457dde7e112bbb808dee1ba05ab2d99180c5b250ecf082cf24ea9f309741370d'
+
+def database_dump(db, target):
+    with open(target, 'wb') as f:
+        os.chmod(target, 0o600)
+        r = subprocess.run(['docker', 'exec', db, 'sh', '-c',
+            'exec pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"'], stdout=f, stderr=subprocess.PIPE)
+    if r.returncode or target.stat().st_size == 0:
+        raise RuntimeError('maintenance database backup failed')
+
+def validate_restore(db, backup):
+    name = 'sub2api_oct16_restore_check'
+    run(['docker', 'exec', db, 'sh', '-c', 'exec createdb -U "$POSTGRES_USER" "$1"', 'restore-check', name])
+    try:
+        run(['docker', 'exec', '-i', db, 'sh', '-c',
+             'exec pg_restore --exit-on-error --no-owner --no-privileges -U "$POSTGRES_USER" -d "$1"', 'restore-check', name], backup.read_bytes())
+    finally:
+        run(['docker', 'exec', db, 'sh', '-c', 'exec dropdb -U "$POSTGRES_USER" "$1"', 'restore-check', name])
+
+def restore_database(db, backup):
+    if not backup.is_file(): raise RuntimeError('stopped-write backup unavailable')
+    # Only before new worker starts or the public route changes.
+    run(['docker', 'exec', '-i', db, 'sh', '-c',
+         'exec psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
+        b'DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
+    run(['docker', 'exec', '-i', db, 'sh', '-c',
+         'exec pg_restore --exit-on-error --clean --if-exists --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB"'], backup.read_bytes())
+
 def deploy(bundle):
     manifest = json.loads((bundle / 'manifest.json').read_text())
     commit, tree = manifest['source_commit'], manifest['source_tree']
@@ -259,7 +289,17 @@ def deploy(bundle):
     rows = run(['docker', 'exec', '-i', db_id, 'sh', '-c',
                 'exec psql -X -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
                b"SELECT filename || '|' || checksum FROM schema_migrations ORDER BY filename;\n")
-    verify_migration_checksums(manifest.get('migration_checksums'), rows)
+    maintenance = manifest.get('maintenance') is True
+    if maintenance:
+        if not update_worker or previous.get('migration_set_sha256') != OCT16_OLD or manifest.get('migration_set_sha256') != OCT16_NEW:
+            raise ValueError('unapproved maintenance migration pair')
+        applied = dict(row.split('|', 1) for row in rows.splitlines())
+        expected = manifest.get('migration_checksums', {})
+        for name, checksum in applied.items():
+            if name in expected and expected[name] != checksum:
+                raise ValueError('existing migration checksum changed')
+    else:
+        verify_migration_checksums(manifest.get('migration_checksums'), rows)
     caddy_id = run(['docker', 'ps', '-q', '--filter', 'label=com.docker.compose.project=' + PROJECT,
                     '--filter', 'label=com.docker.compose.service=test-station-caddy']).strip()
     if not caddy_id or '\n' in caddy_id:
@@ -293,7 +333,7 @@ def deploy(bundle):
     base_tag = previous['image_tag']
     if run(['docker', 'image', 'inspect', '--format', '{{.Id}}', base_tag]).strip() != manifest['base_image_id']:
         raise ValueError('base dependency identity mismatch')
-    (bundle / 'Dockerfile').write_text('FROM ' + base_tag + '\nUSER root\nRUN apk add --no-cache chromium font-noto-cjk\nENV INTELLIGENCE_CHROMIUM_PATH=/usr/bin/chromium-browser\nUSER 1000:1000\nCOPY --chown=1000:1000 --chmod=0555 sub2api /app/sub2api\nLABEL org.opencontainers.image.revision="' + commit + '"\n')
+    (bundle / 'Dockerfile').write_text('FROM ' + base_tag + chr(10) + 'COPY --chown=1000:1000 --chmod=0555 sub2api /app/sub2api' + chr(10) + 'COPY --chown=1000:1000 resources /app/resources' + chr(10) + 'LABEL org.opencontainers.image.revision="' + commit + '"' + chr(10))
     started = time.monotonic()
     run(['docker', 'build', '--pull=false', '-t', image, str(bundle)])
     image_id = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image]).strip()
@@ -306,8 +346,32 @@ def deploy(bundle):
         meta.update(previous_worker_container=worker_id, previous_worker_image_id=worker_image_id, worker_update_started=False)
     save(release / 'deployment.json', meta)
     compose = ['docker', 'compose', '-p', PROJECT, '--env-file', str(release / '.env'), '-f', str(release / 'compose.yaml')]
+    maintenance_stopped = False
+    migrated = False
+    worker_started_new = False
+    route_opened = False
+    stopped_backup = release / 'stopped-postgres.dump'
+    detector_ids = []
+    if maintenance:
+        rehearsal = release / 'restore-rehearsal.dump'
+        database_dump(db_id, rehearsal)
+        validate_restore(db_id, rehearsal)
     try:
         run(compose + ['config', '--quiet'])
+        if maintenance:
+            detector_ids = run(['docker', 'ps', '-q', '--filter', 'label=com.docker.compose.project=' + PROJECT,
+                '--filter', 'label=com.docker.compose.service=test-station-detector']).split()
+            maintenance_stopped = True
+            run(['docker', 'stop', '--time', '60', api_id])
+            stop_worker(worker_id)
+            for detector in detector_ids: run(['docker', 'stop', '--time', '60', detector])
+            database_dump(db_id, stopped_backup)
+            run(compose + ['run', '--rm', '--no-deps', '--entrypoint', '/app/sub2api', 'test-station-worker', '-migrate-only'])
+            migrated = True
+            applied_rows = run(['docker', 'exec', '-i', db_id, 'sh', '-c',
+                'exec psql -X -qAt -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
+                b'SELECT filename || chr(124) || checksum FROM schema_migrations ORDER BY filename;')
+            verify_migration_checksums(manifest['migration_checksums'], applied_rows)
         run(compose + ['up', '-d', '--no-deps', service])
         candidate_id = run(compose + ['ps', '-q', service]).strip()
         healthy(candidate_id)
@@ -318,13 +382,15 @@ def deploy(bundle):
             worker_started = time.monotonic()
             meta['worker_update_started'] = True
             save(release / 'deployment.json', meta)
-            stop_worker(worker_id)
+            if not maintenance: stop_worker(worker_id)
+            worker_started_new = True
             run(compose + ['up', '-d', '--no-deps', 'test-station-worker'])
             new_worker = active_worker()
             healthy(new_worker)
             meta['candidate_worker_container'] = new_worker
             meta['stage_seconds']['worker_replace'] = round(time.monotonic() - worker_started, 2)
         cutover_at = time.time()
+        route_opened = True
         reload_caddy(caddy_id, new_caddy)
         public_probes()
         private_write(caddy_path, new_caddy)
@@ -346,8 +412,29 @@ def deploy(bundle):
         save(ROOT / 'release-state.json', state)
         print('test_station_api status=promoted source_commit=' + commit + ' image_id=' + image_id, flush=True)
     except Exception:
-        rollback(release)
+        if maintenance_stopped:
+            if not worker_started_new and not route_opened:
+                ids = run(compose + ['ps', '-q', service]).split()
+                for candidate in ids: run(['docker', 'stop', '--time', '60', candidate])
+                if stopped_backup.exists(): restore_database(db_id, stopped_backup)
+                run(['docker', 'start', worker_id])
+                run(['docker', 'start', api_id])
+                healthy(api_id)
+                for detector in detector_ids: run(['docker', 'start', detector])
+                meta.update(result='rolled_back', rolled_back=True)
+                save(release / 'deployment.json', meta)
+            else:
+                # New work may have produced durable data: never restore an old dump.
+                meta.update(result='recovery_required', rolled_back=False)
+                save(release / 'deployment.json', meta)
+                raise RuntimeError('new worker or traffic started; preserve database for forward recovery')
+        else:
+            rollback(release)
         raise
+    if maintenance:
+        for detector in detector_ids: run(['docker', 'start', detector])
+        meta.update(result='succeeded', maintenance=True, backup=str(stopped_backup))
+        save(release / 'deployment.json', meta)
     # The caller verifies the actual page before finalizing connection drain.
     print('test_station_api verification_pending=true release_dir=' + str(release), flush=True)
 

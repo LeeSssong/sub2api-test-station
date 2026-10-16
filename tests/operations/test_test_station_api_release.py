@@ -243,7 +243,16 @@ class APIReleaseTests(unittest.TestCase):
 
 
 class HostFlowTests(unittest.TestCase):
-    def exercise(self, fail_probe=False, update_worker=False, fail_worker=False, fail_rollback_probe=False, fail_migration=False):
+    def test_maintenance_success_orders_backup_stop_migrate_start(self):
+        self.exercise(update_worker=True, maintenance=True)
+    def test_maintenance_failed_migration_restores_before_new_writes(self):
+        self.exercise(update_worker=True, maintenance=True, fail_native=True)
+    def test_maintenance_new_worker_failure_preserves_database(self):
+        self.exercise(update_worker=True, maintenance=True, fail_worker=True)
+    def test_maintenance_public_failure_preserves_database(self):
+        self.exercise(update_worker=True, maintenance=True, fail_probe=True)
+
+    def exercise(self, fail_probe=False, update_worker=False, fail_worker=False, fail_rollback_probe=False, fail_migration=False, maintenance=False, fail_native=False):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'station'
             old_release = root / 'releases' / ('b' * 40)
@@ -256,13 +265,14 @@ class HostFlowTests(unittest.TestCase):
             caddy = old_release / 'Caddyfile'
             caddy.write_text(':80 {\n reverse_proxy test-station-api:8080\n}\n')
             previous = {'source_commit': 'b' * 40, 'source_tree': 'c' * 40, 'image_id': 'base', 'image_tag': 'old', 'release_dir': str(old_release)}
+            if maintenance: previous['migration_set_sha256'] = release.OCT16_OLD
             (root / 'release-state.json').write_text(json.dumps(previous))
             bundle = Path(tmp) / 'bundle'
             bundle.mkdir()
             (bundle / 'chromium-seccomp.json').write_text((ROOT / 'infra/security/chromium-seccomp.json').read_text())
             (bundle / 'sub2api').write_bytes(b'binary')
             (bundle / 'manifest.json').write_text(json.dumps({'source_commit': 'a' * 40, 'source_tree': 'd' * 40,
-                'previous_commit': 'b' * 40, 'base_image_id': 'base', 'update_worker': update_worker, 'migration_checksums': {'265.sql': 'a'*64}, 'migration_set_sha256': 'c'*64, 'binary_sha256': release.hashlib.sha256(b'binary').hexdigest()}))
+                'previous_commit': 'b' * 40, 'base_image_id': 'base', 'update_worker': update_worker, 'migration_checksums': {'265.sql': 'a'*64}, 'maintenance': maintenance, 'migration_set_sha256': release.OCT16_NEW if maintenance else 'c'*64, 'binary_sha256': release.hashlib.sha256(b'binary').hexdigest()}))
             config = {'services': {'test-station-api': {'image': 'old', 'environment': {'SERVER_PROCESS_ROLE': 'api'}, 'networks': ['test-station']},
                 'test-station-worker': {'image': 'old-worker-image', 'environment': {'SERVER_PROCESS_ROLE': 'worker'}, 'volumes': ['app:/app/data']}, 'test-station-detector': {'image': 'old'}},
                 'networks': {'test-station': {'name': 'sub2api-test-station-network'}}}
@@ -271,6 +281,7 @@ class HostFlowTests(unittest.TestCase):
             worker_restored = False
             def invoke(args, data=None):
                 nonlocal worker_started, worker_restored
+                if fail_native and '-migrate-only' in args: raise RuntimeError('synthetic migration failure')
                 if args[-4:] == ["up", "-d", "--no-deps", "test-station-worker"]:
                     worker_started = True
                     worker_restored = "previous-worker-compose.json" in " ".join(args)
@@ -307,7 +318,25 @@ class HostFlowTests(unittest.TestCase):
             with patch.object(release, 'ROOT', root), patch.object(release, 'run', side_effect=invoke) as commands, \
                  patch.object(release, 'inspect', side_effect=inspected), \
                  patch.object(release, 'healthy', side_effect=readiness), patch.object(release, 'reload_caddy') as reloads, \
+                 patch.object(release, 'database_dump', side_effect=lambda db,p: p.write_bytes(b'backup')) as dumps, \
+                 patch.object(release, 'validate_restore') as validation, patch.object(release, 'restore_database') as restoration, \
                  patch.object(release, 'public_probes', side_effect=probes), contextlib.redirect_stdout(io.StringIO()):
+                if maintenance:
+                    if fail_native or fail_worker or fail_probe:
+                        with self.assertRaises(RuntimeError): release.deploy(bundle)
+                        self.assertEqual(restoration.call_count, 1 if fail_native else 0)
+                        status=json.loads((root/'releases'/('a'*40)/'deployment.json').read_text())['result']
+                        self.assertEqual(status, 'rolled_back' if fail_native else 'recovery_required')
+                    else:
+                        release.deploy(bundle)
+                        self.assertEqual(validation.call_count,1)
+                        self.assertEqual(dumps.call_count,2)
+                        steps=[c.args[0] for c in commands.call_args_list]
+                        migrate=next(i for i,a in enumerate(steps) if '-migrate-only' in a)
+                        stop=steps.index(['docker','stop','--time','60','old-api'])
+                        start=next(i for i,a in enumerate(steps) if a[-4:]==['up','-d','--no-deps','test-station-api-green'])
+                        self.assertLess(stop,migrate);self.assertLess(migrate,start)
+                    return
                 if fail_migration:
                     with self.assertRaises(ValueError):
                         release.deploy(bundle)

@@ -31,6 +31,8 @@ const (
 	nativeUserModelKey       = "ops_model"
 )
 
+const NativeUserCopyFastUnavailable = "当前分组的 Fast 模式暂时异常或不支持 Fast。"
+
 // NativeUserErrorContactAdminSuggestion 是站内错误页的统一建议，Request ID 由详情字段单独给出。
 const NativeUserErrorContactAdminSuggestion = nativeUserErrorAdminHelp + "并提供 Request ID"
 
@@ -67,6 +69,12 @@ func ProjectNativeUserErrorCore(input NativeUserErrorInput) NativeUserErrorProje
 		errType = "api_error"
 	}
 	result := NativeUserErrorProjection{Type: errType, Code: strings.TrimSpace(input.Code)}
+	// Preserve the scheduler's Fast verdict even when an older log already
+	// contains generic Chinese copy or a previous failover selected an account.
+	if strings.EqualFold(errType, "fast_unavailable") || strings.EqualFold(result.Code, "fast_unavailable") {
+		result.Message = NativeUserCopyFastUnavailable
+		return result
+	}
 	copy := strings.TrimSpace(input.Message)
 	upstreamFacing := nativeUserErrorUpstreamFacing(input, errType)
 	if copy != "" {

@@ -122,6 +122,27 @@ func TestToUserErrorRequestPreservesSanitizedNativeMessageWithoutInventingDiagno
 	require.Equal(t, NativeUserErrorContactAdminSuggestion, out.Suggestion)
 }
 
+func TestToUserErrorRequestFastUnavailable(t *testing.T) {
+	accountID := int64(7)
+	for _, selected := range []*int64{nil, &accountID} {
+		for _, businessLimited := range []bool{false, true} {
+			src := &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+				StatusCode: 503, Type: "fast_unavailable", Phase: "routing", Owner: "platform",
+				AccountID: selected, IsBusinessLimited: businessLimited,
+				Message: "服务暂时繁忙，请稍后重试。", RequestID: "fast-request-id",
+			}}
+			list := ToUserErrorRequest(&src.OpsErrorLog)
+			detail := ToUserErrorRequestDetail(src)
+			for _, out := range []*UserErrorRequest{list, &detail.UserErrorRequest} {
+				require.Equal(t, "当前分组的 Fast 模式暂时异常或不支持 Fast。", out.Message)
+				require.Equal(t, out.Message, out.Meaning)
+				require.Equal(t, "如需协助请联系管理员并提供 Request ID", out.Suggestion)
+			}
+			require.Equal(t, "fast-request-id", detail.RequestID)
+		}
+	}
+}
+
 func TestToUserErrorRequestDetail_WhitelistAndRedacts(t *testing.T) {
 	uid := int64(42)
 	accountID := int64(7)

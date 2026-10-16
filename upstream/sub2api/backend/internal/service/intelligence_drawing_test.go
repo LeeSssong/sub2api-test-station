@@ -63,7 +63,7 @@ func TestDrawingJudgeRequiresVisualEvidence(t *testing.T) {
 	}{
 		{name: "all four dimensions supported", want: "correct"},
 		{name: "severe obstruction", dimension: "structure", verdict: "incorrect", reason: "大块绿色图形严重遮挡巴士和人物", want: "incorrect"},
-		{name: "unidentifiable character", dimension: "subject", verdict: "unknown", reason: "只有通用小人，无法确认题目人物", want: "unknown"},
+		{name: "obscured subject", dimension: "subject", verdict: "unknown", reason: "主体严重遮挡，无法辨认是否为人", want: "unknown"},
 		{name: "wrong character", dimension: "subject", verdict: "incorrect", reason: "画面主体是动物", want: "incorrect"},
 		{name: "unclear action", dimension: "action", verdict: "unknown", reason: "人物与载具关系不可辨认", want: "unknown"},
 		{name: "wrong action", dimension: "action", verdict: "incorrect", reason: "人物在行走，没有划船", want: "incorrect"},
@@ -75,7 +75,7 @@ func TestDrawingJudgeRequiresVisualEvidence(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			checks := map[string]any{
-				"subject":   map[string]string{"verdict": "correct", "reason": "人物面容和发型具有题目人物的卡通化特征"},
+				"subject":   map[string]string{"verdict": "correct", "reason": "可见清晰的普通卡通人物"},
 				"action":    map[string]string{"verdict": "correct", "reason": "人物坐在船内，双手持桨"},
 				"scene":     map[string]string{"verdict": "correct", "reason": "背景有沙丘和仙人掌"},
 				"structure": map[string]string{"verdict": "correct", "reason": "人物、船和船桨完整，主体清晰可见"},
@@ -144,7 +144,7 @@ func TestDrawingPublicVerdictPreservesGeneration(t *testing.T) {
 	for _, tc := range []struct {
 		state, display string
 		expiry         time.Time
-	}{{"passed", "passed", now.Add(time.Minute)}, {"incorrect", "incorrect", now.Add(time.Minute)}, {"unknown", "unknown", now.Add(time.Minute)}, {"pending", "pending", now.Add(time.Minute)}, {"pending", "unknown", now.Add(-time.Minute)}} {
+	}{{"passed", "passed", now.Add(time.Minute)}, {"incorrect", "incorrect", now.Add(time.Minute)}, {"unknown", "unknown", now.Add(time.Minute)}, {"pending", "pending", now.Add(time.Minute)}, {"pending", "error", now.Add(-time.Minute)}} {
 		r := &PelicanGroupTestResult{Status: "success", ResponseText: "<svg></svg>", PelicanConfig: &PelicanTestConfig{QuestionKind: "pelican", IntelligenceResult: &IntelligenceResultMetadata{DrawingJudgment: &DrawingJudgment{Status: tc.state, Deadline: tc.expiry}}}}
 		got := intelligencePublicResult(r, true)
 		require.Equal(t, "passed", got.Verdict, "visual judgment must not change generation timeline or group status")
@@ -255,5 +255,66 @@ func TestDrawingNativeTransportCarriesExactlyOneImage(t *testing.T) {
 			require.Len(t, upstream.requests, 1)
 			require.Equal(t, 1, strings.Count(string(upstream.lastBody), "aGVsbG8="), platform+mode)
 		}
+	}
+}
+
+func TestDrawingPromptGeneralizesWithoutFaceRecognition(t *testing.T) {
+	cfg := &PelicanTestConfig{Prompt: "任意题目", IntelligenceResult: &IntelligenceResultMetadata{Action: "任意动作", Scene: "任意场景"}}
+	prompt := drawingJudgePrompt(cfg)
+	require.Contains(t, prompt, "不识别具体人物身份")
+	require.Contains(t, prompt, "任意动作")
+	require.Contains(t, prompt, "任意场景")
+	for _, example := range []string{"巴士", "热气球", "船", "山姆", "人物特征无法确认时判unknown"} {
+		require.NotContains(t, prompt, example)
+	}
+}
+
+func TestDrawingCompletionSeparatesUncertaintyFromErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, verdict, reason, want string
+		renderFailure               bool
+	}{
+		{"visual uncertainty", "unknown", "动作：遮挡导致关系不可辨认", "unknown", false},
+		{"request failure", "unknown", "judge_request_failed", "error", false},
+		{"invalid response", "unknown", "judge_invalid_response", "error", false},
+		{"unavailable group", "unknown", "judge_group_unavailable", "error", false},
+		{"render failure", "", "", "error", true},
+		{"visual pass", "correct", "主体动作场景均清晰", "passed", false},
+		{"visual failure", "incorrect", "主体缺失", "incorrect", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &drawingRepoFake{groupTestRepoFake: newGroupTestRepoFake()}
+			svc, _ := newGroupTestService(repo.groupTestRepoFake, nil, nil)
+			svc.repo = repo
+			svc.renderDrawing = func(context.Context, string) (string, error) {
+				if tc.renderFailure {
+					return "", errors.New("render failed")
+				}
+				return "image", nil
+			}
+			svc.judgeDrawing = func(context.Context, int64, *PelicanTestConfig, string) *QualityJudgment {
+				return &QualityJudgment{Verdict: tc.verdict, Reason: tc.reason}
+			}
+			r := &PelicanGroupTestResult{Status: "success", PelicanConfig: &PelicanTestConfig{QuestionKind: "pelican", DrawingJudge: &QualityJudgeConfig{GroupID: 1, ModelID: "vision"}, IntelligenceResult: &IntelligenceResultMetadata{}}}
+			prepareDrawingJudgment(r)
+			svc.completeDrawingJudgment(r)
+			require.NotNil(t, repo.final)
+			require.Equal(t, tc.want, repo.final.Status)
+			require.Equal(t, "success", r.Status)
+		})
+	}
+}
+
+func TestDrawingLegacyDisplayIsReadOnly(t *testing.T) {
+	for _, tc := range []struct{ reason, want string }{
+		{"人物：无法确认身份", "unknown"},
+		{"视觉判题请求失败", "error"},
+		{"判题结果无法解析", "error"},
+	} {
+		m := &IntelligenceResultMetadata{DrawingJudgment: &DrawingJudgment{Status: "unknown", Reason: tc.reason}}
+		got := drawingJudgmentForDisplay(m)
+		require.Equal(t, tc.want, got.Status)
+		require.Equal(t, tc.reason, got.Reason)
+		require.Equal(t, "unknown", m.DrawingJudgment.Status)
 	}
 }

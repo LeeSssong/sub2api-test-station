@@ -271,6 +271,33 @@ func TestClassifyNoAccountError_NoAccountsInPool_Stays503(t *testing.T) {
 	require.False(t, cls.ModelNotFound)
 }
 
+func TestFastUnavailableProtocolContract(t *testing.T) {
+	cls := classifySelectionFailureError(fmt.Errorf("selection failed: %w", service.ErrOpenAIFastUnavailable), noAccountErrorClassification{})
+	require.Equal(t, http.StatusServiceUnavailable, cls.Status)
+	require.Equal(t, "fast_unavailable", cls.ErrType)
+	for _, endpoint := range []string{EndpointResponses, EndpointChatCompletions} {
+		for _, streamStarted := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream_started=%t", endpoint, streamStarted), func(t *testing.T) {
+				c, w := newGinContextForEndpoint(t, endpoint)
+				c.Writer.Header().Set("X-Request-ID", "fast-request-id")
+				(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+				const message = "当前分组的 Fast 模式暂时异常或不支持 Fast。如需协助请联系管理员并提供 Request ID: fast-request-id。"
+				if streamStarted && endpoint == EndpointResponses {
+					_, errObj := parseResponsesFailedSSE(t, w.Body.String())
+					require.Equal(t, "fast_unavailable", errObj["code"])
+					require.Equal(t, message, errObj["message"])
+				} else {
+					require.Contains(t, w.Body.String(), `"type":"fast_unavailable"`)
+					require.Contains(t, w.Body.String(), `"message":"`+message+`"`)
+				}
+				if !streamStarted {
+					require.Equal(t, http.StatusServiceUnavailable, w.Code)
+				}
+			})
+		}
+	}
+}
+
 func TestLocalCapacityExhaustedProtocolContract(t *testing.T) {
 	cls := classifyNoAccountError(
 		context.Background(),

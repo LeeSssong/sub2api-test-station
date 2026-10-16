@@ -61,6 +61,31 @@ func TestProjectNativeUserErrorCategories(t *testing.T) {
 	}
 }
 
+func TestProjectNativeUserErrorFastUnavailable(t *testing.T) {
+	const requestID = "fast-request-id"
+	inputs := []struct {
+		name  string
+		input NativeUserErrorInput
+	}{
+		{"scheduler failure", NativeUserErrorInput{Type: "fast_unavailable", Message: ErrOpenAIFastUnavailable.Error()}},
+		{"code only", NativeUserErrorInput{Type: "api_error", Code: " FAST_UNAVAILABLE "}},
+		{"previous generic copy", NativeUserErrorInput{Type: "fast_unavailable", Message: "服务暂时繁忙，请稍后重试。"}},
+		{"selected account after failover", NativeUserErrorInput{Type: "fast_unavailable", Message: ErrOpenAIFastUnavailable.Error(), AccountSelected: true, Stage: "upstream"}},
+		{"unsafe diagnostic", NativeUserErrorInput{Type: " FAST_UNAVAILABLE ", Message: "no available channel upstream https://secret.example req_secret"}},
+	}
+	for _, tt := range inputs {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.input.Status = http.StatusServiceUnavailable
+			tt.input.RequestID = requestID
+			got := ProjectNativeUserError(tt.input)
+			require.Equal(t, "当前分组的 Fast 模式暂时异常或不支持 Fast。"+
+				"如需协助请联系管理员并提供 Request ID: fast-request-id。", got.Message)
+			require.Equal(t, strings.TrimSpace(tt.input.Type), got.Type)
+			require.Equal(t, strings.TrimSpace(tt.input.Code), got.Code)
+		})
+	}
+}
+
 func TestProjectNativeUserErrorContextLimitUsesStableCode(t *testing.T) {
 	got := ProjectNativeUserError(NativeUserErrorInput{
 		Status:          http.StatusBadGateway,

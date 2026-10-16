@@ -290,6 +290,9 @@ def deploy(bundle):
                 'exec psql -X -v ON_ERROR_STOP=1 -At -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
                b"SELECT filename || '|' || checksum FROM schema_migrations ORDER BY filename;\n")
     maintenance = manifest.get('maintenance') is True
+    skip_restore_rehearsal = manifest.get('skip_restore_rehearsal', False)
+    if not isinstance(skip_restore_rehearsal, bool):
+        raise ValueError('invalid restore rehearsal flag')
     if maintenance:
         if not update_worker or previous.get('migration_set_sha256') != OCT16_OLD or manifest.get('migration_set_sha256') != OCT16_NEW:
             raise ValueError('unapproved maintenance migration pair')
@@ -352,7 +355,7 @@ def deploy(bundle):
     route_opened = False
     stopped_backup = release / 'stopped-postgres.dump'
     detector_ids = []
-    if maintenance:
+    if maintenance and not skip_restore_rehearsal:
         rehearsal = release / 'restore-rehearsal.dump'
         database_dump(db_id, rehearsal)
         validate_restore(db_id, rehearsal)

@@ -1,6 +1,5 @@
 {
-  "version": "docs-v15-new-images-lightbox",
-  "file_count": 24,
+  "version": "docs-v16-brand-guide-refresh",
   "files": [
     {
       "path": "assets/3-1.png",
@@ -8,9 +7,19 @@
       "sha256": "cd085fbdd587fcd74ee22e920fe96fd617e9b5d548f93d4166574091e91b04c7"
     },
     {
+      "path": "assets/3-2-9b57dee6e6ea.png",
+      "bytes": 281012,
+      "sha256": "9b57dee6e6ea9137ed15a0f1ad60015ef8586aac9a42aed8627d4a8299bdd151"
+    },
+    {
       "path": "assets/3-2.png",
       "bytes": 281012,
       "sha256": "9b57dee6e6ea9137ed15a0f1ad60015ef8586aac9a42aed8627d4a8299bdd151"
+    },
+    {
+      "path": "assets/3-3-ccs-e6b7db89b647.png",
+      "bytes": 578887,
+      "sha256": "e6b7db89b647986622f0626c0c3033bc0ab4bf1432bbdd497149ed6ff1674109"
     },
     {
       "path": "assets/3-3-ccs.png",
@@ -18,9 +27,19 @@
       "sha256": "e6b7db89b647986622f0626c0c3033bc0ab4bf1432bbdd497149ed6ff1674109"
     },
     {
+      "path": "assets/3-4-ccs-b4334ab9a3d9.png",
+      "bytes": 571311,
+      "sha256": "b4334ab9a3d9aa2a3776827ea5883ba1621e48a4db38c2e04ea9e826c68d728d"
+    },
+    {
       "path": "assets/3-4-ccs.png",
       "bytes": 571311,
       "sha256": "b4334ab9a3d9aa2a3776827ea5883ba1621e48a4db38c2e04ea9e826c68d728d"
+    },
+    {
+      "path": "assets/3-5-ccs-d2fd15fe46e9.png",
+      "bytes": 409390,
+      "sha256": "d2fd15fe46e9f71789d316e8b0de4baa8ffd242aa07babfef53f3af53b56c569"
     },
     {
       "path": "assets/3-5-ccs.png",
@@ -28,9 +47,24 @@
       "sha256": "d2fd15fe46e9f71789d316e8b0de4baa8ffd242aa07babfef53f3af53b56c569"
     },
     {
+      "path": "assets/3-6-ai-b74fc95994fc.png",
+      "bytes": 282837,
+      "sha256": "b74fc95994fcaf041799b9c705fec9027e0ed8e1a35f55a30a86004253453bb6"
+    },
+    {
       "path": "assets/3-6-ai.png",
       "bytes": 282837,
       "sha256": "b74fc95994fcaf041799b9c705fec9027e0ed8e1a35f55a30a86004253453bb6"
+    },
+    {
+      "path": "assets/4-1-7766c6633045.png",
+      "bytes": 672327,
+      "sha256": "7766c66330454d6c9af95320516dc89d3ebecfe7afe3af5cdcf6e840c0784757"
+    },
+    {
+      "path": "assets/4-1-codex-4d76c4a05672.png",
+      "bytes": 582943,
+      "sha256": "4d76c4a0567288d6e0819dd75d62ab9e321c5f26d1cd81ce6eeb81af05f47c12"
     },
     {
       "path": "assets/4-1-codex.png",
@@ -43,9 +77,19 @@
       "sha256": "7766c66330454d6c9af95320516dc89d3ebecfe7afe3af5cdcf6e840c0784757"
     },
     {
+      "path": "assets/4-10-b4b06b5ea041.png",
+      "bytes": 305926,
+      "sha256": "b4b06b5ea041006a3e893dbd834b7e9ab3a578359e62a42744a5d0ef568507a4"
+    },
+    {
       "path": "assets/4-10.png",
       "bytes": 305926,
       "sha256": "b4b06b5ea041006a3e893dbd834b7e9ab3a578359e62a42744a5d0ef568507a4"
+    },
+    {
+      "path": "assets/4-2-codex-1da37e49c65f.png",
+      "bytes": 281844,
+      "sha256": "1da37e49c65f071ff5bcb365d9d77a8d5adba4c71202a697af62db5eebd19bae"
     },
     {
       "path": "assets/4-2-codex.png",
@@ -53,9 +97,19 @@
       "sha256": "1da37e49c65f071ff5bcb365d9d77a8d5adba4c71202a697af62db5eebd19bae"
     },
     {
+      "path": "assets/4-3-gpt-7da4a11a0d16.png",
+      "bytes": 177557,
+      "sha256": "7da4a11a0d16436ac1dca894b8ace10f93b91639d415f681a5c7ffe814577328"
+    },
+    {
       "path": "assets/4-3-gpt.png",
       "bytes": 177557,
       "sha256": "7da4a11a0d16436ac1dca894b8ace10f93b91639d415f681a5c7ffe814577328"
+    },
+    {
+      "path": "assets/4-4-gpt-bc150811703f.png",
+      "bytes": 127497,
+      "sha256": "bc150811703f33135acc53aedea10a5d646e15facc00ed2681fa90d4cfe18aa0"
     },
     {
       "path": "assets/4-4-gpt.png",
@@ -63,9 +117,19 @@
       "sha256": "bc150811703f33135acc53aedea10a5d646e15facc00ed2681fa90d4cfe18aa0"
     },
     {
+      "path": "assets/4-5-783b0115d462.png",
+      "bytes": 563732,
+      "sha256": "783b0115d4625f573297bcaa0941ce1605e99b019487b1c2f64b2c884cf8967c"
+    },
+    {
       "path": "assets/4-5.png",
       "bytes": 563732,
       "sha256": "783b0115d4625f573297bcaa0941ce1605e99b019487b1c2f64b2c884cf8967c"
+    },
+    {
+      "path": "assets/4-6-cd22c18ded22.png",
+      "bytes": 158283,
+      "sha256": "cd22c18ded22336d7b3a2912c5aebb6e1e16347bd95fc397fe2bda5d2a392a98"
     },
     {
       "path": "assets/4-6.png",
@@ -73,9 +137,19 @@
       "sha256": "cd22c18ded22336d7b3a2912c5aebb6e1e16347bd95fc397fe2bda5d2a392a98"
     },
     {
+      "path": "assets/4-7-codex-71f70159809f.png",
+      "bytes": 205059,
+      "sha256": "71f70159809fc24ac811368f43dce3b078f518b947b3cda1b649d52bfe45e952"
+    },
+    {
       "path": "assets/4-7-codex.png",
       "bytes": 205059,
       "sha256": "71f70159809fc24ac811368f43dce3b078f518b947b3cda1b649d52bfe45e952"
+    },
+    {
+      "path": "assets/4-8-1bac820f8656.png",
+      "bytes": 589349,
+      "sha256": "1bac820f865647b8dc35d1579e5cf254b2eb02c209da73665bb13d1f8b1edad8"
     },
     {
       "path": "assets/4-8.png",
@@ -83,9 +157,19 @@
       "sha256": "1bac820f865647b8dc35d1579e5cf254b2eb02c209da73665bb13d1f8b1edad8"
     },
     {
+      "path": "assets/4-9-a55ec5314b68.png",
+      "bytes": 524889,
+      "sha256": "a55ec5314b68242bdee8ad93e6ed8d0a90422fb0983487e0e2d7b384facc2660"
+    },
+    {
       "path": "assets/4-9.png",
       "bytes": 524889,
       "sha256": "a55ec5314b68242bdee8ad93e6ed8d0a90422fb0983487e0e2d7b384facc2660"
+    },
+    {
+      "path": "assets/create-api-key-9e8da0159f5a.png",
+      "bytes": 328878,
+      "sha256": "9e8da0159f5a0a6ba2c21042527eb930fcb554b37b35dd6d0d1e565558501341"
     },
     {
       "path": "assets/qq-group-qr.jpg",
@@ -103,6 +187,11 @@
       "sha256": "6b619afb3ec7aeef50c0ebc56e344cf4b15dbe063599e19462cf6cdec1277ef9"
     },
     {
+      "path": "assets/xingqiao-logo-brand.png",
+      "bytes": 145468,
+      "sha256": "c6a3dcb2b547af1c7694ef83646728b9055497c942bfa5f479aa29d614508c70"
+    },
+    {
       "path": "downloads/CC-Switch-v3.20.1-Windows.msi",
       "bytes": 13553664,
       "sha256": "b2a958ccd2bbfd1c44c614d9bebb0dd9f4a55066deed2962511032a487f7ab90"
@@ -114,13 +203,14 @@
     },
     {
       "path": "index.html",
-      "bytes": 23707,
-      "sha256": "e8020c2ee2af5b717e9b7737a386234a1a4acf54e0fb09efdbe197d2d397c491"
+      "bytes": 28274,
+      "sha256": "2b7630f563db2202e1bc3b323cd76e2983c1fd53983f891f7ce1f9e7257b223c"
     },
     {
       "path": "manifest.json",
-      "bytes": 7079,
-      "sha256": "7ccb3a6a4097701571a8147c528a4c177616d303b919b6e677e790aef35950c9"
+      "bytes": 6859,
+      "sha256": "cc99c69157c88ba5c4b823d235fd3ab2b0931d6c8b687b6ce2f67b748af60f46"
     }
-  ]
+  ],
+  "file_count": 42
 }

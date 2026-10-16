@@ -7,7 +7,6 @@
       "body": [
         "开始前，请确认你已经准备好：",
         "一台 Windows、macOS 或 Linux 电脑",
-        "符合使用要求的网络环境（VPN）",
         "如果电脑中已经打开 Codex，请先完全退出，完成配置后再重新启动。"
       ],
       "images": []
@@ -28,21 +27,8 @@
         "安装 CC Switch"
       ],
       "images": [],
-      "downloads": [
-        {
-          "file": "CC-Switch-v3.20.1-Windows.msi",
-          "path": "downloads/CC-Switch-v3.20.1-Windows.msi",
-          "label": "Windows 安装包",
-          "platform": "Windows"
-        },
-        {
-          "file": "CC-Switch-v3.20.1-macOS.dmg",
-          "path": "downloads/CC-Switch-v3.20.1-macOS.dmg",
-          "label": "macOS 安装包",
-          "platform": "macOS"
-        }
-      ],
-      "important_notice": "安装完成后：保持CC Switch打开"
+      "important_notice": "安装完成后：保持CC Switch打开",
+      "official_download_url": "https://ccswitch.io/zh/"
     },
     {
       "id": "create-key",
@@ -53,8 +39,8 @@
       ],
       "images": [
         {
-          "source": "4-1创建密钥.png",
-          "file": "4-1-7766c6633045.png",
+          "source": "创建API密钥-教程标注.png",
+          "file": "create-api-key-9e8da0159f5a.png",
           "alt": "四、创建 API 密钥"
         },
         {
@@ -69,23 +55,12 @@
       "id": "import",
       "title": "五、一键导入 CC Switch",
       "body": [
-        "在密钥列表中点击「导入到 CCS」。",
-        "浏览器询问是否打开 CC Switch 时，选择允许。"
+        "在密钥列表中点击「导入到 CCS」。"
       ],
       "images": [
         {
           "source": "3.3-一键导入ccs.png",
           "file": "3-3-ccs-e6b7db89b647.png",
-          "alt": "五、一键导入 CC Switch"
-        },
-        {
-          "source": "3.4-允许打开ccs.png",
-          "file": "3-4-ccs-b4334ab9a3d9.png",
-          "alt": "五、一键导入 CC Switch"
-        },
-        {
-          "source": "3.5-导入ccs.png",
-          "file": "3-5-ccs-d2fd15fe46e9.png",
           "alt": "五、一键导入 CC Switch"
         }
       ],
@@ -169,7 +144,7 @@
           "alt": "九、粘贴密钥并进入 Codex"
         }
       ],
-      "important_notice": "需要进行小额充值，确保星桥 AI Link 账号有可用额度，才能调用 Codex。"
+      "important_notice": "需要进行小额充值，确保星桥 AI Link 账号有可用额度，才能调用 Codex。可联系客服QQ:2826033474免费领取测试码"
     },
     {
       "id": "test",
@@ -214,12 +189,13 @@
     "4.7进入codex.png": "4-7-codex-71f70159809f.png",
     "4.8小额充值.png": "4-8-1bac820f8656.png",
     "4.9充值到账确认.png": "4-9-a55ec5314b68.png",
-    "4.10首次测试完成.png": "4-10-b4b06b5ea041.png"
+    "4.10首次测试完成.png": "4-10-b4b06b5ea041.png",
+    "创建API密钥-教程标注.png": "create-api-key-9e8da0159f5a.png"
   },
   "source_asset_count": 16,
   "branding": {
-    "logo": "starlink-logo.png",
-    "source": "图标1254x1254_logo透明.png"
+    "logo": "xingqiao-logo-brand.png",
+    "source": "upstream/sub2api/frontend/public/xingqiao/logo-brand.png"
   },
   "completion": {
     "images": [

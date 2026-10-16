@@ -6,7 +6,7 @@ import { computed } from 'vue';
 import type { DrawingJudgment } from '@/api/intelligenceTests';
 const props = defineProps<{ judgment?: DrawingJudgment }>();
 const state = computed(() => props.judgment?.status || 'unjudged');
-const label = computed(() => ({ passed: '通过', incorrect: '未通过', pending: '待判定', unknown: '判定异常', unjudged: '未判定' })[state.value]);
+const label = computed(() => ({ passed: '通过', incorrect: '未通过', pending: '待判定', unknown: '无法判断', error: '判定异常', unjudged: '未判定' })[state.value]);
 </script>
 <style scoped>
 .iq-drawing-ribbon { position:absolute; z-index:2; top:22px; right:-37px; width:150px; padding:7px 0; transform:rotate(45deg); text-align:center; font-size:12px; line-height:18px; font-weight:600; background:#526273; color:#fff; pointer-events:auto; }

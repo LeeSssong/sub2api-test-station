@@ -586,6 +586,7 @@ run_executor() {
   local requested_image=$IMAGE
   if [[ "${PRELOADED_MODE:-false}" == true ]]; then
     requested_image=${PRELOADED_REQUESTED_IMAGE:?}
+    [[ "$expected_worker_image" != "$IMAGE" ]] || expected_worker_image=$requested_image
   fi
   local executor_args=(
     --mode "$executor_mode"
@@ -3728,7 +3729,47 @@ test_review_concurrent_dead_pid_observers_fail_closed() {
     || fail 'dead PID lock reclaimer mutated Docker or Caddy'
 }
 
+test_october16_paused_notifications() {
+  local original_executor=$EXECUTOR scenario helper copy
+  for scenario in drain_empty fusion_public_failure fusion_partial_migration; do
+    setup_case "october16-$scenario"
+    write_meminfo
+    MIGRATIONS_HASH=457dde7e112bbb808dee1ba05ab2d99180c5b250ecf082cf24ea9f309741370d
+    local old=e5d79ffa00d518804211a877ede6c7cb54277ada8c76e975526dca622445a6de
+    "$REAL_JQ" --arg old "$old" '.migrations_hash=$old' "$CASE_DIR/state.json" >"$CASE_DIR/state.tmp"
+    mv "$CASE_DIR/state.tmp" "$CASE_DIR/state.json"; chmod 600 "$CASE_DIR/state.json"
+    helper="$CASE_DIR/guard.py"
+    cat >"$helper" <<'PY_GUARD'
+import pathlib,sys,time,os
+marker=pathlib.Path(sys.argv[2]);marker.write_text('ready')
+release=pathlib.Path(str(marker)+'.release')
+with open(os.environ['FAKE_EVENT_LOG'],'a') as f:f.write('notification_pause'+chr(10))
+while not release.exists():time.sleep(.01)
+with open(os.environ['FAKE_EVENT_LOG'],'a') as f:f.write('notification_end '+release.read_text()+chr(10))
+PY_GUARD
+    copy="$CASE_DIR/executor.sh"
+    sed "s|/usr/local/libexec/october16-notification-guard.py|$helper|" "$original_executor" >"$copy"
+    EXECUTOR=$copy
+    if [[ "$scenario" == drain_empty ]]; then
+      ONLINE_MIGRATIONS_MODE=true ONLINE_MIGRATIONS_FROM_HASH=$old run_executor PRESERVE_DETECTOR=true FAKE_SCENARIO=$scenario >"$CASE_DIR/stdout" 2>"$CASE_DIR/stderr" || fail "October16 success: $(cat "$CASE_DIR/stderr")"
+      grep -q 'notification_end restore' "$EVENT_LOG" || fail 'notification restoration missing'
+      local previous=0 line pattern
+      for pattern in notification_pause 'docker stop --time 60 worker-id' ' -migrate-only' 'up --no-deps -d sub2api-green' 'caddy caddy reload' 'notification_end restore'; do
+        line=$(awk -v pattern="$pattern" -v after="$previous" 'NR>after && $0~pattern {print NR;exit}' "$EVENT_LOG")
+        [[ -n "$line" ]] || fail "October16 ordering missing $pattern"
+        previous=$line
+      done
+    else
+      ONLINE_MIGRATIONS_MODE=true ONLINE_MIGRATIONS_FROM_HASH=$old expect_failure "october16-$scenario" run_executor PRESERVE_DETECTOR=true FAKE_SCENARIO=$scenario
+      grep -q 'notification_end keep-paused' "$EVENT_LOG" || fail 'failed migration must leave notifications paused'
+      "$REAL_JQ" -e '.active_slot=="blue"' "$CASE_DIR/state.json" >/dev/null || fail 'old API not retained'
+    fi
+    EXECUTOR=$original_executor
+  done
+}
+
 case "${ONLY_TEST:-all}" in
+  october16) test_october16_paused_notifications ;;
   official297-recovery) test_official297_migration_failure_restores_database ;;
   september28-online) test_september28_online_transition ;;
   all)

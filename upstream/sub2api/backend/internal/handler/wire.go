@@ -164,6 +164,7 @@ func ProvideGatewayHandler(
 	cfg *config.Config,
 	settingService *service.SettingService,
 	coordinator *securityaudit.Coordinator,
+	geminiCachedContentService *service.GeminiCachedContentService,
 ) *GatewayHandler {
 	gatewayService.SetUsageCostEvidenceRegistrar(usageCostEvidenceRegistrar)
 	openAIGatewayService.SetUsageCostEvidenceRegistrar(usageCostEvidenceRegistrar)
@@ -171,6 +172,7 @@ func ProvideGatewayHandler(
 		userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool,
 		errorPassthroughService, contentModerationService, userMsgQueueService, cfg, settingService)
 	h.securityAuditCoordinator = coordinator
+	h.geminiCachedContentService = geminiCachedContentService
 	return h
 }
 

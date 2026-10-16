@@ -245,6 +245,10 @@ func nativeUserErrorInputFromDiagnosis(detail *OpsErrorLogDetail, class string) 
 		input.Message = detail.Message
 		input.AccountSelected = hasSelectedNativeUpstreamAccount(detail)
 	}
+	// The broad diagnostic class must not erase actionable Fast guidance.
+	if strings.EqualFold(strings.TrimSpace(input.Type), "fast_unavailable") {
+		return input
+	}
 	switch class {
 	case NativeErrorClassLocalLimit:
 		input.AccountSelected = false

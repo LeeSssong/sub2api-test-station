@@ -834,6 +834,7 @@ const adminNavItems = computed((): NavItem[] => {
       { path: '/admin/token-guard', label: t('tokenGuard.title'), icon: ShieldIcon },
       { path: '/admin/token-guard-v2', label: t('tokenGuardV2.title'), icon: ShieldIcon },
       { path: '/admin/pelican-tests', label: t('pelicanTests.title'), icon: ChartIcon },
+      { path: '/admin/group-cache-tests', label: t('admin.groupCacheTest.title'), icon: QualityOpsIcon },
       { path: '/admin/request-captures', label: t('admin.requestCapture.title'), icon: ChartIcon, featureFlag: () => adminSettingsStore.requestCaptureEnabled },
       { path: '/admin/harvest-flow', label: t('nav.harvestFlow'), icon: ChartIcon },
     ] },

@@ -11,9 +11,10 @@ type PelicanTestConfig struct {
 	Intelligence       *IntelligenceRuleConfig     `json:"intelligence,omitempty"`
 	IntelligenceResult *IntelligenceResultMetadata `json:"intelligence_result,omitempty"`
 	// Filled only on saved result snapshots, never used to configure a rule.
-	QualityModelOutcomes map[string]string `json:"quality_model_outcomes,omitempty"`
-	QualityModelActions  map[string]string `json:"quality_model_actions,omitempty"`
-	TriggerSource        string            `json:"trigger_source,omitempty"`
+	QualityModelOutcomes map[string]string      `json:"quality_model_outcomes,omitempty"`
+	QualityModelActions  map[string]string      `json:"quality_model_actions,omitempty"`
+	TriggerSource        string                 `json:"trigger_source,omitempty"`
+	RandomQuestion       *QualityRandomQuestion `json:"random_question,omitempty"`
 	// BPSRecoveryPending is filled from persisted ownership when the runner
 	// claims a plan. It is never accepted from or written to configuration JSON.
 	BPSRecoveryPending bool           `json:"-"`

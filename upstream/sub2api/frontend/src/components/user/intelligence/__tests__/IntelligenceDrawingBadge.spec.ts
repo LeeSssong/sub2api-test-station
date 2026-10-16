@@ -22,3 +22,17 @@ describe('drawing ribbon', () => {
   const w=mount(Card,{props:{group:old,now,hours:24}});await flushPromises();expect(w.find('.iq-drawing-ribbon').text()).toBe('未判定');w.unmount();
  });
 });
+
+it.each([
+ ['unknown', '人物：无法确认身份', '无法判断'],
+ ['error', '视觉判题请求失败', '判定异常'],
+] as const)('shows %s separately from generation success', async (status, reason, label) => {
+ const sample=structuredClone(group);
+ sample.results[0]!.drawing_judgment={status,reason};
+ const w=mount(Card,{props:{group:sample,now,hours:24}});
+ await flushPromises();
+ expect(w.find('.iq-drawing-ribbon').text()).toBe(label);
+ expect(w.find('.iq-drawing-ribbon').attributes('title')).toBe(reason);
+ expect(w.find('iframe').exists()).toBe(true);
+ w.unmount();
+});

@@ -38,3 +38,12 @@ this snapshot and must be reviewed when importing a newer upstream release.
 - Three-way source snapshot import: 97 changed upstream files; preserve local billing/quota/admission, Fast scheduler capabilities, singleton roles, monitoring and user shell. Migration SQL and runtime dependency inputs unchanged.
 - Restore ordinary-user TPS using upstream total-duration throughput, independent of admin-only timing details. Align calculator, hints and boundary tests with this release.
 - Production branch commits after v2.10.5 are excluded. Test station is not part of this deployment.
+
+## Integration candidate — 2026-10-16
+
+- Repository: ranxi2001/sub2api; production snapshot e51d11178b02d77e8fb3661698bd5b8d1bd8a054 (2.11.3).
+- Previous imported snapshot: d977e7a5e24e5536db6ce8b8478743e0c4b11f77.
+- Preserve local user shell, error guidance, timing diagnostics, account cost multipliers, and explicit group long-context pricing. Upstream Sol exemption applies only when the local group has not explicitly enabled long-context pricing.
+- Narra workstation excluded by user instruction. Existing test station Narra runtime must remain isolated and untouched.
+- 18 new SQL files retain upstream bytes. Migration execution adds 100ms lock / 2s statement limits. Online release requires notification pause, drain, management-write fencing, and verified rollback before use.
+- Candidate only: not yet deployed or qualified for online migration.

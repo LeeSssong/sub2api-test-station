@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/redis/go-redis/v9"
 )
@@ -8,6 +9,8 @@ import (
 // The production composition root attaches optional services before starting
 // the harvest loop; no post-construction setter races with startup.
 type OpenAIGatewayDependencies struct {
+	TimezoneProber ProxyExitInfoProber
+	RegionalMetering *RegionalMetering
 	Redis         *redis.Client
 	Accounts      AccountRepository
 	Proxies       ProxyRepository
@@ -38,12 +41,16 @@ type OpenAIGatewayDependencies struct {
 }
 
 func ProvideOpenAIGatewayService(d OpenAIGatewayDependencies) *OpenAIGatewayService {
+	if d.RegionalMetering != nil && d.RegionalMetering.Run != nil {
+		go d.RegionalMetering.Run(context.Background())
+	}
 	svc := NewOpenAIGatewayService(d.Accounts, d.Proxies, d.UsageLogs, d.UsageBilling, d.Users, d.Subscriptions,
 		d.GroupRates, d.Cache, d.Config, d.Scheduler, d.Concurrency, d.Billing, d.RateLimit,
 		d.BillingCache, d.Upstream, d.Deferred, d.OpenAITokens, d.GrokTokens, d.Pricing,
 		d.Channels, d.BalanceNotify, d.Settings, d.Quotas,
 		WithOpenAIRPMCache(d.RPMCache),
-		func(s *OpenAIGatewayService) { s.codexHarvest = d.Harvest; s.coordinationRedis = d.Redis })
+		WithRegionalMetering(d.RegionalMetering),
+		func(s *OpenAIGatewayService) { s.codexHarvest = d.Harvest; s.coordinationRedis = d.Redis; s.requestTimezoneProber = d.TimezoneProber })
 	svc.SetOpenAITurnStateStore(d.TurnState)
 	svc.SetOpenAITurnStateHarvesterProxyRepository(d.Proxies)
 	if shouldStartSingleton(d.Config) {

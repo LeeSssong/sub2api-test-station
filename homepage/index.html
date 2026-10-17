@@ -1,15 +1,96 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090b10" />
-    <meta name="description" content="星桥连接世界顶尖模型，国内直连 OpenAI 与 Anthropic API。" />
-    <link rel="icon" href="/favicon.ico?branding=site-logo" />
-    <title>星桥 | 世界顶尖模型触手可及</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="xingqiao-homepage-version" content="24">
+  <meta name="theme-color" content="#071421">
+  <title>星桥 · 连接你需要的 AI</title>
+  <link rel="icon" href="/src/landing/assets/xingqiao-mark-transparent.png" type="image/png">
+  <link rel="stylesheet" href="/src/landing/styles.css">
+  <script type="module" src="/src/landing/app.js"></script>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="星桥AI Link首页"><img src="/src/landing/assets/xingqiao-mark-transparent.png" width="28" height="28" alt=""><span>星桥AI Link</span></a>
+      <nav class="site-nav" aria-label="主导航">
+        <a class="nav-link is-current" href="/" aria-current="page">首页</a>
+        <a class="nav-link" href="/docs/" target="_blank" rel="noopener noreferrer">接入教程</a>
+      </nav>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="intro">
+          <h1 id="hero-title">星桥，连接世界前沿模型</h1>
+          <p>一个 API 入口，让好模型为你所用。</p>
+        </div>
+
+        <div class="constellation" aria-label="星桥向 Codex、Claude、DeepSeek、Grok、Gemini 发出连接光束">
+          <div class="stage-light" aria-hidden="true"></div>
+          <svg class="connections" aria-hidden="true">
+            <defs>
+              <filter id="soft-light" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="2.6"/></filter>
+              <filter id="point-light" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="3.2"/></filter>
+            </defs>
+            <g class="route-layer"></g>
+            <g class="particle-layer"></g>
+          </svg>
+
+          <div class="providers" role="group" aria-label="选择工具，聚焦它的连接路径">
+            <button class="provider" type="button" data-provider="codex" aria-label="聚焦 Codex 连接" aria-pressed="false">
+              <img class="provider-icon" src="/src/landing/assets/codex-xingqiao.png" width="32" height="32" alt=""><span>Codex</span>
+            </button>
+            <button class="provider" type="button" data-provider="claude" aria-label="聚焦 Claude 连接" aria-pressed="false">
+              <img class="provider-icon" src="/src/landing/assets/claude-xingqiao.svg" width="32" height="32" alt=""><span>Claude</span>
+            </button>
+            <button class="provider" type="button" data-provider="deepseek" aria-label="聚焦 DeepSeek 连接" aria-pressed="false">
+              <img class="provider-icon" src="/src/landing/assets/deepseek-xingqiao.svg" width="32" height="32" alt=""><span>DeepSeek</span>
+            </button>
+            <button class="provider" type="button" data-provider="grok" aria-label="聚焦 Grok 连接" aria-pressed="false">
+              <img class="provider-icon" src="/src/landing/assets/grok-xingqiao.png" width="32" height="32" alt=""><span>Grok</span>
+            </button>
+            <button class="provider" type="button" data-provider="gemini" aria-label="聚焦 Gemini 连接" aria-pressed="false">
+              <img class="provider-icon" src="/src/landing/assets/gemini-xingqiao.png" width="32" height="32" alt=""><span>Gemini</span>
+            </button>
+          </div>
+
+          <div class="hub">
+            <div class="mark-wrap">
+              <img class="hero-mark" src="/src/landing/assets/xingqiao-mark-transparent.png" width="164" height="164" alt="星桥">
+              <svg class="logo-energy" viewBox="0 0 358 358" aria-hidden="true">
+                <defs>
+                  <mask id="mark-silhouette" maskUnits="userSpaceOnUse" x="0" y="0" width="358" height="358" style="mask-type:alpha"><image href="/src/landing/assets/xingqiao-mark-transparent.png" width="358" height="358"/></mask>
+                  <filter id="arm-bloom" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="10"/></filter>
+                  <filter id="core-bloom" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="9"/></filter>
+                </defs>
+                <g mask="url(#mark-silhouette)">
+                  <g class="arm-charges" fill="#92efff" filter="url(#arm-bloom)">
+                    <circle class="arm-charge" cx="65" cy="82" r="22"/>
+                    <circle class="arm-charge" cx="293" cy="82" r="22"/>
+                    <circle class="arm-charge" cx="65" cy="276" r="22"/>
+                    <circle class="arm-charge" cx="293" cy="276" r="22"/>
+                  </g>
+                  <g class="arm-travelers" fill="#e4ffff"></g>
+                </g>
+                <circle class="core-aura" cx="179" cy="179" r="26" fill="#8fefff" filter="url(#core-bloom)"/>
+                <circle class="core-flash" cx="179" cy="179" r="12" fill="#f1ffff" filter="url(#core-bloom)"/>
+              </svg>
+            </div>
+            <a class="start-button" href="/login" target="_blank" rel="noopener noreferrer">开始使用</a>
+          </div>
+        </div>
+
+        <ul class="reasons" aria-label="为什么选择星桥">
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3ZM9 8h6M9 12h6"/></svg><span>钱花得明白</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c-2.5 4-7 8-7 12a7 7 0 0 0 14 0c0-4-4.5-8-7-12Zm-3.5 11 2.5 2.5 4.5-5"/></svg><span>模型不掺水</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 3 3 4 .5.5 4 2.5 3-2.5 3-.5 4-4 .5-3 3-3-3-4-.5-.5-4L2 12l2.5-3 .5-4L9 5 12 2Zm-4 10 3 3 5-6"/></svg><span>好用才算数</span></li>
+          <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h8M10 3v7l-6 9a1.3 1.3 0 0 0 1 2h14a1.3 1.3 0 0 0 1-2l-6-9V3M7 16h10"/></svg><span>效果你来验</span></li>
+        </ul>
+      </section>
+    </main>
+
+  </div>
+</body>
 </html>

@@ -1,5 +1,5 @@
 {
-  "version": "docs-v16-brand-guide-refresh",
+  "version": "docs-v17-seven-step-guide",
   "files": [
     {
       "path": "assets/3-1.png",
@@ -203,14 +203,49 @@
     },
     {
       "path": "index.html",
-      "bytes": 28274,
-      "sha256": "2b7630f563db2202e1bc3b323cd76e2983c1fd53983f891f7ce1f9e7257b223c"
+      "bytes": 22886,
+      "sha256": "d0e936e0d889c2ecccc58c7167bee468bc48a6e07bdd39ec139e7300d5266b31"
     },
     {
       "path": "manifest.json",
-      "bytes": 6859,
-      "sha256": "cc99c69157c88ba5c4b823d235fd3ab2b0931d6c8b687b6ce2f67b748af60f46"
+      "bytes": 5582,
+      "sha256": "cf8c4c1df3f139c9fe124091ec9b0ff2fcf8ba2a15e6d530b89e3b2c5c1c1785"
+    },
+    {
+      "path": "assets/codex-launch-f299650c2cbe.png",
+      "bytes": 281856,
+      "sha256": "f299650c2cbecbd8cca4056cbc2497e473c485ba068c5c174c41990d5fc72a7a"
+    },
+    {
+      "path": "assets/codex-workspace-66b2a70fa896.png",
+      "bytes": 205071,
+      "sha256": "66b2a70fa896b41df27f44d6532b0bb52ae5a908fe6823443bf1bba13eead1a9"
+    },
+    {
+      "path": "assets/qq-support-ccd776cb259f.jpg",
+      "bytes": 62013,
+      "sha256": "ccd776cb259f26ef2d6b1ce1b1ef1cf8ec87da64f65e03e7c3f6b82b652fb84a"
+    },
+    {
+      "path": "assets/qq-group-87edb5fba8ef.jpg",
+      "bytes": 219896,
+      "sha256": "87edb5fba8ef5f84ac8e38c6c5c397168e2a7dd61768201851ef28336ab739f5"
+    },
+    {
+      "path": "assets/create-key-form-e5d5832222f5.png",
+      "bytes": 303251,
+      "sha256": "e5d5832222f52852485ad386279f5cbc7d054e3be2dd5b9756621dfaa23112cd"
+    },
+    {
+      "path": "assets/import-ccs-02a65f28d488.png",
+      "bytes": 420396,
+      "sha256": "02a65f28d48805d98e16bdf0390c1604bf5d197a9ff1fd6cf800c4e30c3b808f"
+    },
+    {
+      "path": "assets/enable-provider-3cc69198bb38.png",
+      "bytes": 316174,
+      "sha256": "3cc69198bb38c773cb3d42ef60bb07e70e89b6947bfbaa32fd4e850e930cdea5"
     }
   ],
-  "file_count": 42
+  "file_count": 49
 }

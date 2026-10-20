@@ -1,28 +1,22 @@
 {
-  "title": "星桥 AI Link｜Codex 新手教程",
+  "title": "星桥 AI Link｜10分钟 Codex 新手教程",
   "chapters": [
     {
-      "id": "prepare",
-      "title": "一、开始前准备",
-      "body": [
-        "开始前，请确认你已经准备好：",
-        "一台 Windows、macOS 或 Linux 电脑",
-        "如果电脑中已经打开 Codex，请先完全退出，完成配置后再重新启动。"
-      ],
-      "images": []
-    },
-    {
       "id": "register",
-      "title": "二、注册星桥 AI Link 账号",
+      "title": "一、注册即送测试额度",
       "body": [
-        "进入 星桥 AI Link，注册并登录账号。",
-        "星桥AI Link入口：https://api.xingqiaolab.top/"
+        "进入 星桥 AI Link，注册并登录账号，注册即送测试额度"
       ],
-      "images": []
+      "images": [],
+      "entry": {
+        "url": "https://api.xingqiaolab.top/",
+        "display": "link-card",
+        "promotional_image_status": "awaiting-user-image"
+      }
     },
     {
       "id": "ccswitch",
-      "title": "三、安装 CC Switch",
+      "title": "二、安装 CC Switch",
       "body": [
         "安装 CC Switch"
       ],
@@ -32,7 +26,7 @@
     },
     {
       "id": "create-key",
-      "title": "四、创建 API 密钥",
+      "title": "三、创建 API 密钥",
       "body": [
         "密钥页面入口：https://api.xingqiaolab.top/keys",
         "打开密钥页面并创建密钥，按页面提示完成填写。"
@@ -41,145 +35,90 @@
         {
           "source": "创建API密钥-教程标注.png",
           "file": "create-api-key-9e8da0159f5a.png",
-          "alt": "四、创建 API 密钥"
+          "alt": "三、创建 API 密钥"
         },
         {
           "source": "3.2-填写密钥.png",
-          "file": "3-2-9b57dee6e6ea.png",
-          "alt": "四、创建 API 密钥"
+          "file": "create-key-form-e5d5832222f5.png",
+          "alt": "三、创建 API 密钥"
         }
       ],
       "important_notice": "API 密钥关联您的账户额度，请勿泄露或转发给他人。密钥一旦被他人使用，可能导致您的额度被消耗。"
     },
     {
       "id": "import",
-      "title": "五、一键导入 CC Switch",
+      "title": "四、一键导入 CC Switch",
       "body": [
         "在密钥列表中点击「导入到 CCS」。"
       ],
       "images": [
         {
           "source": "3.3-一键导入ccs.png",
-          "file": "3-3-ccs-e6b7db89b647.png",
-          "alt": "五、一键导入 CC Switch"
+          "file": "import-ccs-02a65f28d488.png",
+          "alt": "四、一键导入 CC Switch"
         }
       ],
       "troubleshooting": "确认 CC Switch 已安装并正在运行；换 Safari、Chrome 或 Edge 再点击一次「导入到 CCS」。"
     },
     {
       "id": "enable",
-      "title": "六、启用星桥 AI Link",
+      "title": "五、启用星桥 AI Link",
       "body": [
-        "在 CC Switch 中找到星桥 AI Link，点击启用。"
+        "在 CC Switch 的 Codex 栏目中找到星桥 AI Link，点击启用，确认显示为“使用中”。"
       ],
       "images": [
         {
           "source": "3.6-启用星桥ai.png",
-          "file": "3-6-ai-b74fc95994fc.png",
-          "alt": "六、启用星桥 AI Link"
+          "file": "enable-provider-3cc69198bb38.png",
+          "alt": "五、启用星桥 AI Link"
         }
       ]
     },
     {
       "id": "install-codex",
-      "title": "七、安装 Codex 并启用",
+      "title": "六、安装 Codex 并启用",
       "body": [
-        "Codex 安装入口：https://codexapp.agentsmirror.com/",
-        "根据你的电脑系统下载安装 Codex。"
+        "根据你的电脑系统下载安装 Codex并启用。",
+        "如果 Codex 已经打开，请先完全退出，再重新打开，让配置生效。"
       ],
       "images": [
         {
-          "source": "4.1下载codex.png",
-          "file": "4-1-codex-4d76c4a05672.png",
-          "alt": "七、安装 Codex 并启用"
+          "source": "启动 Codex.png",
+          "file": "codex-launch-f299650c2cbe.png",
+          "alt": "启动 Codex"
         },
         {
-          "source": "4.2启动codex.png",
-          "file": "4-2-codex-1da37e49c65f.png",
-          "alt": "七、安装 Codex 并启用"
-        }
-      ]
-    },
-    {
-      "id": "login",
-      "title": "八、登录 ChatGPT",
-      "body": [
-        "有Open AI 账号：可选 [ 继续登陆 ]。",
-        "无Open AI 账号：选用 [ 其他方式登陆 ]。"
-      ],
-      "images": [
-        {
-          "source": "4.3登陆gpt .png",
-          "file": "4-3-gpt-7da4a11a0d16.png",
-          "alt": "八、登录 ChatGPT"
-        },
-        {
-          "source": "4.4密钥登陆gpt .png",
-          "file": "4-4-gpt-bc150811703f.png",
-          "alt": "八、登录 ChatGPT"
-        }
-      ]
-    },
-    {
-      "id": "paste-key",
-      "title": "九、粘贴密钥并进入 Codex",
-      "body": [
-        "进入 星桥AI Link 复制密钥。",
-        "返回 ChatGPT 登陆界面粘贴密钥。"
-      ],
-      "images": [
-        {
-          "source": "4.5复制密钥.png",
-          "file": "4-5-783b0115d462.png",
-          "alt": "九、粘贴密钥并进入 Codex"
-        },
-        {
-          "source": "4.6粘贴密钥登陆.png",
-          "file": "4-6-cd22c18ded22.png",
-          "alt": "九、粘贴密钥并进入 Codex"
-        },
-        {
-          "source": "4.7进入codex.png",
-          "file": "4-7-codex-71f70159809f.png",
-          "alt": "九、粘贴密钥并进入 Codex"
+          "source": "进入 Codex 工作界面.png",
+          "file": "codex-workspace-66b2a70fa896.png",
+          "alt": "进入 Codex 工作界面"
         }
       ],
-      "important_notice": "需要进行小额充值，确保星桥 AI Link 账号有可用额度，才能调用 Codex。可联系客服QQ:2826033474免费领取测试码"
+      "troubleshooting": "确认 CC Switch 已更新到最新版，并在 Codex 栏目中重新启用星桥 AI Link；完全退出 Codex 后再打开。若仍无法进入，请联系客服，提供系统、Codex 和 CC Switch 版本及页面截图，截图请勿包含密钥。",
+      "installation_url": "https://codexapp.agentsmirror.com/"
     },
     {
       "id": "test",
-      "title": "十、小额充值并完成首次测试",
+      "title": "七、完成首次测试",
       "body": [
-        "进入 星桥AI Link 完成小额充值。",
-        "确认充值额度到账。",
-        "打开 Codex 完成测试。"
+        "发送一条简单消息，例如“你好，请介绍一下你能做什么”，确认能够正常收到回复。"
       ],
       "images": [
         {
-          "source": "4.8小额充值.png",
-          "file": "4-8-1bac820f8656.png",
-          "alt": "十、小额充值并完成首次测试"
-        },
-        {
-          "source": "4.9充值到账确认.png",
-          "file": "4-9-a55ec5314b68.png",
-          "alt": "十、小额充值并完成首次测试"
-        },
-        {
           "source": "4.10首次测试完成.png",
           "file": "4-10-b4b06b5ea041.png",
-          "alt": "十、小额充值并完成首次测试"
+          "alt": "七、完成首次测试"
         }
-      ]
+      ],
+      "important_notice": "测试额度用完后，如果觉得还不错，可前往星桥 AI Link 充值继续使用哦。"
     }
   ],
   "assets": {
     "4-1创建密钥.png": "4-1-7766c6633045.png",
-    "3.2-填写密钥.png": "3-2-9b57dee6e6ea.png",
-    "3.3-一键导入ccs.png": "3-3-ccs-e6b7db89b647.png",
+    "3.2-填写密钥.png": "create-key-form-e5d5832222f5.png",
+    "3.3-一键导入ccs.png": "import-ccs-02a65f28d488.png",
     "3.4-允许打开ccs.png": "3-4-ccs-b4334ab9a3d9.png",
     "3.5-导入ccs.png": "3-5-ccs-d2fd15fe46e9.png",
-    "3.6-启用星桥ai.png": "3-6-ai-b74fc95994fc.png",
+    "3.6-启用星桥ai.png": "enable-provider-3cc69198bb38.png",
     "4.1下载codex.png": "4-1-codex-4d76c4a05672.png",
     "4.2启动codex.png": "4-2-codex-1da37e49c65f.png",
     "4.3登陆gpt .png": "4-3-gpt-7da4a11a0d16.png",
@@ -190,7 +129,9 @@
     "4.8小额充值.png": "4-8-1bac820f8656.png",
     "4.9充值到账确认.png": "4-9-a55ec5314b68.png",
     "4.10首次测试完成.png": "4-10-b4b06b5ea041.png",
-    "创建API密钥-教程标注.png": "create-api-key-9e8da0159f5a.png"
+    "创建API密钥-教程标注.png": "create-api-key-9e8da0159f5a.png",
+    "启动 Codex.png": "codex-launch-f299650c2cbe.png",
+    "进入 Codex 工作界面.png": "codex-workspace-66b2a70fa896.png"
   },
   "source_asset_count": 16,
   "branding": {
@@ -200,13 +141,13 @@
   "completion": {
     "images": [
       {
-        "file": "wechat-qr.jpg",
-        "source": "71ceff7979dd13d57b4a0e3daf93c9e1.jpg",
-        "alt": "客服小姐姐｜小桥 微信二维码"
+        "file": "qq-support-ccd776cb259f.jpg",
+        "source": "e342c5aab5d716c3404fc2259f9ccb9c.jpg",
+        "alt": "客服 QQ 二维码"
       },
       {
-        "file": "qq-group-qr.jpg",
-        "source": "1f2032dc424870e98d985194b0cb5126.jpg",
+        "file": "qq-group-87edb5fba8ef.jpg",
+        "source": "45b40abb48c83ce8f09244ff64be06ca.jpg",
         "alt": "星桥 AI Link 官方 QQ 群二维码"
       }
     ]

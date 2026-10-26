@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -9,6 +9,8 @@ import {
   buildCodexQuickConfigToml,
   buildMacLinuxCodexQuickConfigScript,
   buildWindowsCmdCodexQuickConfigScript,
+  buildMacCodexQuickConfigArchive,
+  buildMacCodexQuickConfigScript,
   encodeUtf8Base64,
   isCodexQuickConfigPlatform,
   normalizeCodexBaseUrl
@@ -90,6 +92,67 @@ afterEach(() => {
 })
 
 describe('codexQuickConfig', () => {
+  it('packages the macOS command with executable permissions and a five-second success flow', () => {
+    const dir = workspace()
+    const zip = join(dir, 'config.zip')
+    writeFileSync(zip, buildMacCodexQuickConfigArchive(input))
+    const result = spawnSync('/usr/bin/unzip', ['-q', zip, '-d', dir], { encoding: 'utf8' })
+    expect(result.status, result.stderr).toBe(0)
+    const command = join(dir, 'xingqiao-codex-config.command')
+    expect(statSync(command).mode & 0o777).toBe(0o700)
+    const script = readFileSync(command, 'utf8')
+    expect(script).toBe(buildMacCodexQuickConfigScript(input))
+    expect(script).toContain('欢迎使用星桥AI，正在自动为您配置您的专属密钥。。。')
+    expect(script).toContain('配置完毕，请重启你的codex后使用，本程序将在5s后自动关闭')
+    expect(script).toContain('for remaining in 5 4 3 2 1')
+    expect(script).not.toContain('display dialog')
+    expect(script).toContain('tty of targetTab is targetTTY')
+    expect(script).toContain('close targetWindow saving no')
+    expect(script).not.toContain('close targetTab')
+  })
+
+  it.runIf(nativeUnix)('runs the macOS setup, displays the requested messages and waits five seconds only on success', () => {
+    const runner = unixRunner({ os: 'Darwin' })
+    writeFileSync(join(runner.bin, 'sleep'), '#!/bin/bash\nprintf "%s" "$1" >> "$HOME/sleep.log"\n', { mode: 0o755 })
+    const script = buildMacCodexQuickConfigScript({ ...input, modelCatalogContent: '{"models":[]}' })
+    const result = runner.run(script)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('欢迎使用星桥AI，正在自动为您配置您的专属密钥。。。')
+    expect(result.stdout).toContain('配置完毕，请重启你的codex后使用，本程序将在5s后自动关闭')
+    expect(readFileSync(join(runner.dir, 'sleep.log'), 'utf8')).toBe('11111')
+    expect(readFileSync(join(runner.dir, '.codex/codex-models.json'), 'utf8')).toBe('{"models":[]}')
+    expect(readdirSync(runner.dir)).not.toContain('dialog.log')
+    const closeScript = script.match(/<<'APPLESCRIPT' &\n([\s\S]*?)\nAPPLESCRIPT/)![1]
+    if (process.platform === 'darwin') {
+      const compiled = spawnSync('/usr/bin/osacompile', ['-o', join(runner.dir, 'close.scpt'), '-'], { input: closeScript, encoding: 'utf8' })
+      expect(compiled.status, compiled.stderr).toBe(0)
+    }
+    const failure = runner.run(script.replace(/CATALOG_PAYLOAD='[^']*'/, "CATALOG_PAYLOAD='@@@'"))
+    expect(failure.status).not.toBe(0)
+    expect(failure.stdout).toContain('配置失败')
+    expect(failure.stdout).not.toContain('5s后自动关闭')
+  })
+
+  it.runIf(nativeUnix)('keeps the program open for five full seconds after reporting configuration complete', async () => {
+    const dir = workspace()
+    const child = spawn('/bin/bash', ['-s'], { env: { ...process.env, HOME: dir, CODEX_HOME: join(dir, 'codex') } })
+    let output = ''
+    let completedAt = 0
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString()
+      if (!completedAt && output.includes('配置完毕，请重启你的codex后使用')) completedAt = performance.now()
+    })
+    const exited = new Promise<number | null>((resolve, reject) => {
+      child.on('error', reject)
+      child.on('close', resolve)
+    })
+    child.stdin.end(buildMacCodexQuickConfigScript(input))
+    expect(await exited).toBe(0)
+    expect(completedAt).toBeGreaterThan(0)
+    expect(performance.now() - completedAt).toBeGreaterThanOrEqual(5000)
+    expect(readFileSync(join(dir, 'codex/config.toml'), 'utf8')).toContain('sk-secret-value')
+  }, 15000)
+
   it('only accepts platforms served through a Codex-compatible API', () => {
     expect(isCodexQuickConfigPlatform('openai')).toBe(true)
     expect(isCodexQuickConfigPlatform('composite')).toBe(true)
@@ -148,9 +211,10 @@ describe('codexQuickConfig', () => {
     expect(windowsScript).not.toContain(' -Command "')
     expect(windowsScript).toContain('Publish-File $configTemp $configFile')
     expect(windowsScript).toContain(encodeUtf8Base64('Codex 配置成功。'))
-    expect(windowsScript).toContain(encodeUtf8Base64('请完全退出并重启 Codex 以加载新配置。'))
-    expect(windowsScript).toContain('New-Object -ComObject WScript.Shell')
-    expect(windowsScript).toContain('$shell.Popup(')
+    expect(windowsScript).toContain(encodeUtf8Base64('欢迎使用星桥AI，正在自动为您配置您的专属密钥。。。'))
+    expect(windowsScript).toContain(encodeUtf8Base64('配置完毕，请重启你的codex后使用，本程序将在5s后自动关闭'))
+    expect(windowsScript).toContain('foreach ($remaining in 5..1)')
+    expect(windowsScript).not.toContain('$shell.Popup(')
     expect(windowsScript).toContain('pause')
     expect(unixScript).not.toContain('sk-secret-value')
     expect(windowsScript).not.toContain('sk-secret-value')

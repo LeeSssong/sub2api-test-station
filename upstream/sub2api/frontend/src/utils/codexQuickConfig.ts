@@ -220,6 +220,85 @@ ${catalogBlock}mv -f "${'${TMP_FILE}'}" "${'${CONFIG_FILE}'}"
 `
 }
 
+const desktopWelcome = '欢迎使用星桥AI，正在自动为您配置您的专属密钥。。。'
+const desktopSuccess = '配置完毕，请重启你的codex后使用，本程序将在5s后自动关闭'
+
+export function buildMacCodexQuickConfigScript(input: CodexQuickConfigInput): string {
+  const script = buildMacLinuxCodexQuickConfigScript(input)
+  const start = script.indexOf('\nfinish() {')
+  const end = script.indexOf('\ntrap finish EXIT', start)
+  const finish = `
+finish() {
+  status=$?
+  trap - EXIT
+  [ -z "$TMP_FILE" ] || rm -f "$TMP_FILE" || :
+  [ -z "$CATALOG_TMP_FILE" ] || rm -f "$CATALOG_TMP_FILE" || :
+  if [ "$status" -eq 0 ]; then
+    printf '\\n  ✓ 专属密钥已配置\\n  ✓ 配置文件已保存\\n\\n  %s\\n\\n' '${desktopSuccess}' >&3
+    for remaining in 5 4 3 2 1; do
+      printf '\\r  自动关闭倒计时：%s 秒  ' "$remaining" >&3
+      sleep 1
+    done
+    printf '\\n' >&3
+    if [ -n "$XINGQIAO_TERMINAL_TTY" ] && [ "$XINGQIAO_TERMINAL_TTY" != 'not a tty' ]; then
+      nohup /usr/bin/osascript - "$XINGQIAO_TERMINAL_TTY" >/dev/null 2>&1 3>&- <<'APPLESCRIPT' &
+on run argv
+  set targetTTY to item 1 of argv
+  delay 0.1
+  tell application "Terminal"
+    repeat with targetWindow in windows
+      repeat with targetTab in tabs of targetWindow
+        if tty of targetTab is targetTTY then
+          if (count of tabs of targetWindow) is 1 then close targetWindow saving no
+          return
+        end if
+      end repeat
+    end repeat
+  end tell
+end run
+APPLESCRIPT
+    fi
+  else
+    printf '\\n配置失败，请保留此窗口并联系星桥AI客服。\\n按回车键关闭窗口。\\n' >&3
+    if [ -t 0 ]; then read -r _ || :; fi
+  fi
+  exit "$status"
+}`
+  return (script.slice(0, start) + finish + script.slice(end))
+    .replace('umask 077', `umask 077\nXINGQIAO_TERMINAL_TTY="$(tty 2>/dev/null || :)"\nif [ -t 1 ]; then printf '\\033[2J\\033[3J\\033[H\\033]0;星桥AI · 自动配置\\007'; fi\nprintf '\\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n  星桥AI · Codex 自动配置\\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n\\n  %s\\n\\n' '${desktopWelcome}'`)
+}
+
+// A single uncompressed ZIP entry. Unix mode 0700 survives Archive Utility,
+// unlike a plain browser download, so Finder can run the command by double-click.
+export function buildMacCodexQuickConfigArchive(input: CodexQuickConfigInput): Uint8Array {
+  const name = new TextEncoder().encode('xingqiao-codex-config.command')
+  const content = new TextEncoder().encode(buildMacCodexQuickConfigScript(input))
+  let crc = 0xffffffff
+  for (const byte of content) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+  }
+  crc = (crc ^ 0xffffffff) >>> 0
+  const centralOffset = 30 + name.length + content.length
+  const centralSize = 46 + name.length
+  const bytes = new Uint8Array(centralOffset + centralSize + 22)
+  const view = new DataView(bytes.buffer)
+  const u16 = (offset: number, value: number) => view.setUint16(offset, value, true)
+  const u32 = (offset: number, value: number) => view.setUint32(offset, value, true)
+  u32(0, 0x04034b50); u16(4, 20); u16(12, 33)
+  u32(14, crc); u32(18, content.length); u32(22, content.length); u16(26, name.length)
+  bytes.set(name, 30); bytes.set(content, 30 + name.length)
+  const c = centralOffset
+  u32(c, 0x02014b50); u16(c + 4, 0x0314); u16(c + 6, 20); u16(c + 14, 33)
+  u32(c + 16, crc); u32(c + 20, content.length); u32(c + 24, content.length)
+  u16(c + 28, name.length); u32(c + 38, (0o100700 << 16) >>> 0)
+  bytes.set(name, c + 46)
+  const e = c + centralSize
+  u32(e, 0x06054b50); u16(e + 8, 1); u16(e + 10, 1)
+  u32(e + 12, centralSize); u32(e + 16, centralOffset)
+  return bytes
+}
+
 export function buildWindowsCmdCodexQuickConfigScript(input: CodexQuickConfigInput): string {
   const configPayload = encodeUtf8Base64(buildCodexQuickConfigToml({ ...input, modelCatalogContent: undefined }))
   const catalogPayload = input.modelCatalogContent ? encodeUtf8Base64(input.modelCatalogContent) : ''
@@ -253,7 +332,7 @@ if not exist "%SUB2API_POWERSHELL%" goto :missing_powershell
 set "SUB2API_CODEX_EXIT=1"
 "%SUB2API_POWERSHELL%" -NoLogo -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -EncodedCommand ${bootstrapPayload}
 if not errorlevel 1 if errorlevel 0 set "SUB2API_CODEX_EXIT=0"
-pause
+if not "%SUB2API_CODEX_EXIT%"=="0" pause
 endlocal & exit /b %SUB2API_CODEX_EXIT%
 
 :missing_powershell
@@ -274,6 +353,9 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 function Decode-Text([string]$value) {
   return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($value))
 }
+try { [Console]::Clear(); [Console]::Title = (Decode-Text '${encodeUtf8Base64('星桥AI · 自动配置')}') } catch { }
+[Console]::WriteLine((Decode-Text '${encodeUtf8Base64('\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n  星桥AI · Codex 自动配置\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')}'))
+[Console]::WriteLine((Decode-Text '${encodeUtf8Base64(desktopWelcome)}'))
 function Publish-File([string]$source, [string]$destination, [string]$backup = '') {
   if ([IO.File]::Exists($destination)) {
     if ($backup) {
@@ -303,7 +385,7 @@ ${catalogBlock}  $configTemp = $configFile + '.tmp.' + [Guid]::NewGuid().ToStrin
   [IO.File]::WriteAllBytes($configTemp, [Text.Encoding]::UTF8.GetBytes($config))
 ${catalogPayload ? '  Publish-File $catalogTemp $catalogFile $catalogBackup\n  $catalogPublished = $true\n' : ''}  Publish-File $configTemp $configFile
   $status = 0
-  $message = (Decode-Text '${encodeUtf8Base64('Codex 配置成功。')}') + [Environment]::NewLine + $configFile + [Environment]::NewLine + (Decode-Text '${encodeUtf8Base64('请完全退出并重启 Codex 以加载新配置。')}')
+  $message = (Decode-Text '${encodeUtf8Base64('Codex 配置成功。')}') + [Environment]::NewLine + (Decode-Text '${encodeUtf8Base64(desktopSuccess)}')
 } catch {
   $failure = $_.Exception.Message
   if ($catalogPublished) {
@@ -326,13 +408,12 @@ ${catalogPayload ? '  Publish-File $catalogTemp $catalogFile $catalogBackup\n  $
   }
 }
 [Console]::WriteLine($message)
-try {
-  $shell = New-Object -ComObject WScript.Shell
-  $icon = 16
-  if ($status -eq 0) { $icon = 64 }
-  [void]$shell.Popup($message, 0, 'Sub2API - Codex', $icon)
-} catch {
-  [Console]::WriteLine('System dialog unavailable. See the result above.')
+if ($status -eq 0) {
+  foreach ($remaining in 5..1) {
+    [Console]::Write(([char]13).ToString() + (Decode-Text '${encodeUtf8Base64('  自动关闭倒计时：')}') + $remaining + (Decode-Text '${encodeUtf8Base64(' 秒  ')}'))
+    Start-Sleep -Seconds 1
+  }
+  [Console]::WriteLine()
 }
 exit $status
 `

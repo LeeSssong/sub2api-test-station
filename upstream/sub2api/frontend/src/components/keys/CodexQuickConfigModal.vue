@@ -52,12 +52,19 @@
         </p>
         <div v-else-if="catalogState === 'error'" class="flex flex-wrap items-center gap-2">
           <p role="alert" data-testid="quick-config-catalog-error" class="text-red-600 dark:text-red-400">
-            {{ t('keys.quickConfigureModal.importCatalogError') }}
+            {{ catalogFailure }}
           </p>
           <button type="button" class="btn btn-secondary" data-testid="quick-config-catalog-retry" @click="loadCatalog">
-            {{ t('keys.quickConfigureModal.retryCatalog') }}
+            <Icon name="refresh" size="sm" class="mr-1" />{{ t('common.refresh') }}
           </button>
+          <button type="button" class="btn btn-secondary" data-testid="quick-config-copy-error" @click="copyCatalogError">
+            {{ t(errorCopied ? 'keys.quickConfigureModal.copied' : 'keys.quickConfigureModal.copyError') }}
+          </button>
+          <p v-if="catalogError?.status || catalogError?.code" class="w-full text-xs text-gray-500">
+            {{ catalogError?.status ? `HTTP ${catalogError.status}` : '' }} {{ catalogError?.code }}
+          </p>
         </div>
+        <p v-if="catalogState !== 'ready'" class="mt-2 text-gray-600 dark:text-gray-400">{{ t('keys.quickConfigureModal.catalogOptional') }}</p>
       </div>
 
       <div class="overflow-hidden rounded-lg bg-gray-900 dark:bg-dark-900">
@@ -76,7 +83,10 @@
             </button>
           </div>
         </div>
-        <pre class="max-h-96 overflow-auto p-4 text-xs leading-5 text-gray-100"><code>{{ script }}</code></pre>
+        <details>
+          <summary class="cursor-pointer px-4 py-2 text-xs text-gray-300">{{ t('keys.quickConfigureModal.viewScript') }}</summary>
+          <pre class="max-h-64 overflow-auto p-4 text-xs leading-5 text-gray-100"><code>{{ script }}</code></pre>
+        </details>
       </div>
 
       <div
@@ -95,7 +105,13 @@
 
       <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-dark-700 dark:bg-dark-800/50 dark:text-gray-300">
         <p class="font-medium text-gray-900 dark:text-white">{{ t('keys.quickConfigureModal.runTitle') }}</p>
-        <p class="mt-1 text-sm">{{ runInstruction }}</p>
+        <p data-testid="quick-config-run-instruction" class="mt-1 text-sm">{{ runInstruction }}</p>
+        <template v-if="activePlatform === 'mac'">
+          <p class="mt-2">{{ t('keys.quickConfigureModal.macFirstRun') }}</p>
+          <button type="button" class="btn btn-secondary mt-2" data-testid="quick-config-copy-startup" @click="copyMacStartup">
+            {{ t(startupCopied ? 'keys.quickConfigureModal.copied' : 'keys.quickConfigureModal.copyStartup') }}
+          </button>
+        </template>
         <code v-if="activePlatform === 'unix'" class="mt-1 block break-all text-xs">{{ runCommand }}</code>
       </div>
     </div>
@@ -112,7 +128,7 @@
             @click="downloadScript"
           >
             <Icon name="download" size="sm" />
-            {{ t('keys.quickConfigure') }}
+            {{ t('keys.quickConfigureModal.download') }}
           </button>
           <button type="button" class="btn btn-secondary" @click="emit('close')">
             {{ t('common.close') }}
@@ -126,13 +142,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useClipboard } from '@/composables/useClipboard'
 import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { fetchCodexModelsManifest } from '@/api/codex'
+import { codexCatalogErrorDetails } from '@/utils/codexCatalogError'
 import {
   buildMacLinuxCodexQuickConfigScript,
-  buildMacCodexQuickConfigArchive,
   buildMacCodexQuickConfigScript,
   buildWindowsCmdCodexQuickConfigScript,
   type CodexQuickConfigPlatform
@@ -147,6 +164,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (event: 'close'): void }>()
 const { t } = useI18n()
+const { copyToClipboard } = useClipboard()
 
 type TargetPlatform = 'mac' | 'unix' | 'windows'
 type CatalogState = 'idle' | 'loading' | 'ready' | 'error'
@@ -159,6 +177,9 @@ const actionStatus = ref<ActionStatus>(null)
 const catalogState = ref<CatalogState>('idle')
 const catalogContent = ref('')
 const catalogModelCount = ref(0)
+const catalogError = ref<ReturnType<typeof codexCatalogErrorDetails> | null>(null)
+const errorCopied = ref(false)
+const startupCopied = ref(false)
 let catalogController: AbortController | null = null
 let catalogRequestID = 0
 
@@ -175,12 +196,27 @@ const script = computed(() => activePlatform.value === 'windows'
 
 const fileName = computed(() => activePlatform.value === 'windows'
   ? 'sub2api-codex-config.cmd'
-  : activePlatform.value === 'mac' ? 'xingqiao-codex-config.zip' : 'sub2api-codex-config.sh')
+  : activePlatform.value === 'mac' ? 'xingqiao-codex-config.command' : 'sub2api-codex-config.sh')
 
-const runCommand = computed(() => `chmod +x ${fileName.value} && ./${fileName.value}`)
+const runCommand = computed(() => `bash ${fileName.value}`)
+// The file is selected by the user: no glob that could execute an older download.
+const macStartupCommand = `xq_script=$(/usr/bin/osascript -e 'POSIX path of (choose file with prompt "选择刚下载的星桥 .command 脚本" default location (path to downloads folder))') && chmod u+x "$xq_script" && /bin/bash "$xq_script"`
+const catalogFailure = computed(() => {
+  const error = catalogError.value
+  const reason = error?.balance ? t('keys.quickConfigureModal.insufficientBalance')
+    : error?.code === 'TIMEOUT' ? t('keys.quickConfigureModal.catalogTimeout')
+      : error?.code === 'INVALID_MANIFEST' ? t('keys.quickConfigureModal.invalidCatalog')
+        : error?.message || t('keys.quickConfigureModal.catalogNetworkError')
+  return t('keys.quickConfigureModal.importCatalogError', { reason })
+})
+const catalogDiagnostics = computed(() => {
+  const error = catalogError.value
+  return [catalogFailure.value, error?.message, error?.status ? `HTTP ${error.status}` : '', error?.code,
+    error?.requestId ? `Request ID: ${error.requestId}` : '', '/v1/models'].filter(Boolean).join('\n')
+})
 const runInstruction = computed(() => t(`keys.quickConfigureModal.${activePlatform.value === 'windows' ? 'windowsRun' : activePlatform.value === 'mac' ? 'macRun' : 'linuxRun'}`))
 
-const scriptReady = computed(() => props.show && catalogState.value === 'ready')
+const scriptReady = computed(() => props.show && Boolean(props.apiKey))
 
 const tabClass = (selected: boolean) => [
   'rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -213,6 +249,8 @@ function resetCatalog() {
   catalogState.value = 'idle'
   catalogContent.value = ''
   catalogModelCount.value = 0
+  catalogError.value = null
+  errorCopied.value = false
 }
 
 async function loadCatalog() {
@@ -226,6 +264,8 @@ async function loadCatalog() {
   const requestID = ++catalogRequestID
   catalogController = controller
   catalogState.value = 'loading'
+  catalogError.value = null
+  errorCopied.value = false
   try {
     const result = await fetchCodexModelsManifest(props.baseUrl, props.apiKey, controller.signal)
     if (requestID !== catalogRequestID) return
@@ -237,16 +277,27 @@ async function loadCatalog() {
       ? String((error as { name?: unknown }).name || '')
       : ''
     if (requestID !== catalogRequestID || errorName === 'AbortError') return
+    catalogError.value = codexCatalogErrorDetails(error, props.apiKey)
     catalogState.value = 'error'
   } finally {
     if (requestID === catalogRequestID) catalogController = null
   }
 }
 
+async function copyCatalogError() {
+  try { if (!await copyToClipboard(catalogDiagnostics.value)) throw new Error('Copy failed'); errorCopied.value = true }
+  catch { actionStatus.value = 'error' }
+}
+
+async function copyMacStartup() {
+  try { if (!await copyToClipboard(macStartupCommand)) throw new Error('Copy failed'); startupCopied.value = true }
+  catch { actionStatus.value = 'error' }
+}
+
 async function copyScript() {
   if (!scriptReady.value) return
   try {
-    await navigator.clipboard.writeText(script.value)
+    if (!await copyToClipboard(script.value)) throw new Error('Copy failed')
     copied.value = true
     actionStatus.value = 'copySuccess'
     window.setTimeout(() => { copied.value = false }, 1800)
@@ -259,9 +310,7 @@ async function copyScript() {
 function downloadScript() {
   if (!scriptReady.value) return
   try {
-    const blob = activePlatform.value === 'mac'
-      ? new Blob([buildMacCodexQuickConfigArchive(input.value).buffer as ArrayBuffer], { type: 'application/zip' })
-      : new Blob([script.value], { type: 'text/plain;charset=utf-8' })
+    const blob = new Blob([script.value], { type: 'text/plain;charset=utf-8' })
     saveAs(blob, fileName.value)
     actionStatus.value = 'downloadSuccess'
   } catch {

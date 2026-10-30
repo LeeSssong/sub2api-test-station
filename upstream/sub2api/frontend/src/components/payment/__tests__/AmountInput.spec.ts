@@ -115,7 +115,9 @@ describe('quick amount badge ownership', () => {
 
 describe('confirmed recharge amount selection', () => {
   it('shows four credit/pay choices and keeps selection and custom editing connected', async () => {
-    const wrapper = mount(AmountInput, { props: { modelValue: 10, variant: 'recharge', amounts: [10, 20, 50, 100], currency: 'CNY' } })
+    const wrapper = mount(AmountInput, { props: { modelValue: null, variant: 'recharge', amounts: [10, 20, 50, 100], currency: 'CNY' } })
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.findAll('[aria-pressed="true"]')).toHaveLength(0)
     expect(wrapper.findAll('button')).toHaveLength(4)
     for (const amount of [10, 20, 50, 100]) {
       const choice = wrapper.get(`[data-testid="quick-amount-${amount}"]`)
@@ -125,6 +127,7 @@ describe('confirmed recharge amount selection', () => {
       expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([amount])
       await wrapper.setProps({ modelValue: amount })
       expect(choice.attributes('aria-pressed')).toBe('true')
+      expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
     }
     const frame = wrapper.get('[data-test="custom-amount-frame"]')
     expect(frame.get('label').text()).toBe('其他额度')
@@ -134,6 +137,28 @@ describe('confirmed recharge amount selection', () => {
     await input.setValue('12.34')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([12.34])
     await input.setValue('')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([null])
+  })
+
+  it('switches between quick and custom choices without echoing quick amounts or selecting matching custom values', async () => {
+    const wrapper = mount(AmountInput, { props: { modelValue: null, variant: 'recharge', amounts: [10, 20, 50, 100] } })
+    const input = wrapper.get('input')
+    const choice = wrapper.get('[data-testid="quick-amount-20"]')
+    await input.setValue('12.34')
+    await wrapper.setProps({ modelValue: 12.34 })
+    await choice.trigger('click')
+    await wrapper.setProps({ modelValue: 20 })
+    expect((input.element as HTMLInputElement).value).toBe('')
+    expect(choice.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([20])
+
+    await input.setValue('20')
+    expect((input.element as HTMLInputElement).value).toBe('20')
+    expect(choice.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([20])
+    await input.setValue('')
+    await wrapper.setProps({ modelValue: null })
+    expect(wrapper.findAll('[aria-pressed="true"]')).toHaveLength(0)
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([null])
   })
 

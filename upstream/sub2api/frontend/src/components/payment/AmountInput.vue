@@ -13,12 +13,12 @@
           :class="[
             'relative min-h-12 border px-3 text-center text-sm font-medium transition-colors',
             variant === 'recharge' ? 'min-h-[88px] rounded-[9px] py-4' : 'rounded-lg py-3',
-            modelValue === amt
+            isQuickAmountSelected(amt)
               ? 'border-[var(--xq-accent)] bg-[var(--xq-raised)] dark:bg-[linear-gradient(167deg,rgba(31,87,110,0.82),rgba(15,48,69,0.9))] text-[var(--xq-core)] dark:shadow-[0_12px_30px_rgba(27,112,139,0.12)]'
               : 'border-[var(--xq-border)] bg-[var(--xq-depth)] text-[var(--xq-secondary)] hover:border-[var(--xq-accent)] hover:text-[var(--xq-text)]',
           ]"
           :data-testid="`quick-amount-${amt}`"
-          :aria-pressed="variant === 'recharge' ? modelValue === amt : undefined"
+          :aria-pressed="variant === 'recharge' ? isQuickAmountSelected(amt) : undefined"
           @click="selectAmount(amt)"
         >
           <!-- 促销价签（单行）：仅命中档位的金额显示；红底白字、内圈点线、右侧圆孔、整体旋转 -->
@@ -36,7 +36,7 @@
           </span>
           <span :class="variant === 'recharge' ? 'block text-[26px] font-semibold leading-8 tabular-nums text-[var(--xq-text)]' : 'block'">{{ variant === 'recharge' ? '$' : '' }}{{ amt }}</span>
           <span v-if="variant === 'recharge'" class="mt-2 block text-[13px] font-normal leading-5 tabular-nums text-[var(--xq-secondary)]" data-testid="quick-amount-pay">{{ rechargePaymentLine(amt) }}</span>
-          <span v-if="variant === 'recharge' && modelValue === amt" class="absolute right-2 top-2 text-[var(--xq-core)]" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m3 8 3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          <span v-if="variant === 'recharge' && isQuickAmountSelected(amt)" class="absolute right-2 top-2 text-[var(--xq-core)]" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m3 8 3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <!-- 配置了优惠阶梯时，所有按钮都显示第二行，保持高度一致：赠金显示到账 USD，折扣显示折后实付 -->
           <span
             v-if="showSecondLine && variant !== 'recharge'"
@@ -128,6 +128,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const customText = ref('')
+const selectedQuickAmount = ref<number | null>(null)
 
 // 0 = no limit
 const filteredAmounts = computed(() =>
@@ -185,8 +186,13 @@ const placeholderText = computed(() => {
 
 const AMOUNT_PATTERN = /^\d*(\.\d{0,2})?$/
 
+function isQuickAmountSelected(amt: number): boolean {
+  return props.modelValue === amt && (props.variant !== 'recharge' || selectedQuickAmount.value === amt)
+}
+
 function selectAmount(amt: number) {
-  customText.value = String(amt)
+  selectedQuickAmount.value = amt
+  customText.value = props.variant === 'recharge' ? '' : String(amt)
   emit('update:modelValue', amt)
 }
 
@@ -197,6 +203,7 @@ function handleInput(e: Event) {
     input.value = customText.value
     return
   }
+  selectedQuickAmount.value = null
   customText.value = val
   if (val === '') {
     emit('update:modelValue', null)
@@ -211,6 +218,11 @@ function handleInput(e: Event) {
 }
 
 watch(() => props.modelValue, (v) => {
+  if (props.variant === 'recharge') {
+    // A quick choice updates the payable amount without filling the custom field.
+    if (selectedQuickAmount.value !== null && v === selectedQuickAmount.value) return
+    selectedQuickAmount.value = null
+  }
   if (v !== null && String(v) !== customText.value) {
     customText.value = String(v)
   }

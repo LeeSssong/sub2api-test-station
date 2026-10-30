@@ -98,3 +98,43 @@ describe('Codex models API', () => {
     expect(result.content).toBe(JSON.stringify(JSON.parse(text), null, 2))
   })
 })
+
+
+describe('Codex catalog errors', () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+  it('keeps the real billing reason and request id without leaking credentials', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 403,
+      headers: new Headers({ 'x-request-id': 'req-403' }),
+      text: async () => JSON.stringify({ error: { type: 'billing_error', message: 'Insufficient user balance. key=sk-user-secret' } })
+    }))
+    const error = await fetchCodexModelsManifest('https://example.com', 'sk-user-secret').catch((e: unknown) => e)
+    expect(error).toMatchObject({ status: 403, code: 'billing_error', requestId: 'req-403' })
+    expect(String(error)).toContain('Insufficient user balance')
+    expect(String(error)).not.toContain('sk-user-secret')
+  })
+
+
+  it('reports a timeout separately from user cancellation', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((_url, options: RequestInit) => new Promise((_resolve, reject) => {
+      options.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    })))
+    const pending = fetchCodexModelsManifest('https://example.com', 'sk-test').catch((error: unknown) => error)
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(await pending).toMatchObject({ code: 'TIMEOUT' })
+    const controller = new AbortController()
+    const cancelled = fetchCodexModelsManifest('https://example.com', 'sk-test', controller.signal).catch((error: unknown) => error)
+    controller.abort()
+    expect(await cancelled).toMatchObject({ name: 'AbortError' })
+  })
+  it('does not display HTML proxy errors as server messages', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 502, headers: new Headers(), text: async () => '<html>private proxy diagnostics</html>'
+    }))
+    const error = await fetchCodexModelsManifest('https://example.com', 'sk-secret').catch((e: unknown) => e)
+    expect(error).toMatchObject({ status: 502 })
+    expect(String(error)).not.toContain('<html>')
+  })
+})

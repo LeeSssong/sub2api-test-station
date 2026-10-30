@@ -496,7 +496,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.redeem-page { max-width: 1440px; }
+.redeem-page { max-width: 1180px; }
 .redeem-workspace { display: grid; min-width: 0; gap: 24px; }
 .redeem-account-column { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 24px; align-content: start; }
 @media (min-width: 1280px) {

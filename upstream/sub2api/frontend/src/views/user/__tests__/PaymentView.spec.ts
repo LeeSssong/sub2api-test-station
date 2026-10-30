@@ -432,7 +432,7 @@ describe('PaymentView subscription renewal mode', () => {
 })
 
 describe('PaymentView recharge rate preview', () => {
-  it('uses the selected payment method currency in both locale templates', async () => {
+  it('passes the selected currency and original multiplier to quick amounts', async () => {
     translate.mockClear()
     routeState.path = '/purchase'
     routeState.query = {}
@@ -459,10 +459,8 @@ describe('PaymentView recharge rate preview', () => {
     wrapper.getComponent(AmountInput).vm.$emit('update:modelValue', 10)
     await flushPromises()
 
-    expect(translate).toHaveBeenCalledWith('payment.rechargeRatePreview', {
-      currency: 'USD',
-      usd: '0.50',
-    })
+    expect(wrapper.getComponent(AmountInput).props()).toMatchObject({ currency: 'USD', multiplier: 0.5, feeRate: 0 })
+    expect(wrapper.get('[data-test="create-recharge-order"]').text()).toContain(formatPaymentAmount(10, 'USD'))
     expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} USD')
     expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} USD')
   })
@@ -560,7 +558,7 @@ describe.skip('PaymentView subscription confirmation amounts', () => {
 
 describe('PaymentView recharge-only experience', () => {
 
-  it('matches the Figma recharge workspace dimensions and account benefits', async () => {
+  it('keeps account benefits and places the payment action after payment methods without a summary', async () => {
     routeState.path = '/purchase'
     routeState.query = {}
     getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({ recharge_fee_rate: 2.5 }))
@@ -580,11 +578,13 @@ describe('PaymentView recharge-only experience', () => {
     expect(wrapper.findComponent({ name: 'UserRechargeNav' }).props('concurrency')).toBe(7)
     const workspace = wrapper.find('[data-test="recharge-workspace"]')
     expect(workspace.exists()).toBe(true)
-    expect(workspace.classes()).toEqual(expect.arrayContaining(['grid', 'min-w-0', 'grid-cols-1', 'lg:grid-cols-[minmax(0,848px)_330px]']))
-    const summary = workspace.find('[data-test="recharge-summary"]')
-    expect(summary.exists()).toBe(true)
-    expect(summary.classes()).toContain('min-w-0')
-    expect(workspace.find('[data-test="create-recharge-order"]').exists()).toBe(true)
+    expect(workspace.find('aside').exists()).toBe(false)
+    expect(workspace.find('[data-test="recharge-summary"]').exists()).toBe(false)
+    const action = workspace.get('[data-test="create-recharge-order"]')
+    const methods = wrapper.getComponent({ name: 'PaymentMethodSelector' })
+    expect(action.element.parentElement).toBe(methods.element.parentElement)
+    expect(methods.element.compareDocumentPosition(action.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(action.text()).toBe(`去支付 ${formatPaymentAmount(30.75, 'CNY')}`)
     expect(wrapper.findComponent({ name: 'AmountInput' }).props('variant')).toBe('recharge')
     expect(wrapper.findComponent({ name: 'PaymentMethodSelector' }).props('variant')).toBe('recharge')
   })
@@ -594,16 +594,18 @@ describe('PaymentView recharge-only experience', () => {
     expect(wrapper.text()).toContain('payment.tabSubscribe')
     expect(wrapper.find('[data-test="recharge-workspace"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('payment.noPlans')
-    expect(wrapper.text()).toContain('单笔最低充值 $1，最高充值 $50，如需大额充值联系客服 QQ:2826033474')
+    expect(wrapper.text()).not.toContain('单笔最低充值 $1，最高充值 $50')
+    expect(wrapper.text()).not.toContain('选择本次充值使用的支付渠道')
     const amountInput = wrapper.findComponent({ name: 'AmountInput' })
-    expect(amountInput.props('amounts')).toEqual([10, 30, 50])
+    expect(amountInput.props('amounts')).toEqual([10, 20, 50, 100])
     expect(amountInput.props('min')).toBe(1)
-    expect(amountInput.props('max')).toBe(50)
+    expect(amountInput.props('max')).toBe(2000)
   })
 
   it.each([
     [0.5, '单笔最低充值 $1'],
-    [50.01, '单笔最高充值 $50，如需大额充值可去 [云猫兑换充值] 或 [联系客服QQ:2826033474]'],
+    [2000.01, '单笔充值上限 $2,000，如需大额充值，请联系专属客服 QQ：2826033474'],
+    [2001, '单笔充值上限 $2,000，如需大额充值，请联系专属客服 QQ：2826033474'],
   ])('shows the fixed recharge limit error for %s', async (value, message) => {
     const wrapper = await mountSubscriptionPlanList(0, false)
     const amountInput = wrapper.findComponent({ name: 'AmountInput' })
@@ -613,6 +615,35 @@ describe('PaymentView recharge-only experience', () => {
 
     expect(wrapper.get('[data-test="recharge-amount-error"]').text()).toBe(message)
     expect(wrapper.get('[data-test="create-recharge-order"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('accepts 2000, blocks excess, restores a valid amount and disables a cleared input', async () => {
+    const wrapper = await mountSubscriptionPlanList(0, false)
+    const amountInput = wrapper.getComponent(AmountInput)
+    const action = wrapper.get('[data-test="create-recharge-order"]')
+    for (const [amount, disabled] of [[2000, false], [2001, true], [12.34, false], [null, true]] as const) {
+      amountInput.vm.$emit('update:modelValue', amount)
+      await flushPromises()
+      expect(action.attributes('disabled') !== undefined).toBe(disabled)
+      if (!disabled) {
+        expect(wrapper.find('[data-test="recharge-amount-error"]').exists()).toBe(false)
+        expect(action.text()).toContain(formatPaymentAmount(amount!, 'CNY'))
+      }
+    }
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
+  it('keeps a stricter payment channel limit below the front-end maximum', async () => {
+    const wrapper = await mountSubscriptionPlanList(0, false)
+    getCheckoutInfo.mockResolvedValue(checkoutInfoWithPlansFixture({ method: { single_max: 100 } }))
+    const limited = shallowMount(PaymentView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' }, Teleport: true } } })
+    await flushPromises()
+    limited.getComponent(AmountInput).vm.$emit('update:modelValue', 101)
+    await flushPromises()
+    expect(limited.get('[data-test="recharge-amount-error"]').text()).toBe('payment.amountNoMethod')
+    expect(limited.get('[data-test="create-recharge-order"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    limited.unmount()
   })
 
   it('shows a retry state when checkout loading fails instead of reporting payment unavailable', async () => {

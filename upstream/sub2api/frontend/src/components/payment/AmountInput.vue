@@ -5,19 +5,20 @@
       <label v-if="variant !== 'recharge'" class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
         {{ t('payment.quickAmounts') }}
       </label>
-      <div :class="variant === 'recharge' ? 'grid grid-cols-3 gap-[10px]' : 'grid grid-cols-2 gap-2 sm:grid-cols-5'">
+      <div :class="variant === 'recharge' ? 'grid grid-cols-2 gap-[10px] sm:grid-cols-4' : 'grid grid-cols-2 gap-2 sm:grid-cols-5'">
         <button
           v-for="amt in filteredAmounts"
           :key="amt"
           type="button"
           :class="[
             'relative min-h-12 border px-3 text-center text-sm font-medium transition-colors',
-            variant === 'recharge' ? 'rounded-[9px]' : 'rounded-lg py-3',
+            variant === 'recharge' ? 'min-h-[88px] rounded-[9px] py-4' : 'rounded-lg py-3',
             modelValue === amt
               ? 'border-[var(--xq-accent)] bg-[var(--xq-raised)] dark:bg-[linear-gradient(167deg,rgba(31,87,110,0.82),rgba(15,48,69,0.9))] text-[var(--xq-core)] dark:shadow-[0_12px_30px_rgba(27,112,139,0.12)]'
               : 'border-[var(--xq-border)] bg-[var(--xq-depth)] text-[var(--xq-secondary)] hover:border-[var(--xq-accent)] hover:text-[var(--xq-text)]',
           ]"
           :data-testid="`quick-amount-${amt}`"
+          :aria-pressed="variant === 'recharge' ? modelValue === amt : undefined"
           @click="selectAmount(amt)"
         >
           <!-- 促销价签（单行）：仅命中档位的金额显示；红底白字、内圈点线、右侧圆孔、整体旋转 -->
@@ -33,10 +34,12 @@
               <span class="h-1 w-1 shrink-0 rounded-full bg-white"></span>
             </span>
           </span>
-          <span class="block">{{ amt }}</span>
+          <span :class="variant === 'recharge' ? 'block text-[26px] font-semibold leading-8 tabular-nums text-[var(--xq-text)]' : 'block'">{{ variant === 'recharge' ? '$' : '' }}{{ amt }}</span>
+          <span v-if="variant === 'recharge'" class="mt-2 block text-[13px] font-normal leading-5 tabular-nums text-[var(--xq-secondary)]" data-testid="quick-amount-pay">{{ rechargePaymentLine(amt) }}</span>
+          <span v-if="variant === 'recharge' && modelValue === amt" class="absolute right-2 top-2 text-[var(--xq-core)]" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m3 8 3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <!-- 配置了优惠阶梯时，所有按钮都显示第二行，保持高度一致：赠金显示到账 USD，折扣显示折后实付 -->
           <span
-            v-if="showSecondLine"
+            v-if="showSecondLine && variant !== 'recharge'"
             :class="[
               'mt-0.5 block text-[11px] font-normal leading-tight',
               quoteFor(amt).percent > 0 ? 'text-red-600 dark:text-red-300' : 'text-gray-400 dark:text-gray-500',
@@ -48,12 +51,26 @@
     </div>
 
     <!-- Custom Amount Input -->
-    <div>
-      <label :class="variant === 'recharge' ? 'mb-2 block text-xs text-[var(--xq-secondary)]' : 'mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'">
-        {{ variant === 'recharge' ? '自定义额度' : t('payment.customAmount') }}
+    <div v-if="variant === 'recharge'" data-test="custom-amount-frame" class="flex min-h-11 items-center gap-2 rounded-lg border border-[var(--xq-border)] bg-[var(--xq-depth)] px-3 focus-within:border-[var(--xq-accent)] focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--xq-accent)]">
+      <label for="custom-recharge-amount" class="shrink-0 whitespace-nowrap text-xs text-[var(--xq-secondary)]">其他金额</label>
+      <input
+        id="custom-recharge-amount"
+        type="text"
+        inputmode="decimal"
+        :value="customText"
+        :placeholder="placeholderText"
+        class="min-h-11 w-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm tabular-nums text-[var(--xq-text)] caret-[var(--xq-accent)] outline-none placeholder:text-[var(--xq-secondary)]"
+        aria-describedby="custom-recharge-ratio"
+        @input="handleInput"
+      />
+      <span id="custom-recharge-ratio" class="shrink-0 whitespace-nowrap text-[11px] text-[var(--xq-accent)]">1:1充值</span>
+    </div>
+    <div v-else>
+      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+        {{ t('payment.customAmount') }}
       </label>
       <div class="relative">
-        <span v-if="variant !== 'recharge'" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
           $
         </span>
         <input
@@ -61,7 +78,7 @@
           inputmode="decimal"
           :value="customText"
           :placeholder="placeholderText"
-          :class="variant === 'recharge' ? 'input h-10 w-full px-[14px] py-2 text-sm' : 'input w-full py-3 pl-8 pr-4'"
+          class="input w-full py-3 pl-8 pr-4"
           @input="handleInput"
         />
       </div>
@@ -89,6 +106,7 @@ const props = withDefaults(defineProps<{
   multiplier?: number
   /** 支付币种（折扣模式第二行实付金额的币种与精度） */
   currency?: string
+  feeRate?: number
   variant?: 'default' | 'recharge'
 }>(), {
   amounts: () => [20, 50, 100],
@@ -98,6 +116,7 @@ const props = withDefaults(defineProps<{
   bonusMode: 'bonus',
   multiplier: 1,
   currency: undefined,
+  feeRate: 0,
   variant: 'default',
 })
 
@@ -133,6 +152,14 @@ function quoteFor(amt: number) {
   })
 }
 
+// 仅增加金额展示：报价与充值页原始手续费取整完全一致，不改变 modelValue 或提交额。
+function rechargePaymentLine(amt: number): string {
+  const base = quoteFor(amt).payBase
+  const fee = props.feeRate > 0 && base > 0 ? Math.ceil(((base * props.feeRate) / 100) * 100) / 100 : 0
+  const total = props.feeRate > 0 && base > 0 ? Math.round((base + fee) * 100) / 100 : base
+  return formatPaymentAmount(total, props.currency)
+}
+
 // 价签文案：赠金「+20%」，折扣「20% OFF」
 function badgeText(amt: number): string {
   const percent = formatRechargeBonusNumber(quoteFor(amt).percent)
@@ -148,7 +175,7 @@ function secondLine(amt: number): string {
 }
 
 const placeholderText = computed(() => {
-  if (props.variant === 'recharge') return '输入充值额度（USD）'
+  if (props.variant === 'recharge') return '请输入金额'
   if (props.min > 0 && props.max > 0) return `${props.min} - ${props.max}`
   if (props.min > 0) return `≥ ${props.min}`
   if (props.max > 0) return `≤ ${props.max}`

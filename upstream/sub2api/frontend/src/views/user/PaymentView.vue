@@ -56,26 +56,25 @@
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
             <template v-else>
-              <div data-test="recharge-workspace" class="mt-[22px] grid min-w-0 grid-cols-1 overflow-hidden rounded-[16px] border border-[var(--xq-border)] bg-[var(--xq-surface)] dark:bg-[rgba(5,19,31,0.78)] dark:shadow-[0_20px_62px_rgba(0,0,0,0.16)] lg:h-[432px] lg:grid-cols-[minmax(0,848px)_330px]">
-                <div class="min-w-0 px-5 py-6 sm:px-[30px] sm:pb-[30px] sm:pt-7">
+              <div data-test="recharge-workspace" class="mt-[22px] min-w-0 overflow-hidden rounded-[16px] border border-[var(--xq-border)] bg-[var(--xq-surface)] dark:bg-[rgba(5,19,31,0.78)] dark:shadow-[0_20px_62px_rgba(0,0,0,0.16)]">
+                <div class="min-w-0 max-w-[848px] px-5 py-6 sm:px-[30px] sm:pb-[30px] sm:pt-7">
                   <section>
                     <div class="flex items-start gap-3">
                       <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border border-[var(--xq-border)] bg-[var(--xq-surface)] dark:bg-[rgba(20,63,84,0.52)] text-[10px] font-semibold text-[var(--xq-accent)]">01</span>
                       <div>
-                        <h2 class="text-[15px] font-semibold leading-[21px] text-[var(--xq-text)]">选择充值额度</h2>
-                        <p class="mt-[3px] text-[11px] leading-[18px] text-[var(--xq-muted)]">单笔最低充值 $1，最高充值 $50，如需大额充值联系客服 QQ:2826033474</p>
+                        <h2 class="text-[18px] font-semibold leading-[26px] text-[var(--xq-text)]">选择充值额度</h2>
                       </div>
                     </div>
                     <div v-if="renderedBonusNotice" data-testid="recharge-bonus-notice" class="mt-3 text-sm text-[var(--xq-secondary)]" v-html="renderedBonusNotice"></div>
                     <AmountInput
                       class="mt-[22px]"
                       v-model="amount"
-                      :amounts="[10, 30, 50]"
+                      :amounts="[10, 20, 50, 100]"
                       :min="RECHARGE_MIN_AMOUNT"
                       :max="RECHARGE_MAX_AMOUNT"
                       variant="recharge"
                       :bonus-tiers="rechargeBonusTiers" :bonus-mode="rechargeBonusMode"
-                      :multiplier="balanceRechargeMultiplier" :currency="selectedCurrency"
+                      :multiplier="balanceRechargeMultiplier" :currency="selectedCurrency" :fee-rate="feeRate"
                     />
                     <p v-if="amountError" data-test="recharge-amount-error" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
                   </section>
@@ -84,7 +83,6 @@
                       <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg border border-[var(--xq-border)] bg-[var(--xq-surface)] dark:bg-[rgba(20,63,84,0.52)] text-[10px] font-semibold text-[var(--xq-accent)]">02</span>
                       <div>
                         <h2 class="text-[15px] font-semibold leading-[21px] text-[var(--xq-text)]">支付方式</h2>
-                        <p class="mt-[3px] text-[11px] leading-[18px] text-[var(--xq-muted)]">选择本次充值使用的支付渠道</p>
                       </div>
                     </div>
                     <PaymentMethodSelector
@@ -94,46 +92,16 @@
                       variant="recharge"
                       @select="selectedMethod = $event"
                     />
-                  </section>
-                </div>
-                <aside data-test="recharge-summary" class="flex min-h-[432px] min-w-0 flex-col border-t border-[var(--xq-border)] bg-[var(--xq-surface)] dark:bg-[radial-gradient(300px_220px_at_100%_100%,rgba(76,181,202,0.11),transparent_72%),linear-gradient(161deg,rgba(15,47,68,0.78),rgba(6,23,36,0.92))] px-5 py-6 lg:border-l lg:border-t-0 lg:px-[26px] lg:py-7">
-                  <div>
-                    <p class="text-[11px] leading-4 text-[var(--xq-accent)]">本次支付</p>
-                    <h2 class="mt-1 text-[14px] font-semibold leading-[23px] text-[var(--xq-text)]">金额核对</h2>
-                  </div>
-                  <div class="mt-auto w-full pt-[90px]">
-                    <div class="flex items-center justify-between border-b border-[var(--xq-border)] py-3 text-sm">
-                      <span class="text-[var(--xq-secondary)]">充值额度</span>
-                      <span class="font-semibold text-[var(--xq-text)]">${{ validAmount.toFixed(2) }}</span>
-                    </div>
-                    <div v-if="discountAmount > 0" data-testid="recharge-discount-row" class="flex justify-between gap-4 py-3 text-sm"><span>{{ t('payment.rechargeBonus.discountLabelWithPercent', { percent: formatRechargeBonusNumber(bonusQuote.percent) }) }}</span><span>-{{ formatSelectedPaymentAmount(discountAmount) }}</span></div>
-                    <div v-if="showBonusRow" data-testid="recharge-bonus-row" class="flex justify-between gap-4 py-3 text-sm"><span>{{ t('payment.rechargeBonus.amountLabelWithPercent', { percent: formatRechargeBonusNumber(bonusQuote.percent) }) }}</span><span>+${{ bonusQuote.bonus.toFixed(2) }}</span></div>
-                    <div v-if="showCreditedBalance" data-testid="recharge-credited-row" class="flex justify-between gap-4 py-3 text-sm"><span>{{ t('payment.creditedBalance') }}</span><span>${{ creditedAmount.toFixed(2) }}</span></div>
-                    <div v-if="feeRate > 0" class="flex justify-between gap-4 border-b border-[var(--xq-border)] py-3 text-sm">
-                      <span class="text-[var(--xq-muted)]">{{ t('payment.fee') }} ({{ feeRate }}%)</span>
-                      <span class="text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
-                    </div>
-                    <div :data-actual-pay="showActualPay" class="pb-4 pt-[18px]">
-                      <p class="text-xs leading-5 text-[var(--xq-secondary)]">{{ t('payment.actualPay') }}</p>
-                      <p class="mt-[3px] text-[28px] font-semibold leading-[34px] text-[var(--xq-core)]">{{ formatSelectedPaymentAmount(totalAmount) }}</p>
-                    </div>
-                    <div v-if="balanceRechargeMultiplier !== 1" class="mb-4 flex justify-between gap-4 text-sm">
-                      <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
-                      <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
-                    </div>
-                    <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
-                      {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
-                    </p>
-                  </div>
-                  <button data-test="create-recharge-order" class="btn min-h-[48px] w-full border border-[var(--xq-core)] bg-[var(--xq-core)] px-4 text-sm font-semibold text-[var(--xq-canvas)] shadow-[0_14px_17px_rgba(81,178,195,0.12)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
+                  <button data-test="create-recharge-order" class="btn mt-6 min-h-[48px] w-full border border-[var(--xq-core)] bg-[var(--xq-core)] px-4 text-sm font-semibold text-[var(--xq-canvas)] shadow-[0_14px_17px_rgba(81,178,195,0.12)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
                     <span v-if="submitting" class="flex items-center justify-center gap-2">
                       <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
                       {{ t('common.processing') }}
                     </span>
-                    <span v-else>{{ t('payment.createOrder') }} {{ formatSelectedPaymentAmount(totalAmount) }}</span>
+                    <span v-else>去支付 {{ formatSelectedPaymentAmount(totalAmount) }}</span>
                   </button>
-                  <p class="pt-[10px] text-center text-[11px] leading-4 text-[var(--xq-muted)]">订单创建后将进入安全支付流程</p>
-                </aside>
+                  </section>
+                </div>
+
               </div>
             </template>
           </template>
@@ -362,7 +330,7 @@ import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
 import { formatMultiplierLabel } from '@/utils/formatters'
 import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType, SubscriptionRenewalMode } from '@/types/payment'
-import { formatRechargeBonusNumber, normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
+import { normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -424,7 +392,7 @@ const errorHintMessage = ref('')
 const activeTab = ref<'recharge' | 'subscription'>('recharge')
 const amount = ref(30)
 const RECHARGE_MIN_AMOUNT = 1
-const RECHARGE_MAX_AMOUNT = 50
+const RECHARGE_MAX_AMOUNT = 2000
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const renewalMode = ref<SubscriptionRenewalMode>('restart')
@@ -744,10 +712,6 @@ const bonusQuote = computed(() => quoteRechargeBonus(rechargeBonusTiers.value, v
   currencyDigits: currencyFractionDigits(selectedCurrency.value),
 }))
 const payBaseAmount = computed(() => bonusQuote.value.payBase)
-const discountAmount = computed(() => roundPaymentAmount(validAmount.value - payBaseAmount.value, selectedCurrency.value))
-const creditedAmount = computed(() => bonusQuote.value.credited)
-const showBonusRow = computed(() => bonusQuote.value.mode !== 'discount' && bonusQuote.value.bonus > 0)
-const showCreditedBalance = computed(() => balanceRechargeMultiplier.value !== 1 || bonusQuote.value.percent > 0)
 
 const methodOptions = computed<PaymentMethodOption[]>(() =>
   enabledMethods.value.map((type) => {
@@ -772,12 +736,11 @@ const totalAmount = computed(() =>
     ? Math.round((payBaseAmount.value + feeAmount.value) * 100) / 100
     : payBaseAmount.value
 )
-const showActualPay = computed(() => feeRate.value > 0 || discountAmount.value > 0)
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
   if (validAmount.value < RECHARGE_MIN_AMOUNT) return '单笔最低充值 $1'
-  if (validAmount.value > RECHARGE_MAX_AMOUNT) return '单笔最高充值 $50，如需大额充值可去 [云猫兑换充值] 或 [联系客服QQ:2826033474]'
+  if (validAmount.value > RECHARGE_MAX_AMOUNT) return '单笔充值上限 $2,000，如需大额充值，请联系专属客服 QQ：2826033474'
   // No method can handle this amount
   if (!enabledMethods.value.some((m) => amountFitsMethod(payBaseAmount.value, m))) {
     return t('payment.amountNoMethod')

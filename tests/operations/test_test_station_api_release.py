@@ -60,6 +60,13 @@ class ReleaseScopeTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertNotEqual(self.check_scope(['upstream/sub2api/frontend/' + path]).returncode, 0)
 
+    def test_payment_visibility_fix_allows_api_only_release(self):
+        paths = ['upstream/sub2api/backend/internal/service/' + name for name in (
+            'payment_config_limits.go', 'payment_config_limits_test.go',
+            'payment_visible_method_instances.go')]
+        result = self.check_scope(paths)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_snapshot_removal_requires_worker_and_only_deleted_migration(self):
         paths = ['upstream/sub2api/backend/internal/repository/usage_log_repo_insert.go',
                  'upstream/sub2api/backend/ent/schema/usage_log.go',

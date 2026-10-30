@@ -538,40 +538,49 @@ func TestGetAvailableMethodLimitsPreservesLegacyCrossProviderBehaviorWhenVisible
 	require.Equal(t, 400.0, resp.GlobalMax)
 }
 
-func TestVisibleMethodEnabledSettingControlsCheckoutAndOrderRouting(t *testing.T) {
+func TestVisibleMethodLegacySettingsDoNotOverrideEnabledInstances(t *testing.T) {
 	tests := []struct {
-		name           string
-		enabledSetting *string
-		enabledTypes   string
-		wantVisible    bool
-		wantResolved   bool
+		name            string
+		providerKey     string
+		supportedTypes  string
+		method          string
+		instanceEnabled bool
+		legacyEnabled   *string
+		enabledTypes    string
+		wantAvailable   bool
 	}{
-		{name: "explicit false disables method without current selection", enabledSetting: paymentLimitPtr("false"), wantVisible: false, wantResolved: false},
-		{name: "current alipay selection overrides stale hidden false", enabledSetting: paymentLimitPtr("false"), enabledTypes: "alipay", wantVisible: true, wantResolved: true},
-		{name: "other current selection does not override false", enabledSetting: paymentLimitPtr("false"), enabledTypes: "wxpay", wantVisible: false, wantResolved: false},
-		{name: "explicit true enables method", enabledSetting: paymentLimitPtr("true"), wantVisible: true, wantResolved: true},
-		{name: "missing setting preserves legacy behavior", enabledSetting: nil, wantVisible: true, wantResolved: true},
+		{name: "official alipay with hidden false and no selection", providerKey: "alipay", supportedTypes: "alipay", method: "alipay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("false"), wantAvailable: true},
+		{name: "official alipay with hidden false and alipay selected", providerKey: "alipay", supportedTypes: "alipay", method: "alipay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("false"), enabledTypes: "alipay", wantAvailable: true},
+		{name: "official alipay with hidden false and wxpay selected", providerKey: "alipay", supportedTypes: "alipay", method: "alipay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("false"), enabledTypes: "wxpay", wantAvailable: true},
+		{name: "official alipay with hidden true", providerKey: "alipay", supportedTypes: "alipay", method: "alipay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("true"), wantAvailable: true},
+		{name: "official alipay without legacy flag", providerKey: "alipay", supportedTypes: "alipay", method: "alipay", instanceEnabled: true, wantAvailable: true},
+		{name: "only easypay selected with alipay supported and hidden flags false", providerKey: "easypay", supportedTypes: "alipay", method: "alipay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("false"), enabledTypes: "easypay", wantAvailable: true},
+		{name: "only easypay selected with wxpay supported and hidden flags false", providerKey: "easypay", supportedTypes: "wxpay", method: "wxpay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("false"), enabledTypes: "easypay", wantAvailable: true},
+		{name: "disabled easypay stays unavailable despite hidden true", providerKey: "easypay", supportedTypes: "alipay", method: "alipay", legacyEnabled: paymentLimitPtr("true"), enabledTypes: "easypay"},
+		{name: "alipay-only easypay does not expose wxpay", providerKey: "easypay", supportedTypes: "alipay", method: "wxpay", instanceEnabled: true, legacyEnabled: paymentLimitPtr("false"), enabledTypes: "easypay"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			client := newPaymentConfigServiceTestClient(t)
-			_, err := client.PaymentProviderInstance.Create().
-				SetProviderKey(payment.TypeAlipay).
-				SetName("Official Alipay").
+			instance, err := client.PaymentProviderInstance.Create().
+				SetProviderKey(tt.providerKey).
+				SetName(tt.name).
 				SetConfig("{}").
-				SetSupportedTypes(payment.TypeAlipay).
-				SetEnabled(true).
+				SetSupportedTypes(tt.supportedTypes).
+				SetEnabled(tt.instanceEnabled).
 				Save(ctx)
 			require.NoError(t, err)
 
 			values := map[string]string{
 				SettingPaymentVisibleMethodAlipaySource: "",
+				SettingPaymentVisibleMethodWxpaySource:  "",
 				SettingEnabledPaymentTypes:              tt.enabledTypes,
 			}
-			if tt.enabledSetting != nil {
-				values[SettingPaymentVisibleMethodAlipayEnabled] = *tt.enabledSetting
+			if tt.legacyEnabled != nil {
+				values[SettingPaymentVisibleMethodAlipayEnabled] = *tt.legacyEnabled
+				values[SettingPaymentVisibleMethodWxpayEnabled] = *tt.legacyEnabled
 			}
 			svc := &PaymentConfigService{
 				entClient:   client,
@@ -580,12 +589,24 @@ func TestVisibleMethodEnabledSettingControlsCheckoutAndOrderRouting(t *testing.T
 
 			resp, err := svc.GetAvailableMethodLimits(ctx)
 			require.NoError(t, err)
-			_, visible := resp.Methods[payment.TypeAlipay]
-			require.Equal(t, tt.wantVisible, visible)
+			_, visible := resp.Methods[tt.method]
+			require.Equal(t, tt.wantAvailable, visible, "checkout visibility")
+			if tt.instanceEnabled {
+				require.Contains(t, resp.Methods, tt.supportedTypes)
+				require.Len(t, resp.Methods, 1, "only the supported method should be exposed")
+			} else {
+				require.Empty(t, resp.Methods)
+			}
 
-			resolved, err := svc.resolveEnabledVisibleMethodInstance(ctx, payment.TypeAlipay)
+			resolved, err := svc.resolveEnabledVisibleMethodInstance(ctx, tt.method)
 			require.NoError(t, err)
-			require.Equal(t, tt.wantResolved, resolved != nil)
+			if tt.wantAvailable {
+				require.NotNil(t, resolved, "order routing")
+				require.Equal(t, instance.ID, resolved.ID)
+				require.Equal(t, tt.providerKey, resolved.ProviderKey)
+			} else {
+				require.Nil(t, resolved, "order routing")
+			}
 		})
 	}
 }

@@ -94,6 +94,9 @@ while IFS= read -r path; do
          "$(git diff --diff-filter=D --name-only "$previous" HEAD -- "$path")" == "$path" ]] \
         || fail 'only deletion of snapshot migration with worker update is supported' ;;
     upstream/sub2api/frontend/src/*|upstream/sub2api/frontend/DESIGN.md|docs/*|ops/*|tests/*|artifacts/*) ;;
+    upstream/sub2api/backend/internal/service/payment_config_limits.go|\
+    upstream/sub2api/backend/internal/service/payment_config_limits_test.go|\
+    upstream/sub2api/backend/internal/service/payment_visible_method_instances.go) ;;
     homepage/*|infra/independent-test-station/Dockerfile.homepage|\
     upstream/sub2api/backend/internal/web/embed_on.go|\
     upstream/sub2api/backend/internal/web/embed_test.go|\

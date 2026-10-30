@@ -52,14 +52,15 @@
 
     <!-- Custom Amount Input -->
     <div v-if="variant === 'recharge'" data-test="custom-amount-frame" class="flex min-h-11 items-center gap-2 rounded-lg border border-[var(--xq-border)] bg-[var(--xq-depth)] px-3 focus-within:border-[var(--xq-accent)] focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--xq-accent)]">
-      <label for="custom-recharge-amount" class="shrink-0 whitespace-nowrap text-xs text-[var(--xq-secondary)]">其他金额</label>
+      <label for="custom-recharge-amount" class="shrink-0 whitespace-nowrap text-xs text-[var(--xq-secondary)]">其他额度</label>
+      <span data-test="custom-recharge-currency" class="shrink-0 text-sm text-[var(--xq-text)]" aria-hidden="true">$</span>
       <input
         id="custom-recharge-amount"
         type="text"
         inputmode="decimal"
         :value="customText"
         :placeholder="placeholderText"
-        class="min-h-11 w-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm tabular-nums text-[var(--xq-text)] caret-[var(--xq-accent)] outline-none placeholder:text-[var(--xq-secondary)]"
+        class="min-h-11 w-0 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm tabular-nums text-[var(--xq-text)] caret-[var(--xq-accent)] outline-none placeholder:text-xs placeholder:text-[var(--xq-muted)] sm:placeholder:text-[13px]"
         aria-describedby="custom-recharge-ratio"
         @input="handleInput"
       />
@@ -175,7 +176,7 @@ function secondLine(amt: number): string {
 }
 
 const placeholderText = computed(() => {
-  if (props.variant === 'recharge') return '请输入金额'
+  if (props.variant === 'recharge') return '请输入额度'
   if (props.min > 0 && props.max > 0) return `${props.min} - ${props.max}`
   if (props.min > 0) return `≥ ${props.min}`
   if (props.max > 0) return `≤ ${props.max}`

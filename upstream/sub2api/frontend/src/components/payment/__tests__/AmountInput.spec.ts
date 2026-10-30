@@ -127,10 +127,10 @@ describe('confirmed recharge amount selection', () => {
       expect(choice.attributes('aria-pressed')).toBe('true')
     }
     const frame = wrapper.get('[data-test="custom-amount-frame"]')
-    expect(frame.get('label').text()).toBe('其他金额')
+    expect(frame.get('label').text()).toBe('其他额度')
     expect(frame.text()).toContain('1:1充值')
     const input = frame.get('input')
-    expect(input.attributes('placeholder')).toBe('请输入金额')
+    expect(input.attributes('placeholder')).toBe('请输入额度')
     await input.setValue('12.34')
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([12.34])
     await input.setValue('')

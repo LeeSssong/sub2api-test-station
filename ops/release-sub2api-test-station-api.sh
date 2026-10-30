@@ -802,7 +802,9 @@ PY
 [[ -z $(git status --porcelain) && "$commit" == $(git rev-parse HEAD) ]] || fail 'source changed during build'
 cp "$root/infra/security/chromium-seccomp.json" "$staging/chromium-seccomp.json"
 cp "$root/ops/deploy-sub2api-test-station-api.py" "$staging/deploy.py"
-tar -czf "$staging/bundle.tar.gz" -C "$staging" sub2api manifest.json deploy.py chromium-seccomp.json
+mkdir -p "$staging/resources"
+cp -R "$root/upstream/sub2api/backend/resources/." "$staging/resources/"
+tar -czf "$staging/bundle.tar.gz" -C "$staging" sub2api manifest.json deploy.py chromium-seccomp.json resources
 archive_sha=$(shasum -a 256 "$staging/bundle.tar.gz" | awk '{print $1}')
 remote=$(ssh -T "${ssh_opts[@]}" sub2api-test-station 'mktemp -d /var/tmp/sub2api-test-station-api.XXXXXX')
 [[ "$remote" =~ ^/var/tmp/sub2api-test-station-api\.[a-zA-Z0-9]+$ ]] || fail 'unsafe remote staging path'

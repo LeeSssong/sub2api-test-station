@@ -6,6 +6,7 @@ import json
 import tempfile
 import subprocess
 import os
+import tarfile
 from unittest.mock import patch
 from pathlib import Path
 
@@ -13,6 +14,34 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location('release', ROOT / 'ops/deploy-sub2api-test-station-api.py')
 release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
+
+
+class ReleaseBundleTests(unittest.TestCase):
+    def test_bundle_contains_resources_required_by_runtime_image(self):
+        shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()
+        packaging = shell[shell.index('cp "$root/infra/security/chromium-seccomp.json"'):shell.index('archive_sha=')]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging = root / 'staging'
+            staging.mkdir()
+            inputs = {
+                'infra/security/chromium-seccomp.json': '{}',
+                'ops/deploy-sub2api-test-station-api.py': '# deploy',
+                'upstream/sub2api/backend/resources/model-pricing/prices.json': '{"test": 1}',
+            }
+            for name, content in inputs.items():
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
+            for name in ('sub2api', 'manifest.json'):
+                (staging / name).write_text(name)
+            result = subprocess.run(['bash', '-eu', '-c', packaging], capture_output=True, text=True,
+                env=dict(os.environ, root=str(root), staging=str(staging)))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with tarfile.open(staging / 'bundle.tar.gz') as bundle:
+                resource = 'resources/model-pricing/prices.json'
+                self.assertIn(resource, bundle.getnames())
+                self.assertEqual(bundle.extractfile(resource).read(), b'{"test": 1}')
 
 
 class ReleaseScopeTests(unittest.TestCase):

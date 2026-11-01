@@ -35,7 +35,7 @@ func (s *APIKeyService) GetGroupToolMappings(ctx context.Context, groupIDs []int
 }
 
 func NormalizeGroupToolIDs(ids []string) ([]string, error) {
-	allowed := map[string]bool{"codex": true, "claude": true, "grok": true, "deepseek": true}
+	allowed := map[string]bool{"codex": true, "claude": true, "grok": true, "deepseek": true, "gemini": true}
 	seen := map[string]bool{}
 	result := []string{}
 	for _, id := range ids {

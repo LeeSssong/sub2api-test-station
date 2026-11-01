@@ -101,3 +101,10 @@ describe('AI线路真实口径', () => {
  it('does not fall back to legacy counts when SLA is unavailable', () => {
    expect(routeHealth(metric({real_request_count:100,real_success_count:100})).text).toBe('暂无数据')
  })
+
+ it('discovers Gemini through platform fallback and authoritative cross-platform mappings', () => {
+   expect(model.tools.map(t=>t.id)).toEqual(['codex','claude','gemini','deepseek','grok'])
+   expect(toolIdsForGroup({ ...group(5), platform: 'gemini' } as Group)).toEqual(['gemini'])
+   expect(toolIdsForGroup({ ...group(6), tool_ids: ['gemini','codex'] })).toEqual(['gemini','codex'])
+   expect(toolIdsForGroup({ ...group(5), platform: 'gemini', tool_ids: ['claude'] } as Group)).toEqual(['claude'])
+ })

@@ -3,8 +3,9 @@ import type { MonitorV4Group } from '@/features/monitor-v4/types'
 export const tools = [
   { id: 'codex', label: 'Codex', platform: 'openai', type: 'AI 编程' },
   { id: 'claude', label: 'Claude Code', platform: 'anthropic', type: 'AI 编程' },
-  { id: 'grok', label: 'Grok', platform: 'grok', type: '通用 AI' },
+  { id: 'gemini', label: 'Gemini', platform: 'gemini', type: '通用 AI' },
   { id: 'deepseek', label: 'DeepSeek', platform: 'deepseek', type: '通用 AI' },
+  { id: 'grok', label: 'Grok', platform: 'grok', type: '通用 AI' },
 ] as const
 export type Tool = typeof tools[number]
 const SNAPSHOT_FRESHNESS_MS = 7 * 60 * 1000

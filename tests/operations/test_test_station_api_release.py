@@ -79,6 +79,20 @@ class ReleaseScopeTests(unittest.TestCase):
         self.assertEqual(self.check_scope(migration, True, True).returncode, 0)
         self.assertNotEqual(self.check_scope(['upstream/sub2api/backend/migrations/999.sql'], True, True).returncode, 0)
 
+    def test_gemini_tool_mapping_candidate_allows_api_only_without_dependencies(self):
+        paths = [
+            'upstream/sub2api/backend/internal/service/group_tool_mapping.go',
+            'upstream/sub2api/backend/internal/service/group_tool_mapping_test.go',
+            'upstream/sub2api/frontend/public/xingqiao/providers/gemini.svg',
+            'upstream/sub2api/frontend/src/features/ai-tools/ToolCarousel.vue',
+            'upstream/sub2api/frontend/src/styles/xingqiao-ai.css',
+        ]
+        result = self.check_scope(paths)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for path in ['upstream/sub2api/frontend/pnpm-lock.yaml',
+                     'upstream/sub2api/backend/internal/service/billing_service.go']:
+            self.assertNotEqual(self.check_scope([path]).returncode, 0)
+
     def test_native_group_catalog_changes_allow_api_only_release(self):
         paths = ['internal/handler/' + name for name in (
             'api_key_handler.go', 'gateway_handler.go', 'gateway_user_models.go',

@@ -136,7 +136,9 @@ while IFS= read -r path; do
     upstream/sub2api/backend/internal/service/model_plaza_service.go|\
     upstream/sub2api/backend/internal/service/model_plaza_service_test.go|\
     upstream/sub2api/backend/internal/service/group_tool_mapping.go|\
-    upstream/sub2api/backend/internal/service/api_key_group_tool_mapping_test.go) ;;
+    upstream/sub2api/backend/internal/service/api_key_group_tool_mapping_test.go|\
+    upstream/sub2api/backend/internal/service/group_tool_mapping_test.go|\
+    upstream/sub2api/frontend/public/xingqiao/providers/gemini.svg) ;;
     upstream/sub2api/backend/internal/service/account_test_service.go|\
     upstream/sub2api/backend/internal/service/account_test_service_openai_test.go|\
     upstream/sub2api/backend/internal/repository/account_monitor_repo.go|\

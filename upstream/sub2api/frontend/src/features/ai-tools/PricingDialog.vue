@@ -89,6 +89,7 @@ let refreshTimer: ReturnType<typeof setTimeout> | undefined
 const REFRESH_INTERVAL_MS = 60_000
 const isOpenAiTool = computed(() => props.tool?.id === 'codex')
 const sources: Record<string, string> = {
+  gemini: 'https://ai.google.dev/gemini-api/docs/pricing',
   codex: 'https://developers.openai.com/api/docs/pricing',
   claude: 'https://platform.claude.com/docs/en/about-claude/pricing',
   grok: 'https://docs.x.ai/docs/models', deepseek: 'https://api-docs.deepseek.com/quick_start/pricing'

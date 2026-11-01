@@ -1,7 +1,7 @@
 <template>
   <section class="rounded-xl border border-gray-200 p-4 dark:border-dark-600" aria-label="AI 工具关联">
     <h3 class="text-sm font-semibold text-gray-900 dark:text-white">AI 工具关联</h3>
-    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">来源：管理员配置。未配置时不会出现在 AI 工具卡片中，已有密钥不变。</p>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">来源：管理员配置。未选择工具时按分组平台默认展示；保存关联不会改变已有密钥。</p>
     <fieldset :disabled="loading || saving || !loaded" class="mt-3 flex flex-wrap gap-4">
       <legend class="sr-only">选择此线路可用于哪些 AI 工具</legend>
       <label v-for="tool in tools" :key="tool.id" class="flex items-center gap-2 text-sm">
@@ -25,13 +25,11 @@
 import { ref, watch } from 'vue'
 import { apiClient } from '@/api/client'
 
-type ToolId = 'codex' | 'claude' | 'grok' | 'deepseek'
+import { tools, type Tool } from '@/features/ai-tools/model'
+
+type ToolId = Tool['id']
 interface ToolMappings { group_id: number; tool_ids: ToolId[]; version: number; effective_at: string; updated_by: number }
 const props = defineProps<{ groupId: number }>()
-const tools: { id: ToolId; label: string }[] = [
-  { id: 'codex', label: 'Codex' }, { id: 'claude', label: 'Claude Code' },
-  { id: 'grok', label: 'Grok' }, { id: 'deepseek', label: 'DeepSeek' },
-]
 const selected = ref<ToolId[]>([])
 const loading = ref(false)
 const saving = ref(false)

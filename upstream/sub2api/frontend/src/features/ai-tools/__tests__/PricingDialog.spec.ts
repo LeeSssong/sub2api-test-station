@@ -319,3 +319,13 @@ describe('原生扣费标准同步', () => {
     vi.restoreAllMocks()
   })
 })
+
+it('shows Gemini official source and native Gemini group models without unrelated fees', async () => {
+  mocks.groups.mockResolvedValue([group(5,'Gemini 测试分组',.5,'gemini'),group(1,'Codex 分组',1)])
+  mocks.models.mockResolvedValue([{group_id:5,supported_models:['gemini-test-model']}])
+  const w=make();await w.setProps({tool:{id:'gemini',label:'Gemini'},lines:[]});await flushPromises()
+  expect(w.get('.pricing-source a').attributes('href')).toBe('https://ai.google.dev/gemini-api/docs/pricing')
+  expect(w.get('.fee-table').text()).toContain('Gemini 测试分组')
+  expect(w.get('.fee-table').text()).not.toContain('Codex 分组')
+  expect(w.text()).toContain('gemini-test-model')
+})

@@ -7,7 +7,7 @@
       <div v-if="rankingFailed" class="workspace-error ranking-error" role="alert">近 24 小时推荐统计读取失败，请刷新重试。 <button class="xq-button" @click="loadWorkspace">重试</button></div>
       <div v-if="loading && !loaded" class="empty" role="status">正在读取 AI 工具…</div>
       <template v-if="loaded">
-        <div class="tool-grid" :aria-busy="loading">
+        <ToolCarousel :item-count="toolCards.length" :aria-busy="loading">
           <article v-for="tool in toolCards" :key="tool.id" class="tool-card">
             <header class="tool-card-header">
               <div class="tool-card-identity"><h3 class="tool-title"><img class="provider-logo" :src="providerIcon(tool.platform)" alt="" /><span>{{ tool.label }}</span></h3><span class="tool-type">{{ tool.type }}</span></div>
@@ -21,11 +21,11 @@
               <Icon class="tool-status-arrow" name="chevronRight" size="sm" />
             </button>
             <div class="card-bottom tool-association" role="group" :aria-label="`${tool.label} 最佳线路与关联密钥`">
-              <div :id="`tool-best-${tool.id}`" class="tool-best" title="近 24 小时：成功率 50% · 缓存命中率 30% · 首字速度 20%"><small>最佳线路</small><strong class="best" :class="{muted:!tool.best}">{{ tool.best?.name || (tool.active.length ? tool.bestEmptyText : '暂无可用线路') }}</strong></div>
+              <div :id="`tool-best-${tool.id}`" class="tool-best" title="近 24 小时：成功率 50% · 缓存命中率 30% · 首字速度 20%"><small>最佳线路</small><strong class="best" :class="{muted:!tool.best}">{{ tool.best?.name || (tool.active.length ? tool.bestEmptyText : tool.id === 'gemini' ? '暂无可用 Gemini 分组' : '暂无可用线路') }}</strong></div>
               <button type="button" class="xq-button" :disabled="!tool.active.length" :aria-describedby="`tool-best-${tool.id}`" @click="openCreate(tool)">关联密钥</button>
             </div>
           </article>
-        </div>
+        </ToolCarousel>
       </template>
       <KeysView :refresh-version="keyRefreshVersion" @changed="loadWorkspace" />
       <BaseDialog brand-theme :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
@@ -75,6 +75,7 @@ import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
 import RouteHistoryStrip from '@/features/ai-tools/RouteHistoryStrip.vue'
 import { aggregateRouteSLACounts, getRouteTimeline, type RouteTimelinePoint } from '@/features/ai-tools/routeTimeline'
 import PricingDialog from '@/features/ai-tools/PricingDialog.vue'
+import ToolCarousel from '@/features/ai-tools/ToolCarousel.vue'
 import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'

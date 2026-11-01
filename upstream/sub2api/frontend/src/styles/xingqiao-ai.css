@@ -21,18 +21,29 @@
 .xq-ai :focus-visible,.xq-dialog :focus-visible{outline:2px solid var(--xq-accent);outline-offset:3px}
 .xq-ai ::selection,.xq-dialog ::selection{background:#245665;color:var(--xq-text)}
 .xq-ai{display:flex;flex-direction:column;min-height:calc(100dvh - var(--xq-header-height) - var(--xq-top-gutter) - var(--xq-bottom-gutter))}
+.user-page.xq-ai{width:min(calc(100% - 64px),1440px)}
 .xq-ai .page-head{margin-bottom:14px}
 .xq-ai .page-head h1{font-size:20px;line-height:1.4;font-weight:600;letter-spacing:-.01em}
-.xq-ai .tool-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:34px}
+.xq-ai .tool-carousel{--tool-visible:4;position:relative;min-width:0;margin-bottom:34px}
+.xq-ai .tool-grid{display:flex;width:100%;gap:16px;min-width:0;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
+.xq-ai .tool-grid::-webkit-scrollbar{display:none}
+.xq-ai .tool-grid>.tool-card,.xq-ai .tool-grid>.tool-slot-empty{flex:0 0 calc((100% - (var(--tool-visible) - 1)*16px)/var(--tool-visible))}
+.xq-ai .tool-grid>.tool-card:nth-child(4n + 1){scroll-snap-align:start}
+.xq-ai .tool-slot-empty{visibility:hidden;pointer-events:none}
+.xq-ai .tool-carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:36px;min-height:48px;padding:0;border:1px solid color-mix(in srgb,var(--xq-border) 76%,transparent);border-radius:10px;background:color-mix(in srgb,var(--xq-raised) 72%,var(--xq-depth));color:color-mix(in srgb,var(--xq-accent) 72%,var(--xq-secondary));box-shadow:none;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.xq-ai .tool-carousel-arrow:first-child{right:calc(100% + 18px)}
+.xq-ai .tool-carousel-arrow:last-child{left:calc(100% + 18px)}
+.xq-ai .tool-carousel-arrow:hover{border-color:color-mix(in srgb,var(--xq-accent) 35%,var(--xq-border));background:var(--xq-raised);color:var(--xq-accent)}
+.xq-ai .tool-carousel-arrow:disabled{visibility:hidden;pointer-events:none}
 .xq-ai .tool-card{position:relative;overflow:hidden;display:flex;flex-direction:column;min-width:0;min-height:210px;padding:20px;border:1px solid rgba(58,118,143,.42);border-radius:14px;background:linear-gradient(150deg,rgba(17,51,74,.88),rgba(8,27,42,.80));transition:border-color .2s,background .2s}
 .xq-ai .tool-card:after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(220px 130px at 8% 0,rgba(97,201,217,.075),transparent 72%);opacity:.8}
 .xq-ai .tool-card:hover{background:linear-gradient(150deg,rgba(20,61,86,.92),rgba(9,30,46,.86));border-color:rgba(97,201,217,.58)}
-.xq-ai .tool-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.xq-ai .tool-card-identity{min-width:0}
-.xq-ai .tool-title span{overflow-wrap:anywhere}
-.xq-ai .tool-title{display:flex;align-items:center;gap:9px;font-size:15px;line-height:1.35;font-weight:600;color:var(--xq-core);letter-spacing:-.01em}
+.xq-ai .tool-card-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:8px}
+.xq-ai .tool-card-identity{display:contents}
+.xq-ai .tool-title span{white-space:nowrap}
+.xq-ai .tool-title{grid-column:1/-1;display:flex;align-items:center;gap:9px;white-space:nowrap;font-size:15px;line-height:1.35;font-weight:600;color:var(--xq-core);letter-spacing:-.01em}
 .xq-ai .provider-logo,.xq-dialog .provider-logo{width:18px;height:18px;object-fit:contain;flex:0 0 18px;opacity:.92}
-.xq-ai .tool-type{display:block;margin-top:4px;font-size:11px;color:#668596}
+.xq-ai .tool-type{display:block;grid-column:1;grid-row:2;margin-top:0;font-size:11px;color:#668596}
 .xq-ai .tool-status{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:54px;margin-top:13px;padding:4px 0;border:0;border-radius:0;background:none;color:var(--xq-secondary);font:inherit;font-size:12px;text-align:left;cursor:pointer;transition:transform .15s}
 .xq-ai .tool-status:hover{color:var(--xq-text)}
 .xq-ai .tool-status:active{transform:translateY(1px)}
@@ -74,7 +85,7 @@
 .xq-dialog .xq-route-dialog{width:min(1280px,calc(100vw - 48px));max-width:none}
 .xq-dialog .xq-pricing-dialog{width:min(1080px,calc(100vw - 48px));max-width:none;height:min(900px,calc(100dvh - 40px));max-height:none;display:flex;flex-direction:column}
 .xq-dialog .xq-pricing-dialog .modal-body{min-height:0;overflow:hidden;display:flex;flex:1 1 auto}
-.xq-ai .pricing-entry{display:flex;align-items:center;justify-content:flex-end;flex-shrink:0;gap:4px;margin:0;padding:0;background:none;border:0;color:var(--xq-accent);font-size:11px;white-space:nowrap;text-align:right;cursor:pointer;min-height:28px}
+.xq-ai .pricing-entry{display:flex;grid-column:2;grid-row:2;align-items:center;justify-content:flex-end;flex-shrink:0;gap:4px;margin:0;padding:0;background:none;border:0;color:var(--xq-accent);font-size:11px;white-space:nowrap;text-align:right;cursor:pointer;min-height:28px}
 .xq-ai .pricing-entry:hover{text-decoration:underline;text-underline-offset:4px}
 .xq-ai .pricing-entry:focus-visible{outline:2px solid var(--xq-accent);outline-offset:4px;border-radius:4px}
 @media(max-width:640px){.xq-dialog .xq-pricing-dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px)}.xq-ai .pricing-entry{min-height:44px}}
@@ -111,8 +122,13 @@
 .xq-dialog .best-route-badge{position:absolute;top:0;left:0;width:56px;height:56px;overflow:hidden;border-radius:11px 0 0 0;pointer-events:none}
 .xq-dialog .best-route-ribbon{position:absolute;top:12px;left:-24px;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;width:88px;height:16px;background:var(--xq-success);color:var(--xq-void);font-size:10px;font-weight:600;line-height:16px;white-space:nowrap}
 .xq-dialog .route-health{display:flex;align-items:center;gap:6px}
-@media(max-width:1050px){.xq-ai .tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.xq-dialog .xq-route-dialog{width:min(960px,calc(100vw - 32px))}.xq-dialog .detail-section-head{align-items:flex-start;flex-direction:column;gap:12px}}
-@media(max-width:700px){.xq-ai .page-head{margin-bottom:10px}.xq-ai .tool-grid{grid-template-columns:1fr}.xq-dialog .modal-header{padding:18px}.xq-dialog .modal-body{padding:18px}.xq-dialog .modal-overlay{padding:12px}}
+@media(max-width:1280px){.xq-ai .tool-carousel{--tool-visible:2}.xq-ai .tool-grid>.tool-card{scroll-snap-align:none}.xq-ai .tool-grid>.tool-card:nth-child(2n + 1){scroll-snap-align:start}}
+@media(max-width:1050px){.xq-dialog .xq-route-dialog{width:min(960px,calc(100vw - 32px))}.xq-dialog .detail-section-head{align-items:flex-start;flex-direction:column;gap:12px}}
+@media(min-width:701px) and (max-width:780px){.xq-ai .tool-association{flex-direction:column;align-items:stretch;gap:8px}.xq-ai .tool-association .tool-best{flex:0 1 auto}.xq-ai .tool-association button{width:100%}}
+.xq-ai .merged-key-section .keys-filter-select .select-trigger{color:var(--xq-secondary)!important;font-weight:500}
+@media(max-width:700px){.xq-ai .merged-key-section .keys-filter-select .select-trigger{font-size:11px}}
+@media(min-width:701px) and (max-width:780px){.xq-ai .merged-key-section .keys-toolbar .keys-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.xq-ai .merged-key-section .keys-search{grid-column:1/-1}}
+@media(max-width:700px){.user-page.xq-ai{width:100%}.xq-ai .page-head{margin-bottom:10px}.xq-ai .tool-carousel{--tool-visible:1;display:flex;flex-wrap:wrap;justify-content:center;column-gap:16px;row-gap:12px}.xq-ai .tool-grid{order:-1;flex:0 0 100%}.xq-ai .tool-grid>.tool-card{scroll-snap-align:start}.xq-ai .tool-carousel-arrow{position:static;transform:none;width:44px;flex:0 0 44px;min-height:44px}.xq-ai .tool-carousel-arrow:first-child,.xq-ai .tool-carousel-arrow:last-child{left:auto;right:auto}.xq-dialog .modal-header{padding:18px}.xq-dialog .modal-body{padding:18px}.xq-dialog .modal-overlay{padding:12px}}
 @media(prefers-reduced-motion:reduce){.xq-ai *,.xq-dialog *{transition:none!important;animation:none!important}}
 .xq-dialog .xq-key-dialog{width:min(640px,calc(100vw - 40px));max-width:none}
 .xq-dialog .xq-key-dialog .modal-body{padding:15px 24px 12px}

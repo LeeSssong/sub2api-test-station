@@ -9,11 +9,11 @@ const button = (wrapper: ReturnType<typeof mount>, label: string) => wrapper.fin
 
 describe('GroupToolMappings', () => {
   beforeEach(() => { vi.clearAllMocks(); vi.mocked(apiClient.get).mockResolvedValue(record(['codex'])) })
-  it('loads explicit mappings and saves all four choices with an independent button', async () => {
+  it('loads explicit mappings and saves all five choices with an independent button', async () => {
     const wrapper = mount(GroupToolMappings, { props: { groupId: 7 } })
     await flushPromises()
     expect(apiClient.get).toHaveBeenCalledWith('/admin/groups/7/tool-mappings')
-    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(4)
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(5)
     expect(wrapper.get('input[value="codex"]').element).toHaveProperty('checked', true)
     expect(wrapper.get('input[value="claude"]').element).toHaveProperty('checked', false)
     await wrapper.get('input[value="grok"]').setValue(true)
@@ -44,4 +44,16 @@ describe('GroupToolMappings', () => {
     expect(wrapper.text()).not.toContain('工具关联已保存')
     expect(button(wrapper, '保存工具关联').attributes('disabled')).toBeUndefined()
   })
+})
+
+it('saves Gemini alongside the original mapping and retains selection on failure', async () => {
+  const w=mount(GroupToolMappings,{props:{groupId:7}});await flushPromises()
+  await w.get('input[value="gemini"]').setValue(true)
+  vi.mocked(apiClient.put).mockRejectedValueOnce(new Error('offline'))
+  await button(w,'保存工具关联').trigger('click');await flushPromises()
+  expect(w.get('input[value="gemini"]').element).toHaveProperty('checked',true)
+  vi.mocked(apiClient.put).mockResolvedValueOnce(record(['codex','gemini']))
+  await button(w,'保存工具关联').trigger('click');await flushPromises()
+  expect(apiClient.put).toHaveBeenLastCalledWith('/admin/groups/7/tool-mappings',{tool_ids:['codex','gemini']})
+  expect(w.get('input[value="codex"]').element).toHaveProperty('checked',true)
 })

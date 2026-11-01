@@ -184,7 +184,7 @@ const TablePageLayoutStub = {
   props: ['continuous'],
   template: `
     <div :data-continuous="continuous">
-      <slot name="actions" />
+      <slot name="heading" /><slot name="actions" />
       <slot name="filters" />
       <slot name="endpoint" />
       <slot name="table" />
@@ -281,7 +281,7 @@ const mountView = async () => {
         Icon: IconStub,
         UseKeyModal: true,
         BulkEditKeysModal: true,
-        EndpointPopover: true,
+        EndpointPopover: false,
         GroupBadge: true,
         GroupOptionItem: true,
         Teleport: { template: '<div><slot /></div>' },
@@ -479,7 +479,7 @@ describe('user KeysView column settings', () => {
     getUserGroupRates.mockResolvedValue({ 12: 0.8 })
     getHybridPerformanceSnapshot.mockResolvedValue({ generated_at: new Date().toISOString(), groups: [{ id: 12, sla_request_count: 100, sla_success_count: 75, success_rate: 75, ttft_p50_ms: 2160, request_count: 10 }] })
     const wrapper = await mountView()
-    await wrapper.get('button[title="keys.clickToChangeGroup"]').trigger('click')
+    await wrapper.get('button[title$=" · keys.clickToChangeGroup"]').trigger('click')
     await flushPromises()
     const popup = wrapper.get('.keys-line-popup')
     expect(popup.text()).toContain('0.8x')
@@ -512,18 +512,18 @@ describe('user KeysView column settings', () => {
     const content = wrapper.get('[data-continuous]').html()
     expect(wrapper.get('[data-test="keys-actions"]').classes()).toContain('justify-between')
     expect(content.indexOf('Search name or key...')).toBeLessThan(content.indexOf('data-tour="keys-create-btn"'))
-    expect(content.indexOf('Search name or key...')).toBeLessThan(content.indexOf('data-test="keys-endpoint"'))
-    expect(content.indexOf('data-test="keys-endpoint"')).toBeLessThan(content.indexOf('data-test="keys-list-heading"'))
+    expect(content.indexOf('Search name or key...')).toBeLessThan(content.indexOf('data-test="keys-list-heading"'))
+    expect(wrapper.find('button').exists()).toBe(true)
     expect(content.indexOf('data-test="keys-list-heading"')).toBeLessThan(content.indexOf('data-test="columns"'))
     expect(content.indexOf('data-test="columns"')).toBeLessThan(content.indexOf('data-test="keys-pagination"'))
-    expect(wrapper.get('[data-test="keys-endpoint"]').text()).toContain('https://api.example.test/v1')
+    expect(wrapper.get('.merged-endpoints').text()).toContain('https://api.example.test/v1')
     expect(wrapper.getComponent({ name: 'DataTable' }).props('stickyFirstColumn')).toBe(false)
   })
 
   it('uses the current origin when no public endpoint is configured and copies only that address', async () => {
     const wrapper = await mountView()
-    expect(wrapper.get('[data-test="keys-endpoint"]').text()).toContain(`${window.location.origin}/v1`)
-    await getButtonByText(wrapper, 'Copy address').trigger('click')
+    expect(wrapper.get('.merged-endpoints').text()).toContain(`${window.location.origin}/v1`)
+    await wrapper.get('.merged-endpoints .group\\/endpoint button').trigger('click')
     expect(copyToClipboard).toHaveBeenCalledWith(`${window.location.origin}/v1`, 'keys.endpoints.copied')
     expect(copyToClipboard).not.toHaveBeenCalledWith('sk-test-key', expect.anything())
   })
@@ -602,8 +602,11 @@ describe('user KeysView column settings', () => {
   it('shows an unavailable quota amount rather than a fabricated zero when used quota is missing', async () => {
     listKeys.mockResolvedValue({ items: [{ ...createApiKey(), quota: 20.1234, quota_used: null }], total: 1, page: 1, page_size: 20, pages: 1 })
     const wrapper = await mountView()
-    expect(wrapper.get('[data-test="key-usage"]').text()).toContain('— / $20.12')
-    expect(wrapper.get('[data-test="key-usage"]').text()).not.toContain('$0.00 / $20.12')
+    expect(wrapper.get('.keys-usage-summary').text()).not.toContain('详情')
+    expect(wrapper.get('.keys-usage-summary').element.children).toHaveLength(2)
+    await wrapper.get('.keys-usage-details[aria-haspopup="dialog"]').trigger('click')
+    expect(wrapper.get('[data-test="key-usage-details"]').text()).toContain('— / $20.12')
+    expect(wrapper.get('[data-test="key-usage-details"]').text()).not.toContain('$0.00 / $20.12')
   })
 
   it('opens bulk editing with only selected visible keys', async () => {

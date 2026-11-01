@@ -1814,17 +1814,3 @@ func nullableMonitorMetric(v sql.NullFloat64) *float64 {
 	}
 	return &v.Float64
 }
-
-func (r *accountMonitorRepository) InsertGroupProbeResult(ctx context.Context, groupID int64, result service.AccountMonitorProbeResult, runID string) error {
-	if groupID <= 0 || result.AccountID <= 0 || result.ModelID == "" || result.CheckedAt.IsZero() {
-		return errors.New("invalid group monitor result")
-	}
-	if result.UsageCompleteness == "" {
-		result.UsageCompleteness = service.ProbeUsageUnknown
-	}
-	_, err := r.db.ExecContext(ctx, `INSERT INTO account_monitor_results (
- run_id, account_id, model_id, status, error_code, http_status, ttft_ms, latency_ms,
- input_tokens, cache_creation_tokens, cache_read_tokens, usage_completeness, checked_at, group_id
- ) VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, runID, result.AccountID, result.ModelID, result.Status, result.ErrorCode, result.HTTPStatus, result.TTFTMS, result.LatencyMS, result.InputTokens, result.CacheCreationTokens, result.CacheReadTokens, result.UsageCompleteness, result.CheckedAt.UTC(), groupID)
-	return err
-}

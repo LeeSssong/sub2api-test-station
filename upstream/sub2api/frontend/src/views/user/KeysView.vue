@@ -1,8 +1,9 @@
 <template>
-  <AppLayout>
+  <section id="my-keys" class="merged-key-section" aria-labelledby="my-keys-title">
     <div class="user-page user-keys-page">
-      <UserPageHeader title="我的密钥" />
+
       <TablePageLayout continuous class="keys-work-surface">
+      <template #heading><h2 id="my-keys-title" class="merged-keys-title">我的密钥</h2></template>
       <template #actions>
         <div class="keys-toolbar">
           <div class="keys-filters">
@@ -77,29 +78,10 @@
         </div>
       </template>
 
-      <template #endpoint>
-        <div class="keys-endpoint" data-test="keys-endpoint">
-          <div class="keys-endpoint-summary min-w-0">
-            <div class="keys-endpoint-label">{{ t('keys.endpoints.title') }} <span>{{ t('keys.endpoints.default') }}</span></div>
-            <code>{{ apiEndpoint || t('keys.endpoints.unavailable') }}</code>
-            <EndpointPopover
-              v-if="publicSettings?.custom_endpoints?.length"
-              class="mt-2"
-              api-base-url=""
-              :custom-endpoints="publicSettings.custom_endpoints"
-            />
-          </div>
-          <div class="keys-endpoint-actions">
-            <button type="button" class="btn btn-secondary" :disabled="!apiEndpoint" @click="copyEndpoint">{{ t('keys.endpoints.copyAddress') }}</button>
-            <button type="button" class="btn btn-secondary" @click="showConnectionHelp = true">{{ t('keys.endpoints.instructions') }}</button>
-          </div>
-        </div>
-      </template>
-
       <template #table>
         <div class="keys-list-heading" data-test="keys-list-heading">
           <h2>{{ t('keys.apiKey') }}</h2>
-          <span>{{ t('keys.listHint') }}</span>
+          <EndpointPopover class="merged-endpoints" :api-base-url="apiEndpoint" :custom-endpoints="publicSettings?.custom_endpoints || []" />
         </div>
         <div v-if="listLoadError && apiKeys.length" class="mb-3 flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300" role="alert">
           <span>{{ t('keys.failedToLoad') }}</span>
@@ -182,11 +164,13 @@
                 class="keys-line-trigger"
                 type="button"
                 :aria-expanded="groupSelectorKeyId === row.id"
-                :title="t('keys.clickToChangeGroup')"
+                :title="`${row.group?.name || t('keys.noGroup')} · ${t('keys.clickToChangeGroup')}`"
               >
                 <GroupBadge
                   v-if="row.group"
                   class="keys-line-trigger-badge"
+                  compact-rate
+                  :truncate="false"
                   :name="row.group.name"
                   :platform="row.group.platform"
                   :subscription-type="row.group.subscription_type"
@@ -279,6 +263,162 @@
           </template>
 
           <template #cell-usage="{ row }">
+            <div class="keys-usage-summary">
+              <div>{{ t('keys.today') }}: <strong>{{ formatKeyUsage(usageStats[row.id]?.today_actual_cost) }}</strong></div>
+              <div class="flex items-center gap-2">
+                <button type="button" class="keys-usage-details" @click="detailKeyId = row.id" :aria-label="row.name + ' · 用量与限制详情'" aria-haspopup="dialog">
+                  {{ t('keys.total') }}: <strong>{{ formatKeyUsage(usageStats[row.id]?.total_actual_cost) }}</strong>
+                </button>
+                <span v-if="row.status === 'quota_exhausted' || row.status === 'expired'" class="keys-usage-status">{{ t('keys.status.' + row.status) }}</span>
+              </div>
+            </div>
+          </template>
+          <template #cell-rate_limit="{ row }">
+            <button v-if="row.rate_limit_5h > 0 || row.rate_limit_1d > 0 || row.rate_limit_7d > 0" type="button" class="keys-details-trigger" @click="detailKeyId = row.id" aria-haspopup="dialog">查看限制</button>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
+          <template #cell-expires_at="{ value }">
+            <span v-if="value" :class="[
+              'text-sm keys-expiry-value',
+              new Date(value) < new Date() ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-dark-400'
+            ]">
+              {{ formatDateTime(value) }}
+            </span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
+          </template>
+
+          <template #cell-status="{ value }">
+            <span :class="[
+              'badge',
+              value === 'active' ? 'badge-success' :
+              value === 'quota_exhausted' ? 'badge-warning' :
+              value === 'expired' ? 'badge-danger' :
+              'badge-gray'
+            ]">
+              {{ t('keys.status.' + value) }}
+            </span>
+          </template>
+
+          <template #cell-last_used_at="{ value }">
+            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ formatDateTime(value) }}
+            </span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
+          <template #cell-last_used_ip="{ value }">
+            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
+              {{ value }}
+            </span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
+
+          <template #cell-created_at="{ value }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
+          </template>
+
+          <template #cell-actions="{ row }">
+            <div class="keys-row-actions flex items-center gap-1">
+              <button
+                v-if="isCodexQuickConfigPlatform(row.group?.platform)"
+                @click="openCodexQuickConfigModal(row)"
+                data-testid="quick-config-button"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-900/20 dark:hover:text-primary-400"
+                :title="t('keys.quickConfigure')"
+              >
+                <Icon name="download" size="sm" />
+                <span class="text-xs">{{ t('keys.quickConfigure') }}</span>
+              </button>
+              <!-- Use Key Button -->
+              <button
+                @click="openUseKeyModal(row)"
+                :title="t('keys.useKey')"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:text-green-600 dark:hover:text-green-400"
+              >
+                <Icon name="terminal" size="sm" />
+                <span class="text-xs">{{ t('keys.useKey') }}</span>
+              </button>
+              <!-- Import to CC Switch Button -->
+              <button
+                v-if="!publicSettings?.hide_ccs_import_button"
+                @click="importToCcswitch(row)"
+                :title="t('keys.importToCcSwitch')"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+              >
+                <Icon name="upload" size="sm" />
+                <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
+              </button>
+              <!-- Toggle Status Button -->
+              <button
+                @click="toggleKeyStatus(row)"
+                :title="row.status === 'active' ? t('keys.disable') : t('keys.enable')"
+                :class="[
+                  'flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors',
+                  row.status === 'active'
+                    ? 'text-gray-500 hover:text-yellow-600 dark:hover:text-yellow-400'
+                    : 'text-gray-500 hover:text-green-600 dark:hover:text-green-400'
+                ]"
+              >
+                <Icon v-if="row.status === 'active'" name="ban" size="sm" />
+                <Icon v-else name="checkCircle" size="sm" />
+                <span class="text-xs">{{ row.status === 'active' ? t('keys.disable') : t('keys.enable') }}</span>
+              </button>
+              <!-- Edit Button -->
+              <button
+                @click="editKey(row)"
+                :title="t('common.edit')"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+              >
+                <Icon name="edit" size="sm" />
+                <span class="text-xs">{{ t('common.edit') }}</span>
+              </button>
+              <!-- Delete Button -->
+              <button
+                @click="confirmDelete(row)"
+                :title="t('common.delete')"
+                class="keys-action-danger flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:text-red-600 dark:hover:text-red-400"
+              >
+                <Icon name="trash" size="sm" />
+                <span class="text-xs">{{ t('common.delete') }}</span>
+              </button>
+            </div>
+          </template>
+
+          <template #empty>
+            <div v-if="listLoadError" class="flex flex-col items-center gap-3 py-8 text-center" role="alert">
+              <p class="text-sm text-red-600 dark:text-red-400">{{ t('keys.failedToLoad') }}</p>
+              <button type="button" class="btn btn-secondary" @click="loadApiKeys"><Icon name="refresh" size="sm" aria-hidden="true" /> {{ t('common.refresh') }}</button>
+            </div>
+            <EmptyState
+              v-else
+              :title="t('keys.noKeysYet')"
+              :description="t('keys.createFirstKey')"
+              :action-text="t('keys.createKey')"
+              @action="showCreateModal = true"
+            />
+          </template>
+        </DataTable>
+        </div>
+      </template>
+
+      <template #pagination>
+        <div class="keys-pagination" data-test="keys-pagination">
+          <span>{{ t('pagination.of') }} {{ pagination.total }} {{ t('pagination.results') }} · {{ t('pagination.perPage') }} {{ pagination.page_size }}</span>
+          <nav :aria-label="t('pagination.pageOf', { page: pagination.page, total: Math.max(1, pagination.pages) })">
+            <button type="button" :aria-label="t('pagination.previous')" :disabled="loading || pagination.page <= 1" @click="handlePageChange(pagination.page - 1)"><Icon name="chevronLeft" size="sm" /></button>
+            <span>{{ pagination.page }} / {{ Math.max(1, pagination.pages) }}</span>
+            <button type="button" :aria-label="t('pagination.next')" :disabled="loading || pagination.page >= pagination.pages" @click="handlePageChange(pagination.page + 1)"><Icon name="chevronRight" size="sm" /></button>
+          </nav>
+        </div>
+      </template>
+      </TablePageLayout>
+    </div>
+
+    <BaseDialog :show="!!detailKey" title="密钥用量与限制" width="normal" brand-theme @close="detailKeyId = null">
+      <div v-for="row in detailKey ? [detailKey] : []" :key="row.id" class="space-y-5" data-test="key-usage-details">
+        <p class="font-medium break-words">{{ row.name }} · {{ t('keys.status.' + row.status) }}</p>
+        <section><h4 class="mb-2 font-semibold">用量与额度</h4>
             <div class="text-sm">
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
@@ -318,9 +458,8 @@
                 </div>
               </div>
             </div>
-          </template>
-
-          <template #cell-rate_limit="{ row }">
+          </section>
+        <section><h4 class="mb-2 font-semibold">速率限制</h4>
             <div v-if="row.rate_limit_5h > 0 || row.rate_limit_1d > 0 || row.rate_limit_7d > 0" class="space-y-1.5 min-w-[140px]">
               <!-- 5h window -->
               <div v-if="row.rate_limit_5h > 0">
@@ -418,145 +557,7 @@
               </button>
             </div>
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
-          </template>
-
-          <template #cell-expires_at="{ value }">
-            <span v-if="value" :class="[
-              'text-sm',
-              new Date(value) < new Date() ? 'text-red-500 dark:text-red-400' : 'text-gray-500 dark:text-dark-400'
-            ]">
-              {{ formatDateTime(value) }}
-            </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
-          </template>
-
-          <template #cell-status="{ value }">
-            <span :class="[
-              'badge',
-              value === 'active' ? 'badge-success' :
-              value === 'quota_exhausted' ? 'badge-warning' :
-              value === 'expired' ? 'badge-danger' :
-              'badge-gray'
-            ]">
-              {{ t('keys.status.' + value) }}
-            </span>
-          </template>
-
-          <template #cell-last_used_at="{ value }">
-            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
-              {{ formatDateTime(value) }}
-            </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
-          </template>
-
-          <template #cell-last_used_ip="{ value }">
-            <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
-              {{ value }}
-            </span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
-          </template>
-
-          <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
-          </template>
-
-          <template #cell-actions="{ row }">
-            <div class="keys-row-actions flex items-center gap-1">
-              <button
-                v-if="isCodexQuickConfigPlatform(row.group?.platform)"
-                @click="openCodexQuickConfigModal(row)"
-                data-testid="quick-config-button"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-primary-50 hover:text-primary-600 dark:hover:bg-primary-900/20 dark:hover:text-primary-400"
-                :title="t('keys.quickConfigure')"
-              >
-                <Icon name="download" size="sm" />
-                <span class="text-xs">{{ t('keys.quickConfigure') }}</span>
-              </button>
-              <!-- Use Key Button -->
-              <button
-                @click="openUseKeyModal(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:text-green-600 dark:hover:text-green-400"
-              >
-                <Icon name="terminal" size="sm" />
-                <span class="text-xs">{{ t('keys.useKey') }}</span>
-              </button>
-              <!-- Import to CC Switch Button -->
-              <button
-                v-if="!publicSettings?.hide_ccs_import_button"
-                @click="importToCcswitch(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                <Icon name="upload" size="sm" />
-                <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
-              </button>
-              <!-- Toggle Status Button -->
-              <button
-                @click="toggleKeyStatus(row)"
-                :class="[
-                  'flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors',
-                  row.status === 'active'
-                    ? 'text-gray-500 hover:text-yellow-600 dark:hover:text-yellow-400'
-                    : 'text-gray-500 hover:text-green-600 dark:hover:text-green-400'
-                ]"
-              >
-                <Icon v-if="row.status === 'active'" name="ban" size="sm" />
-                <Icon v-else name="checkCircle" size="sm" />
-                <span class="text-xs">{{ row.status === 'active' ? t('keys.disable') : t('keys.enable') }}</span>
-              </button>
-              <!-- Edit Button -->
-              <button
-                @click="editKey(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
-              >
-                <Icon name="edit" size="sm" />
-                <span class="text-xs">{{ t('common.edit') }}</span>
-              </button>
-              <!-- Delete Button -->
-              <button
-                @click="confirmDelete(row)"
-                class="keys-action-danger flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:text-red-600 dark:hover:text-red-400"
-              >
-                <Icon name="trash" size="sm" />
-                <span class="text-xs">{{ t('common.delete') }}</span>
-              </button>
-            </div>
-          </template>
-
-          <template #empty>
-            <div v-if="listLoadError" class="flex flex-col items-center gap-3 py-8 text-center" role="alert">
-              <p class="text-sm text-red-600 dark:text-red-400">{{ t('keys.failedToLoad') }}</p>
-              <button type="button" class="btn btn-secondary" @click="loadApiKeys"><Icon name="refresh" size="sm" aria-hidden="true" /> {{ t('common.refresh') }}</button>
-            </div>
-            <EmptyState
-              v-else
-              :title="t('keys.noKeysYet')"
-              :description="t('keys.createFirstKey')"
-              :action-text="t('keys.createKey')"
-              @action="showCreateModal = true"
-            />
-          </template>
-        </DataTable>
-        </div>
-      </template>
-
-      <template #pagination>
-        <div class="keys-pagination" data-test="keys-pagination">
-          <span>{{ t('pagination.of') }} {{ pagination.total }} {{ t('pagination.results') }} · {{ t('pagination.perPage') }} {{ pagination.page_size }}</span>
-          <nav :aria-label="t('pagination.pageOf', { page: pagination.page, total: Math.max(1, pagination.pages) })">
-            <button type="button" :aria-label="t('pagination.previous')" :disabled="loading || pagination.page <= 1" @click="handlePageChange(pagination.page - 1)"><Icon name="chevronLeft" size="sm" /></button>
-            <span>{{ pagination.page }} / {{ Math.max(1, pagination.pages) }}</span>
-            <button type="button" :aria-label="t('pagination.next')" :disabled="loading || pagination.page >= pagination.pages" @click="handlePageChange(pagination.page + 1)"><Icon name="chevronRight" size="sm" /></button>
-          </nav>
-        </div>
-      </template>
-      </TablePageLayout>
-    </div>
-
-    <BaseDialog :show="showConnectionHelp" :title="t('keys.endpoints.instructions')" width="narrow" @close="showConnectionHelp = false">
-      <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('keys.endpoints.instructionsHint') }}</p>
-      <div class="mt-4 flex flex-wrap items-center gap-3">
-        <code class="break-all text-sm">{{ apiEndpoint || t('keys.endpoints.unavailable') }}</code>
-        <button type="button" class="btn btn-secondary" :disabled="!apiEndpoint" @click="copyEndpoint">{{ t('keys.endpoints.copyAddress') }}</button>
+          </section>
       </div>
     </BaseDialog>
 
@@ -1255,7 +1256,7 @@
         </div>
       </div>
     </Teleport>
-  </AppLayout>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -1266,10 +1267,12 @@
 	import { useClipboard } from '@/composables/useClipboard'
 
 const { t } = useI18n()
+import { useRoute } from 'vue-router'
+const mergedRoute = useRoute()
+const props = withDefaults(defineProps<{ refreshVersion?: number }>(), { refreshVersion: 0 })
+const emit = defineEmits<{ changed: [] }>()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import { buildGatewayUrl } from '@/api/client'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import UserPageHeader from '@/components/user/UserPageHeader.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import DataTable from '@/components/common/DataTable.vue'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -1419,16 +1422,19 @@ const concurrencyDetail = (id: number) => {
 }
 
 const columns = computed<Column[]>(() =>
-  allColumns.value.filter((col) => ALWAYS_VISIBLE_COLUMNS.has(col.key) || !hiddenColumns.has(col.key))
+  allColumns.value.filter((col) => ALWAYS_VISIBLE_COLUMNS.has(col.key) || !hiddenColumns.has(col.key)).map(col => ({ ...col, class: `keys-column-${col.key}` }))
 )
 
 const apiKeys = ref<ApiKey[]>([])
+const detailKeyId = ref<number | null>(null)
+const detailKey = computed(() => apiKeys.value.find(key => key.id === detailKeyId.value))
 const selectedKeyIds = ref<Array<string | number>>([])
 const showBulkEdit = ref(false)
 async function handleBulkFinished(failed: number[]) {
   selectedKeyIds.value = failed
   if (!failed.length) appStore.showSuccess(t('keys.keyUpdatedSuccess'))
   await loadApiKeys(true)
+  emit('changed')
 }
 const groups = ref<Group[]>([])
 const loading = ref(false)
@@ -1550,6 +1556,11 @@ const sortState = ref({
 const filterSearch = ref('')
 const filterStatus = ref('')
 const filterGroupId = ref<string | number>('')
+watch(() => mergedRoute?.query.group_id, (value) => {
+  const id = String(value || '')
+  filterGroupId.value = /^\d+$/.test(id) ? Number(id) : ''
+  onFilterChange()
+})
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
@@ -1560,7 +1571,6 @@ const showUseKeyModal = ref(false)
 const showCodexQuickConfigModal = ref(false)
 const showCcsClientSelect = ref(false)
 const showColumnDropdown = ref(false)
-const showConnectionHelp = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const selectedCodexQuickConfigPlatform = computed(() => {
@@ -1575,9 +1585,6 @@ const apiEndpoint = computed(() => {
   if (configured) return configured
   return buildGatewayUrl('/v1')
 })
-const copyEndpoint = () => {
-  if (apiEndpoint.value) void clipboardCopy(apiEndpoint.value, t('keys.endpoints.copied'))
-}
 const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<ReturnType<typeof placeKeyMenu> | null>(null)
@@ -1911,6 +1918,7 @@ const toggleKeyStatus = async (key: ApiKey) => {
   const newStatus = key.status === 'active' ? 'inactive' : 'active'
   try {
     await keysAPI.toggleStatus(key.id, newStatus)
+    emit('changed')
     appStore.showSuccess(
       newStatus === 'active' ? t('keys.keyEnabledSuccess') : t('keys.keyDisabledSuccess')
     )
@@ -1920,13 +1928,20 @@ const toggleKeyStatus = async (key: ApiKey) => {
   }
 }
 
-const openGroupSelector = (key: ApiKey) => {
+const openGroupSelector = async (key: ApiKey) => {
   if (groupSelectorKeyId.value === key.id) {
     groupSelectorKeyId.value = null
     dropdownPosition.value = null
   } else {
     const buttonEl = groupButtonRefs.value.get(key.id)
     if (buttonEl) {
+      // A merged page can place the trigger at the viewport edge after scrolling.
+      // Keep the native menu below its trigger with enough room to select a line.
+      if (buttonEl.getBoundingClientRect().bottom > window.innerHeight - 180 && typeof buttonEl.scrollIntoView === 'function') {
+        buttonEl.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      }
+      if (disposed) return
       const rect = buttonEl.getBoundingClientRect()
       dropdownPosition.value = placeKeyMenu(rect, window.innerWidth, window.innerHeight)
     }
@@ -1946,6 +1961,7 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
 
   try {
     await keysAPI.update(key.id, { group_id: newGroupId })
+    emit('changed')
     appStore.showSuccess(t('keys.groupChangedSuccess'))
     loadApiKeys()
   } catch (error) {
@@ -2071,6 +2087,7 @@ const handleSubmit = async () => {
       }
     }
     closeModals()
+    emit('changed')
     loadApiKeys()
   } catch (error: any) {
     const errorMsg = error.response?.data?.detail || t('keys.failedToSave')
@@ -2082,6 +2099,7 @@ const handleSubmit = async () => {
 }
 
 const handleKeyCreated = () => {
+  emit('changed')
   showCreateModal.value = false
   appStore.showSuccess(t('keys.keyCreatedSuccess'))
   if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
@@ -2100,6 +2118,7 @@ const handleDelete = async () => {
 
   try {
     await keysAPI.delete(selectedKey.value.id)
+    emit('changed')
     appStore.showSuccess(t('keys.keyDeletedSuccess'))
     showDeleteDialog.value = false
     loadApiKeys()
@@ -2231,7 +2250,7 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   })
 
   try {
-    window.open(deeplink, '_self')
+    window.location.href = deeplink
 
     // Check if the protocol handler worked by detecting if we're still focused
     setTimeout(() => {
@@ -2273,16 +2292,16 @@ function formatResetTime(resetAt: string | null): string {
 const inventoryRef = ref<HTMLElement | null>(null)
 let inventoryObserver: ResizeObserver | undefined
 let fitFrame = 0
-let measuredRowHeight = 64
 const fitInventory = () => {
   const inventory = inventoryRef.value
   if (!inventory || inventory.clientHeight <= 0) return
-  if (!loading.value) {
-    const rows = [...inventory.querySelectorAll('tbody tr')].filter(row => row.children.length > 1)
-    measuredRowHeight = Math.max(64, ...rows.map(row => row.getBoundingClientRect().height))
-  }
+  inventory.style.setProperty('--key-visible-width', `${Math.max(1, inventory.clientWidth - 12)}px`)
+  const wrapper = inventory.querySelector<HTMLElement>('.table-wrapper')
+  if (!wrapper || loading.value) return
   const headerHeight = inventory.querySelector('thead')?.getBoundingClientRect().height || 44
-  const size = fitKeyRows(inventory.clientHeight, headerHeight, measuredRowHeight)
+  const rowHeight = Number.parseFloat(getComputedStyle(inventory).getPropertyValue('--key-row-height')) || 64
+  // clientHeight already excludes a real horizontal scrollbar (including on WebKit).
+  const size = fitKeyRows(wrapper.clientHeight, headerHeight, rowHeight)
   if (size !== pagination.value.page_size) {
     const firstItem = (pagination.value.page - 1) * pagination.value.page_size
     pagination.value.page_size = size
@@ -2299,8 +2318,9 @@ const handleViewportResize = () => {
   groupSelectorKeyId.value = null
   scheduleFitInventory()
 }
-watch([loading, columns, selectedKeyIds], () => { void nextTick(scheduleFitInventory) })
+watch([loading, columns, selectedKeyIds, usageLoadError], () => { void nextTick(scheduleFitInventory) })
 
+watch(() => props.refreshVersion, () => { void loadApiKeys() })
 onMounted(() => {
   const requestedGroupId = new URLSearchParams(window.location.search).get('group_id')
   if (requestedGroupId && /^\d+$/.test(requestedGroupId)) filterGroupId.value = Number(requestedGroupId)

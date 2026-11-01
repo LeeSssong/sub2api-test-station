@@ -1098,15 +1098,3 @@ func unifiedAccountMonitorSelectionPattern(bucketOrigin string, groupScoped bool
 	}
 	return `(?s)WITH\s+real_candidates(?:\s*\([^)]*\))?\s+AS.*?probe_ranked(?:\s*\([^)]*\))?\s+AS` + groupMarker + `.*?account_monitor_results.*?status\s+IN\s*\(\s*'success'\s*,\s*'failed'\s*\).*?latest_probe(?:\s*\([^)]*\))?\s+AS.*?selected_requests(?:\s*\([^)]*\))?\s+AS.*?FROM\s+real_candidates.*?UNION ALL.*?FROM\s+latest_probe`
 }
-
-func TestManualGroupProbePersistsGroupScope(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer db.Close()
-	repo := NewAccountMonitorRepository(db).(*accountMonitorRepository)
-	now := time.Now().UTC()
-	result := service.AccountMonitorProbeResult{AccountID: 12, ModelID: "gpt-5", Status: "success", CheckedAt: now}
-	mock.ExpectExec(`(?s)INSERT INTO account_monitor_results.*group_id.*VALUES`).WithArgs(sqlmock.AnyArg(), int64(12), "gpt-5", "success", "", nil, nil, nil, 0, 0, 0, service.ProbeUsageUnknown, now, int64(7)).WillReturnResult(sqlmock.NewResult(1, 1))
-	require.NoError(t, repo.InsertGroupProbeResult(context.Background(), 7, result, "7d4b56d2-8223-4f77-8d22-f6a93d818980"))
-	require.NoError(t, mock.ExpectationsWereMet())
-}

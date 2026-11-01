@@ -135,37 +135,6 @@ func (h *MonitorV4Handler) Snapshot(c *gin.Context) {
 	response.Success(c, monitorV4SnapshotResponse{ContractVersion: snapshot.ContractVersion, Window: snapshot.Window, RefreshIntervalSeconds: snapshot.RefreshIntervalSeconds, GeneratedAt: snapshot.GeneratedAt.UTC().Format(time.RFC3339), Groups: groups})
 }
 
-// Check runs an authenticated, bounded manual check. Results are session-local
-// in the client; the native observations remain available to monitor statistics.
-func (h *MonitorV4Handler) Check(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	subject, ok := middleware.GetAuthSubjectFromContext(c)
-	if !ok || subject.UserID <= 0 {
-		response.Unauthorized(c, "User not authenticated")
-		return
-	}
-	checker, ok := h.service.(interface {
-		Check(context.Context, int64, []int64) ([]service.MonitorV4CheckResult, error)
-	})
-	if !ok {
-		response.InternalError(c, "line checker unavailable")
-		return
-	}
-	var req struct {
-		GroupIDs []int64 `json:"group_ids" binding:"required,min=1,max=100"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "invalid group_ids")
-		return
-	}
-	results, err := checker.Check(c.Request.Context(), subject.UserID, req.GroupIDs)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, gin.H{"results": results})
-}
-
 func (h *MonitorV4Handler) Timeline(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	subject, ok := middleware.GetAuthSubjectFromContext(c)

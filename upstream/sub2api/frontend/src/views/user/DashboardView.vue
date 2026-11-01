@@ -26,23 +26,8 @@
             </div>
           </article>
         </div>
-        <section class="lines-panel" aria-labelledby="routes-title">
-          <div class="panel-head"><h2 id="routes-title">我的 AI 线路</h2><button class="xq-button route-check-button" aria-label="检查线路" title="每分钟最多检查 30 次" :disabled="checking || checkCooldown || !routeRows.some(g=>g.status==='active')" @click="runChecks"><img src="/xingqiao/refresh.svg" alt="" :class="{'is-checking':checking}" /><span>检查线路</span></button></div>
-          <div v-if="checkError" class="workspace-error" role="alert">{{ checkError }}</div>
-          <div class="route-table-scroll">
-            <div class="route-table" role="table" aria-label="我的 AI 线路">
-              <div class="route-header" role="row"><span role="columnheader">线路</span><span role="columnheader">近 1 小时成功率</span><span role="columnheader" title="本次检查首字耗时">本次检查结果</span><span role="columnheader">关联密钥</span><span role="columnheader">操作</span></div>
-              <div v-for="group in routeRows" :key="group.id" class="route-row" role="row">
-                <div class="route-name" role="cell"><span class="dot" :class="stateOf(group).kind" :aria-label="stateOf(group).text"></span><div><div class="route-identity"><img class="provider-logo route-provider-logo" :src="providerIcon(group.platform)" alt="" /><strong>{{ group.name }}</strong><span class="rate-badge">{{ rateLabel(group) }}</span></div><small>{{ platformLabel(group.platform) }} · {{ stateOf(group).text }}</small></div></div>
-                <span role="cell" class="rate success-rate-tone" :data-tone="successTone(group,metricsById,true)" :title="statsHint(group)">{{ successLabel(group,metricsById,true) }}</span>
-                <span role="cell" :class="checkOf(group).kind" :title="checkOf(group).text==='—'?'本次尚未检查':'本次检查首字耗时'"><Icon v-if="checkOf(group).kind==='success'" name="check" size="sm" />{{ checkOf(group).text }}</span>
-                <span role="cell">{{ counts.get(group.id)||0 }} 把</span><button class="route-action" @click="openGroupKeys(group.id)">查看关联密钥</button>
-              </div>
-            </div>
-          </div>
-          <div v-if="!routeRows.length" class="empty">暂无已关联密钥的线路</div>
-        </section>
       </template>
+      <KeysView :refresh-version="keyRefreshVersion" @changed="loadWorkspace" />
       <BaseDialog brand-theme :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
         <div class="detail-section-head"><div class="detail-period"><span>统计范围</span><div class="detail-period-segment" role="group" aria-label="线路统计时间"><button v-for="period in periods" :key="period.value" :aria-pressed="detailWindow===period.value" :class="{active:detailWindow===period.value}" @click="loadDetails(period.value)">{{ period.label }}</button></div><label class="detail-granularity">粒度 <select aria-label="线路图粒度" :value="detailWindow==='1h'?'5m':detailGranularity" :disabled="detailWindow==='1h'" @change="detailGranularity=($event.target as HTMLSelectElement).value as 'hour'|'day';loadDetails(detailWindow)"><option v-if="detailWindow==='1h'" value="5m">5 分钟</option><option value="hour">小时</option><option value="day">天</option></select></label></div></div>
         <div v-if="detailError" class="workspace-error" role="alert">{{ detailError }} <button class="xq-button" @click="loadDetails(detailWindow)">重试</button></div>
@@ -81,9 +66,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import KeysView from './KeysView.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
@@ -94,12 +79,12 @@ import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
 import { formatLineRate, resolveLineRate } from '@/components/keys/lineOptions'
-import { checkLines, type LineCheck } from '@/features/ai-tools/api'
-import { tools, linkedCounts, configuredLines, routeCountHealth, routeHealth, routeHealthTone, routeSuccessLabel, compareQuality, rankWeightedRoutes, metricLabel, providerIcon, platformLabel, toolIdsForGroup } from '@/features/ai-tools/model'
+import { tools, linkedCounts, configuredLines, routeCountHealth, routeHealth, routeHealthTone, routeSuccessLabel, compareQuality, rankWeightedRoutes, providerIcon, toolIdsForGroup } from '@/features/ai-tools/model'
 import { getDashboardWorkspaceSnapshot, setDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
 import type { ApiKey, Group } from '@/types'
 import type { MonitorV4Group, MonitorV4Window } from '@/features/monitor-v4/types'
 import '@/styles/xingqiao-ai.css'
+import '@/styles/xingqiao-merged-keys.css'
 
 const timelinePoints=ref<RouteTimelinePoint[]>([]),timelineLoading=ref(false),timelineError=ref(false)
 async function loadTimeline(window:MonitorV4Window,signal:AbortSignal){
@@ -108,7 +93,6 @@ async function loadTimeline(window:MonitorV4Window,signal:AbortSignal){
  catch{if(!signal.aborted)timelineError.value=true}
  finally{if(!signal.aborted)timelineLoading.value=false}
 }
-const router=useRouter()
 const authStore=useAuthStore()
 const cacheUserId=String(authStore.user?.id||'')
 const cachedWorkspace=getDashboardWorkspaceSnapshot(cacheUserId)
@@ -117,9 +101,10 @@ let freshnessTimer: ReturnType<typeof setInterval> | undefined
 const groups=ref<Group[]>(cachedWorkspace?.groups||[]), keys=ref<ApiKey[]>(cachedWorkspace?.keys||[]), rates=ref<Record<number,number>>(cachedWorkspace?.rates||{}), metrics=ref<MonitorV4Group[]>(cachedWorkspace?.metrics||[]), rankingMetrics=ref<MonitorV4Group[]>(cachedWorkspace?.rankingMetrics||[])
 const metricsGeneratedAt=ref<string|null>(cachedWorkspace?.metricsGeneratedAt||null)
 const rankingMetricsGeneratedAt=ref<string|null>(cachedWorkspace?.rankingMetricsGeneratedAt||null)
-const loading=ref(false), loaded=ref(!!cachedWorkspace), workspaceError=ref(''), statsFailed=ref(false), statsError=ref(''), rankingFailed=ref(false), checking=ref(false), checkError=ref('')
-const checks=ref<Record<number,LineCheck>>({}), detailWindow=ref<MonitorV4Window>('24h'), detailGranularity=ref<'hour'|'day'>('hour'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
-let loadController:AbortController|undefined, detailController:AbortController|undefined, checkController:AbortController|undefined
+const loading=ref(false), loaded=ref(!!cachedWorkspace), workspaceError=ref(''), statsFailed=ref(false), statsError=ref(''), rankingFailed=ref(false)
+const keyRefreshVersion=ref(0)
+const detailWindow=ref<MonitorV4Window>('24h'), detailGranularity=ref<'hour'|'day'>('hour'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
+let loadController:AbortController|undefined, detailController:AbortController|undefined
 const detailCache=new Map<MonitorV4Window,MonitorV4Group[]>()
 let returnToDetailGroup:number|undefined
 let detailsTrigger:HTMLElement|null=null, createTrigger:HTMLElement|null=null
@@ -150,28 +135,10 @@ let pricingTrigger:HTMLElement|null=null
 function openPricing(tool:ToolCard){pricingTrigger=document.activeElement as HTMLElement;pricingTool.value=tool}
 function closePricing(){pricingTool.value=null;nextTick(()=>pricingTrigger?.focus())}
 const selectedTool=ref<ToolCard|null>(null), createTool=ref<ToolCard|null>(null),createGroupId=ref<number>()
-const routeRows=computed(()=>sort(configuredLines(groups.value,keys.value)))
 const detailRows=computed(()=>[...(selectedTool.value?.groups||[])].sort((a,b)=>(resolveLineRate(a,rates.value)??Infinity)-(resolveLineRate(b,rates.value)??Infinity)))
 const detailBest=computed(()=>toolCards.value.find(tool=>tool.id===selectedTool.value?.id)?.best)
 const periods=[{value:'1h' as const,label:'近 1 小时'},{value:'24h' as const,label:'近 24 小时'},{value:'7d' as const,label:'近 7 天'}]
 const rateLabel=(g:Group)=>formatLineRate(resolveLineRate(g,rates.value))
-function metricHealth(g:Group,ms:Map<number,MonitorV4Group>,hour:boolean){
-  return routeHealth(hour&&statsFailed.value?undefined:ms.get(g.id),clock.value,hour?metricsGeneratedAt.value:undefined)
-}
-function successTone(g:Group,ms:Map<number,MonitorV4Group>,hour:boolean){return routeHealthTone(metricHealth(g,ms,hour))}
-function successLabel(g:Group,ms:Map<number,MonitorV4Group>,hour:boolean){
-  const health=metricHealth(g,ms,hour)
-  return routeSuccessLabel(health)
-}
-function statsHint(g:Group){const m=metricsById.value.get(g.id);return !m||statsFailed.value||m.sla_request_count==null||m.sla_success_count==null?'SLA 统计暂不可用，请刷新重试':'最近 1 小时后台 SLA（排除业务限制及客户端取消）\n成功请求：'+m.sla_success_count+' 次\n总请求：'+m.sla_request_count+' 次'}
-function checkOf(g:Group){
-  if(g.status!=='active')return {kind:'muted',text:'线路已停用'}
-  if(checking.value&&counts.value.has(g.id))return {kind:'warning',text:'检查中…'}
-  const r=checks.value[g.id]
-  if(!r)return {kind:'muted',text:'—'}
-  if(r.status==='success'&&r.ttft_ms!=null)return {kind:'success',text:metricLabel(r.ttft_ms)}
-  return {kind:r.status==='disabled'?'muted':'danger',text:r.status==='timeout'?'响应超时':r.status==='disabled'?'线路已停用':'检查失败'}
-}
 function cacheWorkspace(){setDashboardWorkspaceSnapshot({userId:cacheUserId,groups:groups.value,keys:keys.value,rates:rates.value,metrics:metrics.value,metricsGeneratedAt:metricsGeneratedAt.value,rankingMetrics:rankingMetrics.value,rankingMetricsGeneratedAt:rankingMetricsGeneratedAt.value})}
 async function loadAllKeys(signal:AbortSignal){const first=await keysAPI.list(1,100,undefined,{signal});const items=[...first.items];for(let page=2;page<=Math.ceil(first.total/100);page++){const next=await keysAPI.list(page,100,undefined,{signal});items.push(...next.items)}return items}
 async function loadWorkspace(){
@@ -235,30 +202,7 @@ function closeCreate(){
   createTool.value=null
   if(!selectedTool.value)nextTick(()=>createTrigger?.focus())
 }
-async function keyCreated(key:ApiKey){keys.value=[...keys.value.filter(k=>k.id!==key.id),key];createTool.value=null;await loadWorkspace();if(selectedTool.value)await loadDetails(detailWindow.value)}
-const checkCooldown=ref(false)
-let checkCooldownTimer:ReturnType<typeof setTimeout>|undefined
-async function runChecks(){
-  if(checking.value||checkCooldown.value)return
-  const ids=routeRows.value.filter(g=>g.status==='active').map(g=>g.id);if(!ids.length)return
-  checking.value=true;checkError.value='';checkController=new AbortController()
-  try{const results=await checkLines(ids,checkController.signal);if(checkController.signal.aborted)return;for(const id of ids)checks.value[id]=results.find(r=>r.group_id===id)||{group_id:id,status:'failed',ttft_ms:null,checked_at:''};await loadWorkspace()}
-  catch(error:unknown){if(!checkController.signal.aborted){
-    const failure=error as {status?:number;code?:string;metadata?:{retry_after_seconds?:unknown}}|null
-    if(failure?.status===429&&failure.code==='LINE_CHECK_RATE_LIMITED'){
-      const retry=Number(failure.metadata?.retry_after_seconds)
-      const seconds=Number.isFinite(retry)?Math.max(1,Math.min(60,Math.ceil(retry))):60
-      checkError.value=`每分钟最多检查 30 次，请在 ${seconds} 秒后重试。`
-      checkCooldown.value=true
-      clearTimeout(checkCooldownTimer)
-      checkCooldownTimer=setTimeout(()=>{checkCooldown.value=false;checkError.value=''},seconds*1000)
-    }else if(failure?.status===429){checkError.value='检查过于频繁，请稍后重试。'}
-    else if(failure?.code==='LINE_CHECK_UNAVAILABLE'){checkError.value='线路检查暂不可用，请稍后重试。'}
-    else{checkError.value='线路检查请求未完成，请稍后重试。'}
-  }}
-  finally{checking.value=false}
-}
-function openGroupKeys(id:number){void router.push({path:'/keys',query:{group_id:String(id)}})}
+async function keyCreated(key:ApiKey){keyRefreshVersion.value++;keys.value=[...keys.value.filter(k=>k.id!==key.id),key];createTool.value=null;await loadWorkspace();if(selectedTool.value)await loadDetails(detailWindow.value)}
 onMounted(()=>{void loadWorkspace();freshnessTimer=setInterval(()=>{clock.value=Date.now()},30000)})
-onBeforeUnmount(()=>{clearTimeout(checkCooldownTimer);clearInterval(freshnessTimer);loadController?.abort();detailController?.abort();checkController?.abort()})
+onBeforeUnmount(()=>{clearInterval(freshnessTimer);loadController?.abort();detailController?.abort();})
 </script>

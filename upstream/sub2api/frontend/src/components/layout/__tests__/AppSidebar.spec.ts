@@ -73,12 +73,12 @@ describe('AppSidebar user navigation structure', () => {
   it('keeps only the confirmed primary entries for regular users', () => {
     const userItemsSource = componentSource.slice(
       componentSource.indexOf('function buildUserNavItems'),
-      componentSource.indexOf('// The management console links'),
+      componentSource.indexOf('// User navigation items (for regular users)'),
     )
 
     expect(userItemsSource).toContain("{ path: '/dashboard', label: userNavLabel('aiTools', 'AI 工具'), icon: DashboardIcon }")
     expect(userItemsSource).toContain("{ path: '/usage', label: t('nav.usage'), icon: ChartIcon }")
-    expect(userItemsSource).toContain("{ path: '/keys', label: userNavLabel('myKeys', '我的密钥'), icon: KeyIcon }")
+    expect(userItemsSource).not.toContain("path: '/keys'")
     expect(userItemsSource).not.toContain("path: '/purchase'")
     expect(userItemsSource).not.toContain("path: '/orders'")
     expect(userItemsSource).not.toContain("path: '/redeem'")

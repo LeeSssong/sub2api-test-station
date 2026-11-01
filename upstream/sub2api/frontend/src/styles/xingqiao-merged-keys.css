@@ -1,0 +1,69 @@
+/* Only the confirmed merge: retain original key toolbar/table styles and row fitting. */
+.merged-key-section{min-width:0;scroll-margin-top:20px;}
+.merged-key-section .user-keys-page{height:auto!important;min-height:0!important;padding:0!important;display:block!important;}
+.user-app-shell .merged-key-section .keys-work-surface{height:632px!important;min-height:632px!important;max-height:632px!important;flex:0 0 auto!important;margin:0!important;border-radius:14px!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
+.keys-module-heading{display:flex;align-items:center;flex:0 0 64px;min-height:64px;}
+.keys-module-heading h2{margin:0;padding:0;font-size:18px;line-height:28px;font-weight:600;color:var(--xq-text);}
+.merged-key-section .keys-list-heading{align-items:center!important;justify-content:space-between!important;gap:16px!important;}
+.merged-key-section .keys-list-heading>h2{flex:0 0 auto;white-space:nowrap;}
+.merged-key-section .merged-endpoints{justify-content:flex-end;gap:10px 24px;max-width:calc(100% - 100px);}
+.merged-key-section .merged-endpoints>div{border:0!important;border-radius:0!important;background:transparent!important;padding:5px 0!important;color:#8fa8b5!important;font-size:11px!important;line-height:18px;gap:7px;flex-wrap:wrap;}
+.merged-key-section .merged-endpoints code,.merged-key-section .merged-endpoints button,.merged-key-section .merged-endpoints a,.merged-key-section .merged-endpoints span{color:#8fa8b5!important;font-size:11px!important;}
+.merged-key-section .merged-endpoints code{white-space:nowrap;}
+.merged-key-section .merged-endpoints span.rounded{background:transparent!important;padding:0!important;font-size:10px!important;}
+.user-app-shell .merged-key-section .keys-work-surface .layout-section-scrollable{min-height:0!important;flex:1 1 0!important;display:flex!important;overflow:hidden!important;}
+.merged-key-section .table-scroll-container{display:flex!important;flex-direction:column!important;height:100%!important;min-height:0!important;flex:1!important;overflow:hidden!important;}
+.merged-key-section .keys-inventory{flex:1 1 0!important;min-height:0!important;overflow:hidden!important;}
+.merged-key-section .keys-inventory>.table-wrapper{height:100%!important;max-height:100%!important;overflow-x:auto!important;overflow-y:hidden!important;display:block!important;}
+.merged-key-section .keys-inventory table{display:table!important;}
+.merged-key-section .keys-inventory tbody{display:table-row-group!important;}
+@media(max-width:1150px){.merged-key-section .keys-list-heading{align-items:flex-start!important;flex-direction:column!important;gap:6px!important;}.merged-key-section .merged-endpoints{width:100%;max-width:100%;justify-content:flex-start;}}
+@media(max-width:700px){
+ .user-app-shell .merged-key-section .keys-work-surface{height:820px!important;min-height:820px!important;max-height:820px!important;}
+ .keys-module-heading{flex-basis:60px;min-height:60px;}.keys-module-heading h2{font-size:17px;}
+ .merged-key-section .merged-endpoints{gap:5px;flex-direction:column;align-items:flex-start;}
+ .merged-key-section .merged-endpoints>div{padding:3px 0!important;gap:4px 7px;}
+}
+
+/* V0.7 complete empty state: center within the visible table width, keep table headers. */
+.merged-key-section .keys-inventory:has(.empty-state) table{height:100%!important;}
+.merged-key-section .keys-inventory:has(.empty-state) tbody td{vertical-align:middle;padding:0!important;}
+.merged-key-section .keys-inventory .empty-state{padding:18px 12px;width:var(--key-visible-width,264px);max-width:none;}
+@media(max-width:700px){
+ .merged-key-section .keys-inventory:has(.empty-state) tbody td{padding-left:0!important;padding-right:0!important;}
+ .merged-key-section .empty-state{width:var(--key-visible-width,264px);min-height:300px;}
+ .merged-key-section .empty-state-title{white-space:normal;}
+ .merged-key-section .empty-state-description{max-width:24ch;}
+}
+
+/* C2: real, uniform data rows; let complete single-line names determine column width. */
+.merged-key-section .keys-inventory{--key-row-height:64px;}
+.user-app-shell .merged-key-section .keys-work-surface table{table-layout:auto!important;}
+.user-app-shell .merged-key-section .keys-inventory th:not(:first-child){width:auto!important;}
+.user-app-shell .merged-key-section .keys-inventory th.keys-column-actions{min-width:190px;}
+.user-app-shell .merged-key-section .keys-inventory tr[data-row-id]{height:var(--key-row-height);}
+.user-app-shell .merged-key-section .keys-inventory tr[data-row-id]>td{padding:7px 10px;white-space:nowrap;vertical-align:middle;}
+.user-app-shell .merged-key-section .keys-row-actions{display:flex;flex-wrap:wrap;min-width:190px;max-width:260px;gap:0;}
+.user-app-shell .merged-key-section .keys-row-actions button{height:24px;line-height:16px;padding:4px;}
+.merged-key-section .keys-line-trigger{max-width:none!important;white-space:nowrap;flex-shrink:0;}
+.merged-key-section .keys-line-trigger .keys-line-trigger-badge{flex:none;white-space:nowrap;}
+.merged-key-section .keys-line-trigger .keys-group-name{flex:none;white-space:nowrap;overflow:visible;}
+.merged-key-section .keys-group-rate{flex:none;white-space:nowrap;}
+.keys-usage-summary{font-size:12px;line-height:20px;color:var(--xq-secondary);white-space:nowrap;}
+.keys-usage-summary strong{font-weight:500;color:var(--xq-text);}
+.keys-usage-details{padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit;line-height:inherit;white-space:nowrap;cursor:pointer;}
+.keys-usage-details:focus-visible{outline:2px solid var(--xq-accent);outline-offset:2px;}
+.keys-usage-status{color:var(--xq-accent);}
+.merged-key-section .keys-expiry-value{white-space:nowrap;}
+.keys-details-trigger{font-size:12px;line-height:20px;color:var(--xq-accent);text-decoration:underline;text-underline-offset:3px;white-space:nowrap;}
+.keys-details-trigger:focus-visible{outline:2px solid var(--xq-accent);outline-offset:3px;}
+
+/* C2-R1: keep every action and full line name in the ordinary desktop viewport. */
+@media(min-width:1200px) and (max-width:1650px){
+ .user-app-shell .merged-key-section .keys-work-surface table{min-width:100%!important;}
+ .user-app-shell .merged-key-section .keys-inventory th:not(:first-child),
+ .user-app-shell .merged-key-section .keys-inventory tr[data-row-id]>td{padding-left:4px;padding-right:4px;}
+ .merged-key-section .keys-line-trigger{gap:4px;padding-left:6px;padding-right:6px;}
+ .merged-key-section .keys-line-trigger .keys-line-trigger-badge{gap:4px;}
+ .merged-key-section .keys-row-actions button:focus-visible{outline:2px solid var(--xq-accent);outline-offset:1px;}
+}

@@ -31,19 +31,17 @@ type panelRateLimitAllower interface {
 //   - 公开接口按安全客户端 IP 计数：仅统计全局单播地址，回环/内网/链路本地
 //     地址（反代内部转发地址）直接跳过，避免误拦整条反代链路的流量。
 //   - 配置走进程内缓存（60s TTL），热路径零 DB 访问。
-//   - Global/Heavy/PublicIP 的 Redis 异常 fail-open；主动线路探测单独 fail-close。
+//   - Global/Heavy/PublicIP 的 Redis 异常 fail-open。
 type PanelRateLimiter struct {
-	limiter          panelRateLimitAllower
-	lineCheckLimiter *middleware.RateLimiter
-	settingService   *service.SettingService
+	limiter        panelRateLimitAllower
+	settingService *service.SettingService
 }
 
 // NewPanelRateLimiter 创建面板限流器。
 func NewPanelRateLimiter(redisClient *redis.Client, settingService *service.SettingService) *PanelRateLimiter {
 	return &PanelRateLimiter{
-		limiter:          middleware.NewRateLimiter(redisClient),
-		lineCheckLimiter: middleware.NewRateLimiter(redisClient),
-		settingService:   settingService,
+		limiter:        middleware.NewRateLimiter(redisClient),
+		settingService: settingService,
 	}
 }
 

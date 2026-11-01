@@ -1,6 +1,6 @@
-/** Keep full rows within the available inventory, allowing for a horizontal scrollbar. */
+/** Keep full rows within the available inventory, using the measured scrollport (clientHeight excludes its scrollbar). */
 export function fitKeyRows(height: number, headerHeight = 44, rowHeight = 64): number {
-  return Math.max(1, Math.floor((height - headerHeight - 20) / Math.max(1, rowHeight)))
+  return Math.max(1, Math.floor((height - headerHeight - 1) / Math.max(1, rowHeight)))
 }
 
 /** Line menus always start below their trigger; the list scrolls within the remaining space. */

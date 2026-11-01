@@ -110,6 +110,7 @@
                       ? 'sidebar-wallet'
                       : undefined
               "
+              :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
               @click="handleMenuItemClick(item.path)"
             >
               <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
@@ -158,7 +159,7 @@
             :aria-label="item.label"
             :aria-current="isActive(item.path) ? 'page' : undefined"
             :title="item.label"
-            :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
+            :data-tour="item.path === '/dashboard' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
           >
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" aria-hidden="true" v-html="sanitizeSvg(item.iconSvg)"></span>
@@ -221,7 +222,7 @@
               <UserIcon class="h-4 w-4" />
               <span>{{ t('nav.profile') }}</span>
             </router-link>
-            <router-link to="/keys" class="user-account-menu-item" role="menuitem" @click="closeAccountMenu(); closeMobile()">
+            <router-link to="/dashboard#my-keys" class="user-account-menu-item" role="menuitem" @click="closeAccountMenu(); closeMobile()">
               <KeyIcon class="h-4 w-4" />
               <span>{{ t('nav.apiKeys') }}</span>
             </router-link>
@@ -760,7 +761,6 @@ function buildUserNavItems(): NavItem[] {
     { path: '/dashboard', label: userNavLabel('aiTools', 'AI 工具'), icon: DashboardIcon },
     { path: '/image-studio', label: '生图工作站', icon: DashboardIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon },
-    { path: '/keys', label: userNavLabel('myKeys', '我的密钥'), icon: KeyIcon },
     { path: '/support-tickets', label: t('nav.supportTickets'), icon: SupportTicketIcon, featureFlag: flagUserSupportTickets, badge: () => supportTicketStore.userUnread },
     ...(flagAffiliate() ? [{ path: '/affiliate', label: t('nav.affiliate'), icon: GiftIcon }] : []),
     // Recharge and redemption are accessed only through the fixed balance entry.
@@ -778,8 +778,12 @@ function buildUserNavItems(): NavItem[] {
 // User navigation items (for regular users)
 const userNavItems = computed((): NavItem[] => applyFeatureFlags(buildUserNavItems()))
 
-// The management console links to the same user workspace navigation.
-const personalNavItems = userNavItems
+// Keep the native /keys entry for the existing administrator tour.
+const personalNavItems = computed((): NavItem[] => userNavItems.value.flatMap(item =>
+  item.path === '/usage'
+    ? [item, { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon }]
+    : [item]
+))
 
 // Custom menu items filtered by visibility
 const customMenuItemsForUser = computed(() => {
@@ -959,7 +963,8 @@ function handleMenuItemClick(itemPath: string) {
   const pathToSelector: Record<string, string> = {
     '/admin/groups': '#sidebar-group-manage',
     '/admin/accounts': '#sidebar-channel-manage',
-    '/keys': '[data-tour="sidebar-my-keys"]'
+    '/keys': '[data-tour="sidebar-my-keys"]',
+    '/dashboard': '[data-tour="sidebar-my-keys"]'
   }
 
   const selector = pathToSelector[itemPath]

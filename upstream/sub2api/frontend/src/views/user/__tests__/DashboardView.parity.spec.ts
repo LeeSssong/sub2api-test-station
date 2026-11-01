@@ -4,20 +4,35 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from '../DashboardView.vue'
 import { clearDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
-const mocks=vi.hoisted(()=>({timeline:vi.fn().mockResolvedValue([]),groups:vi.fn(),rates:vi.fn(),keys:vi.fn(),snapshot:vi.fn(),check:vi.fn(),models:vi.fn(),push:vi.fn(),authUser:{id:7}}))
+const mocks=vi.hoisted(()=>({timeline:vi.fn().mockResolvedValue([]),groups:vi.fn(),rates:vi.fn(),keys:vi.fn(),snapshot:vi.fn(),models:vi.fn(),push:vi.fn(),authUser:{id:7}}))
 vi.mock('vue-router',()=>({useRouter:()=>({push:mocks.push})}))
 vi.mock('@/stores/auth',()=>({useAuthStore:()=>({user:mocks.authUser})}))
 vi.mock('@/api/groups',()=>({default:{getAvailable:mocks.groups,getUserGroupRates:mocks.rates}}))
 vi.mock('@/api/keys',()=>({default:{list:mocks.keys}}))
 vi.mock('@/features/monitor-v4/api',()=>({getHybridPerformanceSnapshot:mocks.snapshot}))
-vi.mock('@/features/ai-tools/api',()=>({checkLines:mocks.check,getGroupModels:mocks.models}))
+vi.mock('@/features/ai-tools/api',()=>({getGroupModels:mocks.models}))
 const groups=[{id:1,name:'GPT-Pro',platform:'openai',rate_multiplier:1,status:'active'},{id:2,name:'未关联线路',platform:'openai',rate_multiplier:.5,status:'active'}]
 const metric=(id:number)=>({id,tool_ids:['codex'],success_rate:98,request_count:100,success_count:98,ttft_p50_ms:2160,latency_p50_ms:6500,sla_request_count:100,sla_success_count:98,source_updated_at:new Date().toISOString()})
 const slaPoint=(group_id:number,request_count=100,success_count=98)=>({group_id,start:'2026-10-08T10:00:00Z',end:'2026-10-08T11:00:00Z',request_count,success_count,cache_hit_rate:null,ttft_p50_ms:null})
 const deferred=<T,>()=>{let resolve!:(value:T)=>void;let reject!:(reason?:unknown)=>void;const promise=new Promise<T>((res,rej)=>{resolve=res;reject=rej});return {promise,resolve,reject}}
-const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title'],template:'<div v-if="show" role="dialog"><h3>{{title}}</h3><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
-beforeEach(()=>{vi.clearAllMocks();clearDashboardWorkspaceSnapshot();mocks.models.mockResolvedValue([{group_id:1,supported_models:['gpt-5.4','gpt-5.2'],official_pricing:{'gpt-5.4':{input_price:2.5e-6,cache_read_price:.25e-6,output_price:15e-6}}},{group_id:2,supported_models:['gpt-5.4','custom-model']},{group_id:99,supported_models:['private-model']}]);mocks.groups.mockResolvedValue(groups);mocks.rates.mockResolvedValue({});mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]}],total:1});mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))});mocks.check.mockResolvedValue([{group_id:1,status:'success',ttft_ms:1230}])})
+const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title'],template:'<div v-if="show" role="dialog"><h3>{{title}}</h3><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
+beforeEach(()=>{vi.clearAllMocks();clearDashboardWorkspaceSnapshot();mocks.models.mockResolvedValue([{group_id:1,supported_models:['gpt-5.4','gpt-5.2'],official_pricing:{'gpt-5.4':{input_price:2.5e-6,cache_read_price:.25e-6,output_price:15e-6}}},{group_id:2,supported_models:['gpt-5.4','custom-model']},{group_id:99,supported_models:['private-model']}]);mocks.groups.mockResolvedValue(groups);mocks.rates.mockResolvedValue({});mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]}],total:1});mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))})})
 describe('原型AI工具交互',()=>{
+ it.each(['groups','rates'] as const)('keeps the key manager mounted when tool workspace %s fails',async(failure)=>{
+  mocks[failure].mockRejectedValue(new Error('workspace offline'))
+  const w=make();await flushPromises()
+  expect(w.find('.workspace-error').exists()).toBe(true)
+  expect(w.find('[data-testid="merged-key-manager"]').exists()).toBe(true)
+  expect(mocks.keys).toHaveBeenCalled()
+  w.unmount()
+ })
+ it('replaces the retired line checker with the complete key manager',async()=>{
+  const w=make();await flushPromises()
+  expect(w.find('[data-testid="merged-key-manager"]').exists()).toBe(true)
+  expect(w.find('[aria-labelledby="routes-title"]').exists()).toBe(false)
+  expect(w.find('button[aria-label="检查线路"]').exists()).toBe(false)
+  w.unmount()
+ })
  beforeEach(()=>{mocks.timeline.mockReset();mocks.timeline.mockResolvedValue(groups.map(g=>slaPoint(g.id)))})
  it('uses group SLA timeline counts for the detail total instead of the logical snapshot',async()=>{
   const point=(group_id:number,request_count:number,success_count:number,start='2026-10-08T10:00:00Z',end='2026-10-08T11:00:00Z')=>({group_id,start,end,request_count,success_count,cache_hit_rate:.5,ttft_p50_ms:1000})
@@ -45,25 +60,6 @@ describe('原型AI工具交互',()=>{
   expect(firstCard().get('.success-rate').text()).toBe('—')
   expect(w.text()).toContain('线路走势读取失败')
   w.unmount()
- })
- it('shows the line check limit and allows retry after the server cooldown',async()=>{
-  vi.useFakeTimers()
-  const w=make()
-  try {
-   await flushPromises()
-   mocks.check.mockRejectedValueOnce({status:429,code:'LINE_CHECK_RATE_LIMITED',metadata:{retry_after_seconds:3}})
-   const button=w.get('button[aria-label="检查线路"]')
-   await button.trigger('click');await flushPromises()
-   expect(w.text()).toContain('每分钟最多检查 30 次，请在 3 秒后重试。')
-   expect(button.attributes('disabled')).toBeDefined()
-   await button.trigger('click');await flushPromises()
-   expect(mocks.check).toHaveBeenCalledTimes(1)
-   await vi.advanceTimersByTimeAsync(3000);await flushPromises()
-   expect(button.attributes('disabled')).toBeUndefined()
-   await button.trigger('click');await flushPromises()
-   expect(mocks.check).toHaveBeenCalledTimes(2)
-   expect(w.text()).not.toContain('每分钟最多检查')
-  } finally { w.unmount();vi.useRealTimers() }
  })
  it('orders detail cards by effective multiplier across periods without changing the best route',async()=>{
   const candidates=[
@@ -233,11 +229,10 @@ describe('原型AI工具交互',()=>{
   w.unmount()
  })
 
- it.each([[0,'red'],[69.9,'red'],[70,'amber'],[89.9,'amber'],[90,'green'],[100,'green'],[null,'muted']] as const)('uses the shared success-rate tone for %s in the route list and detail cards',async(rate,tone)=>{
+ it.each([[0,'red'],[69.9,'red'],[70,'amber'],[89.9,'amber'],[90,'green'],[100,'green'],[null,'muted']] as const)('uses the shared success-rate tone for %s in detail cards',async(rate,tone)=>{
   mocks.timeline.mockResolvedValue(groups.map(g=>slaPoint(g.id,rate===null?0:1000,rate===null?0:rate*10)))
   mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),success_rate:rate,request_count:rate===null?0:100,sla_request_count:rate===null?0:1000,sla_success_count:rate===null?0:rate*10}))})
   const w=make();await flushPromises()
-  expect(w.get('.route-row .rate').attributes('data-tone')).toBe(tone)
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
   expect(w.get('.success-rate').attributes('data-tone')).toBe(tone)
   w.unmount()
@@ -245,16 +240,14 @@ describe('原型AI工具交互',()=>{
  it('keeps unavailable statistics neutral instead of implying success',async()=>{
   mocks.snapshot.mockRejectedValue(new Error('offline'))
   const w=make();await flushPromises()
-  expect(w.get('.route-row .rate').text()).toBe('暂无数据')
-  expect(w.get('.route-row .rate').attributes('data-tone')).toBe('muted')
+  expect(w.get('.tool-status').text()).toContain('无数据')
   w.unmount()
  })
- it('keeps the route list on one hour and detail status on its selected SLA window',async()=>{
+ it('keeps the tool health on one hour and detail status on its selected SLA window',async()=>{
   mocks.snapshot.mockImplementation((window:string)=>Promise.resolve({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),sla_request_count:g.id===1?1:99,sla_success_count:window==='7d'?0:g.id===1?0:99}))}))
   mocks.timeline.mockImplementation((window:string)=>Promise.resolve(groups.map(g=>slaPoint(g.id,window==='7d'?100:g.id===1?1:99,window==='7d'?0:g.id===1?0:99))))
   const w=make();await flushPromises()
   expect(w.get('.tool-status').findAll('[data-health-count]').map(item=>item.text())).toEqual(['正常1','异常1'])
-  expect(w.get('.route-row .route-name').text()).toContain('异常')
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
   await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises()
   expect(w.findAll('.route-detail-card').find(r=>r.text().includes('GPT-Pro'))!.get('.route-health').text()).toBe('异常')
@@ -262,17 +255,15 @@ describe('原型AI工具交互',()=>{
   expect(w.text()).not.toMatch(/可用 ·|不可用 ·|0\/2 条/)
   w.unmount()
  })
- it('uses the effective multiplier with its suffix in both line tables',async()=>{
+ it('uses the effective multiplier with its suffix in detail cards',async()=>{
   mocks.rates.mockResolvedValue({1:0.12})
   const w=make();await flushPromises()
-  expect(w.get('.route-row .rate-badge').text()).toBe('0.12x倍率')
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
   expect(w.get('[role="dialog"]').text()).toContain('0.12x倍率')
   expect(w.get('[role="dialog"]').text()).toContain('0.5x倍率')
   w.unmount()
  })
  it('keeps associate action even with keys and opens creation without navigation',async()=>{const w=make();await flushPromises();const b=w.findAll('button').find(b=>b.text()==='关联密钥')!;await b.trigger('click');expect(w.find('[data-testid="create-key"]').exists()).toBe(true);expect(mocks.push).not.toHaveBeenCalled();w.unmount()})
- it('only lists linked lines and starts checks without using historical latency',async()=>{const w=make();await flushPromises();const list=w.get('[aria-labelledby="routes-title"]');expect(list.text()).not.toContain('未关联线路');expect(list.text()).not.toContain('2.16s');await w.get('button[aria-label="检查线路"]').trigger('click');await flushPromises();expect(mocks.check.mock.calls[0][0]).toEqual([1]);expect(list.text()).toContain('1.23s');w.unmount()})
  it('keeps the chart and fetches selected period without standalone latency metrics',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();expect(w.find('.route-history').exists()).toBe(true);expect(w.get('[role="dialog"]').text()).not.toContain('2.16s');await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises();expect(mocks.snapshot.mock.calls.some(c=>c[0]==='7d')).toBe(true);w.unmount()})
  it('defaults to 24 hours and forwards granularity while one hour uses five minutes',async()=>{
   const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
@@ -285,7 +276,7 @@ describe('原型AI工具交互',()=>{
  })
  it('initial load failure shows retry instead of invented empty data',async()=>{mocks.groups.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('[role="alert"]').text()).toContain('重试');expect(w.find('.tool-grid').exists()).toBe(false);w.unmount()})
  it('shows the workspace before monitoring statistics finish loading',async()=>{const pending=deferred<{groups:ReturnType<typeof metric>[]}>();mocks.snapshot.mockReturnValue(pending.promise);const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(true);expect(w.text()).not.toContain('正在读取 AI 工具');pending.resolve({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))});await flushPromises();w.unmount()})
- it('keeps the workspace visible when monitoring statistics fail',async()=>{mocks.snapshot.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(true);expect(w.find('[role="alert"]').exists()).toBe(true);expect(w.text()).toContain('暂无数据');w.unmount()})
+ it('keeps the workspace visible when monitoring statistics fail',async()=>{mocks.snapshot.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(true);expect(w.find('[role="alert"]').exists()).toBe(true);expect(w.text()).toContain('无数据');w.unmount()})
  it('restores the last successful workspace immediately when returning to the page',async()=>{const first=make();await flushPromises();first.unmount();const pendingGroups=deferred<typeof groups>();mocks.groups.mockReturnValue(pendingGroups.promise);const second=make();await flushPromises();expect(second.find('.tool-grid').exists()).toBe(true);expect(second.text()).not.toContain('正在读取 AI 工具');pendingGroups.resolve(groups);await flushPromises();second.unmount()})
  it('falls back to the group platform when no explicit tool mapping exists',async()=>{
   const anthropic={id:3,name:'default',platform:'anthropic',rate_multiplier:1,status:'active'}
@@ -346,12 +337,10 @@ describe('原型AI工具交互',()=>{
 
 })
 
-it('shows SLA in the route list and keeps detail status on the selected SLA window',async()=>{
+it('shows SLA in detail cards and keeps detail status on the selected SLA window',async()=>{
  mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),real_request_count:841,real_success_count:660,sla_request_count:667,sla_success_count:660}))})
  mocks.timeline.mockImplementation((window:string)=>Promise.resolve(groups.map(g=>slaPoint(g.id,window==='7d'?100:667,window==='7d'?80:660))))
  const w=make();await flushPromises()
- expect(w.get('.route-row .rate').text()).toBe('98.95%')
- expect(w.get('.route-row .rate').attributes('title')).toContain('667')
  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
  expect(w.get('.route-health').text()).toBe('正常运行')
  expect(w.get('.success-rate').text()).toBe('98.95%')

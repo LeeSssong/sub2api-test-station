@@ -187,8 +187,8 @@
   .user-keys-page .keys-inventory .keys-row-actions { justify-content: flex-start; gap: 2px; }
 }
 
-/* My keys is a viewport-sized inventory: page through rows, never scroll the content vertically. */
-.user-workspace:has(.user-keys-page) { height: calc(100dvh - var(--xq-header-height)); min-height: 0; padding-top: var(--xq-top-gutter) !important; padding-bottom: var(--xq-bottom-gutter) !important; overflow: hidden; }
+/* Only a standalone key page locks its workspace; the dashboard embeds KeysView below tool cards. */
+.user-workspace:has(> .merged-key-section > .user-keys-page) { height: calc(100dvh - var(--xq-header-height)); min-height: 0; padding-top: var(--xq-top-gutter) !important; padding-bottom: var(--xq-bottom-gutter) !important; overflow: hidden; }
 .user-keys-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .user-keys-page .user-page-header { flex-shrink: 0; margin-bottom: 12px; }
 .user-app-shell .user-keys-page .keys-work-surface { flex: 1; height: 0; min-height: 0; overflow: hidden !important; padding: 0 16px; }

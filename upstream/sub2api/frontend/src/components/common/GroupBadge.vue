@@ -8,20 +8,20 @@
     <!-- Platform logo -->
     <PlatformIcon v-if="platform" :platform="platform" size="sm" />
     <!-- Group name -->
-    <span :class="truncate ? 'truncate' : 'min-w-0 whitespace-normal [overflow-wrap:anywhere]'">{{ name }}</span>
+    <span class="keys-group-name" :class="compactRate ? 'shrink-0 whitespace-nowrap' : truncate ? 'truncate' : 'min-w-0 whitespace-normal [overflow-wrap:anywhere]'">{{ name }}</span>
     <!-- Right side label -->
-    <span v-if="showLabel" :class="labelClass">
+    <span v-if="showLabel" class="keys-group-rate" :class="labelClass" :title="hasCustomRate ? '原倍率 → 用户专属倍率' : undefined">
       <template v-if="hasCustomRate">
         <!-- 原倍率删除线 + 专属倍率高亮 -->
-        <span class="line-through opacity-50 mr-0.5">{{ formatMultiplierLabel(rateMultiplier) }}</span>
-        <span class="font-bold">{{ formatMultiplierLabel(userRateMultiplier) }}</span>
+        <span class="line-through opacity-50 mr-0.5">{{ rateLabel(rateMultiplier) }}</span>
+        <span class="font-bold">{{ rateLabel(userRateMultiplier) }}</span>
       </template>
       <template v-else>
         {{ labelText }}
       </template>
     </span>
     <span v-if="hasPeakRate" :class="peakRateClass" :title="peakRateTitle">
-      {{ peakRateText }}
+      {{ compactRate ? peakRateText.replace(/x倍率/g, 'x') : peakRateText }}
     </span>
   </span>
 </template>
@@ -36,6 +36,7 @@ import { formatMultiplierLabel } from '@/utils/formatters'
 import PlatformIcon from './PlatformIcon.vue'
 
 interface Props {
+  compactRate?: boolean
   name: string
   platform?: GroupPlatform
   subscriptionType?: SubscriptionType
@@ -58,6 +59,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  compactRate: false,
   subscriptionType: 'standard',
   showRate: true,
   truncate: true,
@@ -68,6 +70,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const { t } = useI18n()
+const rateLabel = (value: number | null | undefined) => props.compactRate ? formatMultiplierLabel(value).replace(/x倍率$/, 'x') : formatMultiplierLabel(value)
 
 const isSubscription = computed(() => props.subscriptionType === 'subscription')
 
@@ -114,7 +117,7 @@ const showLabel = computed(() => {
 
 // Label text
 const labelText = computed(() => {
-  const rateLabel = props.rateMultiplier !== undefined ? formatMultiplierLabel(props.rateMultiplier) : ''
+  const formattedRate = props.rateMultiplier !== undefined ? rateLabel(props.rateMultiplier) : ''
   if (isSubscription.value && !props.alwaysShowRate) {
     // 如果有剩余天数，显示天数
     if (props.daysRemaining !== null && props.daysRemaining !== undefined) {
@@ -126,7 +129,7 @@ const labelText = computed(() => {
     // 否则显示"订阅"
     return t('groups.subscription')
   }
-  return rateLabel
+  return formattedRate
 })
 
 // Label style based on type and days remaining

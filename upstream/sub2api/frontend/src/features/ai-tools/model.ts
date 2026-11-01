@@ -122,4 +122,3 @@ export function rankWeightedRoutes(
 }
 export const metricLabel = (ms?: number|null) => ms == null ? '—' : `${(ms/1000).toFixed(2)}s`
 export const providerIcon = (platform: string) => `/xingqiao/providers/${platform === 'grok' ? 'xai' : platform}.svg`
-export const platformLabel = (platform: string) => ({openai:'OpenAI',anthropic:'Anthropic',grok:'xAI',deepseek:'DeepSeek'}[platform]||platform)

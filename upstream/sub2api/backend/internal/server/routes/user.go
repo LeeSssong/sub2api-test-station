@@ -170,7 +170,6 @@ func RegisterUserRoutes(
 		authenticated.GET("/monitor-v2", panelRateLimiter.Heavy(), h.MonitorV2.Snapshot)
 		authenticated.GET("/monitor-v4", panelRateLimiter.Heavy(), h.MonitorV4.Snapshot)
 		authenticated.GET("/monitor-v4/timeline", panelRateLimiter.Heavy(), h.MonitorV4.Timeline)
-		authenticated.POST("/monitor-v4/check", panelRateLimiter.LineCheck(), panelRateLimiter.Heavy(), h.MonitorV4.Check)
 		authenticated.GET("/monitor-v2/codexradar-insights", panelRateLimiter.Heavy(), h.CodexRadar.Get)
 		authenticated.GET("/monitor-v2/codexradar-community", panelRateLimiter.Heavy(), h.CodexRadarCommunity.Get)
 

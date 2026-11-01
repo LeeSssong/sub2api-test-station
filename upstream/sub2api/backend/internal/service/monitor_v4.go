@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,15 +103,12 @@ type MonitorV4Snapshot struct {
 }
 
 type MonitorV4Service struct {
-	checkMu     sync.Mutex
-	checkActive map[int64]bool
-	checkCount  int
-	groupRepo   GroupRepository
-	available   MonitorV2AvailableGroupReader
-	configured  MonitorV2ConfiguredGroupReader
-	native      MonitorV4ProjectionReader
-	settings    MonitorV2SettingsReader
-	store       MonitorV4SnapshotStore
+	groupRepo  GroupRepository
+	available  MonitorV2AvailableGroupReader
+	configured MonitorV2ConfiguredGroupReader
+	native     MonitorV4ProjectionReader
+	settings   MonitorV2SettingsReader
+	store      MonitorV4SnapshotStore
 }
 
 func (s *MonitorV4Service) SetSnapshotStore(store MonitorV4SnapshotStore) {

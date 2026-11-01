@@ -118,7 +118,7 @@ describe('regular user storefront menu', () => {
     const { sidebar, app, router } = await setup([storefront], false, 'admin')
     app.$patch({ sidebarCollapsed: true })
     await nextTick()
-    expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/usage', '/keys'])
+    expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/image-studio', '/usage'])
     expect(sidebar.get('aside').classes()).not.toContain('admin-sidebar')
     expect(sidebar.get('aside').classes()).not.toContain('admin-sidebar-collapsed')
     expect(sidebar.get('.sidebar-brand-title').attributes('href')).toBe('/dashboard')
@@ -134,17 +134,17 @@ describe('regular user storefront menu', () => {
     app.$patch({ sidebarCollapsed: false })
     await nextTick()
     const personal = sidebar.findAll('.sidebar-section').find(section => section.find('.sidebar-section-title').exists())!
-    expect(personal.findAll('a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/usage', '/keys'])
+    expect(personal.findAll('a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/image-studio', '/usage', '/keys'])
     await router.push('/keys')
     await flushPromises()
     expect(sidebar.get('aside').classes()).not.toContain('admin-sidebar')
-    expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/usage', '/keys'])
+    expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/image-studio', '/usage'])
   })
 
   it.each([false, true])('keeps only the bottom recharge entry when payments are enabled=%s', async (paymentEnabled) => {
     const { sidebar, router } = await setup([storefront], paymentEnabled)
     expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual([
-      '/dashboard', '/usage', '/keys',
+      '/dashboard', '/image-studio', '/usage',
     ])
     expect(sidebar.find('nav a[href="/redeem"]').exists()).toBe(false)
     expect(sidebar.find('nav a[href="/custom/xingqiao-storefront"]').exists()).toBe(false)
@@ -166,7 +166,7 @@ describe('regular user storefront menu', () => {
     for (const visibility of ['user', 'admin'] as const) {
       app.$patch({ cachedPublicSettings: { custom_menu_items: [{ ...storefront, visibility }] } })
       await nextTick()
-      expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/usage', '/keys'])
+      expect(sidebar.findAll('nav a').map(link => link.attributes('href'))).toEqual(['/dashboard', '/image-studio', '/usage'])
       expect(sidebar.get('[data-testid="user-sidebar-recharge"]').exists()).toBe(true)
     }
   })

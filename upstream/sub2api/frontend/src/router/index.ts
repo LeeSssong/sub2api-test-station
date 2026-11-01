@@ -207,7 +207,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/keys',
     name: 'Keys',
-    component: () => import('@/views/user/KeysView.vue'),
+    redirect: to => ({ path: '/dashboard', query: to.query, hash: '#my-keys' }),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
@@ -828,6 +828,26 @@ const router = createRouter({
   scrollBehavior(to, _from, savedPosition) {
     // SettingsView waits for its async form and reveals the target tab first.
     if (to.path === '/admin/settings' && settingsLocation(to.query.tab, to.hash).linked) return false
+    // The merged key manager mounts after the workspace request settles.
+    if (to.path === '/dashboard' && to.hash === '#my-keys') {
+      return new Promise<false>(resolve => {
+        let observer: MutationObserver | undefined
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        const reveal = () => {
+          const target = document.getElementById('my-keys')
+          if (!target) return false
+          target.scrollIntoView({ block: 'start' })
+          observer?.disconnect()
+          clearTimeout(timeout)
+          resolve(false)
+          return true
+        }
+        if (reveal()) return
+        observer = new MutationObserver(reveal)
+        observer.observe(document.body, { childList: true, subtree: true })
+        timeout = setTimeout(() => { observer?.disconnect(); resolve(false) }, 5000)
+      })
+    }
     // Scroll to saved position when using browser back/forward
     if (savedPosition) {
       return savedPosition

@@ -30,7 +30,6 @@ func TestAccountMonitorProbeObservesResponsesEvents(t *testing.T) {
 			require.Equal(t, tc.status, result.Status)
 			if tc.wantTTFT {
 				require.NotNil(t, result.TTFTMS)
-				require.Equal(t, "success", monitorV4CheckStatus(result))
 			} else {
 				require.Nil(t, result.TTFTMS)
 			}
@@ -44,8 +43,7 @@ func TestAccountMonitorProbeObservesResponsesEvents(t *testing.T) {
 }
 
 func TestAccountMonitorProbeIgnoresSuppressedCompletion(t *testing.T) {
-	ctx, observer, cleanup := newAccountMonitorProbeContext(context.Background())
-	defer cleanup()
+	ctx, observer := newAccountMonitorProbeContext(context.Background())
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/probe", nil).WithContext(ctx)
 	c.Set(accountTestSuppressCompletionContextKey, true)
@@ -152,29 +150,5 @@ func TestAccountMonitorProbeResultClassifiesFatalErrorsWithHTTPStatus(t *testing
 				t.Fatalf("http status = %#v, want %d", result.HTTPStatus, tt.httpStatus)
 			}
 		})
-	}
-}
-
-func TestManualProbeFirstTokenDeadlineStopsAfterContent(t *testing.T) {
-	ctx := context.WithValue(context.Background(), accountMonitorFirstTokenTimeoutKey{}, 10*time.Millisecond)
-	probeCtx, observer, cleanup := newAccountMonitorProbeContext(ctx)
-	defer cleanup()
-	observer.observe(TestEvent{Type: "content", Text: "ok"}, time.Now())
-	select {
-	case <-probeCtx.Done():
-		t.Fatal("first token timer cancelled a response already streaming")
-	case <-time.After(30 * time.Millisecond):
-	}
-}
-func TestManualProbeFirstTokenDeadlineIsExplicit(t *testing.T) {
-	ctx := context.WithValue(context.Background(), accountMonitorFirstTokenTimeoutKey{}, time.Millisecond)
-	probeCtx, observer, cleanup := newAccountMonitorProbeContext(ctx)
-	defer cleanup()
-	observer.observe(TestEvent{Type: "status", Text: "waiting"}, time.Now())
-	select {
-	case <-probeCtx.Done():
-		require.ErrorIs(t, context.Cause(probeCtx), errAccountMonitorFirstTokenTimeout)
-	case <-time.After(time.Second):
-		t.Fatal("first token deadline not enforced")
 	}
 }

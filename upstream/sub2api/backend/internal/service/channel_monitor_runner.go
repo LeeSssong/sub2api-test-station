@@ -29,7 +29,7 @@ type MonitorScheduler interface {
 // 避免依赖完整的 repo + encryptor 链路。生产实现 *ChannelMonitorService 自然满足。
 type monitorRunnerSvc interface {
 	ListEnabledMonitors(ctx context.Context) ([]*ChannelMonitor, error)
-	RunScheduledCheck(ctx context.Context, id int64) ([]*CheckResult, error)
+	RunCheck(ctx context.Context, id int64) ([]*CheckResult, error)
 }
 
 // ChannelMonitorRunner 渠道监控调度器。
@@ -67,11 +67,12 @@ type ChannelMonitorRunner struct {
 
 // scheduledMonitor 单个监控的运行时上下文。
 type scheduledMonitor struct {
-	id       int64
-	name     string
-	interval time.Duration
-	jitter   time.Duration // 每轮 ± [0, jitter] 的均匀随机偏移；0 = 固定间隔
-	cancel   context.CancelFunc
+	id         int64
+	name       string
+	configHash [32]byte // durable configuration, excluding check timestamps
+	interval   time.Duration
+	jitter     time.Duration // 每轮 ± [0, jitter] 的均匀随机偏移；0 = 固定间隔
+	cancel     context.CancelFunc
 }
 
 // nextDelay 计算下一次触发的等待时长：interval ± [0, jitter] 的均匀随机偏移。
@@ -163,6 +164,12 @@ func (r *ChannelMonitorRunner) Schedule(m *ChannelMonitor) {
 	if jitter < 0 {
 		jitter = 0
 	}
+	configHash, err := monitorScheduleHash(m)
+	if err != nil {
+		slog.Error("channel_monitor: invalid scheduling configuration", "monitor_id", m.ID)
+		r.Unschedule(m.ID)
+		return
+	}
 
 	r.mu.Lock()
 	if r.stopped {
@@ -184,11 +191,12 @@ func (r *ChannelMonitorRunner) Schedule(m *ChannelMonitor) {
 	}
 	ctx, cancel := context.WithCancel(r.parentCtx)
 	task := &scheduledMonitor{
-		id:       m.ID,
-		name:     m.Name,
-		interval: interval,
-		jitter:   jitter,
-		cancel:   cancel,
+		id:         m.ID,
+		name:       m.Name,
+		configHash: configHash,
+		interval:   interval,
+		jitter:     jitter,
+		cancel:     cancel,
 	}
 	r.tasks[m.ID] = task
 	r.wg.Add(1)
@@ -300,10 +308,7 @@ func (r *ChannelMonitorRunner) releaseInFlight(id int64) {
 // runOne 执行单个监控的检测。普通错误只记日志；API key 解密失败会撤销任务。
 // 任务结束时（含 panic recover）必须释放 in-flight 槽。
 func (r *ChannelMonitorRunner) runOne(id int64, name string) {
-	ctx, cancel := context.WithTimeout(
-		context.Background(),
-		monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer,
-	)
+	ctx, cancel := context.WithTimeout(context.Background(), monitorRequestTimeout+monitorPingTimeout+monitorRunOneBuffer)
 	defer cancel()
 
 	defer r.releaseInFlight(id)
@@ -315,7 +320,7 @@ func (r *ChannelMonitorRunner) runOne(id int64, name string) {
 		}
 	}()
 
-	if _, err := r.svc.RunScheduledCheck(ctx, id); err != nil {
+	if _, err := r.svc.RunCheck(ctx, id); err != nil {
 		if errors.Is(err, ErrChannelMonitorAPIKeyDecryptFailed) {
 			r.Unschedule(id)
 		}

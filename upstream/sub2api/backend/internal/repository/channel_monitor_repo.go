@@ -51,13 +51,15 @@ func (r *channelMonitorRepository) Create(ctx context.Context, m *service.Channe
 		SetEnabled(m.Enabled).
 		SetIntervalSeconds(m.IntervalSeconds).
 		SetJitterSeconds(m.JitterSeconds).
-		SetHistoryStartedAt(m.HistoryStartedAt).
 		SetCreatedBy(m.CreatedBy).
 		SetExtraHeaders(channelMonitorHeadersForPersistence(m)).
 		SetBodyOverrideMode(defaultBodyModeRepo(m.BodyOverrideMode)).
 		SetCheckMode(defaultCheckModeRepo(m.CheckMode))
 	if m.TemplateID != nil {
 		builder = builder.SetTemplateID(*m.TemplateID)
+	}
+	if m.AccountID != nil {
+		builder = builder.SetAccountID(*m.AccountID)
 	}
 	if m.GroupID != nil {
 		builder = builder.SetGroupID(*m.GroupID)
@@ -124,7 +126,6 @@ func (r *channelMonitorRepository) Update(ctx context.Context, m *service.Channe
 		SetEnabled(m.Enabled).
 		SetIntervalSeconds(m.IntervalSeconds).
 		SetJitterSeconds(m.JitterSeconds).
-		SetHistoryStartedAt(m.HistoryStartedAt).
 		SetExtraHeaders(channelMonitorHeadersForPersistence(m)).
 		SetBodyOverrideMode(defaultBodyModeRepo(m.BodyOverrideMode)).
 		SetCheckMode(defaultCheckModeRepo(m.CheckMode))
@@ -132,6 +133,11 @@ func (r *channelMonitorRepository) Update(ctx context.Context, m *service.Channe
 		updater = updater.SetTemplateID(*m.TemplateID)
 	} else {
 		updater = updater.ClearTemplateID()
+	}
+	if m.AccountID != nil {
+		updater = updater.SetAccountID(*m.AccountID)
+	} else {
+		updater = updater.ClearAccountID()
 	}
 	if m.GroupID != nil {
 		updater = updater.SetGroupID(*m.GroupID)
@@ -308,11 +314,9 @@ func (r *channelMonitorRepository) ListLatestPerModel(ctx context.Context, monit
 	const q = `
 		SELECT DISTINCT ON (model)
 		    model, status, latency_ms, ping_latency_ms, checked_at
-		FROM channel_monitor_histories h
-		JOIN channel_monitors cm ON cm.id = h.monitor_id
-		    AND h.checked_at >= cm.history_started_at
-		WHERE h.monitor_id = $1
-		ORDER BY model, h.checked_at DESC
+		FROM channel_monitor_histories
+		WHERE monitor_id = $1
+		ORDER BY model, checked_at DESC
 	`
 	rows, err := r.db.QueryContext(ctx, q, monitorID)
 	if err != nil {
@@ -375,11 +379,9 @@ func (r *channelMonitorRepository) ComputeAvailability(ctx context.Context, moni
 		       CASE WHEN COUNT(latency_ms) > 0
 		            THEN SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL)::float8 / COUNT(latency_ms)
 		            ELSE NULL END                                                   AS avg_latency_ms
-		FROM channel_monitor_histories h
-		JOIN channel_monitors cm ON cm.id = h.monitor_id
-		    AND h.checked_at >= cm.history_started_at
-		WHERE h.monitor_id = $1
-		  AND h.checked_at >= NOW() - ($2::int || ' days')::interval
+		FROM channel_monitor_histories
+		WHERE monitor_id = $1
+		  AND checked_at >= NOW() - ($2::int || ' days')::interval
 		GROUP BY model
 	`
 	rows, err := r.db.QueryContext(ctx, q, monitorID, windowDays)
@@ -432,12 +434,10 @@ func (r *channelMonitorRepository) ListLatestForMonitorIDs(ctx context.Context, 
 	}
 	const q = `
 		SELECT DISTINCT ON (monitor_id, model)
-		    monitor_id, model, status, latency_ms, ping_latency_ms, checked_at, h.quota
-		FROM channel_monitor_histories h
-		JOIN channel_monitors cm ON cm.id = h.monitor_id
-		    AND h.checked_at >= cm.history_started_at
-		WHERE h.monitor_id = ANY($1)
-		ORDER BY h.monitor_id, h.model, h.checked_at DESC
+		    monitor_id, model, status, latency_ms, ping_latency_ms, checked_at, quota
+		FROM channel_monitor_histories
+		WHERE monitor_id = ANY($1)
+		ORDER BY monitor_id, model, checked_at DESC
 	`
 	rows, err := r.db.QueryContext(ctx, q, pq.Array(ids))
 	if err != nil {
@@ -499,8 +499,6 @@ func (r *channelMonitorRepository) ListRecentHistoryForMonitors(
 		    FROM channel_monitor_histories h
 		    JOIN targets t
 		      ON t.monitor_id = h.monitor_id AND t.model = h.model
-		    JOIN channel_monitors cm ON cm.id = h.monitor_id
-		      AND h.checked_at >= cm.history_started_at
 		)
 		SELECT monitor_id, status, latency_ms, ping_latency_ms, checked_at
 		FROM ranked
@@ -585,12 +583,10 @@ func (r *channelMonitorRepository) ComputeAvailabilityForMonitors(ctx context.Co
 		       CASE WHEN COUNT(latency_ms) > 0
 		            THEN SUM(latency_ms) FILTER (WHERE latency_ms IS NOT NULL)::float8 / COUNT(latency_ms)
 		            ELSE NULL END                                                   AS avg_latency_ms
-		FROM channel_monitor_histories h
-		JOIN channel_monitors cm ON cm.id = h.monitor_id
-		    AND h.checked_at >= cm.history_started_at
-		WHERE h.monitor_id = ANY($1)
-		  AND h.checked_at >= NOW() - ($2::int || ' days')::interval
-		GROUP BY h.monitor_id, h.model
+		FROM channel_monitor_histories
+		WHERE monitor_id = ANY($1)
+		  AND checked_at >= NOW() - ($2::int || ' days')::interval
+		GROUP BY monitor_id, model
 	`
 	rows, err := r.db.QueryContext(ctx, q, pq.Array(ids), windowDays)
 	if err != nil {
@@ -792,11 +788,11 @@ func entToServiceMonitor(row *dbent.ChannelMonitor) *service.ChannelMonitor {
 		ExtraModels:          extras,
 		GroupName:            row.GroupName,
 		GroupID:              row.GroupID,
+		HistoryStartedAt:     row.HistoryStartedAt,
 		Enabled:              row.Enabled,
 		IntervalSeconds:      row.IntervalSeconds,
 		JitterSeconds:        row.JitterSeconds,
 		LastCheckedAt:        row.LastCheckedAt,
-		HistoryStartedAt:     row.HistoryStartedAt,
 		CreatedBy:            row.CreatedBy,
 		CreatedAt:            row.CreatedAt,
 		UpdatedAt:            row.UpdatedAt,

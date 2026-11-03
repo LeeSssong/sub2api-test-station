@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -63,10 +62,6 @@ type ChannelMonitorRepository interface {
 	UpdateAggregationWatermark(ctx context.Context, date time.Time) error
 }
 
-type ChannelMonitorGroupReader interface {
-	GetByIDLite(ctx context.Context, id int64) (*Group, error)
-}
-
 // channelMonitorRuntimeReader is the optional settings view used to gate V1
 // active probes by channel_monitor_enabled + channel_monitor_mode.
 type channelMonitorRuntimeReader interface {
@@ -75,17 +70,17 @@ type channelMonitorRuntimeReader interface {
 
 // ChannelMonitorService 渠道监控管理服务。
 type ChannelMonitorService struct {
-	repo        ChannelMonitorRepository
-	encryptor   SecretEncryptor
-	groupReader ChannelMonitorGroupReader
+	repo      ChannelMonitorRepository
+	encryptor SecretEncryptor
 	// settings is optional; when nil, RunCheck fails closed for active probes
 	// (mode defaults to v2 / retired) so tests without settings never hit upstream.
-	settings               channelMonitorRuntimeReader
-	activeProbeUsageReader ActiveProbeUsageWindowReader
+	settings channelMonitorRuntimeReader
 	// scheduler 由 wire 通过 SetScheduler 注入；CRUD 后调用对应钩子即时同步任务。
 	// 测试或未注入场景下保持 nil，所有钩子调用变为 no-op。
-	scheduler    MonitorScheduler
-	now          func() time.Time
+	scheduler MonitorScheduler
+	// quotaFetcher 由 wire 通过 SetQuotaFetcher 注入（accountUsage/CN 服务在本服务
+	// 之后构造，构造参数注入会破坏既有依赖顺序）。nil 时 fail-closed：
+	// 配额模式的检测产出「未配置」错误快照，Create/Update 关联账号直接报错。
 	quotaFetcher *ChannelMonitorQuotaFetcher
 }
 
@@ -98,16 +93,8 @@ const maxChannelMonitorNameRunes = 100
 const ChannelMonitorDuplicateOperationIDMetadataKey = "sub2api:duplicate_operation_id"
 
 // NewChannelMonitorService 创建渠道监控服务实例。
-func NewChannelMonitorService(
-	repo ChannelMonitorRepository,
-	encryptor SecretEncryptor,
-	groupReaders ...ChannelMonitorGroupReader,
-) *ChannelMonitorService {
-	service := &ChannelMonitorService{repo: repo, encryptor: encryptor, now: time.Now}
-	if len(groupReaders) > 0 {
-		service.groupReader = groupReaders[0]
-	}
-	return service
+func NewChannelMonitorService(repo ChannelMonitorRepository, encryptor SecretEncryptor) *ChannelMonitorService {
+	return &ChannelMonitorService{repo: repo, encryptor: encryptor}
 }
 
 // SetRuntimeReader injects the settings reader used to gate active probes.
@@ -117,14 +104,6 @@ func (s *ChannelMonitorService) SetRuntimeReader(r channelMonitorRuntimeReader) 
 		return
 	}
 	s.settings = r
-}
-
-// SetActiveProbeUsageReader injects the bounded usage reader used only by the
-// scheduled active-probe path. Manual checks remain unaffected.
-func (s *ChannelMonitorService) SetActiveProbeUsageReader(r ActiveProbeUsageWindowReader) {
-	if s != nil {
-		s.activeProbeUsageReader = r
-	}
 }
 
 func (s *ChannelMonitorService) probeRuntime(ctx context.Context) ChannelMonitorRuntime {
@@ -170,13 +149,6 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 	if err := validateCreateParams(p); err != nil {
 		return nil, err
 	}
-	group, err := s.resolveGroupAssociation(ctx, p.Provider, p.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	if group != nil {
-		p.GroupName = group.Name
-	}
 	if err := validateBodyModeForProtocol(p.Provider, p.APIMode, p.BodyOverrideMode, p.BodyOverride); err != nil {
 		return nil, err
 	}
@@ -204,7 +176,6 @@ func (s *ChannelMonitorService) Create(ctx context.Context, p ChannelMonitorCrea
 		Enabled:          p.Enabled,
 		IntervalSeconds:  p.IntervalSeconds,
 		JitterSeconds:    p.JitterSeconds,
-		HistoryStartedAt: s.currentTime(),
 		CreatedBy:        p.CreatedBy,
 		TemplateID:       p.TemplateID,
 		ExtraHeaders:     emptyHeadersIfNil(p.ExtraHeaders),
@@ -273,7 +244,6 @@ func (s *ChannelMonitorService) Duplicate(
 		Enabled:              false,
 		IntervalSeconds:      source.IntervalSeconds,
 		JitterSeconds:        source.JitterSeconds,
-		HistoryStartedAt:     s.currentTime(),
 		CreatedBy:            createdBy,
 		TemplateID:           cloneInt64Pointer(source.TemplateID),
 		ExtraHeaders:         cloneChannelMonitorHeaders(source.ExtraHeaders),
@@ -464,24 +434,21 @@ func (s *ChannelMonitorService) Update(ctx context.Context, id int64, p ChannelM
 	if err != nil {
 		return nil, err
 	}
-	before := *existing
 	if err := applyMonitorUpdate(existing, p); err != nil {
 		return nil, err
-	}
-	group, err := s.resolveGroupAssociation(ctx, existing.Provider, existing.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	if group != nil {
-		existing.GroupName = group.Name
 	}
 
 	newPlainAPIKey, apiKeyUpdated, err := s.applyAPIKeyUpdate(existing, p.APIKey)
 	if err != nil {
 		return nil, err
 	}
-	if channelMonitorIdentityChanged(&before, existing, apiKeyUpdated) {
-		existing.HistoryStartedAt = s.currentTime()
+	if err := s.validateProbeAPIKey(existing, newPlainAPIKey); err != nil {
+		return nil, err
+	}
+	if p.Provider != nil || p.CheckMode != nil || p.AccountID != nil {
+		if err := s.revalidateLinkedAccount(ctx, existing); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.repo.Update(ctx, existing); err != nil {
@@ -598,13 +565,6 @@ func (s *ChannelMonitorService) applyAPIKeyUpdate(existing *ChannelMonitor, raw 
 	return plain, true, nil
 }
 
-func (s *ChannelMonitorService) currentTime() time.Time {
-	if s.now == nil {
-		return time.Now().UTC()
-	}
-	return s.now().UTC()
-}
-
 // Delete 删除监控（历史通过外键 CASCADE 自动清理）。
 func (s *ChannelMonitorService) Delete(ctx context.Context, id int64) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
@@ -675,6 +635,8 @@ func (s *ChannelMonitorService) RunCheck(ctx context.Context, id int64) ([]*Chec
 	return results, nil
 }
 
+// runQuotaOnlyCheck quota 模式：一次配额抓取 → 单条 CheckResult
+// （Model=PrimaryModel，默认 "quota"；无 ping/latency，状态由快照推导）。
 func (s *ChannelMonitorService) runQuotaOnlyCheck(ctx context.Context, m *ChannelMonitor) []*CheckResult {
 	snapshot := s.fetchQuotaSnapshot(ctx, m)
 	res := deriveQuotaCheckResult(snapshot, m.PrimaryModel, time.Now())
@@ -682,6 +644,8 @@ func (s *ChannelMonitorService) runQuotaOnlyCheck(ctx context.Context, m *Channe
 	return []*CheckResult{res}
 }
 
+// fetchQuotaSnapshot 抓取关联账号配额。未关联账号 / fetcher 未注入时返回
+// 显式错误快照（不返回 error，保证检测周期与历史时间线连续）。
 func (s *ChannelMonitorService) fetchQuotaSnapshot(ctx context.Context, m *ChannelMonitor) *domain.MonitorQuotaSnapshot {
 	if m.AccountID == nil {
 		return quotaErrorSnapshot("usage", "linked account not found", time.Now())
@@ -692,6 +656,8 @@ func (s *ChannelMonitorService) fetchQuotaSnapshot(ctx context.Context, m *Chann
 	return s.quotaFetcher.Fetch(ctx, *m.AccountID)
 }
 
+// attachQuotaSnapshot quota_probe：把配额快照挂到主模型行（results[0]）。
+// 配额失败不改变探活状态，仅在探活 message 为空时附注失败原因。
 func attachQuotaSnapshot(results []*CheckResult, snapshot *domain.MonitorQuotaSnapshot) {
 	if len(results) == 0 || snapshot == nil {
 		return
@@ -701,50 +667,6 @@ func attachQuotaSnapshot(results []*CheckResult, snapshot *domain.MonitorQuotaSn
 	if !snapshot.Success && strings.TrimSpace(primary.Message) == "" {
 		primary.Message = truncateMessage("quota fetch failed: " + snapshot.Error)
 	}
-}
-
-// ErrChannelMonitorProbeSkipped indicates a scheduled probe was deliberately
-// suppressed by admission policy. It is not persisted as a history result.
-var ErrChannelMonitorProbeSkipped = errors.New("channel monitor scheduled probe skipped")
-
-// RunScheduledCheck performs at most one model check for an automatic tick.
-// It fails closed when group usage cannot be established or the monitor has no
-// group association, and never invokes the manual retry helper.
-func (s *ChannelMonitorService) RunScheduledCheck(ctx context.Context, id int64) ([]*CheckResult, error) {
-	rt := s.probeRuntime(ctx)
-	if !rt.Enabled {
-		return nil, ErrChannelMonitorDisabled
-	}
-	if !rt.ActiveProbesAllowed() {
-		return nil, ErrChannelMonitorActiveProbesRetired
-	}
-	m, err := s.Get(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if m.APIKeyDecryptFailed {
-		return nil, ErrChannelMonitorAPIKeyDecryptFailed
-	}
-	if m.GroupID == nil || *m.GroupID <= 0 || s.activeProbeUsageReader == nil {
-		return nil, ErrChannelMonitorProbeSkipped
-	}
-	start, end := currentActiveProbeBucket(s.currentTime())
-	used, err := s.activeProbeUsageReader.HasGroupUsageInWindow(ctx, *m.GroupID, start, end)
-	if err != nil || used {
-		return nil, ErrChannelMonitorProbeSkipped
-	}
-	models := append([]string{m.PrimaryModel}, m.ExtraModels...)
-	if len(models) == 0 || strings.TrimSpace(models[0]) == "" {
-		return nil, ErrChannelMonitorProbeSkipped
-	}
-	idx := int((m.ID + start.Unix()/300) % int64(len(models)))
-	model := models[idx]
-	opts := &CheckOptions{APIMode: m.APIMode, ExtraHeaders: m.ExtraHeaders, BodyOverrideMode: m.BodyOverrideMode, BodyOverride: m.BodyOverride}
-	// Scheduled admission permits one upstream request only; unlike the manual
-	// path it deliberately omits the extra endpoint ping.
-	result := runCheckForModel(ctx, m.Provider, m.Endpoint, m.APIKey, model, opts)
-	s.persistCheckResults(ctx, m, []*CheckResult{result})
-	return []*CheckResult{result}, nil
 }
 
 // persistCheckResults 写入本次检测的历史记录并更新 last_checked_at。
@@ -795,9 +717,7 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	for i, model := range models {
 		i, model := i, model
 		eg.Go(func() error {
-			r := runChannelMonitorCheckWithRetry(ctx, func(attemptCtx context.Context) *CheckResult {
-				return runCheckForModel(attemptCtx, m.Provider, m.Endpoint, m.APIKey, model, opts)
-			})
+			r := runCheckForModel(ctx, m.Provider, m.Endpoint, m.APIKey, model, opts)
 			r.PingLatencyMs = pingMs
 			mu.Lock()
 			results[i] = r
@@ -807,23 +727,6 @@ func (s *ChannelMonitorService) runChecksConcurrent(ctx context.Context, m *Chan
 	}
 	_ = eg.Wait()
 	return results
-}
-
-func runChannelMonitorCheckWithRetry(
-	ctx context.Context,
-	check func(context.Context) *CheckResult,
-) *CheckResult {
-	var result *CheckResult
-	for attempt := 0; attempt < monitorChannelCheckMaxAttempts; attempt++ {
-		result = check(ctx)
-		if result.Status == MonitorStatusOperational || result.Status == MonitorStatusDegraded {
-			return result
-		}
-		if ctx.Err() != nil {
-			return result
-		}
-	}
-	return result
 }
 
 // ---------- 调度器协作 ----------
@@ -1042,9 +945,9 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 	if p.GroupName != nil {
 		existing.GroupName = strings.TrimSpace(*p.GroupName)
 	}
+	// Retain optional metadata from the existing schema; it does not gate probes.
 	if p.ClearGroup {
 		existing.GroupID = nil
-		existing.GroupName = ""
 	} else if p.GroupID != nil {
 		existing.GroupID = cloneInt64Pointer(p.GroupID)
 	}
@@ -1067,54 +970,6 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 		}
 	}
 	return applyMonitorAdvancedUpdate(existing, p, providerChanged)
-}
-
-// channelMonitorIdentityChanged reports whether an update changed the remote
-// target whose history feeds current-state monitor statistics.
-func channelMonitorIdentityChanged(before, after *ChannelMonitor, apiKeyUpdated bool) bool {
-	if before == nil || after == nil {
-		return before != after || apiKeyUpdated
-	}
-	return apiKeyUpdated ||
-		before.Provider != after.Provider ||
-		before.APIMode != after.APIMode ||
-		before.Endpoint != after.Endpoint ||
-		before.PrimaryModel != after.PrimaryModel ||
-		!equalInt64Pointers(before.GroupID, after.GroupID)
-}
-
-func equalInt64Pointers(left, right *int64) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return *left == *right
-}
-
-func (s *ChannelMonitorService) resolveGroupAssociation(
-	ctx context.Context,
-	provider string,
-	groupID *int64,
-) (*Group, error) {
-	if groupID == nil {
-		return nil, nil
-	}
-	if *groupID <= 0 {
-		return nil, ErrChannelMonitorInvalidGroup
-	}
-	if s.groupReader == nil {
-		return nil, nil
-	}
-	group, err := s.groupReader.GetByIDLite(ctx, *groupID)
-	if err != nil {
-		if errors.Is(err, ErrGroupNotFound) {
-			return nil, ErrChannelMonitorInvalidGroup
-		}
-		return nil, fmt.Errorf("load channel monitor group: %w", err)
-	}
-	if group == nil || group.Status != StatusActive || group.Platform != provider {
-		return nil, ErrChannelMonitorInvalidGroup
-	}
-	return group, nil
 }
 
 // applyMonitorAdvancedUpdate 处理自定义请求快照相关字段，从 applyMonitorUpdate 拆出避免过长。

@@ -1335,10 +1335,9 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 func ProvideChannelMonitorService(
 	repo ChannelMonitorRepository,
 	encryptor SecretEncryptor,
-	groupRepo GroupRepository,
 	settingService *SettingService,
 ) *ChannelMonitorService {
-	svc := NewChannelMonitorService(repo, encryptor, groupRepo)
+	svc := NewChannelMonitorService(repo, encryptor)
 	svc.SetRuntimeReader(settingService)
 	return svc
 }
@@ -1373,7 +1372,6 @@ func ProvideChannelMonitorRunner(
 	svc *ChannelMonitorService,
 	settingService *SettingService,
 	quotaFetcher *ChannelMonitorQuotaFetcher,
-	usageService *AccountUsageService,
 	cfg *config.Config,
 ) *ChannelMonitorRunner {
 	r := NewChannelMonitorRunner(svc, settingService)
@@ -1381,11 +1379,13 @@ func ProvideChannelMonitorRunner(
 		// Ensure runtime reader is set even if ProvideChannelMonitorService
 		// was constructed without settings (tests / alternate providers).
 		svc.SetRuntimeReader(settingService)
-		svc.SetActiveProbeUsageReader(usageService)
-		svc.SetQuotaFetcher(quotaFetcher)
 		svc.SetScheduler(r)
+		svc.SetQuotaFetcher(quotaFetcher)
 	}
 	startBackgroundService(cfg, r)
+	if configuredProcessRole(cfg) == config.ProcessRoleWorker {
+		r.startReconciliation()
+	}
 	return r
 }
 

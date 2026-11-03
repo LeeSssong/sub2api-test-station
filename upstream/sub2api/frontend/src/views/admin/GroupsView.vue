@@ -2197,7 +2197,6 @@
             data-tour="edit-group-form-name"
           />
         </div>
-        <GroupToolMappings v-if="editingGroup" :key="editingGroup.id" :group-id="editingGroup.id" :platform="editForm.platform" />
         <div>
           <GroupI18nField
             v-model="editForm.description"
@@ -4420,7 +4419,6 @@ import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesMo
 import GroupUserDeniedModelsModal from "@/components/admin/group/GroupUserDeniedModelsModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
-import GroupToolMappings from "@/components/admin/group/GroupToolMappings.vue";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
 import type { PricingFormEntry } from "@/components/admin/channel/types";

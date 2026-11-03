@@ -22,6 +22,22 @@ ssh -T "${ssh_opts[@]}" sub2api-test-station 'sudo -n cat /opt/sub2api-test-stat
 previous=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_commit"])' "$staging/previous-state.json")
 update_worker=${TEST_STATION_UPDATE_WORKER:-false}
 [[ "$update_worker" == true || "$update_worker" == false ]] || fail 'invalid worker update flag'
+previous_tree=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_tree"])' "$staging/previous-state.json")
+scope_base=$previous
+# BEGIN canonical test-station baseline
+# The Founder requested canonical origin/main after the external c67 release.
+# This exact predecessor is bridged to the reviewed monitor backport, never to an arbitrary ref.
+if [[ "$previous" == c67f21bc79010fa2a8e04ccd8c79291274ddf82e ]]; then
+  [[ "$update_worker" == true ]] || fail 'canonical baseline transition requires worker replacement'
+  [[ "$previous_tree" == f4ad3ab7f12d47c57cbb79ad05f4f52fa225a473 ]] || fail 'external predecessor tree differs'
+  canonical=2a366ba1a0860a1f97295b33739c6dff26cb5f22
+  [[ $(git rev-parse "$canonical^{tree}") == 2698b179f4ba7bc762b24ae26cc4d3052334e6e3 ]] || fail 'canonical baseline tree differs'
+  git merge-base --is-ancestor "$canonical" HEAD || fail 'canonical baseline is not integrated'
+  scope_base=$canonical
+fi
+# END canonical test-station baseline
+git diff --name-only "$scope_base" HEAD >/dev/null || fail 'cannot determine release scope'
+
 # Monitor service changes require the same new binary in API and singleton worker.
 # Native group catalogue handlers and their read-only tool mapping can update API only.
 # The reviewed user popularity projection reuses native read-only aggregates, API only.
@@ -94,7 +110,13 @@ while IFS= read -r path; do
          "$(git diff --diff-filter=D --name-only "$previous" HEAD -- "$path")" == "$path" ]] \
         || fail 'only deletion of snapshot migration with worker update is supported' ;;
     # ISSUE-FIX-005: reviewed 24h real-request line metrics are read-only API queries.
-    upstream/sub2api/backend/internal/handler/monitor_v4_line_metrics_test.go|    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics.go|    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_test.go|    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_postgres_test.go|    upstream/sub2api/backend/internal/server/routes/monitor_v4_line_metrics_test.go|    upstream/sub2api/backend/internal/service/monitor_v4_line_metrics.go|    upstream/sub2api/backend/internal/service/monitor_v4_line_metrics_test.go) ;;
+    upstream/sub2api/backend/internal/handler/monitor_v4_line_metrics_test.go|\
+    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics.go|\
+    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_test.go|\
+    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_postgres_test.go|\
+    upstream/sub2api/backend/internal/server/routes/monitor_v4_line_metrics_test.go|\
+    upstream/sub2api/backend/internal/service/monitor_v4_line_metrics.go|\
+    upstream/sub2api/backend/internal/service/monitor_v4_line_metrics_test.go) ;;
     upstream/sub2api/frontend/src/*|upstream/sub2api/frontend/DESIGN.md|docs/*|ops/*|tests/*|artifacts/*) ;;
     upstream/sub2api/backend/internal/service/payment_config_limits.go|\
     upstream/sub2api/backend/internal/service/payment_config_limits_test.go|\
@@ -765,7 +787,7 @@ while IFS= read -r path; do
       [[ "$update_worker" == true ]] || fail "main synchronization requires worker update" ;;
     *) fail "release excludes unsupported runtime changes: $path" ;;
   esac
-done < <(git diff --name-only "$previous" HEAD)
+done < <(git diff --name-only "${scope_base:-$previous}" HEAD)
 binary_commit=$commit
 binary_tree=$tree
 if [[ -n ${TEST_STATION_REUSE_BUILD_FROM:-} ]]; then

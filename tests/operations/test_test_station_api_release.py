@@ -16,6 +16,42 @@ release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
 
 
+class CanonicalTestStationBaselineTests(unittest.TestCase):
+    def check_bridge(self, previous='c67f21bc79010fa2a8e04ccd8c79291274ddf82e',
+                     worker=True, previous_tree='f4ad3ab7f12d47c57cbb79ad05f4f52fa225a473',
+                     canonical_tree='2698b179f4ba7bc762b24ae26cc4d3052334e6e3', ancestor=0):
+        shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()
+        self.assertTrue('# BEGIN canonical test-station baseline' in shell, 'canonical baseline gate missing')
+        bridge = shell.split('# BEGIN canonical test-station baseline', 1)[1].split(
+            '# END canonical test-station baseline', 1)[0]
+        script = """
+fail(){ echo "$1" >&2; exit 1; }
+git(){ case "$1" in rev-parse) echo "$CANONICAL_TREE";; merge-base) return "$ANCESTOR";; *) return 1;; esac; }
+scope_base=$previous
+""" + bridge + """
+printf '%s' "$scope_base"
+"""
+        return subprocess.run(['bash', '-eu', '-c', script], capture_output=True, text=True,
+            env=dict(os.environ, previous=previous, update_worker=str(worker).lower(),
+                     previous_tree=previous_tree, CANONICAL_TREE=canonical_tree, ANCESTOR=str(ancestor)))
+
+    def test_reviewed_external_predecessor_uses_requested_canonical_main(self):
+        result = self.check_bridge()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '2a366ba1a0860a1f97295b33739c6dff26cb5f22')
+
+    def test_bridge_rejects_wrong_identity_or_missing_worker_replacement(self):
+        for args in [dict(worker=False), dict(previous_tree='0' * 40),
+                     dict(canonical_tree='0' * 40), dict(ancestor=1)]:
+            with self.subTest(args=args):
+                self.assertNotEqual(self.check_bridge(**args).returncode, 0)
+
+    def test_other_predecessors_keep_the_existing_scope_gate(self):
+        result = self.check_bridge(previous='ordinary-predecessor', worker=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'ordinary-predecessor')
+
+
 class ReleaseBundleTests(unittest.TestCase):
     def test_bundle_contains_resources_required_by_runtime_image(self):
         shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()

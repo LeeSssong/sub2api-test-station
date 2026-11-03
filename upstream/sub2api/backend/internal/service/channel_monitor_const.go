@@ -129,8 +129,6 @@ const (
 	monitorAnthropicAPIVersion = "2023-06-01"
 	// monitorChallengeMaxTokens 单次 challenge 请求的 max_tokens（足够回答个位数算术）。
 	monitorChallengeMaxTokens = 50
-	// monitorChannelCheckMaxAttempts 是单模型每轮探测的总尝试数：首次 + 5 次重试。
-	monitorChannelCheckMaxAttempts = 6
 
 	// monitorRunOneBuffer runOne 的总超时缓冲（除请求超时与 ping 超时外的额外裕量）。
 	monitorRunOneBuffer = 10 * time.Second
@@ -203,9 +201,6 @@ var (
 	)
 	ErrChannelMonitorMissingPrimaryModel = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_MISSING_PRIMARY_MODEL", "primary_model is required",
-	)
-	ErrChannelMonitorInvalidGroup = infraerrors.BadRequest(
-		"CHANNEL_MONITOR_INVALID_GROUP", "group_id must reference an active group matching the monitor provider",
 	)
 	ErrChannelMonitorAPIKeyDecryptFailed = infraerrors.InternalServer(
 		"CHANNEL_MONITOR_KEY_DECRYPT_FAILED", "api key decryption failed; please re-edit the monitor with a fresh key",

@@ -238,9 +238,9 @@ func buildUserViewFromSummary(
 		Provider:         m.Provider,
 		GroupName:        m.GroupName,
 		GroupID:          cloneInt64Pointer(m.GroupID),
+		IntervalSeconds:  m.IntervalSeconds,
 		PrimaryModel:     m.PrimaryModel,
 		PrimaryStatus:    summary.PrimaryStatus,
-		IntervalSeconds:  m.IntervalSeconds,
 		PrimaryLatencyMs: summary.PrimaryLatencyMs,
 		Availability7d:   summary.Availability7d,
 		ExtraModels:      summary.ExtraModels,
@@ -249,6 +249,7 @@ func buildUserViewFromSummary(
 	if primaryLatest != nil {
 		view.PrimaryPingLatencyMs = primaryLatest.PingLatencyMs
 		view.PrimaryCheckedAt = primaryLatest.CheckedAt
+		view.LatestQuota = primaryLatest.Quota
 	}
 	return view
 }

@@ -405,17 +405,13 @@ const (
 	defaultChannelMonitorMode      = ChannelMonitorModeV1
 )
 
-// normalizeChannelMonitorMode accepts all supported choices; empty/invalid → v1 (safe default).
+// normalizeChannelMonitorMode accepts only v1/v2/v3; empty/invalid → v1 (safe default).
 func normalizeChannelMonitorMode(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case ChannelMonitorModeV1, "":
 		return ChannelMonitorModeV1
 	case ChannelMonitorModeV2:
 		return ChannelMonitorModeV2
-	case ChannelMonitorModeNativeProbe:
-		return ChannelMonitorModeNativeProbe
-	case ChannelMonitorModeHybridPerformance:
-		return ChannelMonitorModeHybridPerformance
 	case ChannelMonitorModeV3:
 		return ChannelMonitorModeV3
 	default:
@@ -466,7 +462,7 @@ type ChannelMonitorRuntime struct {
 
 // ActiveProbesAllowed reports whether an active provider probe mode may run.
 func (r ChannelMonitorRuntime) ActiveProbesAllowed() bool {
-	return r.Enabled && (r.Mode == ChannelMonitorModeV1 || r.Mode == ChannelMonitorModeNativeProbe || r.Mode == ChannelMonitorModeHybridPerformance)
+	return r.Enabled && r.Mode == ChannelMonitorModeV1
 }
 
 // PassiveAggregationAllowed reports whether the passive aggregation of real

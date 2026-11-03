@@ -13,7 +13,7 @@ import (
 func TestGatewayRoleDoesNotStartGlobalMonitorOrSchedule(t *testing.T) {
 	cfg := &config.Config{Runtime: config.RuntimeConfig{Role: config.RuntimeRoleGateway}}
 	// Empty dependencies would fail if either provider performed its startup DB scan.
-	monitor := ProvideChannelMonitorRunner(&ChannelMonitorService{}, &SettingService{}, nil, nil, cfg)
+	monitor := ProvideChannelMonitorRunner(&ChannelMonitorService{}, &SettingService{}, nil, cfg)
 	require.False(t, monitor.started)
 	monitor.Stop()
 	runner := ProvideScheduledTestRunnerService(nil, nil, nil, nil, cfg, &QualityJudgeService{}, nil, &PelicanGroupTestService{}, &ChannelMonitorV2Service{})

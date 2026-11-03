@@ -10,12 +10,13 @@ vi.mock('@/stores/auth',()=>({useAuthStore:()=>({user:mocks.authUser})}))
 vi.mock('@/api/groups',()=>({default:{getAvailable:mocks.groups,getUserGroupRates:mocks.rates}}))
 vi.mock('@/api/keys',()=>({default:{list:mocks.keys}}))
 vi.mock('@/features/monitor-v4/api',()=>({getHybridPerformanceSnapshot:mocks.snapshot}))
+vi.mock('@/features/monitor-v4/lineSelection',()=>({getLineSelectionMetrics:vi.fn().mockResolvedValue({groups:[],generated_at:new Date().toISOString()})}))
 vi.mock('@/features/ai-tools/api',()=>({getGroupModels:mocks.models}))
 const groups=[{id:1,name:'GPT-Pro',platform:'openai',rate_multiplier:1,status:'active'},{id:2,name:'未关联线路',platform:'openai',rate_multiplier:.5,status:'active'}]
 const metric=(id:number)=>({id,tool_ids:['codex'],success_rate:98,request_count:100,success_count:98,ttft_p50_ms:2160,latency_p50_ms:6500,sla_request_count:100,sla_success_count:98,source_updated_at:new Date().toISOString()})
 const slaPoint=(group_id:number,request_count=100,success_count=98)=>({group_id,start:'2026-10-08T10:00:00Z',end:'2026-10-08T11:00:00Z',request_count,success_count,cache_hit_rate:null,ttft_p50_ms:null})
 const deferred=<T,>()=>{let resolve!:(value:T)=>void;let reject!:(reason?:unknown)=>void;const promise=new Promise<T>((res,rej)=>{resolve=res;reject=rej});return {promise,resolve,reject}}
-const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title'],template:'<div v-if="show" role="dialog"><h3>{{title}}</h3><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId','groups'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
+const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title'],template:'<div v-if="show" role="dialog"><h3>{{title}}</h3><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId','recommendedGroupIds','groups'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
 beforeEach(()=>{vi.clearAllMocks();clearDashboardWorkspaceSnapshot();mocks.models.mockResolvedValue([{group_id:1,supported_models:['gpt-5.4','gpt-5.2'],official_pricing:{'gpt-5.4':{input_price:2.5e-6,cache_read_price:.25e-6,output_price:15e-6}}},{group_id:2,supported_models:['gpt-5.4','custom-model']},{group_id:99,supported_models:['private-model']}]);mocks.groups.mockResolvedValue(groups);mocks.rates.mockResolvedValue({});mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]}],total:1});mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))})})
 describe('原型AI工具交互',()=>{
  it.each(['groups','rates'] as const)('keeps the key manager mounted when tool workspace %s fails',async(failure)=>{
@@ -144,6 +145,28 @@ describe('原型AI工具交互',()=>{
   expect(bestCard().get('h3').text()).toBe('已关联线路')
   w.unmount()
  })
+ it('passes the actual per-tool best route, not a manually selected line, into creation',async()=>{
+  mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),cache_hit_rate:.5,sla_success_count:g.id===1?99:80}))})
+  const w=make();await flushPromises()
+  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
+  await w.get('button[data-detail-group-id="2"]').trigger('click');await flushPromises()
+  const dialog=w.findComponent({name:'CreateLineKeyDialog'})
+  expect(dialog.props('initialGroupId')).toBe(2)
+  expect((dialog.props('recommendedGroupIds') as Map<string,number>).get('codex')).toBe(1)
+  w.unmount()
+ })
+ it('withdraws the create recommendation when its 24-hour ranking expires',async()=>{
+  vi.useFakeTimers({toFake:['Date','setInterval','clearInterval']})
+  try {
+   mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),cache_hit_rate:.5,sla_success_count:g.id===1?99:80}))})
+   const w=make();await flushPromises()
+   const dialog=w.findComponent({name:'CreateLineKeyDialog'})
+   expect((dialog.props('recommendedGroupIds') as Map<string,number>).get('codex')).toBe(1)
+   vi.advanceTimersByTime(8*60*1000);await flushPromises()
+   expect((dialog.props('recommendedGroupIds') as Map<string,number>).has('codex')).toBe(false)
+   w.unmount()
+  } finally { vi.useRealTimers() }
+ })
  it('keeps the cached 24-hour best route when returning before statistics finish loading',async()=>{
   mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),cache_hit_rate:.5}))})
   const first=make();await flushPromises()
@@ -161,6 +184,7 @@ describe('原型AI工具交互',()=>{
   const w=make();await flushPromises()
   expect(w.get('.ranking-error').text()).toContain('近 24 小时')
   expect(w.get('.tool-card .tool-best .best').text()).toBe('暂无请求数据')
+  expect((w.findComponent({name:'CreateLineKeyDialog'}).props('recommendedGroupIds') as Map<string,number>).size).toBe(0)
   mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))})
   await w.get('.ranking-error button').trigger('click');await flushPromises()
   expect(w.find('.ranking-error').exists()).toBe(false)

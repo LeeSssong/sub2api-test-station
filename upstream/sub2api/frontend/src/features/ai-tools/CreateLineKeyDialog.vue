@@ -4,7 +4,7 @@
       <label class="field">名称<input v-model="name" name="name" class="xq-control" placeholder="我的 API 密钥" maxlength="100" required /></label>
       <div class="field route-select">
         <span id="xq-line-label">线路</span>
-        <LineSelect v-model="groupId" :groups="groups" :rates="rates" :metrics="metrics" :metrics-generated-at="metricsGeneratedAt" :metrics-error="metricsError" @retry-metrics="emit('retry-metrics')" :linked-counts="linkedCounts" :tool-id="resolvedToolId" :search-placeholder="`搜索${toolName}线路`" />
+        <LineSelect v-model="groupId" :groups="groups" :rates="rates" :metrics="metrics" :metrics-generated-at="metricsGeneratedAt" :metrics-error="metricsError" :recommended-group-ids="recommendedGroupIds" :linked-counts="linkedCounts" :tool-id="resolvedToolId" :search-placeholder="`搜索${toolName}线路`" />
       </div>
       <section class="key-option"><label class="toggle-row">自定义密钥<input v-model="customOn" name="customOn" type="checkbox" role="switch" /></label><input v-if="customOn" v-model="customKey" name="customKey" type="password" class="xq-control" placeholder="至少 16 位字母、数字、下划线或横线" autocomplete="off" /></section>
       <section class="key-option"><label class="toggle-row">IP 限制<input v-model="ipOn" name="ipOn" type="checkbox" role="switch" /></label><div v-if="ipOn" class="expanded-fields"><label class="field">IP 白名单<textarea v-model="whitelist" name="whitelist" class="xq-control" rows="2" placeholder="每行一个 IP 或 CIDR，也可用逗号分隔" /></label><label class="field">IP 黑名单<textarea v-model="blacklist" name="blacklist" class="xq-control" rows="2" placeholder="每行一个 IP 或 CIDR，也可用逗号分隔" /></label></div></section>
@@ -23,14 +23,14 @@ import LineSelect from '@/components/keys/LineSelect.vue'
 import { buildLineOptions } from '@/components/keys/lineOptions'
 import { keysAPI } from '@/api/keys'
 import type { ApiKey, Group } from '@/types'
-import type { MonitorV4Group } from '@/features/monitor-v4/types'
+import type { LineSelectionMetric } from '@/features/monitor-v4/lineSelection'
 import { tools } from './model'
-const props = defineProps<{show: boolean; toolName: string; toolId?: string; groups: Group[]; metrics: Map<number, MonitorV4Group>; metricsGeneratedAt?: string | null; metricsError?: boolean; linkedCounts: Map<number, number> | null; rates: Record<number, number>; initialGroupId?: number}>()
-const emit = defineEmits<{close: []; created: [key: ApiKey]; 'retry-metrics': []}>()
+const props = defineProps<{show: boolean; toolName: string; toolId?: string; groups: Group[]; metrics: Map<number, LineSelectionMetric>; metricsGeneratedAt?: string | null; metricsError?: boolean; linkedCounts?: Map<number, number> | null; rates: Record<number, number>; initialGroupId?: number; recommendedGroupIds?: ReadonlyMap<string, number>}>()
+const emit = defineEmits<{close: []; created: [key: ApiKey]}>()
 const name = ref(''), groupId = ref<number | null>(null), customOn = ref(false), customKey = ref(''), ipOn = ref(false), whitelist = ref(''), blacklist = ref(''), quota = ref(0), rateOn = ref(false), rate5h = ref(0), rate1d = ref(0), rate7d = ref(0), expiresOn = ref(false), expires = ref(''), error = ref(''), submitting = ref(false)
 const resolvedToolId = computed(() => props.toolId || tools.find(tool => tool.label === props.toolName)?.id)
-const lineOptions = computed(() => buildLineOptions(props.groups, props.rates, props.metrics, props.linkedCounts, resolvedToolId.value, props.metricsGeneratedAt))
-const selected = computed(() => lineOptions.value.find(option => option.value === groupId.value)?.group)
+const lineOptions = computed(() => buildLineOptions(props.groups, props.rates, props.metrics, props.linkedCounts ?? null, resolvedToolId.value, props.metricsGeneratedAt))
+const selected = computed(() => lineOptions.value.find(option => option.value === groupId.value && !option.disabled)?.group)
 const tomorrow = computed(() => { const date = new Date(); date.setDate(date.getDate() + 1); return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` })
 const close = () => { if (!submitting.value) emit('close') }
 watch(() => props.show, show => { if (!show) return; name.value = ''; groupId.value = props.initialGroupId ?? null; customOn.value = false; customKey.value = ''; ipOn.value = false; whitelist.value = ''; blacklist.value = ''; quota.value = 0; rateOn.value = false; rate5h.value = rate1d.value = rate7d.value = 0; expiresOn.value = false; expires.value = ''; error.value = '' }, { immediate: true })

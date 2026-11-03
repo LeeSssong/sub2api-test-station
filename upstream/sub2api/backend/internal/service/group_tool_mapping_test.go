@@ -23,3 +23,23 @@ func TestNormalizeGroupToolIDsGemini(t *testing.T) {
 	_, err = NormalizeGroupToolIDs([]string{"gemini", "unknown"})
 	require.Error(t, err)
 }
+
+func TestResolveGroupToolsDefaultsAndExplicitLegacyExceptions(t *testing.T) {
+	for platform, tool := range map[string]string{"openai": "codex", "anthropic": "claude", "gemini": "gemini", "deepseek": "deepseek", "grok": "grok"} {
+		ids, source := ResolveGroupTools(platform, nil)
+		require.Equal(t, []string{tool}, ids)
+		require.Equal(t, "platform", source)
+		ids, source = ResolveGroupTools(platform, []string{tool})
+		require.Equal(t, []string{tool}, ids)
+		require.Equal(t, "platform", source)
+	}
+	ids, source := ResolveGroupTools("openai", []string{"claude", "gemini"})
+	require.Equal(t, []string{"claude", "gemini"}, ids)
+	require.Equal(t, "legacy_exception", source)
+	ids, source = ResolveGroupTools("composite", []string{"codex"})
+	require.Equal(t, []string{"codex"}, ids)
+	require.Equal(t, "legacy_exception", source)
+	ids, source = ResolveGroupTools("composite", nil)
+	require.Empty(t, ids)
+	require.Equal(t, "unclassified", source)
+}

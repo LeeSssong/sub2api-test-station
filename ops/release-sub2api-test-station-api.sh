@@ -93,6 +93,8 @@ while IFS= read -r path; do
       [[ "$update_worker" == true && ! -e "$root/$path" &&
          "$(git diff --diff-filter=D --name-only "$previous" HEAD -- "$path")" == "$path" ]] \
         || fail 'only deletion of snapshot migration with worker update is supported' ;;
+    # ISSUE-FIX-005: reviewed 24h real-request line metrics are read-only API queries.
+    upstream/sub2api/backend/internal/handler/monitor_v4_line_metrics_test.go|    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics.go|    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_test.go|    upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_postgres_test.go|    upstream/sub2api/backend/internal/server/routes/monitor_v4_line_metrics_test.go|    upstream/sub2api/backend/internal/service/monitor_v4_line_metrics.go|    upstream/sub2api/backend/internal/service/monitor_v4_line_metrics_test.go) ;;
     upstream/sub2api/frontend/src/*|upstream/sub2api/frontend/DESIGN.md|docs/*|ops/*|tests/*|artifacts/*) ;;
     upstream/sub2api/backend/internal/service/payment_config_limits.go|\
     upstream/sub2api/backend/internal/service/payment_config_limits_test.go|\

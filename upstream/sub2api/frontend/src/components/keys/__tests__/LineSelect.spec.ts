@@ -32,14 +32,46 @@ describe('shared line selector', () => {
     expect(document.querySelector('.line-status')?.textContent).toContain('正常运行')
     vi.advanceTimersByTime(8 * 60 * 1000)
     await nextTick()
-    expect(document.querySelector('.line-status')?.textContent).toContain('暂无数据')
+    expect(document.querySelector('.line-status')?.textContent).toContain('统计已过期')
   })
-  it('explains failed statistics and offers a retry separately from health', async () => {
-    const wrapper = mount(LineSelect, { props: { modelValue: null, groups: [group], rates: {}, metrics: new Map(), linkedCounts: new Map(), metricsError: true } })
+  it('shows failed statistics only inside the dropdown without stale values or a retry button', async () => {
+    const wrapper = mount(LineSelect, { attachTo: document.body, props: { modelValue: null, groups: [group], rates: {}, metrics: new Map([[1, metric]]), linkedCounts: new Map(), metricsError: true } })
     wrappers.push(wrapper)
-    expect(wrapper.get('[role="alert"]').text()).toContain('近 1 小时统计读取失败')
-    await wrapper.get('[role="alert"] button').trigger('click')
-    expect(wrapper.emitted('retry-metrics')).toHaveLength(1)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.line-metrics-error').exists()).toBe(false)
+    await wrapper.get('[aria-label="选择线路"]').trigger('click')
+    expect(document.querySelector('.line-status')?.textContent).toContain('统计读取失败')
+    expect(document.querySelector('.line-option-meta')?.textContent).toContain('可用性 —')
+    expect(document.querySelector('.line-option-meta')?.textContent).toContain('首字 —')
+    expect(document.querySelector('.xq-line-select-dropdown')?.textContent).not.toContain('重试')
+  })
+
+  it('uses only a matching eligible tool recommendation, regardless of selection or rate', async () => {
+    const expensive = { ...group, id: 2, name: '推荐线路', rate_multiplier: 2 }
+    const cheaper = { ...group, name: '便宜线路', rate_multiplier: 0.1 }
+    const wrapper = mount(LineSelect, { attachTo: document.body, props: { modelValue: 1, groups: [cheaper, expensive], rates: {}, metrics: new Map(), recommendedGroupIds: new Map([['codex', 2]]) } })
+    wrappers.push(wrapper)
+    await wrapper.get('[aria-label="选择线路"]').trigger('click')
+    const options = [...document.querySelectorAll('.line-option')]
+    expect(options[0]?.querySelector('.line-recommended')).toBeNull()
+    expect(options[1]?.querySelector('.line-recommended')?.textContent).toBe('推荐最佳线路')
+    await wrapper.setProps({ modelValue: 2 })
+    expect(document.querySelectorAll('.line-recommended')).toHaveLength(1)
+    expect(options[1]?.querySelector('.line-recommended')?.textContent).toBe('推荐最佳线路')
+    await wrapper.setProps({ recommendedGroupIds: new Map([['gemini', 2]]) })
+    expect(document.querySelector('.line-recommended')).toBeNull()
+    await wrapper.setProps({ recommendedGroupIds: new Map([['codex', 2]]), groups: [cheaper, { ...expensive, status: 'inactive' }] })
+    expect(document.querySelector('.line-recommended')).toBeNull()
+  })
+  it('shows only the current tool recommendation for a cross-tool legacy line', async () => {
+    const shared = { ...group, id: 2, name: '跨工具线路', tool_ids: ['codex', 'gemini'] }
+    const wrapper = mount(LineSelect, { attachTo: document.body, props: { modelValue: null, toolId: 'codex', groups: [group, shared], rates: {}, metrics: new Map(), recommendedGroupIds: new Map([['codex', 1], ['gemini', 2]]) } })
+    wrappers.push(wrapper)
+    await wrapper.get('[aria-label="选择线路"]').trigger('click')
+    const options = [...document.querySelectorAll('.line-option')]
+    expect(options).toHaveLength(2)
+    expect(options[0]?.querySelector('.line-recommended')?.textContent).toBe('推荐最佳线路')
+    expect(options[1]?.querySelector('.line-recommended')).toBeNull()
   })
 
   it('displays the effective rate and the same metrics in its searchable options', async () => {
@@ -49,7 +81,7 @@ describe('shared line selector', () => {
     await nextTick()
     expect(document.body.textContent).toContain('0.8x倍率')
     expect(document.body.textContent).toContain('正常运行')
-    expect(document.body.textContent).toContain('关联密钥 2 把')
+    expect(document.body.textContent).not.toContain('关联密钥')
     expect(document.body.textContent).toContain('97%')
     expect(document.body.textContent).toContain('2.16s')
     expect(document.querySelector('.xq-line-select-dropdown')).not.toBeNull()
@@ -77,4 +109,14 @@ describe('shared line selector', () => {
     await nextTick()
     expect(wrapper.get('[aria-label="选择线路"]').attributes('aria-expanded')).toBe('false')
   })
+})
+
+it('renders full description and metric hover text including no samples', async () => {
+ const wrapper=mount(LineSelect,{attachTo:document.body,props:{modelValue:null,groups:[{...group,description:'完整描述，不截断'}],rates:{},metrics:new Map(),linkedCounts:null}})
+ wrappers.push(wrapper)
+ await wrapper.get('[aria-label="选择线路"]').trigger('click')
+ expect(document.querySelector('.line-description')?.textContent).toBe('完整描述，不截断')
+ expect(document.querySelector('[title="近24小时可用性"]')?.textContent).toContain('可用性 —')
+ expect(document.querySelector('[title="近24小时首字响应中位数（P50）"]')?.textContent).toContain('首字 —')
+ expect(document.body.textContent).not.toContain('关联密钥')
 })

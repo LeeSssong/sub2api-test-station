@@ -66,6 +66,7 @@ type MonitorV4Metric struct {
 
 type MonitorV4Group struct {
 	ToolIDs                   []string
+	ToolMappingSource         string
 	Status                    string
 	ID                        int64
 	Name                      string
@@ -273,13 +274,10 @@ func (s *MonitorV4Service) snapshotWithGroups(ctx context.Context, window Monito
 		}
 	}
 	for _, group := range visibleGroups {
-		tools := mappings[group.ID].ToolIDs
-		if tools == nil {
-			tools = []string{}
-		}
+		tools, mappingSource := ResolveGroupTools(group.Platform, mappings[group.ID].ToolIDs)
 		projection := projections[group.ID]
 		cards = append(cards, MonitorV4Group{
-			ToolIDs: tools, Status: group.Status,
+			ToolIDs: tools, ToolMappingSource: mappingSource, Status: group.Status,
 			ID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier,
 			SuccessRate: projection.SuccessRate, RequestCount: projection.RequestCount, SuccessCount: projection.SuccessCount,
 			RealRequestCount: projection.RealRequestCount, RealSuccessCount: projection.RealSuccessCount,

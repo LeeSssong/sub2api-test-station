@@ -324,7 +324,8 @@ func (h *APIKeyHandler) Delete(c *gin.Context) {
 
 type availableKeyGroupWithTools struct {
 	*dto.Group
-	ToolIDs []string `json:"tool_ids"`
+	ToolIDs           []string `json:"tool_ids"`
+	ToolMappingSource string   `json:"tool_mapping_source"`
 }
 
 // GetAvailableGroups 获取用户可以绑定的分组列表
@@ -353,11 +354,8 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 	}
 	out := make([]availableKeyGroupWithTools, 0, len(groups))
 	for i := range groups {
-		toolIDs := mappings[groups[i].ID].ToolIDs
-		if toolIDs == nil {
-			toolIDs = []string{}
-		}
-		out = append(out, availableKeyGroupWithTools{Group: dto.GroupFromService(&groups[i]).Localized(c.GetHeader("Accept-Language")), ToolIDs: toolIDs})
+		toolIDs, source := service.ResolveGroupTools(groups[i].Platform, mappings[groups[i].ID].ToolIDs)
+		out = append(out, availableKeyGroupWithTools{Group: dto.GroupFromService(&groups[i]).Localized(c.GetHeader("Accept-Language")), ToolIDs: toolIDs, ToolMappingSource: source})
 	}
 	response.Success(c, out)
 }

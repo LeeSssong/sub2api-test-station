@@ -101,6 +101,27 @@ class ReleaseScopeTests(unittest.TestCase):
         result = self.check_scope(['upstream/sub2api/backend/' + path for path in paths])
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_005_line_metrics_read_only_api_files_allow_api_only_release(self):
+        reviewed = [
+            'internal/handler/monitor_v4_line_metrics_test.go',
+            'internal/repository/monitor_v4_line_metrics.go',
+            'internal/repository/monitor_v4_line_metrics_test.go',
+            'internal/repository/monitor_v4_line_metrics_postgres_test.go',
+            'internal/server/routes/monitor_v4_line_metrics_test.go',
+            'internal/service/monitor_v4_line_metrics.go',
+            'internal/service/monitor_v4_line_metrics_test.go',
+        ]
+        paths = ['upstream/sub2api/backend/' + path for path in reviewed]
+        result = self.check_scope(paths)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for path in [
+            'upstream/sub2api/backend/internal/repository/monitor_v4_line_metrics_write.go',
+            'upstream/sub2api/backend/internal/service/monitor_v4_line_metrics_worker.go',
+            'upstream/sub2api/frontend/pnpm-lock.yaml',
+        ]:
+            with self.subTest(path=path):
+                self.assertNotEqual(self.check_scope([path]).returncode, 0)
+
     def test_dependency_migration_and_unreviewed_backend_changes_remain_excluded(self):
         for path in ['go.mod', 'migrations/999.sql', 'internal/handler/auth_handler.go',
                      'internal/service/billing_service.go', 'internal/repository/group_repo.go']:

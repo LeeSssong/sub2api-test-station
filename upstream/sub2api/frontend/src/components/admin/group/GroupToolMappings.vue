@@ -1,78 +1,34 @@
 <template>
-  <section class="rounded-xl border border-gray-200 p-4 dark:border-dark-600" aria-label="AI 工具关联">
-    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">AI 工具关联</h3>
-    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">来源：管理员配置。未选择工具时按分组平台默认展示；保存关联不会改变已有密钥。</p>
-    <fieldset :disabled="loading || saving || !loaded" class="mt-3 flex flex-wrap gap-4">
-      <legend class="sr-only">选择此线路可用于哪些 AI 工具</legend>
-      <label v-for="tool in tools" :key="tool.id" class="flex items-center gap-2 text-sm">
-        <input v-model="selected" type="checkbox" :value="tool.id" class="checkbox" />
-        {{ tool.label }}
-      </label>
-    </fieldset>
-    <p v-if="loading" class="mt-3 text-xs text-gray-500" role="status">正在读取工具关联…</p>
-    <div v-if="error" class="mt-3 flex items-center gap-3" role="alert">
-      <span class="text-sm text-red-600 dark:text-red-400">{{ error }}</span>
-      <button v-if="!loaded" type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="load">重试</button>
+  <section class="rounded-xl border border-gray-200 p-4 dark:border-dark-600" aria-label="平台工具归类">
+    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">工具归类</h3>
+    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">按分组平台默认归入 {{ defaultTool?.label || '暂无对应工具' }}；保存分组即可，无需单独关联。</p>
+    <p v-if="loading" class="mt-2 text-xs text-gray-500" role="status">正在核对历史例外…</p>
+    <div v-if="error" class="mt-2 flex items-center gap-3" role="alert">
+      <span class="text-sm text-red-600 dark:text-red-400">历史关联读取失败，暂不能确认是否有例外。</span>
+      <button type="button" class="btn btn-secondary btn-sm" @click="load">重试</button>
     </div>
-    <p v-if="saved" class="mt-3 text-sm text-emerald-600 dark:text-emerald-400" role="status">工具关联已保存</p>
-    <button type="button" class="btn btn-secondary mt-3" :disabled="loading || saving || !loaded" @click="save">
-      {{ saving ? '正在保存…' : '保存工具关联' }}
-    </button>
+    <p v-if="exceptionLabels.length" class="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">
+      历史例外（只读）：当前仍归入 {{ exceptionLabels.join('、') }}。请交负责人核对后再决定保留或迁移；本次不会清除。
+    </p>
   </section>
 </template>
-
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { apiClient } from '@/api/client'
-
-import { tools, type Tool } from '@/features/ai-tools/model'
-
-type ToolId = Tool['id']
-interface ToolMappings { group_id: number; tool_ids: ToolId[]; version: number; effective_at: string; updated_by: number }
-const props = defineProps<{ groupId: number }>()
-const selected = ref<ToolId[]>([])
-const loading = ref(false)
-const saving = ref(false)
-const loaded = ref(false)
-const error = ref('')
-const saved = ref(false)
-let requestGeneration = 0
-
-async function load() {
-  const generation = ++requestGeneration
-  const groupId = props.groupId
-  loading.value = true
-  loaded.value = false
-  error.value = ''
-  saved.value = false
-  try {
-    const { data } = await apiClient.get<ToolMappings>(`/admin/groups/${groupId}/tool-mappings`)
-    if (generation !== requestGeneration) return
-    selected.value = [...data.tool_ids]
-    loaded.value = true
-  } catch {
-    if (generation === requestGeneration) error.value = '工具关联读取失败，请检查权限或网络后重试。'
-  } finally {
-    if (generation === requestGeneration) loading.value = false
-  }
+import { tools } from '@/features/ai-tools/model'
+const props=defineProps<{groupId:number;platform:string}>()
+const defaultTool=computed(()=>tools.find(tool=>tool.platform===props.platform))
+const stored=ref<string[]>([]),loading=ref(false),error=ref(false)
+let generation=0
+const exceptionLabels=computed(()=>{
+ const ids=stored.value
+ return ids.length && !(ids.length===1 && ids[0]===defaultTool.value?.id) ? ids.map(id=>tools.find(t=>t.id===id)?.label||id) : []
+})
+async function load(){
+ const current=++generation;loading.value=true;error.value=false;stored.value=[]
+ try{const {data}=await apiClient.get<{tool_ids:string[]}>('/admin/groups/'+props.groupId+'/tool-mappings');if(current===generation)stored.value=Array.isArray(data.tool_ids)?data.tool_ids:[]}
+ catch{if(current===generation)error.value=true}
+ finally{if(current===generation)loading.value=false}
 }
-async function save() {
-  if (!loaded.value || loading.value || saving.value) return
-  const generation = requestGeneration
-  saving.value = true
-  error.value = ''
-  saved.value = false
-  try {
-    const { data } = await apiClient.put<ToolMappings>(`/admin/groups/${props.groupId}/tool-mappings`, { tool_ids: [...selected.value] })
-    if (generation !== requestGeneration) return
-    selected.value = [...data.tool_ids]
-    saved.value = true
-  } catch {
-    if (generation === requestGeneration) error.value = '工具关联保存失败，请检查权限或网络后重试；当前选择已保留。'
-  } finally {
-    saving.value = false
-  }
-}
-watch(() => props.groupId, load, { immediate: true })
-watch(selected, () => { saved.value = false }, { deep: true, flush: 'sync' })
+watch(()=>props.groupId,load,{immediate:true})
 </script>

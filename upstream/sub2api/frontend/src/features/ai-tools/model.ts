@@ -10,9 +10,11 @@ export const tools = [
 export type Tool = typeof tools[number]
 const SNAPSHOT_FRESHNESS_MS = 7 * 60 * 1000
 export function toolIdsForGroup(group: Group, metric?: MonitorV4Group): string[] {
+  const fallback = tools.find(tool => tool.platform === group.platform)
+  if (group.tool_mapping_source === 'platform') return fallback ? [fallback.id] : []
+  if (group.tool_mapping_source === 'unclassified') return []
   if (group.tool_ids?.length) return group.tool_ids
   if (group.tool_ids === undefined && metric?.tool_ids?.length) return metric.tool_ids
-  const fallback = tools.find(tool => tool.platform === group.platform)
   return fallback ? [fallback.id] : []
 }
 export function linkedCounts(keys: ApiKey[]): Map<number, number> {

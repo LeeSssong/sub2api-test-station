@@ -569,8 +569,7 @@
       :metrics="lineMetrics"
       :metrics-generated-at="lineMetricsGeneratedAt"
       :metrics-error="lineMetricsError"
-      @retry-metrics="loadLineContext"
-      :linked-counts="lineCounts"
+      :recommended-group-ids="recommendedGroupIds"
       @close="showCreateModal = false"
       @created="handleKeyCreated"
     />
@@ -608,9 +607,7 @@
             :metrics="lineMetrics"
             :metrics-generated-at="lineMetricsGeneratedAt"
             :metrics-error="lineMetricsError"
-            @retry-metrics="loadLineContext"
-            :linked-counts="lineCounts"
-            :placeholder="t('keys.selectGroup')"
+                  :placeholder="t('keys.selectGroup')"
             :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
           />
@@ -1220,7 +1217,6 @@
             />
           </div>
         </div>
-        <p v-if="lineMetricsError" class="keys-line-metrics-error" role="alert">近 1 小时统计读取失败，请重试。 <button type="button" class="xq-button" @click.stop="loadLineMetrics">重试</button></p>
         <!-- Group list -->
         <div class="keys-line-popup-list max-h-80 overflow-y-auto p-1.5">
           <button
@@ -1234,7 +1230,7 @@
                 ? 'keys-line-popup-option-selected'
                 : 'hover:bg-transparent'
             ]"
-            :title="option.description || undefined"
+            :disabled="option.disabled"
           >
             <div class="keys-line-popup-content">
               <div class="keys-line-popup-heading">
@@ -1246,7 +1242,9 @@
                   {{ option.statusLabel }}<template v-if="selectedKeyForGroup?.group_id === option.value"> · 当前线路</template>
                 </span>
               </div>
-              <div class="keys-line-popup-metrics">近 1 小时成功率 <span :data-tone="option.successTone">{{ option.successLabel }}</span> · 首字 {{ option.ttftLabel }}</div>
+              <p v-if="option.description" class="keys-line-popup-description">{{ option.description }}</p>
+              <div class="keys-line-popup-metrics"><span title="近24小时可用性">可用性 <span :data-tone="option.successTone">{{ option.successLabel }}</span></span> · <span title="近24小时首字响应中位数（P50）">首字 <span :class="option.ttftSeverity ? LATENCY_TEXT_CLASSES[option.ttftSeverity] : ''">{{ option.ttftLabel }}</span></span></div>
+              <small v-if="option.unavailableReason">不可选：{{ option.unavailableReason }}</small>
             </div>
           </button>
           <!-- Empty state when search has no results -->
@@ -1269,7 +1267,7 @@
 const { t } = useI18n()
 import { useRoute } from 'vue-router'
 const mergedRoute = useRoute()
-const props = withDefaults(defineProps<{ refreshVersion?: number }>(), { refreshVersion: 0 })
+const props = withDefaults(defineProps<{ refreshVersion?: number; recommendedGroupIds?: ReadonlyMap<string, number> }>(), { refreshVersion: 0 })
 const emit = defineEmits<{ changed: [] }>()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import { buildGatewayUrl } from '@/api/client'
@@ -1288,11 +1286,12 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import type { ApiKey, ApiKeyConcurrencySnapshot, Group, PublicSettings, UpdateApiKeyRequest } from '@/types'
 	import { buildLineOptions } from '@/components/keys/lineOptions'
 import { fitKeyRows, placeKeyMenu } from '@/components/keys/keysViewport'
-import { providerIcon } from '@/features/ai-tools/model'
+import { providerIcon, rankWeightedRoutes, toolIdsForGroup, tools } from '@/features/ai-tools/model'
+import { LATENCY_TEXT_CLASSES } from '@/utils/latencyHealth'
 import LineSelect from '@/components/keys/LineSelect.vue'
 import BulkKeyEditDialog from '@/components/keys/BulkKeyEditDialog.vue'
 import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
-import { linkedCounts } from '@/features/ai-tools/model'
+import { getLineSelectionMetrics, type LineSelectionMetric } from '@/features/monitor-v4/lineSelection'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
 import type { MonitorV4Group } from '@/features/monitor-v4/types'
 import type { Column } from '@/components/common/types'
@@ -1447,10 +1446,22 @@ const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
 const formatKeyUsage = (value: number | null | undefined) =>
   value == null || !Number.isFinite(value) ? t('keys.usageUnavailable') : `$${formatMoneyFixed(value, 4)}`
 const userGroupRates = ref<Record<number, number>>({})
-const lineMetrics = ref(new Map<number, MonitorV4Group>())
+const lineMetrics = ref(new Map<number, LineSelectionMetric>())
 const lineMetricsGeneratedAt = ref<string | null>(null)
 const lineMetricsError = ref(false)
-const lineCounts = ref<Map<number, number> | null>(null)
+const localRankingMetrics = ref<MonitorV4Group[]>([])
+const localRankingGeneratedAt = ref<string | null>(null)
+const recommendedGroupIds = computed<ReadonlyMap<string, number>>(() => {
+  if (props.recommendedGroupIds) return props.recommendedGroupIds
+  const byId = new Map(localRankingMetrics.value.map(metric => [metric.id, metric]))
+  const recommendations = new Map<string, number>()
+  for (const tool of tools) {
+    const matching = groups.value.filter(group => toolIdsForGroup(group, byId.get(group.id)).includes(tool.id))
+    const best = rankWeightedRoutes(matching, byId, now.value.getTime(), localRankingGeneratedAt.value)[0]?.group
+    if (best) recommendations.set(tool.id, best.id)
+  }
+  return recommendations
+})
 
 // Policy and counts always belong to one completed refresh, never to editable key data.
 const concurrencyState = ref<{
@@ -1701,7 +1712,7 @@ const onStatusFilterChange = (value: string | number | boolean | null) => {
 
 // Convert groups to Select options format with rate multiplier and subscription type
 const groupOptions = computed(() =>
-  buildLineOptions(groups.value, userGroupRates.value, lineMetrics.value, lineCounts.value, undefined, lineMetricsGeneratedAt.value, now.value.getTime())
+  buildLineOptions(groups.value, userGroupRates.value, lineMetrics.value, null, undefined, lineMetricsGeneratedAt.value, now.value.getTime(), lineMetricsError.value)
 )
 
 // Group dropdown search
@@ -1811,38 +1822,52 @@ const loadUserGroupRates = async () => {
   }
 }
 
-async function loadLineMetrics() {
+let lineMetricsController: AbortController | null = null
+let localRankingController: AbortController | null = null
+
+async function loadLocalRankingRecommendations() {
+  localRankingController?.abort()
+  const controller = new AbortController()
+  localRankingController = controller
+  localRankingMetrics.value = []
+  localRankingGeneratedAt.value = null
   try {
-    const snapshot = await getHybridPerformanceSnapshot('1h')
+    const snapshot = await getHybridPerformanceSnapshot('24h', controller.signal)
+    if (disposed || controller.signal.aborted || localRankingController !== controller) return
+    localRankingMetrics.value = snapshot.groups
+    localRankingGeneratedAt.value = snapshot.generated_at
+    now.value = new Date()
+  } catch {
+    if (disposed || controller.signal.aborted || localRankingController !== controller) return
+    localRankingMetrics.value = []
+    localRankingGeneratedAt.value = null
+  }
+}
+
+async function loadLineMetrics() {
+  lineMetricsController?.abort()
+  const controller = new AbortController()
+  lineMetricsController = controller
+  try {
+    const snapshot = await getLineSelectionMetrics(controller.signal)
+    if (disposed || controller.signal.aborted || lineMetricsController !== controller) return
     lineMetrics.value = new Map(snapshot.groups.map(group => [group.id, group]))
     lineMetricsGeneratedAt.value = snapshot.generated_at
     now.value = new Date()
     lineMetricsError.value = false
   } catch {
+    if (disposed || controller.signal.aborted || lineMetricsController !== controller) return
     lineMetrics.value = new Map()
     lineMetricsGeneratedAt.value = null
     lineMetricsError.value = true
   }
 }
 
-async function loadLineContext() {
-  const [, keys] = await Promise.allSettled([
-    loadLineMetrics(),
-    (async () => {
-      const first = await keysAPI.list(1, 100)
-      const items = [...first.items]
-      for (let page = 2; page <= Math.ceil(first.total / 100); page++) {
-        const next = await keysAPI.list(page, 100)
-        items.push(...next.items)
-      }
-      return items
-    })()
-  ])
-  if (keys.status === 'fulfilled') lineCounts.value = linkedCounts(keys.value)
-}
+async function loadLineContext() { await loadLineMetrics() }
 
 watch([showCreateModal, showEditModal], ([create, edit]) => {
   if (create || edit) void loadLineContext()
+  if (create && !props.recommendedGroupIds) void loadLocalRankingRecommendations()
 })
 
 const loadPublicSettings = async () => {
@@ -2344,6 +2369,8 @@ onUnmounted(() => {
   disposed = true
   stopConcurrencyRefresh()
   abortController?.abort()
+  lineMetricsController?.abort()
+  localRankingController?.abort()
   document.removeEventListener('visibilitychange', handleConcurrencyVisibility)
   document.removeEventListener('click', closeGroupSelector)
   inventoryObserver?.disconnect()
@@ -2362,7 +2389,6 @@ onUnmounted(() => {
   flex-shrink: 0;
   margin-left: auto;
 }
-.keys-line-metrics-error{flex-shrink:0;padding:8px 12px;color:var(--xq-warning);font-size:12px;line-height:1.5}
 .keys-inventory :deep(input[type="checkbox"]) { accent-color: var(--xq-accent); }
 .keys-bulk-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--xq-line); color:var(--xq-secondary); font-size:13px; flex-shrink:0; }
 .keys-bulk-toolbar .btn { min-height:32px; padding:4px 12px; font-size:12px; }
@@ -2439,4 +2465,13 @@ onUnmounted(() => {
 .keys-line-popup-metrics span[data-tone="red"]{color:var(--xq-danger);}
 .keys-line-popup-empty{color:var(--xq-secondary);}
 @media(max-width:480px){.keys-line-popup-status{margin-left:28px;}.keys-line-popup-metrics{line-height:1.6;}}
+</style>
+
+<style scoped>
+.keys-line-popup-description{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:var(--xq-secondary);margin:6px 0;line-height:1.6}
+.keys-line-popup-status:has(i[data-status="success"]){color:var(--xq-success);}
+
+.keys-line-popup-status:has(i[data-status="warning"]){color:var(--xq-warning);}
+
+.keys-line-popup-status:has(i[data-status="danger"]){color:var(--xq-danger);}
 </style>

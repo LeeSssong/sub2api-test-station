@@ -6,6 +6,7 @@ export interface MonitorV4Group {
   id: number
   name: string
   tool_ids?: string[]
+  tool_mapping_source?: 'platform' | 'legacy_exception' | 'unclassified'
   status?: string
   platform: string
   rate_multiplier: number

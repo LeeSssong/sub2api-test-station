@@ -62,6 +62,7 @@ function group(value: unknown, path: string): MonitorV4Group {
   const sourceUpdatedAt = source.source_updated_at == null || source.source_updated_at === '' ? null : text(source.source_updated_at, `${path}.source_updated_at`)
   return {
     id, name, platform,
+    tool_mapping_source: ['platform','legacy_exception','unclassified'].includes(String(source.tool_mapping_source)) ? source.tool_mapping_source as MonitorV4Group['tool_mapping_source'] : undefined,
     status: typeof source.status === "string" ? source.status : undefined,
     tool_ids: Array.isArray(source.tool_ids) ? source.tool_ids.filter((id): id is string => typeof id === "string") : [],
     rate_multiplier: number(source.rate_multiplier, `${path}.rate_multiplier`),

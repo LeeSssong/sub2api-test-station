@@ -27,7 +27,7 @@
           </article>
         </ToolCarousel>
       </template>
-      <KeysView :refresh-version="keyRefreshVersion" @changed="loadWorkspace" />
+      <KeysView :refresh-version="keyRefreshVersion" :recommended-group-ids="recommendedGroupIds" @changed="loadWorkspace" />
       <BaseDialog brand-theme :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
         <div class="detail-section-head"><div class="detail-period"><span>统计范围</span><div class="detail-period-segment" role="group" aria-label="线路统计时间"><button v-for="period in periods" :key="period.value" :aria-pressed="detailWindow===period.value" :class="{active:detailWindow===period.value}" @click="loadDetails(period.value)">{{ period.label }}</button></div><label class="detail-granularity">粒度 <select aria-label="线路图粒度" :value="detailWindow==='1h'?'5m':detailGranularity" :disabled="detailWindow==='1h'" @change="detailGranularity=($event.target as HTMLSelectElement).value as 'hour'|'day';loadDetails(detailWindow)"><option v-if="detailWindow==='1h'" value="5m">5 分钟</option><option value="hour">小时</option><option value="day">天</option></select></label></div></div>
         <div v-if="detailError" class="workspace-error" role="alert">{{ detailError }} <button class="xq-button" @click="loadDetails(detailWindow)">重试</button></div>
@@ -58,7 +58,7 @@
           <div v-if="!detailRows.length" class="empty">暂无线路</div>
         </div>
       </BaseDialog>
-      <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :tool-id="createTool?.id" :groups="createTool?.active||[]" :metrics="metricsById" :metrics-generated-at="metricsGeneratedAt" :metrics-error="statsFailed" @retry-metrics="loadWorkspace" :linked-counts="counts" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
+      <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :tool-id="createTool?.id" :groups="createTool?.active||[]" :metrics="selectionMetrics" :metrics-generated-at="selectionGeneratedAt" :metrics-error="selectionError" :recommended-group-ids="recommendedGroupIds" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
       <PricingDialog :tool="pricingTool" :lines="pricingTool?.groups || []" :rates="rates" @close="closePricing" />
     </section>
   </AppLayout>
@@ -78,9 +78,10 @@ import PricingDialog from '@/features/ai-tools/PricingDialog.vue'
 import ToolCarousel from '@/features/ai-tools/ToolCarousel.vue'
 import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
+import { getLineSelectionMetrics, type LineSelectionMetric } from '@/features/monitor-v4/lineSelection'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
 import { formatLineRate, resolveLineRate } from '@/components/keys/lineOptions'
-import { tools, linkedCounts, configuredLines, routeCountHealth, routeHealth, routeHealthTone, routeSuccessLabel, compareQuality, rankWeightedRoutes, providerIcon, toolIdsForGroup } from '@/features/ai-tools/model'
+import { tools, configuredLines, routeCountHealth, routeHealth, routeHealthTone, routeSuccessLabel, compareQuality, rankWeightedRoutes, providerIcon, toolIdsForGroup } from '@/features/ai-tools/model'
 import { getDashboardWorkspaceSnapshot, setDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
 import type { ApiKey, Group } from '@/types'
 import type { MonitorV4Group, MonitorV4Window } from '@/features/monitor-v4/types'
@@ -109,7 +110,6 @@ let loadController:AbortController|undefined, detailController:AbortController|u
 const detailCache=new Map<MonitorV4Window,MonitorV4Group[]>()
 let returnToDetailGroup:number|undefined
 let detailsTrigger:HTMLElement|null=null, createTrigger:HTMLElement|null=null
-const counts=computed(()=>linkedCounts(keys.value))
 const metricsById=computed(()=>new Map(metrics.value.map(m=>[m.id,m])))
 const rankingMetricsById=computed(()=>new Map(rankingMetrics.value.map(m=>[m.id,m])))
 const detailSLACounts=computed(()=>timelineLoading.value || timelineError.value ? new Map<number,{request_count:number;success_count:number}>() : aggregateRouteSLACounts(timelinePoints.value))
@@ -131,6 +131,7 @@ const toolCards=computed(()=>tools.map(tool=>{
   return {...tool,groups:matching,active,best:ranked[0]?.group,bestEmptyText,healthItems,healthSummary}
 }))
 type ToolCard=typeof toolCards.value[number]
+const recommendedGroupIds=computed(()=>new Map(toolCards.value.flatMap(tool=>tool.best ? [[tool.id,tool.best.id] as const] : [])))
 const pricingTool=ref<ToolCard|null>(null)
 let pricingTrigger:HTMLElement|null=null
 function openPricing(tool:ToolCard){pricingTrigger=document.activeElement as HTMLElement;pricingTool.value=tool}
@@ -194,7 +195,16 @@ async function loadDetails(window:MonitorV4Window){
     }
   }finally{if(!c.signal.aborted)detailLoading.value=false}
 }
-function openCreate(tool:ToolCard,id?:number){createTrigger=document.activeElement as HTMLElement;createTool.value=tool;createGroupId.value=id??tool.best?.id}
+const selectionMetrics=ref(new Map<number,LineSelectionMetric>())
+const selectionGeneratedAt=ref<string|null>(null), selectionError=ref(false)
+let selectionController:AbortController|undefined
+async function loadSelectionMetrics(){
+ selectionController?.abort();const c=new AbortController();selectionController=c
+ selectionMetrics.value=new Map();selectionGeneratedAt.value=null;selectionError.value=false
+ try{const s=await getLineSelectionMetrics(c.signal);if(c.signal.aborted)return;selectionMetrics.value=new Map(s.groups.map(g=>[g.id,g]));selectionGeneratedAt.value=s.generated_at}
+ catch{if(!c.signal.aborted)selectionError.value=true}
+}
+function openCreate(tool:ToolCard,id?:number){void loadSelectionMetrics();createTrigger=document.activeElement as HTMLElement;createTool.value=tool;createGroupId.value=id??tool.best?.id}
 function restoreDetailFocus(){
   if(returnToDetailGroup){document.querySelector<HTMLElement>(`[data-detail-group-id="${returnToDetailGroup}"]`)?.focus();returnToDetailGroup=undefined}
 }
@@ -205,5 +215,5 @@ function closeCreate(){
 }
 async function keyCreated(key:ApiKey){keyRefreshVersion.value++;keys.value=[...keys.value.filter(k=>k.id!==key.id),key];createTool.value=null;await loadWorkspace();if(selectedTool.value)await loadDetails(detailWindow.value)}
 onMounted(()=>{void loadWorkspace();freshnessTimer=setInterval(()=>{clock.value=Date.now()},30000)})
-onBeforeUnmount(()=>{clearInterval(freshnessTimer);loadController?.abort();detailController?.abort();})
+onBeforeUnmount(()=>{clearInterval(freshnessTimer);selectionController?.abort();loadController?.abort();detailController?.abort();})
 </script>

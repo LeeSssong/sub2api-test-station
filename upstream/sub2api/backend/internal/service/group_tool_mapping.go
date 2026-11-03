@@ -83,3 +83,17 @@ func (s *adminServiceImpl) SetGroupToolMapping(ctx context.Context, id int64, id
 	}
 	return repo.ReplaceGroupToolMapping(ctx, id, normalized, actor)
 }
+
+// ResolveGroupTools uses platform defaults and explicitly identifies retained
+// legacy exceptions. No historical mapping is cleared by this read path.
+func ResolveGroupTools(platform string, legacy []string) ([]string, string) {
+	defaults := map[string]string{"openai": "codex", "anthropic": "claude", "gemini": "gemini", "deepseek": "deepseek", "grok": "grok"}
+	fallback, known := defaults[platform]
+	if len(legacy) > 0 && !(known && len(legacy) == 1 && legacy[0] == fallback) {
+		return append([]string{}, legacy...), "legacy_exception"
+	}
+	if known {
+		return []string{fallback}, "platform"
+	}
+	return []string{}, "unclassified"
+}

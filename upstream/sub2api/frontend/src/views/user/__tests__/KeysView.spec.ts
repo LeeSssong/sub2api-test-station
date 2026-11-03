@@ -19,6 +19,7 @@ const {
   getDashboardApiKeysUsage,
   getAvailableGroups,
   getUserGroupRates,
+  getLineSelectionMetrics,
   getHybridPerformanceSnapshot,
   showError,
   showSuccess,
@@ -34,6 +35,7 @@ const {
   getDashboardApiKeysUsage: vi.fn(),
   getAvailableGroups: vi.fn(),
   getUserGroupRates: vi.fn(),
+  getLineSelectionMetrics: vi.fn(),
   getHybridPerformanceSnapshot: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -111,6 +113,7 @@ vi.mock('@/api', () => ({
   },
 }))
 vi.mock('@/api/keys', () => ({ keysAPI: { create: createKey } }))
+vi.mock('@/features/monitor-v4/lineSelection', () => ({ getLineSelectionMetrics }))
 vi.mock('@/features/monitor-v4/api', () => ({ getHybridPerformanceSnapshot }))
 
 vi.mock('@/stores/app', () => ({
@@ -261,8 +264,9 @@ const IconStub = {
   template: '<span data-test="icon">{{ name }}</span>',
 }
 
-const mountView = async () => {
+const mountView = async (recommendedGroupIds?: ReadonlyMap<string, number>) => {
   const wrapper = mount(KeysView, {
+    props: { recommendedGroupIds },
     global: {
       stubs: {
         AppLayout: AppLayoutStub,
@@ -334,34 +338,117 @@ describe('user KeysView column settings', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-05T00:00:00Z'))
     getAvailableGroups.mockResolvedValue([{ id: 12, name: 'GPT', status: 'active', platform: 'openai', rate_multiplier: 1 }])
-    getHybridPerformanceSnapshot.mockResolvedValue({ generated_at: new Date().toISOString(), groups: [{ id: 12, sla_request_count: 100, sla_success_count: 95 }] })
+    getLineSelectionMetrics.mockResolvedValue({ generated_at: new Date().toISOString(), groups: [{ id: 12, sla_request_count: 100, sla_success_count: 95 }] })
     const wrapper = await mountView()
     await wrapper.get('.keys-line-trigger').trigger('click');await flushPromises()
     expect(wrapper.get('.keys-line-popup').text()).toContain('正常运行')
     vi.advanceTimersByTime(8 * 60 * 1000);await nextTick()
     expect(wrapper.get('.keys-line-popup').text()).not.toContain('正常运行')
-    expect(wrapper.get('.keys-line-popup').text()).toContain('暂无数据')
+    expect(wrapper.get('.keys-line-popup').text()).toContain('统计已过期')
     wrapper.unmount()
   })
-  it('explains inline statistics failure and retries in place', async () => {
-    getHybridPerformanceSnapshot.mockRejectedValueOnce(new Error('offline'))
+  it('shows inline statistics failure only in route status and reloads on re-entry', async () => {
+    getAvailableGroups.mockResolvedValue([{ id: 12, name: 'GPT', status: 'active', platform: 'openai', rate_multiplier: 1 }])
+    getLineSelectionMetrics.mockRejectedValueOnce(new Error('offline'))
     const wrapper = await mountView()
     await wrapper.get('.keys-line-trigger').trigger('click');await flushPromises()
-    const alert = wrapper.get('.keys-line-popup [role="alert"]')
-    expect(alert.text()).toContain('近 1 小时统计读取失败')
-    await alert.get('button').trigger('click');await flushPromises()
-    expect(wrapper.find('.keys-line-popup [role="alert"]').exists()).toBe(false)
-    expect(getHybridPerformanceSnapshot).toHaveBeenCalledTimes(2)
+    const popup = wrapper.get('.keys-line-popup')
+    expect(popup.find('[role="alert"]').exists()).toBe(false)
+    expect(popup.find('.keys-line-metrics-error').exists()).toBe(false)
+    expect(popup.text()).toContain('统计读取失败')
+    expect(popup.text()).toContain('可用性 —')
+    expect(popup.text()).toContain('首字 —')
+    expect(popup.text()).not.toContain('请重试')
+    await wrapper.get('.keys-line-trigger').trigger('click')
+    await wrapper.get('.keys-line-trigger').trigger('click');await flushPromises()
+    expect(wrapper.get('.keys-line-popup').text()).not.toContain('统计读取失败')
+    expect(getLineSelectionMetrics).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
-  it('passes statistics failure and retry through the create dialog', async () => {
-    getHybridPerformanceSnapshot.mockRejectedValueOnce(new Error('offline'))
+  it('keeps the newest line statistics when an earlier request fails later', async () => {
+    const older = deferred<unknown>()
+    getLineSelectionMetrics.mockImplementationOnce(() => older.promise)
+      .mockResolvedValueOnce({ generated_at: new Date().toISOString(), groups: [] })
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
+    const selector = wrapper.getComponent(LineSelect)
+    await wrapper.get('.keys-line-trigger').trigger('click');await flushPromises()
+    expect(selector.props('metricsError')).toBe(false)
+    older.reject(new Error('late old failure'));await flushPromises()
+    expect(selector.props('metricsError')).toBe(false)
+    wrapper.unmount()
+  })
+  it('ignores an earlier successful response and aborts statistics on unmount', async () => {
+    const older = deferred<unknown>()
+    const latest = { id: 12, sla_request_count: 100, sla_success_count: 95 }
+    getLineSelectionMetrics.mockImplementationOnce(() => older.promise)
+      .mockResolvedValueOnce({ generated_at: new Date().toISOString(), groups: [latest] })
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
+    const selector = wrapper.getComponent(LineSelect)
+    const previousSignal = getLineSelectionMetrics.mock.calls[0]![0] as AbortSignal
+    await wrapper.get('.keys-line-trigger').trigger('click');await flushPromises()
+    expect(previousSignal.aborted).toBe(true)
+    older.resolve({ generated_at: new Date().toISOString(), groups: [] });await flushPromises()
+    expect(selector.props('metrics').get(12)).toEqual(latest)
+    const currentSignal = getLineSelectionMetrics.mock.calls[1]![0] as AbortSignal
+    wrapper.unmount()
+    expect(currentSignal.aborted).toBe(true)
+  })
+  it('shows create statistics failure only inside the dropdown and reloads when reopened', async () => {
+    getAvailableGroups.mockResolvedValue([{ id: 12, name: 'GPT', status: 'active', platform: 'openai', rate_multiplier: 1 }])
+    getLineSelectionMetrics.mockRejectedValueOnce(new Error('offline'))
     const wrapper = await mountView()
     await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
     const selector = wrapper.getComponent(LineSelect)
     expect(selector.props('metricsError')).toBe(true)
-    selector.vm.$emit('retry-metrics');await flushPromises()
-    expect(selector.props('metricsError')).toBe(false)
+    expect(selector.find('[role="alert"]').exists()).toBe(false)
+    expect(selector.props('metrics').size).toBe(0)
+    expect(wrapper.text()).not.toContain('请重试')
+    wrapper.getComponent(CreateLineKeyDialog).vm.$emit('close');await flushPromises()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
+    expect(wrapper.getComponent(LineSelect).props('metricsError')).toBe(false)
+    expect(getLineSelectionMetrics).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+  it('shows each tool best route in ordinary creation without choosing a cross-tool winner', async () => {
+    getAvailableGroups.mockResolvedValue([
+      { id: 1, name: 'Codex 推荐', status: 'active', platform: 'openai', rate_multiplier: 2 },
+      { id: 2, name: 'Gemini 推荐', status: 'active', platform: 'gemini', rate_multiplier: 1 },
+    ])
+    const recommended = new Map([['codex', 1], ['gemini', 2]])
+    const wrapper = await mountView(recommended)
+    await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
+    const selector = wrapper.getComponent(LineSelect)
+    expect(selector.props('recommendedGroupIds')).toEqual(recommended)
+    expect(selector.props('recommendedGroupIds').size).toBe(2)
+    wrapper.unmount()
+  })
+  it('loads the same 24-hour ranking for independent ordinary creation and expires its badges', async () => {
+    getAvailableGroups.mockResolvedValue([
+      { id: 1, name: 'Codex 推荐', status: 'active', platform: 'openai', rate_multiplier: 2 },
+      { id: 2, name: 'Gemini 推荐', status: 'active', platform: 'gemini', rate_multiplier: 1 },
+    ])
+    getHybridPerformanceSnapshot.mockResolvedValue({ generated_at: new Date().toISOString(), groups: [
+      { id: 1, sla_request_count: 100, sla_success_count: 99, cache_hit_rate: 0.5, ttft_p50_ms: 2000 },
+      { id: 2, sla_request_count: 100, sla_success_count: 95, cache_hit_rate: 0.6, ttft_p50_ms: 1000 },
+    ] })
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
+    expect(getHybridPerformanceSnapshot).toHaveBeenCalledWith('24h', expect.any(AbortSignal))
+    const selector = wrapper.getComponent(LineSelect)
+    expect(selector.props('recommendedGroupIds').size).toBe(2)
+    vi.advanceTimersByTime(8 * 60 * 1000);await nextTick()
+    expect(selector.props('recommendedGroupIds').size).toBe(0)
+    wrapper.unmount()
+  })
+  it('does not fabricate a recommendation when the independent ranking request fails', async () => {
+    getAvailableGroups.mockResolvedValue([{ id: 1, name: 'Codex', status: 'active', platform: 'openai', rate_multiplier: 1 }])
+    getHybridPerformanceSnapshot.mockRejectedValue(new Error('ranking offline'))
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click');await flushPromises()
+    const selector = wrapper.getComponent(LineSelect)
+    expect(selector.props('recommendedGroupIds').size).toBe(0)
     wrapper.unmount()
   })
 
@@ -381,7 +468,8 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockReset()
     getAvailableGroups.mockReset()
     getUserGroupRates.mockReset()
-    getHybridPerformanceSnapshot.mockReset()
+    getLineSelectionMetrics.mockReset()
+    getHybridPerformanceSnapshot.mockReset().mockResolvedValue({ generated_at: new Date().toISOString(), groups: [] })
     showError.mockReset()
     showSuccess.mockReset()
     copyToClipboard.mockReset()
@@ -399,7 +487,7 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
-    getHybridPerformanceSnapshot.mockResolvedValue({ groups: [] })
+    getLineSelectionMetrics.mockResolvedValue({ groups: [] })
     isCurrentStep.mockReturnValue(false)
   })
 
@@ -477,7 +565,7 @@ describe('user KeysView column settings', () => {
       { id: 13, name: 'Other line', status: 'active', platform: 'openai', rate_multiplier: 1 }
     ])
     getUserGroupRates.mockResolvedValue({ 12: 0.8 })
-    getHybridPerformanceSnapshot.mockResolvedValue({ generated_at: new Date().toISOString(), groups: [{ id: 12, sla_request_count: 100, sla_success_count: 75, success_rate: 75, ttft_p50_ms: 2160, request_count: 10 }] })
+    getLineSelectionMetrics.mockResolvedValue({ generated_at: new Date().toISOString(), groups: [{ id: 12, sla_request_count: 100, sla_success_count: 75, success_rate: 75, ttft_p50_ms: 2160, request_count: 10 }] })
     const wrapper = await mountView()
     await wrapper.get('button[title$=" · keys.clickToChangeGroup"]').trigger('click')
     await flushPromises()

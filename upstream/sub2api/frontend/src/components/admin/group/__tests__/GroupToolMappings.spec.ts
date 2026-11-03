@@ -2,58 +2,31 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import GroupToolMappings from '../GroupToolMappings.vue'
 import { apiClient } from '@/api/client'
-
 vi.mock('@/api/client', () => ({ apiClient: { get: vi.fn(), put: vi.fn() } }))
-const record = (tool_ids: string[]) => ({ data: { group_id: 7, tool_ids, version: 1, effective_at: '', updated_by: 1 } })
-const button = (wrapper: ReturnType<typeof mount>, label: string) => wrapper.findAll('button').find(item => item.text() === label)!
-
-describe('GroupToolMappings', () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(apiClient.get).mockResolvedValue(record(['codex'])) })
-  it('loads explicit mappings and saves all five choices with an independent button', async () => {
-    const wrapper = mount(GroupToolMappings, { props: { groupId: 7 } })
-    await flushPromises()
-    expect(apiClient.get).toHaveBeenCalledWith('/admin/groups/7/tool-mappings')
-    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(5)
-    expect(wrapper.get('input[value="codex"]').element).toHaveProperty('checked', true)
-    expect(wrapper.get('input[value="claude"]').element).toHaveProperty('checked', false)
-    await wrapper.get('input[value="grok"]').setValue(true)
-    vi.mocked(apiClient.put).mockResolvedValue(record(['codex', 'grok']))
-    expect(button(wrapper, '保存工具关联').attributes('type')).toBe('button')
-    expect(wrapper.find('form').exists()).toBe(false)
-    await button(wrapper, '保存工具关联').trigger('click'); await flushPromises()
-    expect(apiClient.put).toHaveBeenCalledWith('/admin/groups/7/tool-mappings', { tool_ids: ['codex', 'grok'] })
-    expect(wrapper.text()).toContain('工具关联已保存')
-  })
-  it('does not infer mappings and blocks writes after an unauthorized read until retry succeeds', async () => {
-    vi.mocked(apiClient.get).mockRejectedValueOnce({ response: { status: 403 } })
-    const wrapper = mount(GroupToolMappings, { props: { groupId: 7 } })
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('读取失败')
-    expect(button(wrapper, '保存工具关联').attributes('disabled')).toBeDefined()
-    await button(wrapper, '重试').trigger('click'); await flushPromises()
-    expect(wrapper.get('input[value="codex"]').element).toHaveProperty('checked', true)
-  })
-  it('preserves selections when a write is denied and allows retry', async () => {
-    const wrapper = mount(GroupToolMappings, { props: { groupId: 7 } })
-    await flushPromises()
-    await wrapper.get('input[value="deepseek"]').setValue(true)
-    vi.mocked(apiClient.put).mockRejectedValueOnce({ response: { status: 403 } })
-    await button(wrapper, '保存工具关联').trigger('click'); await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('保存失败')
-    expect(wrapper.get('input[value="deepseek"]').element).toHaveProperty('checked', true)
-    expect(wrapper.text()).not.toContain('工具关联已保存')
-    expect(button(wrapper, '保存工具关联').attributes('disabled')).toBeUndefined()
-  })
-})
-
-it('saves Gemini alongside the original mapping and retains selection on failure', async () => {
-  const w=mount(GroupToolMappings,{props:{groupId:7}});await flushPromises()
-  await w.get('input[value="gemini"]').setValue(true)
-  vi.mocked(apiClient.put).mockRejectedValueOnce(new Error('offline'))
-  await button(w,'保存工具关联').trigger('click');await flushPromises()
-  expect(w.get('input[value="gemini"]').element).toHaveProperty('checked',true)
-  vi.mocked(apiClient.put).mockResolvedValueOnce(record(['codex','gemini']))
-  await button(w,'保存工具关联').trigger('click');await flushPromises()
-  expect(apiClient.put).toHaveBeenLastCalledWith('/admin/groups/7/tool-mappings',{tool_ids:['codex','gemini']})
-  expect(w.get('input[value="codex"]').element).toHaveProperty('checked',true)
+const record=(tool_ids:string[])=>({data:{group_id:7,tool_ids,version:1,effective_at:'',updated_by:1}})
+describe('platform-based tool classification',()=>{
+ beforeEach(()=>{vi.clearAllMocks();vi.mocked(apiClient.get).mockResolvedValue(record([]))})
+ it('shows platform default without a redundant edit or save step',async()=>{
+  const w=mount(GroupToolMappings,{props:{groupId:7,platform:'openai'}});await flushPromises()
+  expect(w.text()).toContain('Codex')
+  expect(w.find('input[type="checkbox"]').exists()).toBe(false)
+  expect(w.text()).not.toContain('保存工具关联')
+  expect(apiClient.put).not.toHaveBeenCalled()
+ })
+ it('exposes a historical nondefault mapping without discarding it',async()=>{
+  vi.mocked(apiClient.get).mockResolvedValueOnce(record(['claude']))
+  const w=mount(GroupToolMappings,{props:{groupId:7,platform:'openai'}});await flushPromises()
+  expect(w.text()).toContain('历史例外')
+  expect(w.text()).toContain('Claude Code')
+  expect(w.text()).toContain('Codex')
+  expect(w.text()).toContain('负责人')
+  expect(apiClient.put).not.toHaveBeenCalled()
+ })
+ it('shows mapping read error and allows retry',async()=>{
+  vi.mocked(apiClient.get).mockRejectedValueOnce(new Error('offline'))
+  const w=mount(GroupToolMappings,{props:{groupId:7,platform:'openai'}});await flushPromises()
+  expect(w.get('[role="alert"]').text()).toContain('读取失败')
+  await w.get('button').trigger('click');await flushPromises()
+  expect(w.text()).toContain('Codex')
+ })
 })

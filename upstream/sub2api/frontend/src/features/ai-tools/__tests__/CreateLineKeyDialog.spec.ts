@@ -25,7 +25,7 @@ describe('create line key', () => {
   it('allows unavailable already linked lines and searches supplied choices', async () => {
     const wrapper = render()
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
-    expect(wrapper.text()).toContain('关联密钥 2 把')
+    expect(wrapper.text()).not.toContain('关联密钥')
     expect(wrapper.text()).toContain('97%')
     expect(wrapper.text()).toContain('2.16s')
     await wrapper.get('[aria-label="搜索Codex线路"]').setValue('Plus')

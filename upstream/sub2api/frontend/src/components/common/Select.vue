@@ -254,6 +254,7 @@ const dropdownStyle = computed(() => {
     minWidth: `${minWidth}px`,
     maxWidth: `${boundaryRight - left}px`,
     zIndex: '100000020',
+    '--select-available-height': Math.max(80, (dropdownPosition.value === 'top' ? rect.top : window.innerHeight - rect.bottom) - 12) + 'px',
     ...(props.brand ? { ...defaultBrandTheme, ...brandTheme.value } : {})
   }
 

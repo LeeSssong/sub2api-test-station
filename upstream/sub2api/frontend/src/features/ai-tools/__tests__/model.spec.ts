@@ -108,3 +108,8 @@ describe('AI线路真实口径', () => {
    expect(toolIdsForGroup({ ...group(6), tool_ids: ['gemini','codex'] })).toEqual(['gemini','codex'])
    expect(toolIdsForGroup({ ...group(5), platform: 'gemini', tool_ids: ['claude'] } as Group)).toEqual(['claude'])
  })
+
+it('uses resolved platform classification and never restores a stale monitor override',()=>{
+ expect(toolIdsForGroup({...group(1),tool_ids:['codex'],tool_mapping_source:'platform'} as Group,metric({tool_ids:['claude']}))).toEqual(['codex'])
+ expect(toolIdsForGroup({...group(1),platform:'composite',tool_ids:[],tool_mapping_source:'unclassified'} as Group,metric({tool_ids:['claude']}))).toEqual([])
+})

@@ -22,6 +22,7 @@ func NewMonitorV4Handler(svc monitorV4Snapshotter) *MonitorV4Handler {
 
 type monitorV4GroupResponse struct {
 	ToolIDs                   []string `json:"tool_ids"`
+	ToolMappingSource         string   `json:"tool_mapping_source"`
 	Status                    string   `json:"status"`
 	ID                        int64    `json:"id"`
 	Name                      string   `json:"name"`
@@ -117,7 +118,7 @@ func (h *MonitorV4Handler) Snapshot(c *gin.Context) {
 			updatedAt = &value
 		}
 		groups = append(groups, monitorV4GroupResponse{
-			ToolIDs: group.ToolIDs, Status: group.Status,
+			ToolIDs: group.ToolIDs, ToolMappingSource: group.ToolMappingSource, Status: group.Status,
 			SLARequestCount: slaRequestCount, SLASuccessCount: slaSuccessCount,
 			ID: group.ID, Name: group.Name, Platform: group.Platform, RateMultiplier: group.RateMultiplier,
 			SuccessRate: group.SuccessRate, RequestCount: group.RequestCount, SuccessCount: group.SuccessCount,
@@ -164,4 +165,34 @@ func (h *MonitorV4Handler) Timeline(c *gin.Context) {
 		return
 	}
 	response.InternalError(c, "timeline unavailable")
+}
+
+func (h *MonitorV4Handler) LineSelection(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	if window := c.Query("window"); window != "" && window != string(service.MonitorV4Window24H) {
+		response.BadRequest(c, "unsupported line selection window")
+		return
+	}
+	if h == nil {
+		response.InternalError(c, "line selection unavailable")
+		return
+	}
+	reader, ok := h.service.(interface {
+		LineSelection(context.Context, int64, time.Time) (*service.MonitorV4LineSelection, error)
+	})
+	if !ok {
+		response.InternalError(c, "line selection unavailable")
+		return
+	}
+	value, err := reader.LineSelection(c.Request.Context(), subject.UserID, time.Now().UTC())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, value)
 }

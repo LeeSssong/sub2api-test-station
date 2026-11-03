@@ -2197,7 +2197,7 @@
             data-tour="edit-group-form-name"
           />
         </div>
-        <GroupToolMappings v-if="editingGroup" :key="editingGroup.id" :group-id="editingGroup.id" />
+        <GroupToolMappings v-if="editingGroup" :key="editingGroup.id" :group-id="editingGroup.id" :platform="editForm.platform" />
         <div>
           <GroupI18nField
             v-model="editForm.description"

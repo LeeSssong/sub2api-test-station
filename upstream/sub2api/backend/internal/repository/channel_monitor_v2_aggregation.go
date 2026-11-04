@@ -75,8 +75,15 @@ func (r *channelMonitorV2Repository) pruneChannelMonitorV2Retention(ctx context.
 	// the oldest rollup boundary. Otherwise adjacent chunks would rebuild the
 	// same daily bucket from source rows already pruned by the prior chunk.
 	var backfillCursor time.Time
-	if err := tx.QueryRowContext(ctx, `SELECT backfill_cursor FROM channel_monitor_v2_watermarks WHERE id = 1`).Scan(&backfillCursor); err == nil && backfillCursor.After(channelMonitorV2RetentionCutoff(now, channelMonitorV2RetentionMax)) {
-		return nil
+	var rebuildFrom sql.NullTime
+	if err := tx.QueryRowContext(ctx, `SELECT backfill_cursor, request_type_rebuild_from FROM channel_monitor_v2_watermarks WHERE id = 1`).Scan(&backfillCursor, &rebuildFrom); err == nil {
+		cutoff := channelMonitorV2RetentionCutoff(now, channelMonitorV2RetentionMax)
+		if rebuildFrom.Valid && rebuildFrom.Time.After(cutoff) {
+			cutoff = rebuildFrom.Time
+		}
+		if backfillCursor.After(cutoff) {
+			return nil
+		}
 	}
 	for _, rule := range channelMonitorV2RetentionRules {
 		cutoff := channelMonitorV2RetentionCutoff(now, rule.retention)
@@ -118,6 +125,17 @@ func (r *channelMonitorV2Repository) RecomputeRange(ctx context.Context, start, 
 		}
 	}()
 
+	var rebuildFrom sql.NullTime
+	if err = tx.QueryRowContext(ctx, `SELECT request_type_rebuild_from FROM channel_monitor_v2_watermarks WHERE id = 1`).Scan(&rebuildFrom); err != nil {
+		return err
+	}
+	if rebuildFrom.Valid && start.Before(rebuildFrom.Time) {
+		start = rebuildFrom.Time.UTC()
+	}
+	if !start.Before(end) {
+		return tx.Rollback()
+	}
+
 	// Idempotent window rewrite: drop existing facts/rollups in [start,end) then re-insert.
 	for _, table := range []string{
 		"channel_monitor_v2_latency_histograms_rollup",
@@ -146,7 +164,7 @@ func (r *channelMonitorV2Repository) RecomputeRange(ctx context.Context, start, 
 	if _, err = tx.ExecContext(ctx, channelMonitorV2ErrorAggregationSQL, start, end); err != nil {
 		return fmt.Errorf("aggregate channel monitor v2 errors: %w", err)
 	}
-	if err = r.recomputeFixedRollups(ctx, tx, start, end); err != nil {
+	if err = r.recomputeFixedRollups(ctx, tx, start, end, rebuildFrom.Time); err != nil {
 		return err
 	}
 	// Drop rows past per-tier TTL (1m short, coarse rollups long). Safe after rollup
@@ -167,7 +185,7 @@ const channelMonitorV2UsageMetricsSQL = `
 INSERT INTO channel_monitor_v2_metrics_1m (
   bucket_start, platform, group_id, model, success_requests,
   input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at
+  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at, request_type
 )
 SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s,
        COUNT(DISTINCT COALESCE(NULLIF(ul.request_id, ''), 'usage:' || ul.id::text))
@@ -179,18 +197,18 @@ SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s,
        COALESCE(SUM(ul.first_token_ms) FILTER (WHERE ul.first_token_ms IS NOT NULL AND ` + usageLogSuccessFilterUL + `), 0),
        COUNT(ul.first_token_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `),
        COALESCE(SUM(ul.duration_ms) FILTER (WHERE ul.duration_ms IS NOT NULL AND ` + usageLogSuccessFilterUL + `), 0),
-       COUNT(ul.duration_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `), NOW()
+       COUNT(ul.duration_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `), NOW(), COALESCE(ul.request_type, 0)
 FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
 WHERE ul.created_at >= $1 AND ul.created_at < $2
-GROUP BY 1, 2, 3, 4`
+GROUP BY 1, 2, 3, 4, COALESCE(ul.request_type, 0)`
 
 const channelMonitorV2UserMetricsSQL = `
 INSERT INTO channel_monitor_v2_user_metrics_1m (
   bucket_start, platform, group_id, model, user_id, success_requests,
   input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at
+  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at, request_type
 )
 SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s, ul.user_id,
        COUNT(DISTINCT COALESCE(NULLIF(ul.request_id, ''), 'usage:' || ul.id::text))
@@ -202,19 +220,19 @@ SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s, ul
        COALESCE(SUM(ul.first_token_ms) FILTER (WHERE ul.first_token_ms IS NOT NULL AND ` + usageLogSuccessFilterUL + `), 0),
        COUNT(ul.first_token_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `),
        COALESCE(SUM(ul.duration_ms) FILTER (WHERE ul.duration_ms IS NOT NULL AND ` + usageLogSuccessFilterUL + `), 0),
-       COUNT(ul.duration_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `), NOW()
+       COUNT(ul.duration_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `), NOW(), COALESCE(ul.request_type, 0)
 FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
 WHERE ul.created_at >= $1 AND ul.created_at < $2 AND ul.user_id IS NOT NULL
-GROUP BY 1, 2, 3, 4, 5`
+GROUP BY 1, 2, 3, 4, 5, COALESCE(ul.request_type, 0)`
 
 const channelMonitorV2HistogramSQL = `
 INSERT INTO channel_monitor_v2_latency_histograms_1m (
-  bucket_start, platform, group_id, model, user_id, metric, upper_bound_ms, sample_count
+  bucket_start, platform, group_id, model, user_id, metric, upper_bound_ms, sample_count, request_type
 )
 SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s,
-       audience.user_id, latency.metric, %s, COUNT(*)
+       audience.user_id, latency.metric, %s, COUNT(*), COALESCE(ul.request_type, 0)
 FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
@@ -223,7 +241,7 @@ CROSS JOIN LATERAL (VALUES ('ttft'::text, ul.first_token_ms), ('duration'::text,
 WHERE ul.created_at >= $1 AND ul.created_at < $2
   AND audience.user_id IS NOT NULL AND latency.value_ms IS NOT NULL AND latency.value_ms >= 0
   AND ` + usageLogSuccessFilterUL + `
-GROUP BY 1, 2, 3, 4, 5, 6, 7`
+GROUP BY 1, 2, 3, 4, 5, 6, 7, COALESCE(ul.request_type, 0)`
 
 func channelMonitorV2HistogramBoundSQL(column string) string {
 	return `CASE
@@ -266,6 +284,7 @@ WITH dedup AS (
     END) AS platform,
     COALESCE(current_error.group_id, 0) AS group_id,
     COALESCE(NULLIF(TRIM(current_error.requested_model), ''), NULLIF(TRIM(current_error.model), ''), 'unknown') AS model,
+    COALESCE(current_error.request_type, 0) AS request_type,
     current_error.user_id, current_error.error_type, current_error.error_owner, COALESCE(current_error.status_code, 0) AS status_code,
     ` + channelMonitorClientRejectionSQL + ` AS client_rejection,
     COALESCE(current_error.upstream_status_code, 0) AS upstream_status_code,
@@ -310,21 +329,21 @@ WITH dedup AS (
   FROM dedup
   WHERE bucket_start >= $1 AND bucket_start < $2 AND NOT client_rejection
 ), metric_rows AS (
-  INSERT INTO channel_monitor_v2_metrics_1m (bucket_start, platform, group_id, model, error_requests, upstream_affected_requests, upstream_attempt_count, computed_at)
-  SELECT bucket_start, platform, group_id, model, COUNT(*), COUNT(*) FILTER (WHERE upstream_affected), SUM(upstream_attempts), NOW()
-  FROM classified GROUP BY 1,2,3,4
-  ON CONFLICT (bucket_start, platform, group_id, model) DO UPDATE SET
+  INSERT INTO channel_monitor_v2_metrics_1m (bucket_start, platform, group_id, model, error_requests, upstream_affected_requests, upstream_attempt_count, computed_at, request_type)
+  SELECT bucket_start, platform, group_id, model, COUNT(*), COUNT(*) FILTER (WHERE upstream_affected), SUM(upstream_attempts), NOW(), request_type
+  FROM classified GROUP BY 1,2,3,4,request_type
+  ON CONFLICT (bucket_start, platform, group_id, model, request_type) DO UPDATE SET
     error_requests = EXCLUDED.error_requests, upstream_affected_requests = EXCLUDED.upstream_affected_requests,
     upstream_attempt_count = EXCLUDED.upstream_attempt_count, computed_at = NOW()
 ), user_rows AS (
-  INSERT INTO channel_monitor_v2_user_metrics_1m (bucket_start, platform, group_id, model, user_id, error_requests, computed_at)
-  SELECT bucket_start, platform, group_id, model, user_id, COUNT(*), NOW()
-  FROM classified WHERE user_id IS NOT NULL GROUP BY 1,2,3,4,5
-  ON CONFLICT (bucket_start, platform, group_id, model, user_id) DO UPDATE SET error_requests = EXCLUDED.error_requests, computed_at = NOW()
+  INSERT INTO channel_monitor_v2_user_metrics_1m (bucket_start, platform, group_id, model, user_id, error_requests, computed_at, request_type)
+  SELECT bucket_start, platform, group_id, model, user_id, COUNT(*), NOW(), request_type
+  FROM classified WHERE user_id IS NOT NULL GROUP BY 1,2,3,4,5,request_type
+  ON CONFLICT (bucket_start, platform, group_id, model, user_id, request_type) DO UPDATE SET error_requests = EXCLUDED.error_requests, computed_at = NOW()
 )
-INSERT INTO channel_monitor_v2_error_metrics_1m (bucket_start, platform, group_id, model, error_category, taxonomy_version, error_requests)
-SELECT bucket_start, platform, group_id, model, category, 1, COUNT(*) FROM classified GROUP BY 1,2,3,4,5
-ON CONFLICT (bucket_start, platform, group_id, model, error_category, taxonomy_version)
+INSERT INTO channel_monitor_v2_error_metrics_1m (bucket_start, platform, group_id, model, error_category, taxonomy_version, error_requests, request_type)
+SELECT bucket_start, platform, group_id, model, category, 1, COUNT(*), request_type FROM classified GROUP BY 1,2,3,4,5,request_type
+ON CONFLICT (bucket_start, platform, group_id, model, error_category, taxonomy_version, request_type)
 DO UPDATE SET error_requests = EXCLUDED.error_requests`
 
 // Floor matches channelMonitorV2RetentionMax (90d). Keep the INTERVAL literal in
@@ -358,13 +377,23 @@ ON CONFLICT (id) DO UPDATE SET
 
 var channelMonitorV2FixedRollupSeconds = []int{300, 3600, 43200, 86400}
 
-func (r *channelMonitorV2Repository) recomputeFixedRollups(ctx context.Context, tx *sql.Tx, start, end time.Time) error {
+func (r *channelMonitorV2Repository) recomputeFixedRollups(ctx context.Context, tx *sql.Tx, start, end, rebuildFrom time.Time) error {
 	for _, seconds := range channelMonitorV2FixedRollupSeconds {
 		// Coarse buckets are immutable between boundaries during the normal
 		// trailing refresh. Historical backfills and boundary-crossing windows
 		// still rebuild them; this avoids repeatedly regrouping the full current
 		// day/user table every few minutes.
 		if seconds >= 43200 && sameFixedRollupBucket(start, end, seconds) {
+			continue
+		}
+		// Recent boundary buckets still have all their legacy 1m facts. Rebuild
+		// them together with new typed facts so post-migration traffic is counted.
+		// Older buckets may have lost 1m sources; preserve their existing totals.
+		rollupStart := start
+		if boundary := start.Truncate(time.Duration(seconds) * time.Second); boundary.Before(rebuildFrom) && boundary.Before(channelMonitorV2RetentionCutoff(time.Now(), channelMonitorV2RetentionUser1m)) {
+			rollupStart = boundary.Add(time.Duration(seconds) * time.Second)
+		}
+		if !rollupStart.Before(end) {
 			continue
 		}
 		interval := fmt.Sprintf("%d seconds", seconds)
@@ -374,20 +403,20 @@ func (r *channelMonitorV2Repository) recomputeFixedRollups(ctx context.Context, 
 			"channel_monitor_v2_user_metrics_rollup",
 			"channel_monitor_v2_metrics_rollup",
 		} {
-			if _, err := tx.ExecContext(ctx, fmt.Sprintf(channelMonitorV2FixedRollupDeleteSQL, table), interval, seconds, start, end); err != nil {
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(channelMonitorV2FixedRollupDeleteSQL, table), interval, seconds, rollupStart, end); err != nil {
 				return err
 			}
 		}
-		if _, err := tx.ExecContext(ctx, channelMonitorV2MetricsRollupSQL, interval, seconds, start, end); err != nil {
+		if _, err := tx.ExecContext(ctx, channelMonitorV2MetricsRollupSQL, interval, seconds, rollupStart, end); err != nil {
 			return fmt.Errorf("roll up channel monitor v2 metrics %ds: %w", seconds, err)
 		}
-		if _, err := tx.ExecContext(ctx, channelMonitorV2UserMetricsRollupSQL, interval, seconds, start, end); err != nil {
+		if _, err := tx.ExecContext(ctx, channelMonitorV2UserMetricsRollupSQL, interval, seconds, rollupStart, end); err != nil {
 			return fmt.Errorf("roll up channel monitor v2 user metrics %ds: %w", seconds, err)
 		}
-		if _, err := tx.ExecContext(ctx, channelMonitorV2HistogramRollupSQL, interval, seconds, start, end); err != nil {
+		if _, err := tx.ExecContext(ctx, channelMonitorV2HistogramRollupSQL, interval, seconds, rollupStart, end); err != nil {
 			return fmt.Errorf("roll up channel monitor v2 histograms %ds: %w", seconds, err)
 		}
-		if _, err := tx.ExecContext(ctx, channelMonitorV2ErrorRollupSQL, interval, seconds, start, end); err != nil {
+		if _, err := tx.ExecContext(ctx, channelMonitorV2ErrorRollupSQL, interval, seconds, rollupStart, end); err != nil {
 			return fmt.Errorf("roll up channel monitor v2 errors %ds: %w", seconds, err)
 		}
 	}
@@ -431,51 +460,51 @@ INSERT INTO channel_monitor_v2_metrics_rollup (
   bucket_start, bucket_seconds, platform, group_id, model, success_requests, error_requests,
   upstream_affected_requests, upstream_attempt_count, input_tokens, output_tokens,
   cache_creation_tokens, cache_read_tokens, ttft_sum_ms, ttft_count, duration_sum_ms,
-  duration_count, computed_at
+  duration_count, computed_at, request_type
 )
 ` + channelMonitorV2FixedRollupBoundsSQL + `
 SELECT date_bin($1::interval, m.bucket_start, ` + channelMonitorV2DateBinOrigin + `), $2::integer,
        platform, group_id, model, SUM(success_requests), SUM(error_requests),
        SUM(upstream_affected_requests), SUM(upstream_attempt_count), SUM(input_tokens),
        SUM(output_tokens), SUM(cache_creation_tokens), SUM(cache_read_tokens),
-       SUM(ttft_sum_ms), SUM(ttft_count), SUM(duration_sum_ms), SUM(duration_count), NOW()
+       SUM(ttft_sum_ms), SUM(ttft_count), SUM(duration_sum_ms), SUM(duration_count), NOW(), m.request_type
 FROM channel_monitor_v2_metrics_1m m, bounds
 WHERE m.bucket_start >= bounds.start_at AND m.bucket_start < bounds.end_at
-GROUP BY 1, 2, 3, 4, 5`
+GROUP BY 1, 2, 3, 4, 5, m.request_type`
 
 const channelMonitorV2UserMetricsRollupSQL = `
 INSERT INTO channel_monitor_v2_user_metrics_rollup (
   bucket_start, bucket_seconds, platform, group_id, model, user_id, success_requests,
   error_requests, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at
+  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at, request_type
 )
 ` + channelMonitorV2FixedRollupBoundsSQL + `
 SELECT date_bin($1::interval, m.bucket_start, ` + channelMonitorV2DateBinOrigin + `), $2::integer,
        platform, group_id, model, user_id, SUM(success_requests), SUM(error_requests),
        SUM(input_tokens), SUM(output_tokens), SUM(cache_creation_tokens), SUM(cache_read_tokens),
-       SUM(ttft_sum_ms), SUM(ttft_count), SUM(duration_sum_ms), SUM(duration_count), NOW()
+       SUM(ttft_sum_ms), SUM(ttft_count), SUM(duration_sum_ms), SUM(duration_count), NOW(), m.request_type
 FROM channel_monitor_v2_user_metrics_1m m, bounds
 WHERE m.bucket_start >= bounds.start_at AND m.bucket_start < bounds.end_at
-GROUP BY 1, 2, 3, 4, 5, 6`
+GROUP BY 1, 2, 3, 4, 5, 6, m.request_type`
 
 const channelMonitorV2HistogramRollupSQL = `
 INSERT INTO channel_monitor_v2_latency_histograms_rollup (
-  bucket_start, bucket_seconds, platform, group_id, model, user_id, metric, upper_bound_ms, sample_count
+  bucket_start, bucket_seconds, platform, group_id, model, user_id, metric, upper_bound_ms, sample_count, request_type
 )
 ` + channelMonitorV2FixedRollupBoundsSQL + `
 SELECT date_bin($1::interval, h.bucket_start, ` + channelMonitorV2DateBinOrigin + `), $2::integer,
-       platform, group_id, model, user_id, metric, upper_bound_ms, SUM(sample_count)
+       platform, group_id, model, user_id, metric, upper_bound_ms, SUM(sample_count), h.request_type
 FROM channel_monitor_v2_latency_histograms_1m h, bounds
 WHERE h.bucket_start >= bounds.start_at AND h.bucket_start < bounds.end_at
-GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, h.request_type`
 
 const channelMonitorV2ErrorRollupSQL = `
 INSERT INTO channel_monitor_v2_error_metrics_rollup (
-  bucket_start, bucket_seconds, platform, group_id, model, error_category, taxonomy_version, error_requests
+  bucket_start, bucket_seconds, platform, group_id, model, error_category, taxonomy_version, error_requests, request_type
 )
 ` + channelMonitorV2FixedRollupBoundsSQL + `
 SELECT date_bin($1::interval, e.bucket_start, ` + channelMonitorV2DateBinOrigin + `), $2::integer,
-       platform, group_id, model, error_category, taxonomy_version, SUM(error_requests)
+       platform, group_id, model, error_category, taxonomy_version, SUM(error_requests), e.request_type
 FROM channel_monitor_v2_error_metrics_1m e, bounds
 WHERE e.bucket_start >= bounds.start_at AND e.bucket_start < bounds.end_at
-GROUP BY 1, 2, 3, 4, 5, 6, 7`
+GROUP BY 1, 2, 3, 4, 5, 6, 7, e.request_type`

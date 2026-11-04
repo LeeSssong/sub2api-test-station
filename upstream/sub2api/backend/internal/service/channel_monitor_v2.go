@@ -58,7 +58,8 @@ type ChannelMonitorV2PlatformConfig struct {
 // cards, and the matrix. Factory platforms missing from a submitted list are
 // appended disabled. The model ranking table stays ordered by request volume.
 type ChannelMonitorV2Config struct {
-	CandyProbes []ChannelMonitorV2CandyProbe `json:"candy_probes,omitempty"`
+	ExcludeSyncRequests bool                         `json:"exclude_sync_requests"`
+	CandyProbes         []ChannelMonitorV2CandyProbe `json:"candy_probes,omitempty"`
 	// CandyHistoryLimit is how many recent checks each model shows on a card.
 	// Zero means the default; stored values are 15–100.
 	CandyHistoryLimit      int                              `json:"candy_history_limit"`
@@ -226,7 +227,8 @@ type ChannelMonitorV2AggregationWatermark struct {
 	DataThrough        time.Time
 	LastSuccessfulAt   time.Time
 	// BackfillCursor is the earliest start already recomputed; zero when never set.
-	BackfillCursor time.Time
+	BackfillCursor         time.Time
+	RequestTypeRebuildFrom time.Time
 	// HasData is true once any successful recompute wrote data_through.
 	HasData bool
 }

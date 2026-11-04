@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated API blue/green release with optional serialized worker replacement; no migrations."""
+"""Isolated API blue/green release with optional serialized worker replacement and explicitly scoped maintenance migrations."""
 import argparse
 import copy
 import fcntl
@@ -226,11 +226,41 @@ def verify_migration_checksums(expected, rows):
 OCT16_OLD = 'e5d79ffa00d518804211a877ede6c7cb54277ada8c76e975526dca622445a6de'
 OCT16_NEW = '457dde7e112bbb808dee1ba05ab2d99180c5b250ecf082cf24ea9f309741370d'
 
-def database_dump(db, target):
+V2_SCOPE_MIGRATION = '287_channel_monitor_v2_request_scope.sql'
+V2_SCOPE_TABLES = ['channel_monitor_v2_' + kind + suffix
+    for kind in ('metrics', 'user_metrics', 'error_metrics', 'latency_histograms')
+    for suffix in ('_1m', '_rollup')] + [
+        'channel_monitor_v2_config', 'channel_monitor_v2_watermarks', 'schema_migrations']
+
+
+def verify_maintenance_migrations(previous, manifest, rows):
+    if not manifest.get('update_worker'):
+        raise ValueError('maintenance requires serialized worker replacement')
+    old, new = previous.get('migration_set_sha256'), manifest.get('migration_set_sha256')
+    applied = dict(row.split('|', 1) for row in rows.splitlines())
+    expected = manifest.get('migration_checksums', {})
+    legacy = old == OCT16_OLD and new == OCT16_NEW
+    scope = old == OCT16_NEW and set(expected) - set(applied) == {V2_SCOPE_MIGRATION}
+    if not (legacy or scope):
+        raise ValueError('unapproved maintenance migration pair')
+    for name, checksum in applied.items():
+        if name in expected and expected[name] != checksum:
+            raise ValueError('existing migration checksum changed')
+    for name, checksum in expected.items():
+        if not re.fullmatch(r'[a-f0-9]{64}', checksum):
+            raise ValueError('invalid migration checksum')
+        if name not in applied and not legacy and name != V2_SCOPE_MIGRATION:
+            raise ValueError('unexpected pending migration')
+
+
+def database_dump(db, target, tables=None):
     with open(target, 'wb') as f:
         os.chmod(target, 0o600)
-        r = subprocess.run(['docker', 'exec', db, 'sh', '-c',
-            'exec pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"'], stdout=f, stderr=subprocess.PIPE)
+        command = ['docker', 'exec', db, 'sh', '-c',
+            'exec pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"', 'monitor-backup']
+        for table in tables or []:
+            command.extend(['--table', 'public.' + table])
+        r = subprocess.run(command, stdout=f, stderr=subprocess.PIPE)
     if r.returncode or target.stat().st_size == 0:
         raise RuntimeError('maintenance database backup failed')
 
@@ -243,12 +273,15 @@ def validate_restore(db, backup):
     finally:
         run(['docker', 'exec', db, 'sh', '-c', 'exec dropdb -U "$POSTGRES_USER" "$1"', 'restore-check', name])
 
-def restore_database(db, backup):
+def restore_database(db, backup, tables=None):
     if not backup.is_file(): raise RuntimeError('stopped-write backup unavailable')
     # Only before new worker starts or the public route changes.
+    if tables is not None and tables != V2_SCOPE_TABLES:
+        raise ValueError('unsupported partial database restore')
+    drop = ('DROP TABLE ' + ', '.join('public.' + table for table in tables) + ' CASCADE;'
+            if tables else 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
     run(['docker', 'exec', '-i', db, 'sh', '-c',
-         'exec psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'],
-        b'DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
+         'exec psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'], drop.encode())
     run(['docker', 'exec', '-i', db, 'sh', '-c',
          'exec pg_restore --exit-on-error --clean --if-exists --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB"'], backup.read_bytes())
 
@@ -294,13 +327,7 @@ def deploy(bundle):
     if not isinstance(skip_restore_rehearsal, bool):
         raise ValueError('invalid restore rehearsal flag')
     if maintenance:
-        if not update_worker or previous.get('migration_set_sha256') != OCT16_OLD or manifest.get('migration_set_sha256') != OCT16_NEW:
-            raise ValueError('unapproved maintenance migration pair')
-        applied = dict(row.split('|', 1) for row in rows.splitlines())
-        expected = manifest.get('migration_checksums', {})
-        for name, checksum in applied.items():
-            if name in expected and expected[name] != checksum:
-                raise ValueError('existing migration checksum changed')
+        verify_maintenance_migrations(previous, manifest, rows)
     else:
         verify_migration_checksums(manifest.get('migration_checksums'), rows)
     caddy_id = run(['docker', 'ps', '-q', '--filter', 'label=com.docker.compose.project=' + PROJECT,
@@ -355,9 +382,14 @@ def deploy(bundle):
     route_opened = False
     stopped_backup = release / 'stopped-postgres.dump'
     detector_ids = []
+    scope_migration = maintenance and previous.get('migration_set_sha256') == OCT16_NEW
+    # This migration changes only derived monitor tables, config and watermark.
+    # A scoped dump also contains the migration ledger so rollback is atomic
+    # with respect to the schema version, without touching usage/billing data.
+    dump_options = {'tables': V2_SCOPE_TABLES} if scope_migration else {}
     if maintenance and not skip_restore_rehearsal:
         rehearsal = release / 'restore-rehearsal.dump'
-        database_dump(db_id, rehearsal)
+        database_dump(db_id, rehearsal, **dump_options)
         validate_restore(db_id, rehearsal)
     try:
         run(compose + ['config', '--quiet'])
@@ -368,7 +400,7 @@ def deploy(bundle):
             run(['docker', 'stop', '--time', '60', api_id])
             stop_worker(worker_id)
             for detector in detector_ids: run(['docker', 'stop', '--time', '60', detector])
-            database_dump(db_id, stopped_backup)
+            database_dump(db_id, stopped_backup, **dump_options)
             run(compose + ['run', '--rm', '--no-deps', '--entrypoint', '/app/sub2api', 'test-station-worker', '-migrate-only'])
             migrated = True
             applied_rows = run(['docker', 'exec', '-i', db_id, 'sh', '-c',
@@ -419,7 +451,7 @@ def deploy(bundle):
             if not worker_started_new and not route_opened:
                 ids = run(compose + ['ps', '-q', service]).split()
                 for candidate in ids: run(['docker', 'stop', '--time', '60', candidate])
-                if stopped_backup.exists(): restore_database(db_id, stopped_backup)
+                if stopped_backup.exists(): restore_database(db_id, stopped_backup, **dump_options)
                 run(['docker', 'start', worker_id])
                 run(['docker', 'start', api_id])
                 healthy(api_id)
@@ -436,7 +468,7 @@ def deploy(bundle):
         raise
     if maintenance:
         for detector in detector_ids: run(['docker', 'start', detector])
-        meta.update(result='succeeded', maintenance=True, backup=str(stopped_backup))
+        meta.update(result='promoted', maintenance=True, backup=str(stopped_backup))
         save(release / 'deployment.json', meta)
     # The caller verifies the actual page before finalizing connection drain.
     print('test_station_api verification_pending=true release_dir=' + str(release), flush=True)
@@ -447,6 +479,11 @@ def finalize(release):
     state = json.loads((ROOT / 'release-state.json').read_text())
     if state['source_commit'] != meta['source_commit'] or meta['result'] != 'promoted':
         raise ValueError('not the current promoted release')
+    if meta.get('maintenance'):
+        meta.update(result='succeeded', drain={'seconds': 0, 'remaining_at_deadline': 0, 'maximum_seconds': 300})
+        save(release / 'deployment.json', meta)
+        print('test_station_api status=succeeded maintenance=true', flush=True)
+        return
     start = time.monotonic()
     deadline = meta['promoted_at'] + 300
     remaining = 0

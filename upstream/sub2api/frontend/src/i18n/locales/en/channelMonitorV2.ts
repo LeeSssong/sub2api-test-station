@@ -145,6 +145,10 @@ export default {
       unranked: 'Unranked',
     },
     settings: {
+      requestScopeTitle: 'Request scope',
+      excludeSync: 'Exclude synchronous (non-streaming) requests',
+      excludeSyncHint: 'Exclude both successful and failed synchronous requests from V2 channel metrics. Original usage and error logs are retained. Streaming, WebSocket and unknown request types remain included.',
+
       title: 'V2 data monitor config',
       description:
         'Configure passive usage aggregation dimensions (platform / model / group) and refresh cadence. Health colors and details on the user /monitor page show rates, RPM, and TPM — not absolute request volume.',

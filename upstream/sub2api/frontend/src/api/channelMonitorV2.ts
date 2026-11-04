@@ -100,6 +100,7 @@ export interface MonitorCoverage {
 }
 
 export interface MonitorConfig {
+  exclude_sync_requests?: boolean
   candy_probes?: MonitorCandyProbe[]
   /** Recent checks shown per model. 15–100; omitted values use 100. */
   candy_history_limit?: number

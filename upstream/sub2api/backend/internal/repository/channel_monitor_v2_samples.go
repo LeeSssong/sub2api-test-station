@@ -76,6 +76,12 @@ func channelMonitorV2RecentSampleQuery(platforms []string, groupIDs []int64, sta
 	modelSQL, modelArgs := channelMonitorV2SampleModelClause(filter, cfg, "m", 5)
 	args := []any{pq.Array(platforms), pq.Array(groupIDs), start, end}
 	args = append(args, modelArgs...)
+	if cfg.ExcludeSyncRequests {
+		if modelSQL != "" {
+			modelSQL = "(" + modelSQL + ") AND "
+		}
+		modelSQL += channelMonitorV2RequestScopeSQL("m")
+	}
 	return channelMonitorV2RecentSampleFactsSQL(modelSQL), args
 }
 
@@ -278,6 +284,9 @@ func (r *channelMonitorV2Repository) loadRecentSampleHistogramsInto(ctx context.
 	if modelSQL != "" {
 		modelFilter = " AND " + modelSQL
 	}
+	if cfg.ExcludeSyncRequests {
+		modelFilter += " AND " + channelMonitorV2RequestScopeSQL("h")
+	}
 	// user_id 0 is the group rollup. Per-user histogram rows must not be added again.
 	// Bucket starts are text because lib/pq cannot encode a time.Time array.
 	query := fmt.Sprintf(`SELECT h.bucket_start, h.platform, h.group_id, h.metric, h.upper_bound_ms, SUM(h.sample_count)::bigint
@@ -324,6 +333,9 @@ func (r *channelMonitorV2Repository) loadRecentSampleIgnored(ctx context.Context
 	modelFilter := ""
 	if modelSQL != "" {
 		modelFilter = " AND " + modelSQL
+	}
+	if cfg.ExcludeSyncRequests {
+		modelFilter += " AND " + channelMonitorV2RequestScopeSQL("e")
 	}
 	query := fmt.Sprintf(`SELECT e.bucket_start, e.platform, e.group_id, SUM(e.error_requests)::bigint
 FROM channel_monitor_v2_error_metrics_rollup e

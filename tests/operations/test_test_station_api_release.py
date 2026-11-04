@@ -511,3 +511,53 @@ class HostFlowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class V2RequestScopeMigrationTests(unittest.TestCase):
+    def test_only_the_exact_new_migration_is_allowed_and_existing_checksums_are_immutable(self):
+        previous = {'migration_set_sha256': release.OCT16_NEW}
+        manifest = {'update_worker': True, 'migration_set_sha256': 'c'*64,
+                    'migration_checksums': {'old.sql': 'a'*64, release.V2_SCOPE_MIGRATION: 'b'*64}}
+        rows = 'old.sql|' + 'a'*64
+        release.verify_maintenance_migrations(previous, manifest, rows)
+        for change in [dict(update_worker=False),
+                       dict(migration_checksums={'old.sql': 'd'*64, release.V2_SCOPE_MIGRATION: 'b'*64}),
+                       dict(migration_checksums={'old.sql': 'a'*64, '999_other.sql': 'b'*64})]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                release.verify_maintenance_migrations(previous, dict(manifest, **change), rows)
+
+    def test_scope_requires_the_matching_worker(self):
+        gate = ReleaseScopeTests()
+        paths = ['upstream/sub2api/backend/internal/repository/channel_monitor_v2_aggregation.go',
+                 'upstream/sub2api/backend/migrations/287_channel_monitor_v2_request_scope.sql']
+        self.assertNotEqual(gate.check_scope(paths).returncode, 0)
+        self.assertEqual(gate.check_scope(paths, True).returncode, 0)
+
+
+class V2ScopedBackupTests(unittest.TestCase):
+    def test_dump_includes_only_changed_tables_and_migration_ledger(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / 'monitor.dump'
+            def dump(command, stdout=None, **kwargs):
+                stdout.write(b'fixture dump')
+                self.assertIn('--table', command)
+                self.assertIn('public.schema_migrations', command)
+                self.assertIn('public.channel_monitor_v2_config', command)
+                self.assertNotIn('public.usage_logs', command)
+                return subprocess.CompletedProcess(command, 0)
+            with patch.object(release.subprocess, 'run', side_effect=dump):
+                release.database_dump('postgres', target, release.V2_SCOPE_TABLES)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+    def test_scoped_restore_preserves_raw_logs_billing_and_other_schemas(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / 'monitor.dump'; target.write_bytes(b'fixture dump')
+            with patch.object(release, 'run') as run:
+                release.restore_database('postgres', target, release.V2_SCOPE_TABLES)
+            drop = run.call_args_list[0].args[1].decode()
+            self.assertIn('DROP TABLE public.channel_monitor_v2_', drop)
+            self.assertNotIn('DROP SCHEMA', drop)
+            self.assertNotIn('usage_logs', drop)
+            self.assertNotIn('billing', drop)
+            with self.assertRaises(ValueError):
+                release.restore_database('postgres', target, ['usage_logs'])

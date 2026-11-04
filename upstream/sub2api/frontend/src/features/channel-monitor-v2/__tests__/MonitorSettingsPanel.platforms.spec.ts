@@ -83,3 +83,24 @@ it('adds supported and custom platforms, reorders them, and deletes only a disab
   expect(saved).not.toContain('custom_gw')
   wrapper.unmount()
 })
+
+
+it('defaults sync exclusion off, saves it and restores the saved value on reload', async () => {
+  let saved = config() as ReturnType<typeof config> & { exclude_sync_requests?: boolean }
+  mocks.get.mockImplementation(async () => saved)
+  mocks.groups.mockResolvedValue([])
+  mocks.update.mockImplementation(async (payload) => { saved = JSON.parse(JSON.stringify({ ...payload, version: 4 })); return saved })
+  const options = { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } }
+  const wrapper = mount(MonitorSettingsPanel, options)
+  await flushPromises()
+  expect((wrapper.get('[data-testid="monitor-v2-exclude-sync"]').element as HTMLInputElement).checked).toBe(false)
+  await wrapper.get('[data-testid="monitor-v2-exclude-sync"]').setValue(true)
+  await wrapper.get('header button.btn-primary').trigger('click')
+  await flushPromises()
+  expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ exclude_sync_requests: true }))
+  wrapper.unmount()
+  const restored = mount(MonitorSettingsPanel, options)
+  await flushPromises()
+  expect((restored.get('[data-testid="monitor-v2-exclude-sync"]').element as HTMLInputElement).checked).toBe(true)
+  restored.unmount()
+})

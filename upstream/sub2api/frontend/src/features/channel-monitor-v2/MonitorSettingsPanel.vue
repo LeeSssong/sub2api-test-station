@@ -200,6 +200,17 @@
         </div>
       </div>
 
+      <div class="card !rounded-3xl !border-0 px-5 py-4 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV2.settings.requestScopeTitle') }}</h3>
+        <label class="mt-3 flex cursor-pointer items-start gap-3 text-sm">
+          <input v-model="draft.exclude_sync_requests" type="checkbox" data-testid="monitor-v2-exclude-sync" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500/40" />
+          <span>
+            <span class="font-medium text-gray-800 dark:text-gray-100">{{ t('channelMonitorV2.settings.excludeSync') }}</span>
+            <span class="mt-1 block text-xs text-gray-500 dark:text-dark-400">{{ t('channelMonitorV2.settings.excludeSyncHint') }}</span>
+          </span>
+        </label>
+      </div>
+
       <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
         <div class="card-header !py-3">
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV2.settings.errorsTitle') }}</h3>
@@ -519,6 +530,7 @@ function normalizeConfig(value: MonitorConfig): MonitorConfig {
   const ignored = value.ignored_error_categories
   return {
     ...value,
+    exclude_sync_requests: value.exclude_sync_requests ?? false,
     candy_probes: value.candy_probes || [],
     candy_history_limit: value.candy_history_limit && value.candy_history_limit > 0 ? value.candy_history_limit : CANDY_HISTORY_LIMIT,
     health_thresholds: { ...defaultThresholds, ...(value.health_thresholds || {}) },

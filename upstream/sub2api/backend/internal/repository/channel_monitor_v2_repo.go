@@ -26,11 +26,11 @@ func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.Ch
 		SELECT version, enabled, refresh_interval_seconds, platforms, group_ids,
 		       COALESCE(ignored_error_categories, '{}'),
 		       COALESCE(health_thresholds, '{}'::jsonb), candy_probes,
-		       candy_history_limit, updated_at, updated_by
+		       candy_history_limit, exclude_sync_requests, updated_at, updated_by
 		FROM channel_monitor_v2_config WHERE id = 1`).Scan(
 		&cfg.Version, &cfg.Enabled, &cfg.RefreshIntervalSeconds, &platforms,
 		pq.Array(&cfg.GroupIDs), pq.Array(&cfg.IgnoredErrorCategories),
-		&thresholds, &probes, &cfg.CandyHistoryLimit,
+		&thresholds, &probes, &cfg.CandyHistoryLimit, &cfg.ExcludeSyncRequests,
 		&cfg.UpdatedAt, &cfg.UpdatedBy,
 	)
 	if err != nil {
@@ -81,17 +81,17 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 		SET version = version + 1, enabled = $1, refresh_interval_seconds = $2,
 		    platforms = $3, group_ids = $4, ignored_error_categories = $5,
 		    health_thresholds = $6, updated_by = $7, updated_at = NOW(), candy_probes = $9,
-		    candy_history_limit = $10
+		    candy_history_limit = $10, exclude_sync_requests = $11
 		WHERE id = 1 AND version = $8
 		RETURNING version, enabled, refresh_interval_seconds, platforms, group_ids,
 		          COALESCE(ignored_error_categories, '{}'),
 		          COALESCE(health_thresholds, '{}'::jsonb), candy_probes,
-		          candy_history_limit, updated_at, updated_by`,
+		          candy_history_limit, exclude_sync_requests, updated_at, updated_by`,
 		cfg.Enabled, cfg.RefreshIntervalSeconds, platforms, pq.Array(cfg.GroupIDs),
-		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion, probes, cfg.CandyHistoryLimit,
+		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion, probes, cfg.CandyHistoryLimit, cfg.ExcludeSyncRequests,
 	).Scan(&updated.Version, &updated.Enabled, &updated.RefreshIntervalSeconds, &raw,
 		pq.Array(&updated.GroupIDs), pq.Array(&updated.IgnoredErrorCategories),
-		&rawThresholds, &rawProbes, &updated.CandyHistoryLimit,
+		&rawThresholds, &rawProbes, &updated.CandyHistoryLimit, &updated.ExcludeSyncRequests,
 		&updated.UpdatedAt, &updated.UpdatedBy)
 	if err == sql.ErrNoRows {
 		return nil, service.ErrChannelMonitorV2ConfigConflict
@@ -138,7 +138,7 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 			Models:    []service.ChannelMonitorV2Dimension{},
 		}, nil
 	}
-	coverage, err := r.loadCoverage(ctx, filter)
+	coverage, err := r.loadCoverage(ctx, filter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +239,7 @@ func (r *channelMonitorV2Repository) GetSnapshot(ctx context.Context, filter ser
 	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
 		return &service.ChannelMonitorV2Snapshot{Trend: []service.ChannelMonitorV2TrendPoint{}}, nil
 	}
-	coverage, err := r.loadCoverage(ctx, filter)
+	coverage, err := r.loadCoverage(ctx, filter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (r *channelMonitorV2Repository) GetModels(ctx context.Context, filter servi
 	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
 		return &service.ChannelMonitorV2List[service.ChannelMonitorV2ModelRow]{Items: []service.ChannelMonitorV2ModelRow{}}, nil
 	}
-	coverage, err := r.loadCoverage(ctx, filter)
+	coverage, err := r.loadCoverage(ctx, filter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +389,7 @@ func (r *channelMonitorV2Repository) GetMatrix(ctx context.Context, filter servi
 	if channelMonitorV2RestrictedGroupScopeEmpty(filter, cfg) {
 		return &service.ChannelMonitorV2Matrix{GroupBy: groupBy, Items: []service.ChannelMonitorV2MatrixRow{}}, nil
 	}
-	coverage, err := r.loadCoverage(ctx, filter)
+	coverage, err := r.loadCoverage(ctx, filter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -712,7 +712,7 @@ func (r *channelMonitorV2Repository) loadChannelMonitorV2GroupInfo(ctx context.C
 }
 
 func (r *channelMonitorV2Repository) GetErrors(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, includeAdmin bool) (*service.ChannelMonitorV2List[service.ChannelMonitorV2ErrorRow], error) {
-	coverage, err := r.loadCoverage(ctx, filter)
+	coverage, err := r.loadCoverage(ctx, filter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -788,6 +788,9 @@ func (r *channelMonitorV2Repository) loadErrorDetails(ctx context.Context, filte
 				  AND (COALESCE(newer.status_code, 0) >= 400 OR newer.error_type = 'cyber_policy')
 				  AND (newer.created_at, newer.id) > (current_error.created_at, current_error.id)
 		))`,
+	}
+	if cfg.ExcludeSyncRequests {
+		conditions = append(conditions, "COALESCE(current_error.request_type, 0) <> 1")
 	}
 	args := []any{filter.Start, filter.End}
 	platforms := channelMonitorV2EnabledPlatforms(cfg)
@@ -883,7 +886,7 @@ func sanitizeChannelMonitorV2ErrorDetail(message string) string {
 }
 
 func (r *channelMonitorV2Repository) GetUsers(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, admin bool) (*service.ChannelMonitorV2List[service.ChannelMonitorV2UserRow], error) {
-	coverage, err := r.loadCoverage(ctx, filter)
+	coverage, err := r.loadCoverage(ctx, filter, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -1046,10 +1049,10 @@ func (r *channelMonitorV2Repository) loadHistograms(ctx context.Context, filter 
 }
 
 func (r *channelMonitorV2Repository) GetAggregationWatermark(ctx context.Context) (*service.ChannelMonitorV2AggregationWatermark, error) {
-	var usageStart, errorStart, dataThrough, computed, backfill sql.NullTime
+	var usageStart, errorStart, dataThrough, computed, backfill, rebuildFrom sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
-		SELECT usage_coverage_start, error_coverage_start, data_through, last_successful_at, backfill_cursor
-		FROM channel_monitor_v2_watermarks WHERE id = 1`).Scan(&usageStart, &errorStart, &dataThrough, &computed, &backfill)
+		SELECT usage_coverage_start, error_coverage_start, data_through, last_successful_at, backfill_cursor, request_type_rebuild_from
+		FROM channel_monitor_v2_watermarks WHERE id = 1`).Scan(&usageStart, &errorStart, &dataThrough, &computed, &backfill, &rebuildFrom)
 	if err == sql.ErrNoRows {
 		return &service.ChannelMonitorV2AggregationWatermark{}, nil
 	}
@@ -1057,6 +1060,9 @@ func (r *channelMonitorV2Repository) GetAggregationWatermark(ctx context.Context
 		return nil, err
 	}
 	out := &service.ChannelMonitorV2AggregationWatermark{HasData: dataThrough.Valid}
+	if rebuildFrom.Valid {
+		out.RequestTypeRebuildFrom = rebuildFrom.Time.UTC()
+	}
 	if usageStart.Valid {
 		out.UsageCoverageStart = usageStart.Time.UTC()
 	}
@@ -1075,7 +1081,7 @@ func (r *channelMonitorV2Repository) GetAggregationWatermark(ctx context.Context
 	return out, nil
 }
 
-func (r *channelMonitorV2Repository) loadCoverage(ctx context.Context, filter service.ChannelMonitorV2Filter) (*service.ChannelMonitorV2Coverage, error) {
+func (r *channelMonitorV2Repository) loadCoverage(ctx context.Context, filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config) (*service.ChannelMonitorV2Coverage, error) {
 	wm, err := r.GetAggregationWatermark(ctx)
 	if err != nil {
 		return nil, err
@@ -1084,6 +1090,9 @@ func (r *channelMonitorV2Repository) loadCoverage(ctx context.Context, filter se
 		wm = &service.ChannelMonitorV2AggregationWatermark{}
 	}
 	bootstrap := service.ChannelMonitorV2BootstrapProgress(time.Now().UTC(), wm.BackfillCursor, wm.HasData)
+	if !wm.RequestTypeRebuildFrom.IsZero() && !wm.BackfillCursor.After(wm.RequestTypeRebuildFrom) {
+		bootstrap = nil
+	}
 	if !wm.HasData || wm.DataThrough.IsZero() || wm.LastSuccessfulAt.IsZero() {
 		return &service.ChannelMonitorV2Coverage{
 			RequestedStart:        filter.Start,
@@ -1098,6 +1107,11 @@ func (r *channelMonitorV2Repository) loadCoverage(ctx context.Context, filter se
 		}, nil
 	}
 	coverageStart := filter.Start
+	// Legacy mixed facts cannot represent the filtered scope. Advertise only
+	// history actually reclassified by the worker, using its durable cursor.
+	if cfg.ExcludeSyncRequests && wm.BackfillCursor.After(coverageStart) {
+		coverageStart = wm.BackfillCursor
+	}
 	if !wm.UsageCoverageStart.IsZero() && wm.UsageCoverageStart.After(coverageStart) {
 		coverageStart = wm.UsageCoverageStart
 	}
@@ -1193,6 +1207,9 @@ func channelMonitorV2WhereWithRollup(filter service.ChannelMonitorV2Filter, cfg 
 
 func channelMonitorV2Where(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, alias string) (string, []any) {
 	conditions := []string{alias + ".bucket_start >= $1", alias + ".bucket_start < $2"}
+	if cfg.ExcludeSyncRequests {
+		conditions = append(conditions, channelMonitorV2RequestScopeSQL(alias))
+	}
 	args := []any{filter.Start, filter.End}
 	platforms := channelMonitorV2EnabledPlatforms(cfg)
 	if len(filter.Platforms) > 0 {
@@ -1622,4 +1639,10 @@ func (r *channelMonitorV2Repository) loadIgnoredErrorCountsByMatrixKey(
 		byDimBucket[key][bucketKey] += count
 	}
 	return byDimBucket, byDim, rows.Err()
+}
+
+// Unknown raw types (0) remain included; -1 is reserved for unreclassified
+// pre-upgrade mixed aggregates and must never masquerade as filtered traffic.
+func channelMonitorV2RequestScopeSQL(alias string) string {
+	return alias + ".request_type NOT IN (-1, 1)"
 }

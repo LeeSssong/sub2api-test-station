@@ -145,6 +145,10 @@ export default {
       unranked: '未上榜',
     },
     settings: {
+      requestScopeTitle: '统计范围',
+      excludeSync: '不统计同步请求（非流式）',
+      excludeSyncHint: '同步请求的成功与失败均不参与 V2 渠道监控统计；原始使用记录与错误日志仍保留。流式、WebSocket 及未知类型请求继续统计。',
+
       title: 'V2 数据监控配置',
       description:
         '配置被动用量汇总维度（平台 / 模型 / 分组）与刷新频率。健康色与明细在用户端 /monitor 以比例、RPM/TPM 展示，不暴露绝对请求量。',

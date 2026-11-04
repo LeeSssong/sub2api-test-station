@@ -55,6 +55,7 @@ type ChannelMonitorV2Aggregator struct {
 	// backfillAt is the earliest minute already recomputed (mirrors DB cursor).
 	// Zero means "not yet loaded from durable watermark this process".
 	backfillAt       time.Time
+	rebuildFrom      time.Time
 	backfillChunk    time.Duration
 	backfillFailures int
 	// nextWaitFloor is applied after runOnce when failures require backoff.
@@ -246,12 +247,16 @@ func (s *ChannelMonitorV2Aggregator) runOnce() {
 
 	s.mu.Lock()
 	cursor := s.backfillAt
+	rebuildFrom := s.rebuildFrom
 	hasData := s.hasAggregated
 	s.mu.Unlock()
 
 	// Phase 1 (first upgrade / empty): seed the default 90m UI window quickly.
 	if !hasData || cursor.IsZero() {
 		start := now.Add(-channelMonitorV2BootstrapFirst)
+		if start.Before(rebuildFrom) {
+			start = rebuildFrom
+		}
 		started := time.Now()
 		if err := s.repo.RecomputeRange(ctx, start, now); err != nil {
 			logger.LegacyPrintf("service.channel_monitor_v2", "[ChannelMonitorV2] bootstrap recent aggregation failed: %v", err)
@@ -271,6 +276,9 @@ func (s *ChannelMonitorV2Aggregator) runOnce() {
 	// Phase 2: walk history backward at most one chunk per tick until retention max (90d).
 	// Product UI (30d) fills first; remaining 30–90d continues silently.
 	retentionCutoff := now.Add(-channelMonitorV2RetentionMax)
+	if rebuildFrom.After(retentionCutoff) {
+		retentionCutoff = rebuildFrom
+	}
 	if !cursor.After(retentionCutoff) {
 		return
 	}
@@ -405,6 +413,7 @@ func (s *ChannelMonitorV2Aggregator) ensureCursor(ctx context.Context, now time.
 		return nil
 	}
 	if wm != nil {
+		s.rebuildFrom = wm.RequestTypeRebuildFrom.UTC()
 		if !wm.BackfillCursor.IsZero() {
 			s.backfillAt = wm.BackfillCursor.UTC().Truncate(time.Minute)
 		}

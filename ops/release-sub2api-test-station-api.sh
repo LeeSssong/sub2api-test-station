@@ -50,6 +50,15 @@ git diff --name-only "$scope_base" HEAD >/dev/null || fail 'cannot determine rel
 # The embedded brand icon handler only reads existing public settings.
 while IFS= read -r path; do
   case "$path" in
+    # V2 request scope changes both persisted facts and the singleton aggregator.
+    upstream/sub2api/backend/internal/service/channel_monitor_v2.go|\
+    upstream/sub2api/backend/internal/service/channel_monitor_v2_aggregator.go|\
+    upstream/sub2api/backend/internal/repository/channel_monitor_v2_repo.go|\
+    upstream/sub2api/backend/internal/repository/channel_monitor_v2_samples.go|\
+    upstream/sub2api/backend/internal/repository/channel_monitor_v2_aggregation.go|\
+    upstream/sub2api/backend/internal/repository/channel_monitor_v2_request_scope_postgres_test.go|\
+    upstream/sub2api/backend/migrations/287_channel_monitor_v2_request_scope.sql)
+      [[ "$update_worker" == true ]] || fail 'V2 request scope requires a worker update' ;;
     # Reviewed removal of request quality snapshots; API and worker must agree.
     upstream/sub2api/backend/ent/migrate/schema.go|\
     upstream/sub2api/backend/ent/mutation.go|\
@@ -811,7 +820,7 @@ PY
   printf 'test_station_api_release stage=reused_build binary_source_commit=%s\n' "$binary_commit"
 else
   printf 'test_station_api_release stage=frontend_build\n'
-  (cd "$root/upstream/sub2api/frontend"; pnpm run build)
+  (cd "$root/upstream/sub2api/frontend"; pnpm_config_verify_deps_before_run=false pnpm run build)
   printf 'test_station_api_release stage=embedded_server_build\n'
   version=$(cat "$root/upstream/sub2api/backend/cmd/server/VERSION")
   build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -831,6 +840,7 @@ digest=hashlib.sha256()
 for name, checksum in sorted(manifest['migration_checksums'].items()):
     digest.update((name+'\0'+checksum+'\n').encode())
 manifest['migration_set_sha256']=digest.hexdigest()
+manifest['maintenance']=previous['migration_set_sha256'] != manifest['migration_set_sha256']
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 PY
 [[ -z $(git status --porcelain) && "$commit" == $(git rev-parse HEAD) ]] || fail 'source changed during build'

@@ -618,7 +618,8 @@ class V2CardTimelineReleaseTests(unittest.TestCase):
         paths = ['upstream/sub2api/backend/' + p for p in [
             'migrations/' + self.migration,
             'internal/handler/channel_monitor_v2_postgres_test.go',
-            'internal/repository/channel_monitor_v2_config_test.go']]
+            'internal/repository/channel_monitor_v2_config_test.go',
+            'internal/repository/channel_monitor_v2_repo_test.go']]
         self.assertEqual(gate.check_scope(paths, True).returncode, 0)
         self.assertNotEqual(gate.check_scope(paths, False).returncode, 0)
         self.assertNotEqual(gate.check_scope(['upstream/sub2api/backend/migrations/999_other.sql'], True).returncode, 0)

@@ -26,11 +26,11 @@ func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.Ch
 		SELECT version, enabled, refresh_interval_seconds, platforms, group_ids,
 		       COALESCE(ignored_error_categories, '{}'),
 		       COALESCE(health_thresholds, '{}'::jsonb), candy_probes,
-		       candy_history_limit, exclude_sync_requests, updated_at, updated_by
+		       candy_history_limit, exclude_sync_requests, card_timeline_mode, updated_at, updated_by
 		FROM channel_monitor_v2_config WHERE id = 1`).Scan(
 		&cfg.Version, &cfg.Enabled, &cfg.RefreshIntervalSeconds, &platforms,
 		pq.Array(&cfg.GroupIDs), pq.Array(&cfg.IgnoredErrorCategories),
-		&thresholds, &probes, &cfg.CandyHistoryLimit, &cfg.ExcludeSyncRequests,
+		&thresholds, &probes, &cfg.CandyHistoryLimit, &cfg.ExcludeSyncRequests, &cfg.CardTimelineMode,
 		&cfg.UpdatedAt, &cfg.UpdatedBy,
 	)
 	if err != nil {
@@ -81,17 +81,17 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 		SET version = version + 1, enabled = $1, refresh_interval_seconds = $2,
 		    platforms = $3, group_ids = $4, ignored_error_categories = $5,
 		    health_thresholds = $6, updated_by = $7, updated_at = NOW(), candy_probes = $9,
-		    candy_history_limit = $10, exclude_sync_requests = $11
+		    candy_history_limit = $10, exclude_sync_requests = $11, card_timeline_mode = $12
 		WHERE id = 1 AND version = $8
 		RETURNING version, enabled, refresh_interval_seconds, platforms, group_ids,
 		          COALESCE(ignored_error_categories, '{}'),
 		          COALESCE(health_thresholds, '{}'::jsonb), candy_probes,
-		          candy_history_limit, exclude_sync_requests, updated_at, updated_by`,
+		          candy_history_limit, exclude_sync_requests, card_timeline_mode, updated_at, updated_by`,
 		cfg.Enabled, cfg.RefreshIntervalSeconds, platforms, pq.Array(cfg.GroupIDs),
-		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion, probes, cfg.CandyHistoryLimit, cfg.ExcludeSyncRequests,
+		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion, probes, cfg.CandyHistoryLimit, cfg.ExcludeSyncRequests, cfg.CardTimelineMode,
 	).Scan(&updated.Version, &updated.Enabled, &updated.RefreshIntervalSeconds, &raw,
 		pq.Array(&updated.GroupIDs), pq.Array(&updated.IgnoredErrorCategories),
-		&rawThresholds, &rawProbes, &updated.CandyHistoryLimit, &updated.ExcludeSyncRequests,
+		&rawThresholds, &rawProbes, &updated.CandyHistoryLimit, &updated.ExcludeSyncRequests, &updated.CardTimelineMode,
 		&updated.UpdatedAt, &updated.UpdatedBy)
 	if err == sql.ErrNoRows {
 		return nil, service.ErrChannelMonitorV2ConfigConflict
@@ -174,14 +174,6 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 	groupCounts := map[int64]groupValue{}
 	for _, platform := range channelMonitorV2EnabledPlatforms(cfg) {
 		platformCounts[platform] += 0
-		for _, p := range cfg.Platforms {
-			if p.Platform != platform || len(p.Models) == 0 {
-				continue
-			}
-			for _, model := range p.Models {
-				modelCounts[platform+"\x00"+model] = modelValue{platform: platform, count: 0}
-			}
-		}
 	}
 	groupInfo, err := r.loadChannelMonitorV2GroupInfo(ctx, configuredChannelMonitorV2GroupIDs(catalogFilter, cfg))
 	if err != nil {
@@ -230,7 +222,12 @@ func (r *channelMonitorV2Repository) GetDimensions(ctx context.Context, filter s
 	sort.Slice(result.Platforms, func(i, j int) bool {
 		return channelMonitorV2PlatformLess(cfg, result.Platforms[i].Value, result.Platforms[j].Value)
 	})
-	sort.Slice(result.Models, func(i, j int) bool { return result.Models[i].RequestCount > result.Models[j].RequestCount })
+	sort.Slice(result.Models, func(i, j int) bool {
+		if result.Models[i].RequestCount != result.Models[j].RequestCount {
+			return result.Models[i].RequestCount > result.Models[j].RequestCount
+		}
+		return result.Models[i].Value < result.Models[j].Value
+	})
 	sort.Slice(result.Groups, func(i, j int) bool { return result.Groups[i].RequestCount > result.Groups[j].RequestCount })
 	return result, rows.Err()
 }
@@ -319,22 +316,18 @@ func (r *channelMonitorV2Repository) GetModels(ctx context.Context, filter servi
 	if err != nil {
 		return nil, err
 	}
-	accs := map[string]*metricAccumulator{}
-	for _, platform := range channelMonitorV2EnabledPlatforms(cfg) {
-		if len(filter.Platforms) > 0 && !containsString(filter.Platforms, platform) {
-			continue
-		}
-		models := configuredChannelMonitorV2Models(cfg, platform, filter)
-		for _, model := range models {
-			if model == "" {
-				continue
-			}
-			key := platform + "\x00" + model
-			if accs[key] == nil {
-				accs[key] = newMetricAccumulator()
-			}
-		}
+	ignoredByPM, _, err := r.loadIgnoredErrorCountsByPlatformModel(ctx, effectiveFilter, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("load ignored error counts by platform/model: %w", err)
 	}
+	items := channelMonitorV2ModelRows(filter, cfg, facts, hist, ignoredByPM, channelMonitorV2CoveredMinutes(filter, *coverage), admin)
+	return &service.ChannelMonitorV2List[service.ChannelMonitorV2ModelRow]{Coverage: *coverage, Items: items}, nil
+}
+
+// Only traffic creates model rows. Legacy per-platform model lists remain readable
+// configuration data, but no longer hide, merge, or invent models.
+func channelMonitorV2ModelRows(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, facts []channelMonitorV2Fact, hist []channelMonitorV2Histogram, ignoredByPM map[string]int64, minutes float64, admin bool) []service.ChannelMonitorV2ModelRow {
+	accs := map[string]*metricAccumulator{}
 	for _, fact := range facts {
 		if !channelMonitorV2ModelSelected(filter, cfg, fact.Platform, fact.Model) {
 			continue
@@ -355,23 +348,27 @@ func (r *channelMonitorV2Repository) GetModels(ctx context.Context, filter servi
 			accs[key].addHistogram(h)
 		}
 	}
-	// Per platform+model ignored counts for error_rate adjustment.
-	ignoredByPM, _, err := r.loadIgnoredErrorCountsByPlatformModel(ctx, effectiveFilter, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("load ignored error counts by platform/model: %w", err)
-	}
 	items := make([]service.ChannelMonitorV2ModelRow, 0, len(accs))
-	minutes := channelMonitorV2CoveredMinutes(filter, *coverage)
 	for key, acc := range accs {
 		parts := strings.SplitN(key, "\x00", 2)
+		if acc.success+acc.errors == 0 {
+			continue
+		}
 		metrics := acc.metric(minutes, admin)
 		applyIgnoredErrors(&metrics, ignoredByPM[key])
 		items = append(items, service.ChannelMonitorV2ModelRow{Platform: parts[0], Model: parts[1], Metrics: metrics, Health: service.ChannelMonitorV2HealthForWithThresholds(metrics, cfg.HealthThresholds)})
 	}
-	// Model ranking stays by request volume. Platform display order applies to
-	// filters, cards, and the matrix, not this table.
-	sort.Slice(items, func(i, j int) bool { return items[i].Metrics.RequestCount > items[j].Metrics.RequestCount })
-	return &service.ChannelMonitorV2List[service.ChannelMonitorV2ModelRow]{Coverage: *coverage, Items: items}, nil
+	sort.Slice(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if a.Metrics.RequestCount != b.Metrics.RequestCount {
+			return a.Metrics.RequestCount > b.Metrics.RequestCount
+		}
+		if a.Platform != b.Platform {
+			return a.Platform < b.Platform
+		}
+		return a.Model < b.Model
+	})
+	return items
 }
 
 type channelMonitorV2MatrixKey struct {
@@ -537,6 +534,9 @@ func channelMonitorV2MatrixDimensionKey(groupBy service.ChannelMonitorV2GroupBy,
 
 func seedChannelMonitorV2MatrixAccumulators(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, groupBy service.ChannelMonitorV2GroupBy, groupInfo map[int64]channelMonitorV2GroupInfo) map[channelMonitorV2MatrixKey]*channelMonitorV2MatrixAccumulator {
 	accs := map[channelMonitorV2MatrixKey]*channelMonitorV2MatrixAccumulator{}
+	if groupBy == service.ChannelMonitorV2GroupByPlatformModel || groupBy == service.ChannelMonitorV2GroupByPlatformGroupModel {
+		return accs
+	}
 	platforms := channelMonitorV2EnabledPlatforms(cfg)
 	if len(filter.Platforms) > 0 {
 		platforms = intersectStrings(platforms, filter.Platforms)
@@ -1254,34 +1254,9 @@ func channelMonitorV2EnabledPlatforms(cfg service.ChannelMonitorV2Config) []stri
 	return out
 }
 
-// channelMonitorV2DisplayModel maps a raw model name for presentation.
-// Semantics (parallel to empty group_ids = all groups):
-//   - platform not in config / disabled → keep raw model (still collected)
-//   - models list empty → show the real model name (no collapsing)
-//   - models list non-empty → selected keep identity; everything else → __other__
-func channelMonitorV2DisplayModel(cfg service.ChannelMonitorV2Config, platform, model string) string {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return service.ChannelMonitorV2OtherModel
-	}
-	for _, p := range cfg.Platforms {
-		if p.Platform != platform {
-			continue
-		}
-		// Empty allow-list: surface every real model instead of dumping into __other__.
-		// Operators opt into the named + __other__ split only by listing models.
-		if len(p.Models) == 0 {
-			return model
-		}
-		for _, selected := range p.Models {
-			if selected == model {
-				return model
-			}
-		}
-		return service.ChannelMonitorV2OtherModel
-	}
-	// Platform not configured: still show the real model so traffic is visible.
-	return model
+// Keep all concrete requested model names, regardless of legacy display lists.
+func channelMonitorV2DisplayModel(_ service.ChannelMonitorV2Config, _, model string) string {
+	return strings.TrimSpace(model)
 }
 func channelMonitorV2ModelSelected(filter service.ChannelMonitorV2Filter, cfg service.ChannelMonitorV2Config, platform, model string) bool {
 	if len(filter.Models) == 0 {

@@ -12,7 +12,7 @@ it('orders platform sections by the configured display order', () => {
     health: { overall: 'unknown' }, buckets: [],
   }) as MonitorMatrixRow
   const wrapper = mount(MonitorStatusCards, {
-    props: { items: [row('openai'), row('deepseek'), row('kimi')], platformOrder: ['kimi', 'deepseek', 'openai'], countdown: 1, loading: false, now: Date.now() },
+    props: { showCandy: true, items: [row('openai'), row('deepseek'), row('kimi')], platformOrder: ['kimi', 'deepseek', 'openai'], countdown: 1, loading: false, now: Date.now() },
     global: { stubs: { ProviderIcon: true } },
   })
   expect(wrapper.findAll('[data-platform]').map((section) => section.attributes('data-platform'))).toEqual(['kimi', 'deepseek', 'openai'])
@@ -26,7 +26,7 @@ it('renders platform groups, three passive metrics and observed-only candy bars'
     health: { overall: 'healthy', error_rate: 'healthy' }, buckets: [],
     candy: { model: 'model', reasoning_effort: 'medium', interval_minutes: 1, results: [{ checked_at: '2026-09-28T00:59:00Z', verdict: 'incorrect', latency_ms: 50 }] },
   } as MonitorMatrixRow
-  const wrapper = mount(MonitorStatusCards, { props: { items: [row], countdown: 32, loading: false, now }, global: { stubs: { ProviderIcon: true } } })
+  const wrapper = mount(MonitorStatusCards, { props: { showCandy: true, items: [row], countdown: 32, loading: false, now }, global: { stubs: { ProviderIcon: true } } })
   expect(wrapper.text()).toContain('Group One')
   expect(wrapper.text()).toContain('83.7%')
   expect(wrapper.text()).toContain('99.9%')
@@ -39,7 +39,7 @@ it('renders platform groups, three passive metrics and observed-only candy bars'
 
 it('does not show zero traffic as 100 percent availability or invent candy records', () => {
   const row = { platform: 'openai', group_id: 7, group_name: 'No samples', metrics: { has_samples: false, request_count: 0, cache_rate: 0, error_rate: 0, ttft: { p50_ms: null } }, health: { overall: 'unknown' }, buckets: [], candy: { model: 'model', reasoning_effort: 'medium', interval_minutes: 1, results: [] } } as unknown as MonitorMatrixRow
-  const wrapper = mount(MonitorStatusCards, { props: { items: [row], countdown: 32, loading: false, now: Date.now() }, global: { stubs: { ProviderIcon: true } } })
+  const wrapper = mount(MonitorStatusCards, { props: { showCandy: true, items: [row], countdown: 32, loading: false, now: Date.now() }, global: { stubs: { ProviderIcon: true } } })
   expect(wrapper.text()).not.toContain('100.0%')
   expect(wrapper.text()).toContain('channelMonitorV2.candy.waiting')
   expect(wrapper.findAll('[data-testid="candy-history-bar"]')).toHaveLength(0)
@@ -65,7 +65,7 @@ function hoverFixture() {
     candy: { model: 'demo', reasoning_effort: 'medium', interval_minutes: 1, results: [{ checked_at: '2026-09-28T00:59:00Z', verdict: 'error', latency_ms: 1500 }] },
   } as MonitorMatrixRow
   const coverage = { requested_start: '2026-09-28T00:00:00Z', requested_end: '2026-09-28T01:30:00Z' } as MonitorCoverage
-  const wrapper = mount(MonitorStatusCards, { attachTo: document.body, props: { items: [row], coverage, countdown: 32, loading: false, now: Date.now() }, global: { stubs: { ProviderIcon: true } } })
+  const wrapper = mount(MonitorStatusCards, { attachTo: document.body, props: { showCandy: true, items: [row], coverage, countdown: 32, loading: false, now: Date.now() }, global: { stubs: { ProviderIcon: true } } })
   mounted.push(wrapper)
   return { wrapper, row }
 }
@@ -245,4 +245,62 @@ it('shows each configured model with its own history limit', async () => {
   expect(models[1].text()).toContain('gpt-b')
   expect(models[1].find('[data-testid="candy-history-slots"]').element.children).toHaveLength(30)
   expect(wrapper.findAll('[data-testid="candy-history-bar"]')).toHaveLength(2)
+})
+
+it('hides candy from channel cards by default and exposes only the full model action', () => {
+ const { wrapper, row } = hoverFixture()
+ wrapper.unmount()
+ const w = mount(MonitorStatusCards,{props:{items:[row],now:Date.now(),countdown:1,loading:false,modelDetails:true},global:{stubs:{ProviderIcon:true}}})
+ expect(w.find('[data-testid="candy-history"]').exists()).toBe(false)
+ expect(w.findAll('[data-testid="view-group-models"]')).toHaveLength(1)
+ w.unmount()
+})
+
+
+it('follows controlled mode updates and closes the old timeline detail', async () => {
+  const { wrapper } = hoverFixture()
+  await wrapper.setProps({ timelineMode: 'samples', showTimelineControls: false } as any)
+  expect(wrapper.find('[data-testid="card-timeline-mode"]').exists()).toBe(false)
+  expect(wrapper.findAll('[data-testid="traffic-history-bar"]')).toHaveLength(2)
+  await wrapper.get('[data-testid="traffic-history-bar"]').trigger('focus')
+  expect(tooltip()).toBeTruthy()
+  await wrapper.setProps({ timelineMode: 'windows' } as any)
+  expect(wrapper.findAll('[data-testid="traffic-history-bar"]')).toHaveLength(18)
+  expect(tooltip()).toBeNull()
+})
+
+
+it('colors each metric from its own backend threshold state rather than the overall score', async () => {
+  const { wrapper, row } = hoverFixture()
+  await wrapper.setProps({ items: [{ ...row, health: { ...row.health, overall: 'healthy', cache: 'critical', error_rate: 'warning', ttft: 'healthy' } }] as MonitorMatrixRow[] })
+  const numbers = wrapper.findAll('dl dd')
+  expect(numbers.map(item=>item.text())).toEqual(['88.1%', '100.0%', '8.0s'])
+  expect(numbers[0].classes()).toContain('text-red-700')
+  expect(numbers[1].classes()).toContain('text-amber-800')
+  expect(numbers[2].classes()).toContain('text-emerald-800')
+  expect(numbers[0].attributes('title')).toBe('channelMonitorV2.cards.health.critical')
+  expect(numbers[1].attributes('aria-label')).toContain('channelMonitorV2.cards.health.warning')
+  await wrapper.setProps({ items: [{ ...row, health: { ...row.health, overall: 'critical', cache: 'healthy', error_rate: 'critical', ttft: 'warning' } }] as MonitorMatrixRow[] })
+  const updated=wrapper.findAll('dl dd')
+  expect(updated[0].classes()).toContain('text-emerald-800')
+  expect(updated[1].classes()).toContain('text-red-700')
+  expect(updated[2].classes()).toContain('text-amber-800')
+})
+it('uses neutral metric colors for insufficient or missing samples, including unavailable first-token values', async () => {
+  const { wrapper, row } = hoverFixture()
+  await wrapper.setProps({ items: [{ ...row, health: { ...row.health, cache: 'unknown', error_rate: 'unknown', ttft: 'unknown' } }] as MonitorMatrixRow[] })
+  expect(wrapper.findAll('dl dd').every(item=>item.classes().includes('text-gray-600'))).toBe(true)
+  await wrapper.setProps({ items: [{ ...row, metrics: { ...row.metrics, has_samples: false, request_count: 0, ttft: { ...row.metrics.ttft, p50_ms: null } }, health: { ...row.health, cache: 'healthy', error_rate: 'healthy', ttft: 'healthy' } }] as MonitorMatrixRow[] })
+  expect(wrapper.findAll('dl dd').every(item=>item.classes().includes('text-gray-600'))).toBe(true)
+  await wrapper.setProps({ items: [{ ...row, metrics: { ...row.metrics, ttft: { ...row.metrics.ttft, p50_ms: null } }, health: { ...row.health, cache: 'healthy', error_rate: 'healthy', ttft: 'healthy' } }] as MonitorMatrixRow[] })
+  expect(wrapper.findAll('dl dd')[2].classes()).toContain('text-gray-600')
+})
+it('keeps measured zero values colored by their backend state', async () => {
+  const { wrapper, row } = hoverFixture()
+  await wrapper.setProps({ items: [{ ...row, metrics: { ...row.metrics, has_samples: true, cache_rate: 0, error_rate: 1, ttft: { ...row.metrics.ttft, p50_ms: 0 } }, health: { ...row.health, cache: 'critical', error_rate: 'critical', ttft: 'healthy' } }] as MonitorMatrixRow[] })
+  const numbers=wrapper.findAll('dl dd')
+  expect(numbers.map(item=>item.text())).toEqual(['0.00%', '0.00%', '0ms'])
+  expect(numbers[0].classes()).toContain('text-red-700')
+  expect(numbers[1].classes()).toContain('text-red-700')
+  expect(numbers[2].classes()).toContain('text-emerald-800')
 })

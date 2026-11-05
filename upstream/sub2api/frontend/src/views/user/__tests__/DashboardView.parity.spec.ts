@@ -1,4 +1,3 @@
-vi.mock('@/features/ai-tools/routeTimeline',async importOriginal=>({...await importOriginal<typeof import('@/features/ai-tools/routeTimeline')>(),getRouteTimeline:(...args:unknown[])=>mocks.timeline(...args)}))
 import { createI18n } from 'vue-i18n'
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,9 +13,8 @@ vi.mock('@/features/monitor-v4/lineSelection',()=>({getLineSelectionMetrics:vi.f
 vi.mock('@/features/ai-tools/api',()=>({getGroupModels:mocks.models}))
 const groups=[{id:1,name:'GPT-Pro',platform:'openai',rate_multiplier:1,status:'active'},{id:2,name:'未关联线路',platform:'openai',rate_multiplier:.5,status:'active'}]
 const metric=(id:number)=>({id,tool_ids:['codex'],success_rate:98,request_count:100,success_count:98,ttft_p50_ms:2160,latency_p50_ms:6500,sla_request_count:100,sla_success_count:98,source_updated_at:new Date().toISOString()})
-const slaPoint=(group_id:number,request_count=100,success_count=98)=>({group_id,start:'2026-10-08T10:00:00Z',end:'2026-10-08T11:00:00Z',request_count,success_count,cache_hit_rate:null,ttft_p50_ms:null})
 const deferred=<T,>()=>{let resolve!:(value:T)=>void;let reject!:(reason?:unknown)=>void;const promise=new Promise<T>((res,rej)=>{resolve=res;reject=rej});return {promise,resolve,reject}}
-const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title'],template:'<div v-if="show" role="dialog"><h3>{{title}}</h3><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId','recommendedGroupIds','groups'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
+const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{ToolMonitorDetails:{name:'ToolMonitorDetails',props:['toolId','toolName','groups'],template:'<section data-testid="shared-monitor"><button @click="$emit(\'title\', \'分组 · 模型表现\')">models</button></section>'},KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title','description'],template:'<div v-if="show" role="dialog"><h3><slot name="title">{{title}}</slot></h3><p v-if="description" class="modal-description">{{description}}</p><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId','recommendedGroupIds','groups'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
 beforeEach(()=>{vi.clearAllMocks();clearDashboardWorkspaceSnapshot();mocks.models.mockResolvedValue([{group_id:1,supported_models:['gpt-5.4','gpt-5.2'],official_pricing:{'gpt-5.4':{input_price:2.5e-6,cache_read_price:.25e-6,output_price:15e-6}}},{group_id:2,supported_models:['gpt-5.4','custom-model']},{group_id:99,supported_models:['private-model']}]);mocks.groups.mockResolvedValue(groups);mocks.rates.mockResolvedValue({});mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]}],total:1});mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))})})
 describe('原型AI工具交互',()=>{
  it.each(['groups','rates'] as const)('keeps the key manager mounted when tool workspace %s fails',async(failure)=>{
@@ -32,79 +30,6 @@ describe('原型AI工具交互',()=>{
   expect(w.find('[data-testid="merged-key-manager"]').exists()).toBe(true)
   expect(w.find('[aria-labelledby="routes-title"]').exists()).toBe(false)
   expect(w.find('button[aria-label="检查线路"]').exists()).toBe(false)
-  w.unmount()
- })
- beforeEach(()=>{mocks.timeline.mockReset();mocks.timeline.mockResolvedValue(groups.map(g=>slaPoint(g.id)))})
- it('uses group SLA timeline counts for the detail total instead of the logical snapshot',async()=>{
-  const point=(group_id:number,request_count:number,success_count:number,start='2026-10-08T10:00:00Z',end='2026-10-08T11:00:00Z')=>({group_id,start,end,request_count,success_count,cache_hit_rate:.5,ttft_p50_ms:1000})
-  mocks.timeline.mockResolvedValueOnce([point(1,2,1),point(1,10,9,'2026-10-08T11:00:00Z','2026-10-08T12:00:00Z'),point(2,2,0)])
-  const w=make();await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  const cards=w.findAll('.route-detail-card')
-  const firstCard=()=>w.findAll('.route-detail-card').find(c=>c.get('h3').text()==='GPT-Pro')!
-  const first=firstCard()
-  expect(firstCard().get('.success-rate').text()).toBe('83.33%')
-  expect(first.find('.detail-request-sample').exists()).toBe(false)
-  expect(first.get('.detail-quality-label').attributes('title')).toContain('SLA')
-  expect(cards.find(c=>c.get('h3').text()==='未关联线路')!.get('.success-rate').text()).toBe('0%')
-  // Detail status follows the same selected-window SLA counts as its percentage.
-  expect(first.get('.route-health').text()).toBe('波动')
-  mocks.timeline.mockResolvedValueOnce([point(1,12,10,'2026-10-08T00:00:00Z','2026-10-09T00:00:00Z'),point(2,2,0)])
-  await w.get('select[aria-label="线路图粒度"]').setValue('day');await flushPromises()
-  expect(firstCard().get('.success-rate').text()).toBe('83.33%')
-  const pending=deferred<unknown[]>()
-  mocks.timeline.mockImplementationOnce(()=>pending.promise)
-  await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises()
-  expect(firstCard().element).not.toBe(first.element)
-  expect(firstCard().get('.success-rate').text()).toBe('—')
-  pending.reject(new Error('offline'));await flushPromises()
-  expect(firstCard().get('.success-rate').text()).toBe('—')
-  expect(w.text()).toContain('线路走势读取失败')
-  w.unmount()
- })
- it('orders detail cards by effective multiplier across periods without changing the best route',async()=>{
-  const candidates=[
-   {id:1,name:'高倍率最佳线路',platform:'openai',rate_multiplier:1,status:'active'},
-   {id:2,name:'专属低倍率',platform:'openai',rate_multiplier:.8,status:'active'},
-   {id:3,name:'同倍率正常线路',platform:'openai',rate_multiplier:.2,status:'active'},
-   {id:4,name:'同倍率异常线路',platform:'openai',rate_multiplier:.2,status:'inactive'},
-   {id:5,name:'未知倍率',platform:'openai',rate_multiplier:NaN,status:'active'},
-   {id:6,name:'零倍率',platform:'openai',rate_multiplier:1,status:'active'},
-  ]
-  mocks.groups.mockResolvedValue(candidates)
-  mocks.keys.mockResolvedValue({items:[],total:0})
-  mocks.rates.mockResolvedValue({2:.1,6:0})
-  mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:candidates.map(g=>({
-   ...metric(g.id),cache_hit_rate:.5,ttft_p50_ms:1000,
-   sla_success_count:g.id===1?100:g.id===3?90:20,
-  }))})
-  const w=make();await flushPromises()
-  expect(w.get('.tool-card .tool-best .best').text()).toBe('高倍率最佳线路')
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  for(const period of ['近 24 小时','近 1 小时','近 7 天']){
-   await w.findAll('.detail-period-segment button').find(b=>b.text()===period)!.trigger('click');await flushPromises()
-   const cards=w.findAll('.route-detail-card')
-   expect(cards.map(card=>card.get('h3').text())).toEqual(['零倍率','专属低倍率','同倍率正常线路','同倍率异常线路','高倍率最佳线路','未知倍率'])
-   expect(cards.slice(0,5).map(card=>card.get('.rate-badge').text())).toEqual(['0.0x倍率','0.1x倍率','0.2x倍率','0.2x倍率','1.0x倍率'])
-   expect(cards.find(card=>card.find('.best-route-badge').exists())!.get('h3').text()).toBe('高倍率最佳线路')
-  }
-  w.unmount()
- })
- it('hides request counts from route detail while keeping the selected route',async()=>{
-  const w=make();await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  const cards=w.findAll('article.route-detail-card')
-  expect(cards).toHaveLength(2)
-  expect(cards[0].find('.detail-request-sample').exists()).toBe(false)
-  expect(cards[0].find('.detail-success-hover').exists()).toBe(false)
-  expect(cards[0].find('.detail-card-metrics').exists()).toBe(false)
-  expect(cards[0].text()).not.toContain('耗时 P50')
-  expect(cards[0].text()).not.toContain('本次检查')
-  expect(cards[0].get('.success-rate').text()).toBe('98%')
-  const second=cards.find(c=>c.text().includes('未关联线路'))!
-  await second.get('button[data-detail-group-id="2"]').trigger('click');await flushPromises()
-  expect(w.get('[data-testid="create-key"]').text()).toBe('2')
-  expect(mocks.push).not.toHaveBeenCalled()
   w.unmount()
  })
  it('uses a 24-hour weighted score and includes active unlinked lines in the best route',async()=>{
@@ -130,29 +55,6 @@ describe('原型AI工具交互',()=>{
   await w.get('.tool-card .card-bottom button').trigger('click');await flushPromises()
   expect(w.get('[data-testid="create-key"]').text()).toBe('2')
   w.findComponent({name:'CreateLineKeyDialog'}).vm.$emit('close');await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  const bestCard=()=>w.findAll('.route-detail-card').find(card=>card.find('.best-route-badge').exists())!
-  expect(bestCard().get('h3').text()).toBe('未关联最佳线路')
-  expect(bestCard().element.firstElementChild?.classList.contains('best-route-badge')).toBe(true)
-  expect(bestCard().find('.detail-card-quality .best-route-badge').exists()).toBe(false)
-  await w.findAll('button').find(button=>button.text()==='近 7 天')!.trigger('click');await flushPromises()
-  expect(bestCard().get('h3').text()).toBe('未关联最佳线路')
-  mocks.snapshot.mockImplementation((window:string)=>Promise.resolve({
-   ...snapshot(window),groups:snapshot(window).groups.map(g=>({...g,cache_hit_rate:1,ttft_p50_ms:1000,sla_success_count:g.id===1?100:90})),
-  }))
-  await w.findAll('button').find(button=>button.text()==='近 24 小时')!.trigger('click');await flushPromises()
-  expect(w.get('.tool-card .tool-best .best').text()).toContain('已关联线路')
-  expect(bestCard().get('h3').text()).toBe('已关联线路')
-  w.unmount()
- })
- it('passes the actual per-tool best route, not a manually selected line, into creation',async()=>{
-  mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),cache_hit_rate:.5,sla_success_count:g.id===1?99:80}))})
-  const w=make();await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  await w.get('button[data-detail-group-id="2"]').trigger('click');await flushPromises()
-  const dialog=w.findComponent({name:'CreateLineKeyDialog'})
-  expect(dialog.props('initialGroupId')).toBe(2)
-  expect((dialog.props('recommendedGroupIds') as Map<string,number>).get('codex')).toBe(1)
   w.unmount()
  })
  it('withdraws the create recommendation when its 24-hour ranking expires',async()=>{
@@ -193,21 +95,6 @@ describe('原型AI工具交互',()=>{
   expect(w.get('[data-testid="create-key"]').text()).toBe('')
   w.unmount()
  })
- it('distinguishes zero SLA requests from missing timeline points in cards',async()=>{
-  mocks.timeline.mockResolvedValue([slaPoint(1,0,0)])
-  mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:[{...metric(1),sla_request_count:0,sla_success_count:0}]})
-  const w=make();await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  const cards=w.findAll('.route-detail-card')
-  const zero=cards.find(c=>c.text().includes('GPT-Pro'))!
-  const missing=cards.find(c=>c.text().includes('未关联线路'))!
-  expect(zero.find('.detail-request-sample').exists()).toBe(false)
-  expect(missing.find('.detail-request-sample').exists()).toBe(false)
-  expect(zero.get('.success-rate').text()).toBe('暂无数据')
-  expect(missing.get('.success-rate').text()).toBe('暂无数据')
-  w.unmount()
- })
-
  it('shows all route states and exact counts on one clickable tool entry',async()=>{
   const fiveRoutes=Array.from({length:5},(_,index)=>({id:index+1,name:`线路 ${index+1}`,platform:'openai',rate_multiplier:1,status:'active'}))
   mocks.groups.mockResolvedValue(fiveRoutes)
@@ -226,7 +113,7 @@ describe('原型AI工具交互',()=>{
   expect(status.attributes('aria-expanded')).toBe('false')
   await status.trigger('click');await flushPromises()
   expect(status.attributes('aria-expanded')).toBe('true')
-  expect(w.findAll('.route-detail-card')).toHaveLength(5)
+  expect(w.findComponent({name:'ToolMonitorDetails'}).props('groups')).toHaveLength(5)
   w.unmount()
  })
 
@@ -238,66 +125,13 @@ describe('原型AI工具交互',()=>{
   w.unmount()
  })
 
- it('invalidates one-hour health after detail failure and clears only the statistics error on recovery',async()=>{
-  const w=make();await flushPromises()
-  expect(w.get('.tool-status').text()).toBe('正常2')
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  mocks.snapshot.mockRejectedValueOnce(new Error('offline'))
-  await w.findAll('button').find(b=>b.text()==='近 1 小时')!.trigger('click');await flushPromises()
-  expect(w.get('.tool-status').text()).toBe('无数据2')
-  expect(w.get('.route-health').text()).toBe('正常运行')
-  expect(w.get('.statistics-error').text()).toContain('统计读取失败')
-  await w.get('[role="dialog"]').findAll('button').find(b=>b.text()==='重试')!.trigger('click');await flushPromises()
-  expect(w.get('.tool-status').text()).toBe('正常2')
-  expect(w.find('.statistics-error').exists()).toBe(false)
-  w.unmount()
- })
-
- it.each([[0,'red'],[69.9,'red'],[70,'amber'],[89.9,'amber'],[90,'green'],[100,'green'],[null,'muted']] as const)('uses the shared success-rate tone for %s in detail cards',async(rate,tone)=>{
-  mocks.timeline.mockResolvedValue(groups.map(g=>slaPoint(g.id,rate===null?0:1000,rate===null?0:rate*10)))
-  mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),success_rate:rate,request_count:rate===null?0:100,sla_request_count:rate===null?0:1000,sla_success_count:rate===null?0:rate*10}))})
-  const w=make();await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  expect(w.get('.success-rate').attributes('data-tone')).toBe(tone)
-  w.unmount()
- })
  it('keeps unavailable statistics neutral instead of implying success',async()=>{
   mocks.snapshot.mockRejectedValue(new Error('offline'))
   const w=make();await flushPromises()
   expect(w.get('.tool-status').text()).toContain('无数据')
   w.unmount()
  })
- it('keeps the tool health on one hour and detail status on its selected SLA window',async()=>{
-  mocks.snapshot.mockImplementation((window:string)=>Promise.resolve({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),sla_request_count:g.id===1?1:99,sla_success_count:window==='7d'?0:g.id===1?0:99}))}))
-  mocks.timeline.mockImplementation((window:string)=>Promise.resolve(groups.map(g=>slaPoint(g.id,window==='7d'?100:g.id===1?1:99,window==='7d'?0:g.id===1?0:99))))
-  const w=make();await flushPromises()
-  expect(w.get('.tool-status').findAll('[data-health-count]').map(item=>item.text())).toEqual(['正常1','异常1'])
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises()
-  expect(w.findAll('.route-detail-card').find(r=>r.text().includes('GPT-Pro'))!.get('.route-health').text()).toBe('异常')
-  expect(w.findAll('.route-detail-card').find(r=>r.text().includes('未关联线路'))!.get('.route-health').text()).toBe('异常')
-  expect(w.text()).not.toMatch(/可用 ·|不可用 ·|0\/2 条/)
-  w.unmount()
- })
- it('uses the effective multiplier with its suffix in detail cards',async()=>{
-  mocks.rates.mockResolvedValue({1:0.12})
-  const w=make();await flushPromises()
-  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  expect(w.get('[role="dialog"]').text()).toContain('0.12x倍率')
-  expect(w.get('[role="dialog"]').text()).toContain('0.5x倍率')
-  w.unmount()
- })
  it('keeps associate action even with keys and opens creation without navigation',async()=>{const w=make();await flushPromises();const b=w.findAll('button').find(b=>b.text()==='关联密钥')!;await b.trigger('click');expect(w.find('[data-testid="create-key"]').exists()).toBe(true);expect(mocks.push).not.toHaveBeenCalled();w.unmount()})
- it('keeps the chart and fetches selected period without standalone latency metrics',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();expect(w.find('.route-history').exists()).toBe(true);expect(w.get('[role="dialog"]').text()).not.toContain('2.16s');await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises();expect(mocks.snapshot.mock.calls.some(c=>c[0]==='7d')).toBe(true);w.unmount()})
- it('defaults to 24 hours and forwards granularity while one hour uses five minutes',async()=>{
-  const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  expect(w.findAll('button').find(b=>b.text()==='近 24 小时')!.attributes('aria-pressed')).toBe('true')
-  expect(mocks.timeline).toHaveBeenLastCalledWith('24h',expect.anything(),'hour')
-  await w.get('select[aria-label="线路图粒度"]').setValue('day');await flushPromises()
-  expect(mocks.timeline).toHaveBeenLastCalledWith('24h',expect.anything(),'day')
-  await w.findAll('button').find(b=>b.text()==='近 1 小时')!.trigger('click');await flushPromises()
-  expect(w.get('select').attributes('disabled')).toBeDefined();expect((w.get('select').element as HTMLSelectElement).value).toBe('5m');w.unmount()
- })
  it('initial load failure shows retry instead of invented empty data',async()=>{mocks.groups.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('[role="alert"]').text()).toContain('重试');expect(w.find('.tool-grid').exists()).toBe(false);w.unmount()})
  it('shows the workspace before monitoring statistics finish loading',async()=>{const pending=deferred<{groups:ReturnType<typeof metric>[]}>();mocks.snapshot.mockReturnValue(pending.promise);const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(true);expect(w.text()).not.toContain('正在读取 AI 工具');pending.resolve({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))});await flushPromises();w.unmount()})
  it('keeps the workspace visible when monitoring statistics fail',async()=>{mocks.snapshot.mockRejectedValue(new Error('offline'));const w=make();await flushPromises();expect(w.find('.tool-grid').exists()).toBe(true);expect(w.find('[role="alert"]').exists()).toBe(true);expect(w.text()).toContain('无数据');w.unmount()})
@@ -315,8 +149,6 @@ describe('原型AI工具交互',()=>{
   expect(cards[1].find('button').attributes('disabled')).toBeUndefined()
   w.unmount()
  })
- it('preserves the last successful detail metrics after a same-window refresh fails',async()=>{const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises();mocks.snapshot.mockRejectedValue(new Error('offline'));await w.findAll('button').find(b=>b.text()==='近 24 小时')!.trigger('click');await flushPromises();expect(w.get('[role="dialog"]').text()).not.toContain('次请求成功');expect(w.get('[role="dialog"]').text()).toContain('98%');w.unmount()})
-
  it('shows current tool models newest first with native prices without changing group fees',async()=>{
   mocks.rates.mockResolvedValue({1:0.12})
   const w=make();await flushPromises()
@@ -361,18 +193,6 @@ describe('原型AI工具交互',()=>{
 
 })
 
-it('shows SLA in detail cards and keeps detail status on the selected SLA window',async()=>{
- mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>({...metric(g.id),real_request_count:841,real_success_count:660,sla_request_count:667,sla_success_count:660}))})
- mocks.timeline.mockImplementation((window:string)=>Promise.resolve(groups.map(g=>slaPoint(g.id,window==='7d'?100:667,window==='7d'?80:660))))
- const w=make();await flushPromises()
- await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
- expect(w.get('.route-health').text()).toBe('正常运行')
- expect(w.get('.success-rate').text()).toBe('98.95%')
- await w.findAll('button').find(b=>b.text()==='近 7 天')!.trigger('click');await flushPromises()
- expect(w.get('.route-health').text()).toBe('波动')
- expect(w.get('.success-rate').text()).toBe('80%')
- w.unmount()
-})
 
 describe('Gemini 第五工具',()=>{
  it('offers only active Gemini groups through the existing key creation dialog',async()=>{
@@ -395,4 +215,48 @@ describe('Gemini 第五工具',()=>{
   expect(card.text()).toContain('暂无可用 Gemini 分组')
   w.unmount()
  })
+ it('hosts V2 route and model content inside the existing tool dialog without requiring keys',async()=>{
+  mocks.keys.mockResolvedValue({items:[],total:0})
+  const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
+  const monitor=w.findComponent({name:'ToolMonitorDetails'})
+  expect(monitor.props('toolId')).toBe('codex');expect(monitor.props('groups')).toEqual(groups)
+  expect(w.findAll('[role="dialog"]')).toHaveLength(1)
+  await w.get('[data-testid="shared-monitor"] button').trigger('click');await flushPromises()
+  expect(w.get('[role="dialog"] h3').text()).toBe('分组 · 模型表现')
+  expect(mocks.timeline).not.toHaveBeenCalled();w.unmount()
+ })
+
+ it('opens the existing key dialog with the chosen detail group and returns on cancellation',async()=>{
+  const w=make();await flushPromises()
+  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
+  w.findComponent({name:'ToolMonitorDetails'}).vm.$emit('associate',2);await flushPromises()
+  expect(w.get('[data-testid="create-key"]').text()).toBe('2')
+  expect(w.findAll('[role="dialog"]')).toHaveLength(0)
+  w.findComponent({name:'CreateLineKeyDialog'}).vm.$emit('close');await flushPromises()
+  expect(w.find('[data-testid="create-key"]').exists()).toBe(false)
+  expect(w.get('[role="dialog"] h3').text()).toBe('Codex 线路详情')
+  expect(mocks.push).not.toHaveBeenCalled()
+  w.unmount()
+ })
+ it('rejects unauthorized and stopped detail groups without opening a fallback key route',async()=>{
+  mocks.groups.mockResolvedValue([...groups,{id:3,name:'停用',platform:'openai',status:'inactive'}])
+  const w=make();await flushPromises()
+  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
+  for(const id of [99,3]){
+   w.findComponent({name:'ToolMonitorDetails'}).vm.$emit('associate',id);await flushPromises()
+   expect(w.find('[data-testid="create-key"]').exists()).toBe(false)
+   expect(w.find('[role="dialog"]').exists()).toBe(true)
+  }
+  w.unmount()
+ })
+
+})
+
+it('places tool helper events under the dialog title rather than inside its heading',async()=>{
+ const w=make();await flushPromises()
+ await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
+ w.findComponent({name:'ToolMonitorDetails'}).vm.$emit('description','线路辅助说明');await flushPromises()
+ expect(w.get('[role="dialog"] .modal-description').text()).toBe('线路辅助说明')
+ expect(w.get('[role="dialog"] h3').text()).toBe('Codex 线路详情')
+ w.unmount()
 })

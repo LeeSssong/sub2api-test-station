@@ -213,6 +213,8 @@
         :countdown="countdown"
         :now="clockNow"
         :platform-order="cardPlatformOrder"
+        :timeline-mode="snapshot?.config.card_timeline_mode || 'samples'"
+        :show-timeline-controls="false"
       />
       <template v-else>
       <!-- Overview KPI: success · TTFT · tokens/s(optional) · cache · (+ RPM when throughput visible) -->

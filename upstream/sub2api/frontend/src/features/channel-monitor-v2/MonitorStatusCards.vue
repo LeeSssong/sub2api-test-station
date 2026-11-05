@@ -4,36 +4,40 @@
       <div v-for="index in 6" :key="index" class="h-72 animate-pulse rounded-3xl bg-gray-100 dark:bg-dark-800" />
     </div>
     <div v-else-if="!items.length" class="card py-16 text-center text-sm text-gray-500 dark:text-gray-400">{{ t('channelMonitorV2.empty.title') }}</div>
-    <div v-if="items.length" class="flex flex-wrap items-center justify-between gap-2" data-testid="card-timeline-mode">
+    <div v-if="items.length && showTimelineControls !== false" class="flex flex-wrap items-center justify-between gap-2" data-testid="card-timeline-mode">
       <div class="tabs inline-flex shrink-0" role="group" :aria-label="t('channelMonitorV2.cards.timelineMode.label')">
         <button type="button" class="tab !px-2.5 !py-1 text-xs" :class="timelineMode === 'windows' ? 'tab-active' : ''" data-testid="card-timeline-windows" @click="setTimelineMode('windows')">{{ t('channelMonitorV2.cards.timelineMode.windows') }}</button>
         <button type="button" class="tab !px-2.5 !py-1 text-xs" :class="timelineMode === 'samples' ? 'tab-active' : ''" data-testid="card-timeline-samples" @click="setTimelineMode('samples')">{{ t('channelMonitorV2.cards.timelineMode.samples') }}</button>
       </div>
     </div>
-    <section v-for="platform in platforms" :key="platform.name" class="space-y-3" :data-platform="platform.name">
-      <h2 class="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+    <section v-for="platform in cardSections" :key="platform.name" class="space-y-3" :data-platform="platform.name">
+      <h2 v-if="groupByPlatform !== false" class="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
         <span class="grid h-7 w-7 place-items-center rounded-full bg-gray-100 dark:bg-dark-700"><ProviderIcon :provider="platform.name" :size="17" /></span>
         {{ providerLabel(platform.name) }}
         <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ platform.items.length }}</span>
       </h2>
-      <div class="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        <article v-for="row in platform.items" :key="`${row.platform}-${row.group_id}`" class="min-w-0 rounded-3xl border border-gray-200/80 bg-white/80 p-5 shadow-sm dark:border-dark-700/70 dark:bg-dark-800/80" data-testid="monitor-group-card">
-          <header class="flex items-start gap-3">
-            <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-600 dark:bg-primary-900/20 dark:text-primary-300"><ProviderIcon :provider="row.platform" :size="23" /></span>
-            <div class="min-w-0 flex-1">
-              <h3 class="truncate text-base font-semibold text-gray-900 dark:text-gray-100" :title="row.group_name">{{ row.group_name || `#${row.group_id}` }}</h3>
-              <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
-                <span class="rounded px-1.5 py-0.5" :class="providerBadgeClass(row.platform)">{{ providerLabel(row.platform) }}</span>
-                <span v-if="row.group_rate_multiplier != null" class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ t('channelMonitorV2.cards.groupRate', { value: row.group_rate_multiplier.toFixed(2) }) }}</span>
+      <div class="monitor-card-grid grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <article v-for="row in platform.items" :key="`${row.platform}-${row.group_id}`" class="min-w-0 rounded-3xl border border-gray-200/80 bg-white/80 p-5 shadow-sm dark:border-dark-700/70 dark:bg-dark-800/80" data-testid="monitor-group-card" :class="{ 'monitor-card--priority': prioritizeAvailability }">
+          <div v-if="bestLineKeys.includes(`${row.platform}:${row.group_id}`)" class="monitor-card-best" data-testid="best-line-badge" :title="t(bestLineKeys.length > 1 ? 'channelMonitorV2.cards.bestLineTiedHint' : 'channelMonitorV2.cards.bestLineHint')"><span>{{ t('channelMonitorV2.cards.bestLine') }}</span></div>
+          <header class="monitor-card-header" :class="{ 'monitor-card-header--associate': associateKeys }">
+            <div v-if="showProvider" class="monitor-card-provider" data-testid="card-provider">
+              <ProviderIcon :provider="row.platform" :size="24" />
+              <span :title="providerLabel(row.platform)">{{ providerLabel(row.platform) }}</span>
+            </div>
+            <div class="monitor-card-identity" data-testid="card-group-meta">
+              <span class="monitor-card-health rounded-full px-2 py-1 text-[10px] font-semibold" :class="healthBadge[row.health.overall]">{{ t(`channelMonitorV2.cards.health.${row.health.overall}`) }}</span>
+              <div class="monitor-card-title-meta">
+                <h3 class="min-w-0 text-base font-semibold text-gray-900 dark:text-gray-100" :title="row.group_name">{{ row.group_name || `#${row.group_id}` }}</h3>
+                <span v-if="row.group_rate_multiplier != null" class="monitor-card-rate">{{ t('channelMonitorV2.cards.groupRate', { value: row.group_rate_multiplier.toFixed(2) }) }}</span>
               </div>
             </div>
-            <span class="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold" :class="healthBadge[row.health.overall]">{{ t(`channelMonitorV2.cards.health.${row.health.overall}`) }}</span>
+            <button v-if="associateKeys" type="button" class="xq-button associate-key monitor-card-associate" data-testid="associate-group-key" :data-associate-group-id="row.group_id" :data-associate-platform="row.platform" :disabled="row.group_id == null || !associableGroupIds.includes(row.group_id)" :aria-label="t('channelMonitorV2.tool.associateGroupKey', { group: row.group_name || '#' + row.group_id })" @click="emit('associate', row)">{{ t('channelMonitorV2.tool.associateKey') }}</button>
           </header>
 
-          <dl class="mt-5 grid grid-cols-3 gap-2">
+          <dl class="mt-5 grid grid-cols-3 gap-2" :class="{ 'monitor-card-metrics--priority': prioritizeAvailability }">
             <div v-for="metric in metrics(row)" :key="metric.name" class="min-w-0 rounded-2xl border border-gray-100 bg-gray-50/70 px-2.5 py-3 dark:border-dark-700/60 dark:bg-dark-900/40">
               <dt class="truncate text-[10px] tracking-wide text-gray-500 dark:text-gray-400" :title="metric.title || metric.name">{{ metric.name }}</dt>
-              <dd class="mt-1.5 font-mono text-base font-semibold tabular-nums" :class="metric.color">{{ metric.value }}</dd>
+              <dd class="mt-1.5 font-mono text-base font-semibold tabular-nums" :class="metric.color" :title="metric.status" :aria-label="`${metric.name} ${metric.value} · ${metric.status}`">{{ metric.value }}</dd>
             </div>
           </dl>
           <div class="mt-4 border-t border-gray-100 pt-3 dark:border-dark-700/70">
@@ -54,7 +58,7 @@
             </template>
           </div>
 
-          <section v-if="candyHistories(row).length" class="mt-4 border-t border-gray-100 pt-3 dark:border-dark-700/70" data-testid="candy-history">
+          <section v-if="showCandy && candyHistories(row).length" class="mt-4 border-t border-gray-100 pt-3 dark:border-dark-700/70" data-testid="candy-history">
               <h4 class="text-xs font-medium text-gray-700 dark:text-gray-200">{{ t('channelMonitorV2.candy.title') }}</h4>
               <div v-for="(history, historyIndex) in candyHistories(row)" :key="`${history.model}-${history.reasoning_effort}-${historyIndex}`" class="mt-2" data-testid="candy-model-history">
                 <div class="flex items-center justify-between gap-2 text-xs">
@@ -76,6 +80,7 @@
               </div>
               <div class="mt-2 flex items-center justify-between gap-2 text-[9px] text-gray-500 dark:text-gray-400"><span>{{ t('channelMonitorV2.candy.legend') }}</span><span>{{ latestCandyTime(row) }}</span></div>
           </section>
+          <button v-if="modelDetails" type="button" class="monitor-card-models" data-testid="view-group-models" :data-model-group-id="row.group_id" :data-model-platform="row.platform" :aria-label="`${row.group_name} · ${modelCountLabel(row)} · ${t('channelMonitorV2.tool.viewAllModels')}`" @click="emit('models', row)"><span data-testid="supported-model-count">{{ modelCountLabel(row) }}</span><span>{{ t('channelMonitorV2.tool.viewAllModels') }} →</span></button>
         </article>
       </div>
     </section>
@@ -106,17 +111,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { MonitorCandyResult, MonitorCoverage, MonitorMatrixBucket, MonitorMatrixRow } from '@/api/channelMonitorV2'
+import type { HealthState, MonitorCandyResult, MonitorCoverage, MonitorMatrixBucket, MonitorMatrixRow } from '@/api/channelMonitorV2'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import { formatMonitorMs, formatMonitorPercent } from './monitorFormat'
 import { candyDisplayState, candyHistoryLimit, candyHistorySlots, hasMonitorSamples, MONITOR_CARD_SLOT_COUNT, monitorCandyHistories, monitorCardTimeline, type MonitorCardTimelineMode } from './monitorCards'
 
-const props = defineProps<{ items: MonitorMatrixRow[]; coverage?: MonitorCoverage; countdown: number; loading: boolean; now: number; platformOrder?: string[] }>()
+const props = withDefaults(defineProps<{ items: MonitorMatrixRow[]; coverage?: MonitorCoverage; countdown: number; loading: boolean; now: number; platformOrder?: string[]; showCandy?: boolean; modelDetails?: boolean; initialTimelineMode?: MonitorCardTimelineMode; timelineMode?: MonitorCardTimelineMode; showTimelineControls?: boolean; groupByPlatform?: boolean; supportedModelCounts?: Record<number, number>; modelCountsLoading?: boolean; showProvider?: boolean; prioritizeAvailability?: boolean; bestLineKeys?: string[]; associateKeys?: boolean; associableGroupIds?: number[] }>(), { bestLineKeys: () => [], showProvider: true, showTimelineControls: true, groupByPlatform: true, associableGroupIds: () => [] })
+const emit = defineEmits<{ models: [MonitorMatrixRow]; associate: [MonitorMatrixRow] }>()
 const { t, locale } = useI18n()
 type TrafficBar = ReturnType<typeof monitorCardTimeline>[number]
 type CardDetail = { kind: 'traffic'; row: MonitorMatrixRow; bar: TrafficBar } | { kind: 'candy'; row: MonitorMatrixRow; result: MonitorCandyResult; model: string; effort: string }
-const timelineMode = ref<MonitorCardTimelineMode>('windows')
+const localTimelineMode = ref<MonitorCardTimelineMode>(props.initialTimelineMode || 'windows')
+const timelineMode = computed(() => props.timelineMode || localTimelineMode.value)
 const tooltipId = useId()
 const detail = shallowRef<CardDetail | null>(null)
 const anchor = shallowRef<HTMLElement | null>(null)
@@ -175,7 +182,7 @@ function isCandyDetail(row: MonitorMatrixRow, result: MonitorCandyResult, model:
   return detail.value?.kind === 'candy' && detail.value.row === row && detail.value.model === model && detail.value.effort === effort && detail.value.result.checked_at === result.checked_at
 }
 function setTimelineMode(mode: MonitorCardTimelineMode) {
-  timelineMode.value = mode
+  localTimelineMode.value = mode
   closeDetail()
 }
 function timelineBars(row: MonitorMatrixRow) {
@@ -198,7 +205,7 @@ function latestCandyTime(row: MonitorMatrixRow) {
   }
   return Number.isFinite(latest) ? time(latest) : '—'
 }
-watch([() => props.items, () => props.coverage], closeDetail)
+watch([() => props.items, () => props.coverage, timelineMode], closeDetail)
 onMounted(() => {
   document.addEventListener('pointerdown', onOutsidePointer, true)
   document.addEventListener('keydown', onKeydown)
@@ -212,7 +219,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', onViewportChange)
   window.removeEventListener('scroll', onViewportChange, true)
 })
-const { providerLabel, providerBadgeClass } = useChannelMonitorFormat()
+const { providerLabel } = useChannelMonitorFormat()
 const platforms = computed(() => {
   const groups = new Map<string, MonitorMatrixRow[]>()
   for (const row of props.items) {
@@ -227,17 +234,36 @@ const platforms = computed(() => {
   }
   return [...groups].map(([name, items]) => ({ name, items })).sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name))
 })
+const cardSections = computed(() => props.groupByPlatform === false
+  ? [{ name: 'all', items: platforms.value.flatMap(platform => platform.items) }]
+  : platforms.value)
 const healthBadge = { healthy: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300', warning: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300', critical: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300', unknown: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400' }
 const healthBar = { healthy: 'h-5 bg-emerald-400', warning: 'h-3 bg-amber-400', critical: 'h-2 bg-red-400', unknown: 'h-1 bg-gray-300 dark:bg-dark-600' }
 const candyColor = { correct: 'bg-emerald-400', incorrect: 'bg-amber-400', error: 'bg-red-400', unknown: 'bg-gray-400', stale: 'bg-gray-400' }
 const time = (value: number | string) => new Date(value).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit', hour12: false })
-function metrics(row: MonitorMatrixRow) {
+function modelCountLabel(row: MonitorMatrixRow) {
+  const count = row.group_id == null ? undefined : props.supportedModelCounts?.[row.group_id]
+  if (count != null) return t('channelMonitorV2.tool.supportedModelCount', { count })
+  return t(props.modelCountsLoading ? 'channelMonitorV2.tool.modelCountLoading' : 'channelMonitorV2.tool.modelCountUnavailable')
+}
+const metricColors = {
+  healthy: 'text-emerald-800 dark:text-emerald-300',
+  warning: 'text-amber-800 dark:text-amber-300',
+  critical: 'text-red-700 dark:text-red-300',
+  unknown: 'text-gray-600 dark:text-gray-400',
+}
+function metricAppearance(state: HealthState | undefined, available: boolean) {
+  const effectiveState = available && state ? state : 'unknown'
+  return { color: metricColors[effectiveState], status: t(`channelMonitorV2.cards.health.${effectiveState}`) }
+}
+function metrics(row: MonitorMatrixRow): Array<{ name: string; title?: string; value: string; color: string; status: string }> {
   const sampled = hasMonitorSamples(row.metrics)
-  return [
-    { name: t('channelMonitorV2.cards.cache'), value: sampled ? formatMonitorPercent(row.metrics.cache_rate) : '—', color: 'text-gray-800 dark:text-gray-100' },
-    { name: t('channelMonitorV2.cards.availability'), value: sampled ? formatMonitorPercent(1 - row.metrics.error_rate) : '—', color: sampled && row.health.error_rate === 'healthy' ? 'text-emerald-600 dark:text-emerald-300' : 'text-gray-800 dark:text-gray-100' },
-    { name: t('channelMonitorV2.cards.ttft'), title: t('channelMonitorV2.metrics.ttftP50'), value: formatMonitorMs(row.metrics.ttft.p50_ms), color: 'text-gray-800 dark:text-gray-100' }
+  const values = [
+    { name: t('channelMonitorV2.cards.cache'), value: sampled ? formatMonitorPercent(row.metrics.cache_rate) : '—', ...metricAppearance(row.health.cache, sampled) },
+    { name: t('channelMonitorV2.cards.availability'), value: sampled ? formatMonitorPercent(1 - row.metrics.error_rate) : '—', ...metricAppearance(row.health.error_rate, sampled) },
+    { name: t('channelMonitorV2.cards.ttft'), title: t('channelMonitorV2.metrics.ttftP50'), value: formatMonitorMs(row.metrics.ttft.p50_ms), ...metricAppearance(row.health.ttft, sampled && row.metrics.ttft.p50_ms != null) }
   ]
+  return props.prioritizeAvailability ? [values[1], values[2], values[0]] : values
 }
 function dateTime(value: number | string) {
   return new Date(value).toLocaleString(locale.value, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
@@ -258,3 +284,37 @@ function candyTooltip(result: MonitorCandyResult, model?: string, effort?: strin
     + (result.answer_preview ? '\n' + result.answer_preview : '')
 }
 </script>
+
+<style scoped>
+.monitor-card--priority{position:relative}
+.monitor-card-best{position:absolute;top:0;left:0;width:64px;height:64px;overflow:hidden;border-top-left-radius:12px}
+.monitor-card-best>span{position:absolute;top:8px;left:-26px;display:block;width:88px;line-height:20px;text-align:center;transform:rotate(-45deg);background:var(--xq-success);color:var(--xq-canvas);font-size:10px;font-weight:600;white-space:nowrap}
+.monitor-card-metrics--priority{grid-template-columns:minmax(0,1.12fr) minmax(0,1fr);grid-template-rows:repeat(2,minmax(54px,auto));gap:8px}
+.monitor-card-metrics--priority>div{padding:10px}
+.monitor-card-metrics--priority>div:first-child{grid-row:span 2;display:flex;flex-direction:column;justify-content:center}
+.monitor-card-metrics--priority>div:first-child dt{font-size:11px}
+.monitor-card-metrics--priority>div:first-child dd{margin-top:12px;font-size:30px;line-height:1.1}
+.monitor-card-metrics--priority>div:not(:first-child) dd{margin-top:4px;font-size:18px;line-height:1.2}
+.monitor-card-header{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.monitor-card-provider{display:flex;width:40px;flex:none;flex-direction:column;align-items:center;gap:5px;color:var(--xq-secondary)}
+.monitor-card-provider>span{max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;line-height:1.2;color:var(--xq-secondary)}
+.monitor-card-identity{display:flex;flex:1;min-width:0;align-items:center;gap:8px}
+.monitor-card-title-meta{display:flex;min-width:0;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.monitor-card-title-meta>h3{max-width:100%;overflow-wrap:anywhere;line-height:1.4}
+.monitor-card-header:has(.monitor-card-provider){align-items:flex-start}
+.monitor-card-header:has(.monitor-card-provider) .monitor-card-identity{flex-wrap:wrap}
+.monitor-card-header:has(.monitor-card-provider) .monitor-card-title-meta{display:contents}
+.monitor-card-header:has(.monitor-card-provider) h3{flex-basis:100%;order:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.monitor-card-header:has(.monitor-card-provider) .monitor-card-rate{order:1}
+.monitor-card-header:has(.monitor-card-provider) .monitor-card-health{order:2}
+.monitor-card-health{flex:none;white-space:nowrap}
+.monitor-card-rate{flex:none;border-radius:999px;padding:4px 8px;background:color-mix(in srgb,var(--xq-accent) 13%,var(--xq-surface));color:var(--xq-accent);font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap;font-variant-numeric:tabular-nums}
+.monitor-card-associate{margin-left:auto;white-space:nowrap}
+.monitor-card-header--associate{flex-wrap:nowrap;align-items:flex-start}
+.monitor-card-header--associate .monitor-card-identity{align-items:flex-start;padding-top:5px}
+.monitor-card-header--associate .monitor-card-health{margin-top:0}
+.monitor-card-models{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;margin-top:12px;padding:10px 0 0;border-top:1px solid color-mix(in srgb,var(--xq-border) 55%,transparent);color:var(--xq-muted);font-size:11px;line-height:1.6;text-align:left;cursor:pointer;transition:color .15s}
+.monitor-card-models:hover,.monitor-card-models:focus-visible{color:var(--xq-accent)}
+.monitor-card-models:focus-visible{outline:2px solid var(--xq-accent);outline-offset:3px}
+
+</style>

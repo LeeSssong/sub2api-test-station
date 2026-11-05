@@ -50,6 +50,11 @@ git diff --name-only "$scope_base" HEAD >/dev/null || fail 'cannot determine rel
 # The embedded brand icon handler only reads existing public settings.
 while IFS= read -r path; do
   case "$path" in
+    # ISSUE-FIX-004: exact saved timeline migration and its direct integration tests.
+    upstream/sub2api/backend/migrations/288_channel_monitor_v2_card_timeline_mode.sql|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_v2_postgres_test.go|\
+    upstream/sub2api/backend/internal/repository/channel_monitor_v2_config_test.go)
+      [[ "$update_worker" == true ]] || fail 'V2 card timeline requires a worker update' ;;
     # V2 request scope changes both persisted facts and the singleton aggregator.
     upstream/sub2api/backend/internal/service/channel_monitor_v2.go|\
     upstream/sub2api/backend/internal/service/channel_monitor_v2_aggregator.go|\

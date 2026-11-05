@@ -11,16 +11,23 @@
           {{ t('channelMonitorV2.settings.title') }}
         </h2>
       </div>
+      <div class="flex flex-wrap items-center gap-2">
+      <button v-if="conflicted" type="button" class="btn btn-secondary" data-testid="monitor-v2-settings-reload" :disabled="loading || saving" @click="load">
+        <Icon name="refresh" size="sm" />{{ t('channelMonitorV2.settings.reload') }}
+      </button>
       <button
         type="button"
         class="btn btn-primary"
-        :disabled="saving || !dirty"
+        :disabled="loading || saving || conflicted || !dirty"
         @click="save"
       >
         <Icon name="check" size="sm" />
         {{ t('channelMonitorV2.settings.save') }}
       </button>
+      </div>
     </header>
+
+    <p v-if="conflicted" role="alert" class="text-sm text-red-700 dark:text-red-300">{{ t('channelMonitorV2.settings.conflict') }}</p>
 
     <div
       v-if="!systemModeV2"
@@ -78,6 +85,15 @@
             </button>
           </div>
         </div>
+        <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <strong class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV2.settings.timelineTitle') }}</strong>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">{{ t('channelMonitorV2.settings.timelineHint') }}</p>
+          </div>
+          <div class="tabs inline-flex w-auto" role="group" :aria-label="t('channelMonitorV2.cards.timelineMode.label')">
+            <button v-for="mode in (['windows', 'samples'] as const)" :key="mode" type="button" class="tab" :class="draft.card_timeline_mode === mode ? 'tab-active' : ''" :aria-pressed="draft.card_timeline_mode === mode" :data-testid="`monitor-v2-mode-${mode}`" @click="draft.card_timeline_mode = mode">{{ t(`channelMonitorV2.cards.timelineMode.${mode}`) }}</button>
+          </div>
+        </div>
       </div>
 
       <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5 dark:!bg-dark-800 dark:ring-dark-700">
@@ -130,19 +146,6 @@
                 <span v-if="isFactoryPlatform(platform.platform)"> · {{ t('channelMonitorV2.settings.factoryBadge') }}</span>
               </small>
             </div>
-            <input
-              class="input min-w-[12rem] flex-1"
-              :value="platform.models.join(', ')"
-              type="text"
-              :placeholder="t('channelMonitorV2.settings.modelsPlaceholder')"
-              @change="setModels(platform, $event)"
-            />
-            <span
-              class="badge justify-self-start sm:justify-self-end"
-              :class="platform.models.length ? 'badge-gray' : 'badge badge-primary'"
-            >
-              {{ platform.models.length ? t('channelMonitorV2.settings.badgeOther') : t('channelMonitorV2.settings.badgeAllModels') }}
-            </span>
             <button
               v-if="!isFactoryPlatform(platform.platform)"
               type="button"
@@ -291,17 +294,8 @@
         </div>
       </div>
 
-      <MonitorCandySettings v-model="draft.candy_probes" v-model:history-limit="draft.candy_history_limit" :groups="groups" />
 
       <div class="space-y-2">
-        <div class="rounded-2xl border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/50 dark:bg-primary-900/20 dark:text-primary-100">
-          <template v-if="namedModelCount === 0">
-            {{ t('channelMonitorV2.settings.namedModelsEmpty') }}
-          </template>
-          <template v-else>
-            {{ t('channelMonitorV2.settings.namedModelsCount', { count: namedModelCount }) }}
-          </template>
-        </div>
         <div class="rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3 text-xs text-gray-600 dark:border-dark-600 dark:bg-dark-800/50 dark:text-gray-300">
           <p class="font-medium text-gray-800 dark:text-gray-100">{{ t('channelMonitorV2.settings.userContractTitle') }}</p>
           <ul class="mt-1.5 list-disc space-y-0.5 pl-4">
@@ -320,7 +314,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Toggle from '@/components/common/Toggle.vue'
-import MonitorCandySettings from './MonitorCandySettings.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -330,9 +323,8 @@ import {
   updateConfig,
   MONITOR_ERROR_CATEGORIES,
   type MonitorConfig,
-  type MonitorCandyProbe,
 } from '@/api/channelMonitorV2'
-import { CANDY_HISTORY_LIMIT, CANDY_HISTORY_LIMIT_MAX, CANDY_HISTORY_LIMIT_MIN } from './monitorCards'
+import { CANDY_HISTORY_LIMIT } from './monitorCards'
 import { monitorPlatformLabel } from './monitorFormat'
 import { adminAPI } from '@/api/admin'
 import { GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
@@ -347,6 +339,7 @@ const { t, te } = useI18n()
 const appStore = useAppStore()
 const loading = ref(true)
 const saving = ref(false)
+const conflicted = ref(false)
 const draft = ref<MonitorConfig | null>(null)
 const original = ref('')
 const groups = ref<AdminGroup[]>([])
@@ -354,9 +347,6 @@ const selectedCandidate = ref('')
 const customPlatform = ref('')
 
 const dirty = computed(() => (draft.value ? JSON.stringify(draft.value) !== original.value : false))
-const namedModelCount = computed(
-  () => draft.value?.platforms.filter((p) => p.enabled).reduce((sum, p) => sum + p.models.length, 0) || 0
-)
 const errorCategories = MONITOR_ERROR_CATEGORIES
 const countedErrorCategoryCount = computed(
   () => errorCategories.length - (draft.value?.ignored_error_categories?.length || 0)
@@ -413,16 +403,7 @@ const criticalErrorPercent = percentModel('critical_error_rate')
 const warningCachePercent = percentModel('warning_cache_rate')
 const criticalCachePercent = percentModel('critical_cache_rate')
 
-function setModels(platform: MonitorConfig['platforms'][number], event: Event) {
-  platform.models = [
-    ...new Set(
-      (event.target as HTMLInputElement).value
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean)
-    ),
-  ].sort()
-}
+
 
 function toggleGroup(id: number) {
   if (!draft.value) return
@@ -512,24 +493,11 @@ function removePlatform(id: string) {
   draft.value.platforms = draft.value.platforms.filter((platform) => platform.platform !== id)
 }
 
-function candyProbeIdentity(probe: MonitorCandyProbe) {
-  return `${probe.group_id}\0${probe.model.trim()}\0${(probe.reasoning_effort || 'medium').trim().toLowerCase()}`
-}
-
-function hasDuplicateCandyProbe(probes: MonitorCandyProbe[]) {
-  const seen = new Set<string>()
-  for (const probe of probes) {
-    const identity = candyProbeIdentity(probe)
-    if (seen.has(identity)) return true
-    seen.add(identity)
-  }
-  return false
-}
-
 function normalizeConfig(value: MonitorConfig): MonitorConfig {
   const ignored = value.ignored_error_categories
   return {
     ...value,
+    card_timeline_mode: value.card_timeline_mode || 'samples',
     exclude_sync_requests: value.exclude_sync_requests ?? false,
     candy_probes: value.candy_probes || [],
     candy_history_limit: value.candy_history_limit && value.candy_history_limit > 0 ? value.candy_history_limit : CANDY_HISTORY_LIMIT,
@@ -542,6 +510,7 @@ function normalizeConfig(value: MonitorConfig): MonitorConfig {
 }
 
 async function load() {
+  if (loading.value && draft.value) return
   loading.value = true
   try {
     const [value, groupRows] = await Promise.all([getConfig(), adminAPI.groups.getAllIncludingInactive()])
@@ -549,6 +518,7 @@ async function load() {
     draft.value = structuredClone(normalized)
     groups.value = groupRows
     original.value = JSON.stringify(normalized)
+    conflicted.value = false
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.settings.loadFailed')))
   } finally {
@@ -557,20 +527,7 @@ async function load() {
 }
 
 async function save() {
-  if (!draft.value) return
-  if (draft.value.candy_probes?.some(probe => !probe.model.trim() || !Number.isInteger(probe.interval_minutes) || probe.interval_minutes < 1 || probe.interval_minutes > 1440)) {
-    appStore.showError(t('channelMonitorV2.candy.invalid'))
-    return
-  }
-  if (hasDuplicateCandyProbe(draft.value.candy_probes || [])) {
-    appStore.showError(t('channelMonitorV2.candy.duplicateModel'))
-    return
-  }
-  const historyLimit = draft.value.candy_history_limit
-  if (historyLimit == null || !Number.isInteger(historyLimit) || historyLimit < CANDY_HISTORY_LIMIT_MIN || historyLimit > CANDY_HISTORY_LIMIT_MAX) {
-    appStore.showError(t('channelMonitorV2.candy.historyLimitInvalid'))
-    return
-  }
+  if (!draft.value || loading.value || saving.value || conflicted.value) return
   saving.value = true
   try {
     const payload = normalizeConfig(draft.value)
@@ -580,8 +537,11 @@ async function save() {
     original.value = JSON.stringify(normalized)
     appStore.showSuccess(t('channelMonitorV2.settings.saveSuccess'))
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.settings.saveFailed')))
-    await load()
+    const failure = error as { status?: number; response?: { status?: number } }
+    conflicted.value = (failure?.status ?? failure?.response?.status) === 409
+    appStore.showError(conflicted.value
+      ? t('channelMonitorV2.settings.conflict')
+      : extractApiErrorMessage(error, t('channelMonitorV2.settings.saveFailed')))
   } finally {
     saving.value = false
   }

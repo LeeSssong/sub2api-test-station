@@ -561,3 +561,64 @@ class V2ScopedBackupTests(unittest.TestCase):
             self.assertNotIn('billing', drop)
             with self.assertRaises(ValueError):
                 release.restore_database('postgres', target, ['usage_logs'])
+
+
+class V2CardTimelineReleaseTests(unittest.TestCase):
+    migration = '288_channel_monitor_v2_card_timeline_mode.sql'
+    old_digest = '5e2c3b9c073dae5e2c02950ebd21a68d1fc21b0661f3ad11bfe4df8634f24a9b'
+    new_digest = 'e84547d32c582148a4a6dc3c572d497d6060db29f933418cd46681cf834f389d'
+
+    def inputs(self):
+        applied = {p.name: release.hashlib.sha256(p.read_text().strip().encode()).hexdigest()
+                   for p in sorted((ROOT / 'upstream/sub2api/backend/migrations').glob('*.sql'))
+                   if p.name != self.migration and p.read_text().strip()}
+        raw = (ROOT / 'upstream/sub2api/backend/migrations' / self.migration).read_text().strip()
+        expected = dict(applied, **{self.migration: release.hashlib.sha256(raw.encode()).hexdigest()})
+        return ({'migration_set_sha256': self.old_digest},
+                {'update_worker': True, 'migration_set_sha256': self.new_digest,
+                 'migration_checksums': expected},
+                '\n'.join(k + '|' + v for k, v in applied.items()))
+
+    def test_exact_288_transition_allowed_and_other_changes_rejected(self):
+        previous, manifest, rows = self.inputs()
+        try:
+            release.verify_maintenance_migrations(previous, manifest, rows)
+        except ValueError as error:
+            self.fail('reviewed card timeline transition rejected: ' + str(error))
+        for prev, change in [
+            (dict(migration_set_sha256='0'*64), {}),
+            (previous, dict(update_worker=False)),
+            (previous, dict(migration_set_sha256='0'*64)),
+            (previous, dict(migration_checksums=dict(manifest['migration_checksums'], **{'999_other.sql':'a'*64}))),
+            (previous, dict(migration_checksums={k: ('0'*64 if k=='287_channel_monitor_v2_request_scope.sql' else v)
+                                                for k,v in manifest['migration_checksums'].items()})),
+        ]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                release.verify_maintenance_migrations(prev, dict(manifest, **change), rows)
+
+    def test_exact_config_and_ledger_backup_without_usage_or_billing(self):
+        tables = ['channel_monitor_v2_config', 'schema_migrations']
+        with tempfile.TemporaryDirectory() as tmp:
+            backup = Path(tmp) / 'config.dump'; backup.write_bytes(b'fixture')
+            with patch.object(release, 'run') as commands:
+                try:
+                    release.restore_database('postgres', backup, tables)
+                except ValueError as error:
+                    self.fail('reviewed minimal config restore rejected: ' + str(error))
+            drop = commands.call_args_list[0].args[1].decode()
+            self.assertIn('public.channel_monitor_v2_config', drop)
+            self.assertIn('public.schema_migrations', drop)
+            self.assertNotIn('DROP SCHEMA', drop)
+            self.assertNotIn('usage_logs', drop)
+        shell = (ROOT / 'ops/deploy-sub2api-test-station-api.py').read_text()
+        self.assertIn('CARD_TIMELINE_TABLES', shell)
+
+    def test_release_scope_includes_exact_288_and_related_tests_only_with_worker(self):
+        gate = ReleaseScopeTests()
+        paths = ['upstream/sub2api/backend/' + p for p in [
+            'migrations/' + self.migration,
+            'internal/handler/channel_monitor_v2_postgres_test.go',
+            'internal/repository/channel_monitor_v2_config_test.go']]
+        self.assertEqual(gate.check_scope(paths, True).returncode, 0)
+        self.assertNotEqual(gate.check_scope(paths, False).returncode, 0)
+        self.assertNotEqual(gate.check_scope(['upstream/sub2api/backend/migrations/999_other.sql'], True).returncode, 0)

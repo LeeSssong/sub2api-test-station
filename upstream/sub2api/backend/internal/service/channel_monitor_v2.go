@@ -58,6 +58,8 @@ type ChannelMonitorV2PlatformConfig struct {
 // cards, and the matrix. Factory platforms missing from a submitted list are
 // appended disabled. The model ranking table stays ordered by request volume.
 type ChannelMonitorV2Config struct {
+	// CardTimelineMode is the operator-controlled status bar display (windows or samples).
+	CardTimelineMode    string                       `json:"card_timeline_mode"`
 	ExcludeSyncRequests bool                         `json:"exclude_sync_requests"`
 	CandyProbes         []ChannelMonitorV2CandyProbe `json:"candy_probes,omitempty"`
 	// CandyHistoryLimit is how many recent checks each model shows on a card.
@@ -474,10 +476,10 @@ func (s *ChannelMonitorV2Service) getEnabledConfig(ctx context.Context) (*Channe
 
 func (s *ChannelMonitorV2Service) UpdateConfig(ctx context.Context, cfg ChannelMonitorV2Config, expectedVersion int, actorID int64) (*ChannelMonitorV2Config, error) {
 	// Older admin bundles omit candy_history_limit. A JSON object that omits
-	// platforms is also not a new platform list. Read once when either field is
-	// absent so a partial save cannot reset the other.
+	// platforms is also not a new platform list. Preserve the saved timeline mode
+	// when older bundles omit it; all fields share the optimistic version.
 	var current *ChannelMonitorV2Config
-	if s.repo != nil && (cfg.CandyHistoryLimit == 0 || cfg.Platforms == nil) {
+	if s.repo != nil && (cfg.CandyHistoryLimit == 0 || cfg.Platforms == nil || cfg.CardTimelineMode == "") {
 		loaded, err := s.repo.GetConfig(ctx)
 		if err != nil {
 			return nil, err
@@ -489,6 +491,9 @@ func (s *ChannelMonitorV2Service) UpdateConfig(ctx context.Context, cfg ChannelM
 	}
 	if cfg.Platforms == nil && current != nil {
 		cfg.Platforms = append([]ChannelMonitorV2PlatformConfig(nil), current.Platforms...)
+	}
+	if cfg.CardTimelineMode == "" && current != nil {
+		cfg.CardTimelineMode = current.CardTimelineMode
 	}
 	if err := normalizeChannelMonitorV2Config(&cfg); err != nil {
 		return nil, err
@@ -825,6 +830,12 @@ func channelMonitorV2TopUsersWithSelf(items []ChannelMonitorV2UserRow, selfIndex
 }
 
 func normalizeChannelMonitorV2Config(cfg *ChannelMonitorV2Config) error {
+	if cfg.CardTimelineMode == "" {
+		cfg.CardTimelineMode = "samples"
+	}
+	if cfg.CardTimelineMode != "windows" && cfg.CardTimelineMode != "samples" {
+		return fmt.Errorf("%w: card_timeline_mode must be windows or samples", ErrChannelMonitorV2InvalidConfig)
+	}
 	var err error
 	if err = normalizeChannelMonitorV2CandyProbes(cfg.CandyProbes); err != nil {
 		return err

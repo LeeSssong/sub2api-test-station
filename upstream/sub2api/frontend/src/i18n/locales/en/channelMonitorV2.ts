@@ -1,6 +1,8 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
+    originalCandy: {"title": "Original channel checks", "hint": "Existing candy probes continue with their original configuration. These checks keep separate rules and history.", "reload": "Reload", "conflict": "The configuration changed elsewhere. Reload before editing to avoid overwriting newer settings."},
+    tool: {"associateKey": "Link key", "associateGroupKey": "Link a key to {group}", "supportedModelCount": "{count} supported models", "modelCountLoading": "Loading model count…", "modelCountUnavailable": "Model count unavailable", "viewAllModels": "View all model performance", "back": "Back to {tool} routes", "period": "Time range", "group": "Monitored group", "clear": "Clear filters", "modelHint": "All concrete models with requests in the selected group and period, ordered by total requests.", "loadError": "Could not load statistics. Try again.", "retry": "Retry", "loadingModels": "Loading model performance…", "noModels": "No model request samples in this period.", "passiveHint": "Cache, availability and first-token performance from real requests.", "loading": "Loading route statistics…", "noGroups": "No monitored routes for this tool.", "noSamples": "Routes are monitored, with no request samples in this period.", "hour": "Last hour", "day": "Last 24 hours", "week": "Last 7 days", "allGroups": "All monitored groups", "models": "Model performance", "model": "Model", "lines": "routes", "viewAll": "View all"},
     hybrid: {
       title: 'Group performance monitor', updated: 'Updated {time}', successRate: 'Experience success rate', monitoring: 'Monitoring', loadError: 'This time range failed to load. Retry.', retry: 'Retry',
       ttftP95: 'First token P95', latencyP95: 'Total duration P95', cacheHitRate: 'Cache hit rate', requestCount: 'Combined success {success}/{total}', realRequestCount: 'Real requests succeeded {success}/{total}', probeFallbackCount: 'Probe fallback for {count} empty buckets', sampleCount: 'Based on {count} calls', multiplier: 'Multiplier: {value}x', empty: 'No visible groups',
@@ -11,7 +13,10 @@ export default {
         "showCards": "Cards",
         "showAnalytics": "Detailed data",
         "passive": "V2 passive traffic · cache and availability",
-        "groupRate": "Group rate {value}x",
+        "bestLine": "Best line",
+        "bestLineHint": "Highest overall score in the selected period",
+        "bestLineTiedHint": "Tied for the highest overall score in the selected period",
+        "groupRate": "Rate {value}x",
         "cache": "Cache rate",
         "availability": "Availability",
         "ttft": "First token",
@@ -26,9 +31,9 @@ export default {
         "refreshIn": "Refresh in {seconds}s",
         "trafficHistory": "Observed request health timeline",
         "health": {
-            "healthy": "Healthy",
-            "warning": "Degraded",
-            "critical": "Unhealthy",
+            "healthy": "Normal",
+            "warning": "Fluctuating",
+            "critical": "Abnormal",
             "unknown": "Insufficient samples"
         }
     },
@@ -39,7 +44,7 @@ export default {
         "disabledHint": "Intelligence checks are not enabled for this group. An administrator can configure them in Channel Monitor.",
         "invalid": 'Enter a model and an integer interval from 1 to 1440 minutes.',
         "historyLimit": "Recent checks to show",
-        "historyLimitHint": "How many recent checks each model shows on a card. 15–100, default 100. Missing checks stay gray.",
+        "historyLimitHint": "The recent-check window per model is 15–100 checks, default 100. Existing configuration and history are retained.",
         "historyLimitInvalid": "Recent checks must be an integer from 15 to 100.",
         "duplicateModel": "The same group cannot repeat a model and reasoning effort.",
         "title": "Reasoning check",
@@ -55,7 +60,7 @@ export default {
             "stale": "Check expired"
         },
         "settingsTitle": "Group candy logic checks",
-        "settingsHint": "Uses the same group routing as /admin/pelican-tests. The gateway scheduler selects an account for each check using the built-in account candy question. No fixed account binding. A group can check several models; each model is scheduled and shown on its own.",
+        "settingsHint": "Keeps the original channel check schedule and built-in candy question. The gateway selects an account for each check. Models are scheduled separately; these settings and records remain separate from the rules and history on this page.",
         "costHint": "Active checks consume upstream quota. Disabled by default; runs only in enabled V2 mode for displayed groups. Maximum 64 checks, 4 concurrent checks per instance, and 90 seconds per check.",
         "model": "Probe model",
         "modelHint": "A model ID available in this group",
@@ -64,7 +69,7 @@ export default {
         "selectGroup": "Choose a group",
         "addGroup": "Add group check",
         "addModel": "Add model check",
-        "ruleHint": "Accepts clear answers such as 21, 21 candies or the answer is 21. Other answers fail. Transport failures are shown separately. Wrong answers do not disable accounts. Save to apply. Public results expose status and time only; records are retained for 24 hours. A single test does not establish permanent model capability."
+        "ruleHint": "Accepts clear answers such as 21, 21 candies or the answer is 21. Other answers fail. Transport failures are shown separately. Wrong answers do not disable accounts. Save to apply. Records keep their original retention policy and remain separate from this page’s results. A single test does not establish permanent model capability."
 
     },
     title: 'Channel Monitor',
@@ -128,7 +133,7 @@ export default {
     empty: { title: 'No data to display', description: 'Try changing the time range or filters' },
     bucket: { minutes: '{count}-minute buckets', hours: '{count}-hour buckets', days: '{count}-day buckets' },
     matrix: {
-      title: 'Availability trend', description: 'Each row is a channel dimension and each block is an aggregate interval; hover for details', wheelZoom: 'Scroll over blocks to zoom in (narrower range, wider blocks)', wheelZoomX: 'Scroll over blocks to zoom in (narrower range, wider blocks)', dimension: 'Channel dimension', emptyTitle: 'No matrix data for the selected window', legendAria: 'Health score legend', bad: 'Bad', good: 'Good', healthyLegend: 'Healthy (≥80)', warningLegend: 'Watch (50–79)', criticalLegend: 'Critical (<50)', unknownLegend: 'No traffic / insufficient samples', noTraffic: 'No traffic in this interval', noTrafficAt: '{time} · no traffic', scoreLine: 'Health score {score}', resetZoom: 'Reset zoom'
+      title: 'Availability trend', description: 'Each row is a channel dimension and each block is an aggregate interval; hover for details', wheelZoom: 'Scroll over blocks to zoom in (narrower range, wider blocks)', wheelZoomX: 'Scroll over blocks to zoom in (narrower range, wider blocks)', dimension: 'Channel dimension', emptyTitle: 'No matrix data for the selected window', legendAria: 'Health score legend', bad: 'Bad', good: 'Good', healthyLegend: 'Normal (≥80)', warningLegend: 'Fluctuating (50≤score<80)', criticalLegend: 'Abnormal (<50)', unknownLegend: 'Insufficient samples (no requests or below scoring minimum)', noTraffic: 'No traffic in this interval', noTrafficAt: '{time} · no traffic', scoreLine: 'Health score {score}', resetZoom: 'Reset zoom'
     },
     chart: {
       title: 'Availability trend', description: 'Smoothed trend: error rate · first token P50 · cache rate', emptyTitle: 'No trend data for the selected window', errorLegend: 'Error rate (left axis %)', cacheLegend: 'Cache rate (left axis %)', ttftLegend: 'First token P50 (right axis)', errorDataset: 'Error rate trend %', cacheDataset: 'Cache rate trend %', ttftDataset: 'First token trend P50 (ms)', percentAxis: 'Rate %', resetZoom: 'Reset zoom'
@@ -157,6 +162,8 @@ export default {
       loadFailed: 'Failed to load V2 config',
       saveSuccess: 'V2 monitor config saved',
       saveFailed: 'Failed to save V2 config',
+      reload: 'Reload configuration',
+      conflict: 'The configuration changed elsewhere. Your draft is preserved. Note any edits you want to keep; reloading will replace the draft with the latest configuration.',
       modeBanner:
         'System mode is currently {mode}. V2 minute aggregation will not run; this config can be prepared now and takes effect after switching to {modeV2}. Change mode under System Settings → Feature switches.',
       modeClosed: 'Channel monitor disabled',
@@ -165,12 +172,13 @@ export default {
       enableTitle: 'Enable V2 aggregation',
       enableHint:
         'Applies when system mode is V2. Turning this off only stops this config’s aggregation; the system mode switch remains under Feature switches.',
+      timelineTitle: 'Status bar display',
+      timelineHint: 'Controls passive monitoring and line details. Save to apply this mode everywhere.',
       refreshTitle: 'Aggregation interval',
       refreshHint: 'Affects matrix time granularity and refresh cadence',
       refreshAria: 'Aggregation interval',
-      platformsTitle: 'Platforms and models',
-      platformsHint:
-        'Leave empty = show all real model names; when filled, only listed models get their own rows and the rest roll into “Other”. Add a supported platform, or type the same identifier as a group platform. Composite group usage is recorded on the account’s concrete platform.',
+      platformsTitle: 'Monitored platforms',
+      platformsHint: 'Show every concrete model with real requests. Add a supported platform or an identifier matching the group platform. Composite group usage belongs to the underlying account platform.',
       platformsOrderHint:
         'List order is the display order for filters, cards, and the matrix. The model summary stays ranked by request volume. The six factory platforms stay; a newly added platform can be deleted only while it is off.',
       addPlatform: 'Add platform',
@@ -202,12 +210,12 @@ export default {
         'Controls user-facing color bands and overall score. Defaults are tolerant so small error rates or low cache do not immediately show as unhealthy.',
       fields: {
         minimumSample: 'Minimum samples',
-        warningError: 'Error rate watch %',
+        warningError: 'Error rate fluctuation %',
         criticalError: 'Error rate critical %',
         targetTtft: 'TTFT target ms',
-        warningTtft: 'TTFT watch ms',
+        warningTtft: 'TTFT fluctuation ms',
         criticalTtft: 'TTFT critical ms',
-        warningCache: 'Cache rate watch %',
+        warningCache: 'Cache rate fluctuation %',
         criticalCache: 'Cache rate critical %',
       },
       namedModelsEmpty: 'Platform model lists are empty: every real model name will be shown (not folded into “Other”).',
@@ -217,7 +225,7 @@ export default {
         health: 'Health color weights: error rate 60% + first-token P50 20% + cache rate 20% (thresholds configurable above)',
         trend: 'Trend can switch between pulse matrix and line chart (error · cache · first token)',
         latency: 'Latency shows AVG · P50 · P90; absolute request / error counts are not shown',
-        models: 'Empty model lists show real names and never dump everything into “Other”',
+        models: 'Show every concrete model with requests in the selected scope, without folding unlisted models into “Other”',
       },
     },
     admin: {

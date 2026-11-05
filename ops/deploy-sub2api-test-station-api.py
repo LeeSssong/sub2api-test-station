@@ -227,6 +227,10 @@ OCT16_OLD = 'e5d79ffa00d518804211a877ede6c7cb54277ada8c76e975526dca622445a6de'
 OCT16_NEW = '457dde7e112bbb808dee1ba05ab2d99180c5b250ecf082cf24ea9f309741370d'
 
 V2_SCOPE_MIGRATION = '287_channel_monitor_v2_request_scope.sql'
+CARD_TIMELINE_MIGRATION = '288_channel_monitor_v2_card_timeline_mode.sql'
+CARD_TIMELINE_OLD = '5e2c3b9c073dae5e2c02950ebd21a68d1fc21b0661f3ad11bfe4df8634f24a9b'
+CARD_TIMELINE_NEW = 'e84547d32c582148a4a6dc3c572d497d6060db29f933418cd46681cf834f389d'
+CARD_TIMELINE_TABLES = ['channel_monitor_v2_config', 'schema_migrations']
 V2_SCOPE_TABLES = ['channel_monitor_v2_' + kind + suffix
     for kind in ('metrics', 'user_metrics', 'error_metrics', 'latency_histograms')
     for suffix in ('_1m', '_rollup')] + [
@@ -241,7 +245,9 @@ def verify_maintenance_migrations(previous, manifest, rows):
     expected = manifest.get('migration_checksums', {})
     legacy = old == OCT16_OLD and new == OCT16_NEW
     scope = old == OCT16_NEW and set(expected) - set(applied) == {V2_SCOPE_MIGRATION}
-    if not (legacy or scope):
+    card_timeline = (old == CARD_TIMELINE_OLD and new == CARD_TIMELINE_NEW
+                     and set(expected) - set(applied) == {CARD_TIMELINE_MIGRATION})
+    if not (legacy or scope or card_timeline):
         raise ValueError('unapproved maintenance migration pair')
     for name, checksum in applied.items():
         if name in expected and expected[name] != checksum:
@@ -249,7 +255,8 @@ def verify_maintenance_migrations(previous, manifest, rows):
     for name, checksum in expected.items():
         if not re.fullmatch(r'[a-f0-9]{64}', checksum):
             raise ValueError('invalid migration checksum')
-        if name not in applied and not legacy and name != V2_SCOPE_MIGRATION:
+        allowed_pending = CARD_TIMELINE_MIGRATION if card_timeline else V2_SCOPE_MIGRATION
+        if name not in applied and not legacy and name != allowed_pending:
             raise ValueError('unexpected pending migration')
 
 
@@ -276,7 +283,7 @@ def validate_restore(db, backup):
 def restore_database(db, backup, tables=None):
     if not backup.is_file(): raise RuntimeError('stopped-write backup unavailable')
     # Only before new worker starts or the public route changes.
-    if tables is not None and tables != V2_SCOPE_TABLES:
+    if tables is not None and tables not in (V2_SCOPE_TABLES, CARD_TIMELINE_TABLES):
         raise ValueError('unsupported partial database restore')
     drop = ('DROP TABLE ' + ', '.join('public.' + table for table in tables) + ' CASCADE;'
             if tables else 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;')
@@ -386,7 +393,9 @@ def deploy(bundle):
     # This migration changes only derived monitor tables, config and watermark.
     # A scoped dump also contains the migration ledger so rollback is atomic
     # with respect to the schema version, without touching usage/billing data.
-    dump_options = {'tables': V2_SCOPE_TABLES} if scope_migration else {}
+    card_timeline_migration = maintenance and previous.get('migration_set_sha256') == CARD_TIMELINE_OLD
+    dump_options = ({'tables': CARD_TIMELINE_TABLES} if card_timeline_migration else
+                    {'tables': V2_SCOPE_TABLES} if scope_migration else {})
     if maintenance and not skip_restore_rehearsal:
         rehearsal = release / 'restore-rehearsal.dump'
         database_dump(db_id, rehearsal, **dump_options)

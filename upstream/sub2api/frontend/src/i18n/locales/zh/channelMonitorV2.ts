@@ -1,6 +1,8 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
+    originalCandy: {"title": "原渠道检测设置", "hint": "既有糖果探测任务继续按原配置运行。此处管理原渠道检测；检测规则与历史分别保留。", "reload": "重新载入", "conflict": "配置已被其他操作更新。请重新载入后再修改，避免覆盖新设置。"},
+    tool: {"associateKey": "关联密钥", "associateGroupKey": "为 {group} 关联密钥", "supportedModelCount": "支持 {count} 个模型", "modelCountLoading": "模型数量加载中…", "modelCountUnavailable": "模型数量暂不可用", "viewAllModels": "查看全部模型表现", "back": "返回 {tool} 线路详情", "period": "统计范围", "group": "监控分组", "clear": "清除筛选", "modelHint": "所选分组与时间范围内有请求的全部具体模型，按总请求量排序。", "loadError": "统计读取失败，请重试。", "retry": "重试", "loadingModels": "正在读取模型表现…", "noModels": "所选时间内暂无模型请求样本。", "passiveHint": "基于真实请求的缓存率、可用率与首 Token 表现。", "loading": "正在读取线路统计…", "noGroups": "该工具暂无纳入监控的线路。", "noSamples": "线路已纳入监控，所选时间内暂无请求样本。", "hour": "近 1 小时", "day": "近 24 小时", "week": "近 7 天", "allGroups": "全部监控分组", "models": "模型表现", "model": "模型", "lines": "线路详情", "viewAll": "查看全部"},
     hybrid: {
       title: '分组性能监控', updated: '更新于 {time}', successRate: '成功率', monitoring: '持续监控', loadError: '该时间范围加载失败，请重试', retry: '重试',
       ttftP95: '首字 P95', latencyP95: '总耗时 P95', cacheHitRate: '缓存命中率', requestCount: '综合成功 {success}/{total}', realRequestCount: '真实请求成功 {success}/{total}', probeFallbackCount: '{count} 个空桶使用主动探测兜底', sampleCount: '基于 {count} 次调用', multiplier: '当前：{value}x倍率', empty: '暂无可见分组',
@@ -11,7 +13,10 @@ export default {
         "showCards": "卡片视图",
         "showAnalytics": "详细数据",
         "passive": "V2 被动用量 · 缓存率与可用率",
-        "groupRate": "分组倍率 {value}x",
+        "bestLine": "最佳线路",
+        "bestLineHint": "所选统计范围内综合分最高",
+        "bestLineTiedHint": "所选统计范围内综合分并列最高",
+        "groupRate": "倍率 {value}x",
         "cache": "缓存率",
         "availability": "可用率",
         "ttft": "首 TOKEN",
@@ -27,7 +32,7 @@ export default {
         "trafficHistory": "真实请求健康状态时间线",
         "health": {
             "healthy": "正常",
-            "warning": "降级",
+            "warning": "波动",
             "critical": "异常",
             "unknown": "样本不足"
         }
@@ -39,7 +44,7 @@ export default {
         "disabledHint": "该分组尚未开启降智检测, 可由管理员在渠道监控中配置.",
         "invalid": '请填写检测模型, 间隔必须是 1-1440 的整数分钟.',
         "historyLimit": "最近检测次数",
-        "historyLimitHint": "每个模型在卡片上显示最近多少次检测，15-100，默认 100。还没有那么多次检测时，空位显示为未检测。",
+        "historyLimitHint": "每个模型的最近检测窗口为 15–100 次，默认 100；保留原检测配置与历史。",
         "historyLimitInvalid": "最近检测次数必须是 15-100 的整数。",
         "duplicateModel": "同一分组里，相同模型和推理强度不能重复配置。",
         "title": "降智状态",
@@ -55,7 +60,7 @@ export default {
             "stale": "检测已过期"
         },
         "settingsTitle": "分组糖果逻辑检测",
-        "settingsHint": "按 /admin/pelican-tests 的分组调度方式执行, 每次由真实网关调度器选择账号. 使用账号测试的内置糖果题, 不绑定单个账号. 同一分组可以配置多个模型, 每个模型单独检测、单独展示.",
+        "settingsHint": "沿用原渠道检测的分组调度与内置糖果题，每次由网关选择账号。同一分组可配置多个模型，分别定时检测；与本页检测规则、历史分别保留。",
         "costHint": "主动检测会消耗上游额度. 默认不启用; 仅在系统启用 V2 数据监控且分组在展示范围内时运行. 最多 64 条检测, 每实例同时检测 4 条, 单次最多 90 秒.",
         "model": "检测模型",
         "modelHint": "填写该分组可用的模型 ID",
@@ -64,7 +69,7 @@ export default {
         "selectGroup": "选择分组",
         "addGroup": "添加检测分组",
         "addModel": "添加模型检测",
-        "ruleHint": "21、21个、答案是21个等明确答案记为正确, 其他答案记为错误. 检测失败单独标记, 不计为答错; 不因答错自动禁用账号. 保存后生效. 公开页仅展示状态和时间, 检测记录保留 24 小时. 本次测试不代表模型的永久能力."
+        "ruleHint": "21、21个、答案是21个等明确答案记为正确, 其他答案记为错误. 检测失败单独标记, 不计为答错; 不因答错自动禁用账号. 保存后生效. 检测记录仍按原规则保留，不与本页检测记录合并。 本次测试不代表模型的永久能力."
 
     },
     title: '渠道监控',
@@ -128,7 +133,7 @@ export default {
     empty: { title: '没有可展示的数据', description: '尝试调整时间范围或筛选条件' },
     bucket: { minutes: '{count} 分钟粒度', hours: '{count} 小时粒度', days: '{count} 天粒度' },
     matrix: {
-      title: '可用性趋势', description: '每行是一种渠道组合，每个色块代表一个统计区间；悬停查看明细', wheelZoom: '在色块上滚轮放大（区间变窄、色块变宽）', wheelZoomX: '在色块上滚轮放大（区间变窄、色块变宽）', dimension: '渠道维度', emptyTitle: '当前筛选窗口没有矩阵数据', legendAria: '健康分数图例', bad: '差', good: '好', healthyLegend: '健康 (≥80)', warningLegend: '需关注 (50–79)', criticalLegend: '异常 (<50)', unknownLegend: '无流量 / 样本不足', noTraffic: '该区间无流量', noTrafficAt: '{time} · 无流量', scoreLine: '健康分 {score}', resetZoom: '重置缩放'
+      title: '可用性趋势', description: '每行是一种渠道组合，每个色块代表一个统计区间；悬停查看明细', wheelZoom: '在色块上滚轮放大（区间变窄、色块变宽）', wheelZoomX: '在色块上滚轮放大（区间变窄、色块变宽）', dimension: '渠道维度', emptyTitle: '当前筛选窗口没有矩阵数据', legendAria: '健康分数图例', bad: '差', good: '好', healthyLegend: '正常 (≥80)', warningLegend: '波动 (50≤评分<80)', criticalLegend: '异常 (<50)', unknownLegend: '样本不足（无请求或未达评分门槛）', noTraffic: '该区间无流量', noTrafficAt: '{time} · 无流量', scoreLine: '健康分 {score}', resetZoom: '重置缩放'
     },
     chart: {
       title: '可用性趋势', description: '平滑趋势：错误率 · 首 Token P50 · 缓存率', emptyTitle: '当前筛选窗口没有趋势数据', errorLegend: '错误率（左轴 %）', cacheLegend: '缓存率（左轴 %）', ttftLegend: '首 Token P50（右轴）', errorDataset: '错误率趋势 %', cacheDataset: '缓存率趋势 %', ttftDataset: '首 Token 趋势 P50 (ms)', percentAxis: '比率 %', resetZoom: '重置缩放'
@@ -157,6 +162,8 @@ export default {
       loadFailed: 'V2 配置加载失败',
       saveSuccess: 'V2 监控配置已保存',
       saveFailed: 'V2 配置保存失败',
+      reload: '重新载入配置',
+      conflict: '配置已被其他操作更新，当前草稿已保留。请先记录需要保留的修改；重新载入将用最新配置替换草稿。',
       modeBanner:
         '当前系统设置为 {mode}。V2 分钟聚合不会运行；此处配置可预先保存，切换到 {modeV2} 后立即生效。可在系统设置 → 功能开关调整。',
       modeClosed: '渠道监控已关闭',
@@ -164,11 +171,13 @@ export default {
       modeV2: 'V2 被动监控',
       enableTitle: '启用 V2 汇总',
       enableHint: '在系统模式为 V2 时生效；关闭后仅停止本配置的汇总，系统模式开关仍在「功能开关」',
+      timelineTitle: '状态条展示',
+      timelineHint: '统一控制被动监控与线路详情；选择后点击保存生效。',
       refreshTitle: '汇总频率',
       refreshHint: '影响矩阵时间粒度与刷新节奏',
       refreshAria: '汇总频率',
-      platformsTitle: '平台与模型',
-      platformsHint: '留空 = 展示全部真实模型名；填写后仅名单内单独成行，其余归入「其他」。可添加本站已支持平台，或填写与分组 platform 一致的标识。组合分组的用量记在账号所属的具体平台上。',
+      platformsTitle: '监控平台',
+      platformsHint: '展示有真实请求的全部具体模型。可添加本站已支持平台，或填写与分组 platform 一致的标识。组合分组的用量记在账号所属的具体平台上。',
       platformsOrderHint: '列表顺序即筛选、卡片和矩阵的显示顺序。模型汇总仍按请求量排列。出厂六个平台保留；新增且未开启的平台可以删除。',
       addPlatform: '添加平台',
       selectPlatform: '选择已支持或分组平台',
@@ -197,12 +206,12 @@ export default {
       healthHint: '控制用户端色块和整体评分。默认阈值较宽松，避免少量错误或低缓存率立即显示异常。',
       fields: {
         minimumSample: '最小样本数',
-        warningError: '错误率关注 %',
+        warningError: '错误率波动 %',
         criticalError: '错误率异常 %',
         targetTtft: 'TTFT 目标 ms',
-        warningTtft: 'TTFT 关注 ms',
+        warningTtft: 'TTFT 波动 ms',
         criticalTtft: 'TTFT 异常 ms',
-        warningCache: '缓存率关注 %',
+        warningCache: '缓存率波动 %',
         criticalCache: '缓存率异常 %',
       },
       namedModelsEmpty: '各平台模型列表为空：将展示全部真实模型名（不归入「其他」）。',
@@ -212,7 +221,7 @@ export default {
         health: '健康色三指标：错误率 60% + 首 Token P50 20% + 缓存率 20%（阈值可在上方配置）',
         trend: '趋势可切换色块矩阵 / 折线图（错误率 · 缓存率 · 首 Token）',
         latency: '延迟展示 AVG · P50 · P90；不展示绝对请求数 / 错误数',
-        models: '模型列表留空时展示真实模型名，不会全部归入「其他」',
+        models: '展示所选范围内有请求的全部具体模型，不按旧模型名单归并为「其他」',
       },
     },
     admin: {

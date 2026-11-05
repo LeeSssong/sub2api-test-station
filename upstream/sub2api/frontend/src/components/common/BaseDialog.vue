@@ -7,6 +7,7 @@
         :class="{ 'drawer-overlay': placement === 'right', 'user-app-shell xq-dialog': branded }"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
+        :aria-describedby="description ? descriptionId : undefined"
         role="dialog"
         aria-modal="true"
         @mousedown="handleOverlayMousedown"
@@ -17,9 +18,12 @@
         <div ref="dialogRef" :class="['modal-content', widthClasses, contentClass, panelClass, { 'drawer-content': placement === 'right', 'modal-fullscreen': fullscreen }]" @click.stop>
           <!-- Header -->
           <div class="modal-header">
-            <h3 :id="dialogId" class="modal-title">
-              {{ title }}
-            </h3>
+            <div class="modal-heading">
+              <h3 :id="dialogId" class="modal-title">
+                <slot name="title">{{ title }}</slot>
+              </h3>
+              <p v-if="description" :id="descriptionId" class="modal-description">{{ description }}</p>
+            </div>
             <button
               v-if="showCloseButton"
               @click="emit('close')"
@@ -57,6 +61,7 @@ const userTheme = inject('starbridge-user', ref(false))
 
 // Each instance must own a unique accessible title.
 const dialogId = `modal-title-${++dialogIdCounter}`
+const descriptionId = `${dialogId}-description`
 
 // 焦点管理
 const dialogRef = ref<HTMLElement | null>(null)
@@ -69,6 +74,7 @@ interface Props {
   panelClass?: string
   show: boolean
   title: string
+  description?: string
   width?: DialogWidth
   placement?: 'center' | 'right'
   closeOnEscape?: boolean
@@ -207,6 +213,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.modal-heading { min-width: 0; }
+.modal-description { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--xq-secondary, #64748b); }
 .modal-overlay.drawer-overlay { padding: 0; justify-content: flex-end; align-items: stretch; }
 .modal-content.drawer-content { border-radius: 0; height: 100dvh; max-height: 100dvh; margin: 0; }
 .modal-enter-from .drawer-content, .modal-leave-to .drawer-content { transform: translateX(100%); }

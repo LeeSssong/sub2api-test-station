@@ -104,3 +104,82 @@ it('defaults sync exclusion off, saves it and restores the saved value on reload
   expect((restored.get('[data-testid="monitor-v2-exclude-sync"]').element as HTMLInputElement).checked).toBe(true)
   restored.unmount()
 })
+
+it('removes display-model lists and duplicate candy editor while preserving legacy config on save',async()=>{
+ const existing=config();existing.platforms[0].models=['old-model'];existing.candy_probes=[{group_id:7,enabled:true,model:'probe',reasoning_effort:'high',interval_minutes:1}] as never[]
+ mocks.get.mockResolvedValue(existing);mocks.groups.mockResolvedValue([]);mocks.update.mockImplementation(async payload=>({...payload,version:4}))
+ const w=mount(MonitorSettingsPanel,{global:{stubs:{Toggle:true,Icon:true,RouterLink:true}}});await flushPromises()
+ expect(w.find('[data-platform="anthropic"] input[type="text"]').exists()).toBe(false)
+ expect(w.find('[data-testid="monitor-candy-settings"]').exists()).toBe(false)
+ const draft=(w.vm as unknown as {draft:{refresh_interval_seconds:number}}).draft;draft.refresh_interval_seconds=300;await nextTick();await w.get('header button.btn-primary').trigger('click');await flushPromises()
+ expect(mocks.update.mock.calls[0][0]).toMatchObject({candy_probes:existing.candy_probes,platforms:expect.arrayContaining([expect.objectContaining({models:['old-model']})])});w.unmount()
+})
+
+it.each([{ status: 409 }, { response: { status: 409 } }])('keeps the monitor draft on a version conflict and requires explicit reload: %j', async (failure) => {
+  const initial = config()
+  initial.candy_probes = [{ group_id: 7, enabled: true, model: 'old-probe', reasoning_effort: 'high', interval_minutes: 5 }] as never[]
+  mocks.get.mockResolvedValue(initial)
+  mocks.groups.mockResolvedValue([])
+  mocks.update.mockRejectedValueOnce(failure)
+  const w = mount(MonitorSettingsPanel, { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } })
+  try {
+    await flushPromises()
+    await w.get('[data-testid="monitor-v2-exclude-sync"]').setValue(true)
+    await w.get('header button.btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    expect((w.get('[data-testid="monitor-v2-exclude-sync"]').element as HTMLInputElement).checked).toBe(true)
+    expect(w.get('[role="alert"]').text()).toContain('channelMonitorV2.settings.conflict')
+    expect(w.get('header button.btn-primary').attributes('disabled')).toBeDefined()
+    expect(mocks.update.mock.calls[0][0]).toMatchObject({ version: 3, candy_probes: initial.candy_probes })
+    const fresh = { ...initial, version: 4, candy_probes: [{ group_id: 7, enabled: true, model: 'new-probe', reasoning_effort: 'high', interval_minutes: 5 }] }
+    mocks.get.mockResolvedValue(fresh)
+    await w.get('[data-testid="monitor-v2-settings-reload"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').exists()).toBe(false)
+    expect((w.get('[data-testid="monitor-v2-exclude-sync"]').element as HTMLInputElement).checked).toBe(false)
+    mocks.update.mockImplementation(async payload => ({ ...payload, version: 5 }))
+    await w.get('[data-testid="monitor-v2-exclude-sync"]').setValue(true)
+    await w.get('header button.btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.update.mock.calls.at(-1)?.[0]).toMatchObject({ version: 4, candy_probes: fresh.candy_probes, exclude_sync_requests: true })
+  } finally { w.unmount() }
+})
+
+it('preserves the draft and read version after a network failure so a retry can save it', async () => {
+  mocks.get.mockResolvedValue(config())
+  mocks.groups.mockResolvedValue([])
+  mocks.update.mockRejectedValueOnce({ status: 0, message: 'offline' }).mockImplementationOnce(async payload => ({ ...payload, version: 4 }))
+  const w = mount(MonitorSettingsPanel, { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } })
+  try {
+    await flushPromises()
+    await w.get('[data-testid="monitor-v2-exclude-sync"]').setValue(true)
+    await w.get('header button.btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    expect((w.get('[data-testid="monitor-v2-exclude-sync"]').element as HTMLInputElement).checked).toBe(true)
+    expect(w.get('header button.btn-primary').attributes('disabled')).toBeUndefined()
+    await w.get('header button.btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.update.mock.calls.at(-1)?.[0]).toMatchObject({ version: 3, exclude_sync_requests: true })
+  } finally { w.unmount() }
+})
+
+
+it('saves the global timeline mode and restores it after remount', async () => {
+  let saved: any = config()
+  mocks.get.mockImplementation(async () => saved)
+  mocks.groups.mockResolvedValue([])
+  mocks.update.mockImplementation(async payload => { saved = JSON.parse(JSON.stringify({ ...payload, version: 4 })); return saved })
+  const options = { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } }
+  const w = mount(MonitorSettingsPanel, options)
+  await flushPromises()
+  expect(w.get('[data-testid="monitor-v2-mode-samples"]').attributes('aria-pressed')).toBe('true')
+  await w.get('[data-testid="monitor-v2-mode-windows"]').trigger('click')
+  await w.get('header button.btn-primary').trigger('click'); await flushPromises()
+  expect(mocks.update.mock.calls[0][0]).toMatchObject({version:3,card_timeline_mode:'windows'})
+  w.unmount()
+  const restored = mount(MonitorSettingsPanel, options); await flushPromises()
+  expect(restored.get('[data-testid="monitor-v2-mode-windows"]').attributes('aria-pressed')).toBe('true')
+  restored.unmount()
+})

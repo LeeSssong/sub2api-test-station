@@ -41,7 +41,7 @@ func TestChannelMonitorV2DateBinOriginIsUTC(t *testing.T) {
 	}
 }
 
-func TestChannelMonitorV2DisplayModelIsPlatformScoped(t *testing.T) {
+func TestChannelMonitorV2DisplayModelPreservesConcreteNamesDespiteLegacyLists(t *testing.T) {
 	cfg := service.ChannelMonitorV2Config{Platforms: []service.ChannelMonitorV2PlatformConfig{
 		{Platform: "openai", Enabled: true, Models: []string{"shared", "gpt-5"}},
 		{Platform: "grok", Enabled: true, Models: []string{"grok-4"}},
@@ -49,11 +49,11 @@ func TestChannelMonitorV2DisplayModelIsPlatformScoped(t *testing.T) {
 		{Platform: "anthropic", Enabled: true, Models: []string{}},
 	}}
 	require.Equal(t, "shared", channelMonitorV2DisplayModel(cfg, "openai", "shared"))
-	require.Equal(t, service.ChannelMonitorV2OtherModel, channelMonitorV2DisplayModel(cfg, "grok", "shared"))
+	require.Equal(t, "shared", channelMonitorV2DisplayModel(cfg, "grok", "shared"))
 	require.Equal(t, "claude-sonnet-4", channelMonitorV2DisplayModel(cfg, "anthropic", "claude-sonnet-4"))
 	// Unconfigured platform still surfaces the real model name.
 	require.Equal(t, "gemini-2.5-pro", channelMonitorV2DisplayModel(cfg, "gemini", "gemini-2.5-pro"))
-	require.True(t, channelMonitorV2ModelSelected(service.ChannelMonitorV2Filter{Models: []string{service.ChannelMonitorV2OtherModel}}, cfg, "grok", "shared"))
+	require.False(t, channelMonitorV2ModelSelected(service.ChannelMonitorV2Filter{Models: []string{service.ChannelMonitorV2OtherModel}}, cfg, "grok", "shared"))
 }
 
 func TestChannelMonitorV2MatrixDimensionKey(t *testing.T) {
@@ -61,7 +61,7 @@ func TestChannelMonitorV2MatrixDimensionKey(t *testing.T) {
 	key := channelMonitorV2MatrixDimensionKey(service.ChannelMonitorV2GroupByPlatformGroupModel, cfg, "openai", 7, "gpt-5")
 	require.Equal(t, channelMonitorV2MatrixKey{platform: "openai", groupID: 7, model: "gpt-5"}, key)
 	key = channelMonitorV2MatrixDimensionKey(service.ChannelMonitorV2GroupByPlatformModel, cfg, "openai", 7, "unlisted")
-	require.Equal(t, channelMonitorV2MatrixKey{platform: "openai", model: service.ChannelMonitorV2OtherModel}, key)
+	require.Equal(t, channelMonitorV2MatrixKey{platform: "openai", model: "unlisted"}, key)
 	key = channelMonitorV2MatrixDimensionKey(service.ChannelMonitorV2GroupByPlatform, cfg, "openai", 7, "gpt-5")
 	require.Equal(t, channelMonitorV2MatrixKey{platform: "openai"}, key)
 }
@@ -544,14 +544,14 @@ func TestChannelMonitorV2RecentSamplesIgnoreSelectedRange(t *testing.T) {
 	require.NotEqual(t, filter.Start, args[2])
 
 	clause, clauseArgs := channelMonitorV2SampleModelClause(service.ChannelMonitorV2Filter{Models: []string{"gpt-5", service.ChannelMonitorV2OtherModel}}, cfg, "m", 5)
-	require.Contains(t, clause, "m.model = ANY($6)")
-	require.Contains(t, clause, "NOT (m.model = ANY($8))")
-	require.Len(t, clauseArgs, 4)
+	require.Contains(t, clause, "m.model = ANY($5)")
+	require.NotContains(t, clause, "NOT")
+	require.Len(t, clauseArgs, 1)
 
 	open := service.ChannelMonitorV2Config{Platforms: []service.ChannelMonitorV2PlatformConfig{{Platform: "openai", Enabled: true}}}
 	clause, clauseArgs = channelMonitorV2SampleModelClause(service.ChannelMonitorV2Filter{Models: []string{service.ChannelMonitorV2OtherModel}}, open, "m", 5)
-	require.Equal(t, "FALSE", clause)
-	require.Empty(t, clauseArgs)
+	require.Equal(t, "m.model = ANY($5)", clause)
+	require.Len(t, clauseArgs, 1)
 }
 
 func TestAttachRecentSampleBucketsKeepsSamplesOutsideSelectedRange(t *testing.T) {
@@ -596,4 +596,30 @@ func TestAttachRecentSampleBucketsKeepsSamplesOutsideSelectedRange(t *testing.T)
 	require.InDelta(t, 0, samples[0].Metrics.ErrorRate, 0.0001)
 	require.NotNil(t, samples[0].Metrics.TTFT.P50Ms)
 	require.Equal(t, int64(1500), *samples[0].Metrics.TTFT.P50Ms)
+}
+
+func TestChannelMonitorV2ModelRowsUseOnlyRequestedConcreteTrafficAndTotalVolume(t *testing.T) {
+	cfg := service.ChannelMonitorV2Config{Platforms: []service.ChannelMonitorV2PlatformConfig{{Platform: "openai", Enabled: true, Models: []string{"configured-without-traffic"}}}}
+	facts := []channelMonitorV2Fact{
+		{Platform: "openai", Model: "z-high-failure", Success: 1, Errors: 19},
+		{Platform: "openai", Model: "b", Success: 10},
+		{Platform: "openai", Model: "a", Success: 3, Errors: 7},
+		{Platform: "anthropic", Model: "same-volume", Success: 10},
+		{Platform: "openai", Model: "no-traffic"},
+	}
+	rows := channelMonitorV2ModelRows(service.ChannelMonitorV2Filter{}, cfg, facts, nil, nil, 60, true)
+	require.Len(t, rows, 4)
+	require.Equal(t, []string{"z-high-failure", "same-volume", "a", "b"}, []string{rows[0].Model, rows[1].Model, rows[2].Model, rows[3].Model})
+	require.Equal(t, int64(20), rows[0].Metrics.RequestCount)
+	require.Equal(t, int64(19), rows[0].Metrics.ErrorRequests)
+	filtered := channelMonitorV2ModelRows(service.ChannelMonitorV2Filter{Models: []string{"b"}}, cfg, facts, nil, nil, 60, true)
+	require.Len(t, filtered, 1)
+	require.Equal(t, "b", filtered[0].Model)
+	require.Empty(t, channelMonitorV2ModelRows(service.ChannelMonitorV2Filter{}, cfg, nil, nil, nil, 60, true))
+}
+func TestChannelMonitorV2ModelMatrixNeverSeedsConfiguredNames(t *testing.T) {
+	cfg := service.ChannelMonitorV2Config{Platforms: []service.ChannelMonitorV2PlatformConfig{{Platform: "openai", Enabled: true, Models: []string{"never-requested"}}}}
+	for _, by := range []service.ChannelMonitorV2GroupBy{service.ChannelMonitorV2GroupByPlatformModel, service.ChannelMonitorV2GroupByPlatformGroupModel} {
+		require.Empty(t, seedChannelMonitorV2MatrixAccumulators(service.ChannelMonitorV2Filter{}, cfg, by, map[int64]channelMonitorV2GroupInfo{7: {platform: "openai", name: "group"}}))
+	}
 }

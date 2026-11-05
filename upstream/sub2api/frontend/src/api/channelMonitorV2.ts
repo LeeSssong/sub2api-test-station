@@ -42,6 +42,7 @@ export interface MonitorMetric {
   rpm: number
   tpm: number
   error_rate: number
+  success_rate?: number
   cache_rate: number
   cache_rate_numerator: number
   cache_rate_denominator: number
@@ -100,6 +101,8 @@ export interface MonitorCoverage {
 }
 
 export interface MonitorConfig {
+  /** Operator-controlled passive card timeline. Older responses default to samples. */
+  card_timeline_mode?: 'windows' | 'samples'
   exclude_sync_requests?: boolean
   candy_probes?: MonitorCandyProbe[]
   /** Recent checks shown per model. 15–100; omitted values use 100. */

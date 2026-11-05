@@ -29,6 +29,7 @@
         :show-create="false"
         @changed="load"
       />
+      <OriginalCandySettings />
       <section class="admin-history" data-testid="pelican-test-history">
         <header>
           <h3>检测记录</h3>
@@ -160,6 +161,7 @@
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import SmartOpsNav from "@/components/admin/operations/SmartOpsNav.vue";
+import OriginalCandySettings from "@/features/channel-monitor-v2/OriginalCandySettings.vue";
 import IntelligenceRulesPanel from "@/components/admin/operations/IntelligenceRulesPanel.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import Pagination from "@/components/common/Pagination.vue";

@@ -22,41 +22,15 @@
             </button>
             <div class="card-bottom tool-association" role="group" :aria-label="`${tool.label} 最佳线路与关联密钥`">
               <div :id="`tool-best-${tool.id}`" class="tool-best" title="近 24 小时：成功率 50% · 缓存命中率 30% · 首字速度 20%"><small>最佳线路</small><strong class="best" :class="{muted:!tool.best}">{{ tool.best?.name || (tool.active.length ? tool.bestEmptyText : tool.id === 'gemini' ? '暂无可用 Gemini 分组' : '暂无可用线路') }}</strong></div>
-              <button type="button" class="xq-button" :disabled="!tool.active.length" :aria-describedby="`tool-best-${tool.id}`" @click="openCreate(tool)">关联密钥</button>
+              <button type="button" class="xq-button associate-key" :disabled="!tool.active.length" :aria-describedby="`tool-best-${tool.id}`" @click="openCreate(tool)">关联密钥</button>
             </div>
           </article>
         </ToolCarousel>
       </template>
       <KeysView :refresh-version="keyRefreshVersion" :recommended-group-ids="recommendedGroupIds" @changed="loadWorkspace" />
-      <BaseDialog brand-theme :show="!!selectedTool && !createTool" :title="`${selectedTool?.label||''} 线路详情`" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails" @opened="restoreDetailFocus">
-        <div class="detail-section-head"><div class="detail-period"><span>统计范围</span><div class="detail-period-segment" role="group" aria-label="线路统计时间"><button v-for="period in periods" :key="period.value" :aria-pressed="detailWindow===period.value" :class="{active:detailWindow===period.value}" @click="loadDetails(period.value)">{{ period.label }}</button></div><label class="detail-granularity">粒度 <select aria-label="线路图粒度" :value="detailWindow==='1h'?'5m':detailGranularity" :disabled="detailWindow==='1h'" @change="detailGranularity=($event.target as HTMLSelectElement).value as 'hour'|'day';loadDetails(detailWindow)"><option v-if="detailWindow==='1h'" value="5m">5 分钟</option><option value="hour">小时</option><option value="day">天</option></select></label></div></div>
-        <div v-if="detailError" class="workspace-error" role="alert">{{ detailError }} <button class="xq-button" @click="loadDetails(detailWindow)">重试</button></div>
-        <div v-if="detailLoading && !detailData.length" class="empty" role="status">正在读取统计…</div>
-        <div v-else class="route-detail-grid" :aria-busy="detailLoading">
-          <article v-for="group in detailRows" :key="group.id" class="route-detail-card" :aria-labelledby="`detail-route-${group.id}`">
-            <span v-if="group.id===detailBest?.id" class="best-route-badge"><span class="best-route-ribbon">最佳线路</span></span>
-            <header class="detail-card-header">
-              <div class="detail-card-identity">
-                <div class="detail-card-name">
-                  <img class="provider-logo" :src="providerIcon(group.platform)" alt="" />
-                  <h3 :id="`detail-route-${group.id}`">{{ group.name }}</h3>
-                  <span class="rate-badge">{{ rateLabel(group) }}</span>
-                  <span class="route-health" :class="detailSLAHealth(group).kind" title="所选统计范围的后台 SLA 状态"><span class="dot" :class="detailSLAHealth(group).kind" aria-hidden="true"></span>{{ detailSLAHealth(group).text }}</span>
-                </div>
-              </div>
-              <button v-if="group.status==='active'" class="xq-button detail-associate-button" :data-detail-group-id="group.id" @click="openCreate(selectedTool!,group.id)">关联密钥</button>
-              <span v-else class="muted detail-unavailable">不可配置</span>
-            </header>
-            <div class="detail-card-quality">
-              <div class="detail-quality-value" role="group">
-                <span class="detail-quality-label" title="与后台对应分组的 SLA 一致，排除业务限制及客户端取消">请求成功率</span>
-                <strong class="success-rate success-rate-tone" :data-tone="routeHealthTone(detailSLAHealth(group))">{{ timelineLoading || timelineError ? '—' : routeSuccessLabel(detailSLAHealth(group)) }}</strong>
-              </div>
-            </div>
-            <RouteHistoryStrip :points="timelinePoints.filter(point=>point.group_id===group.id)" :loading="timelineLoading" :error="timelineError" />
-          </article>
-          <div v-if="!detailRows.length" class="empty">暂无线路</div>
-        </div>
+      <BaseDialog brand-theme :show="!!selectedTool && !createTool" :title="detailTitle || `${selectedTool?.label||''} 线路详情`" :description="detailDescription" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails">
+        <template #title><span class="route-dialog-title"><img v-if="selectedTool" class="provider-logo" :src="providerIcon(selectedTool.platform)" alt="" /><span>{{ detailTitle || `${selectedTool?.label || ''} 线路详情` }}</span></span></template>
+        <ToolMonitorDetails v-if="selectedTool" :key="selectedTool.id" :tool-id="selectedTool.id" :tool-name="selectedTool.label" :groups="groups" :resume-association="detailResume" @title="detailTitle = $event" @description="detailDescription = $event" @associate="associateDetailGroup" />
       </BaseDialog>
       <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :tool-id="createTool?.id" :groups="createTool?.active||[]" :metrics="selectionMetrics" :metrics-generated-at="selectionGeneratedAt" :metrics-error="selectionError" :recommended-group-ids="recommendedGroupIds" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
       <PricingDialog :tool="pricingTool" :lines="pricingTool?.groups || []" :rates="rates" @close="closePricing" />
@@ -72,29 +46,21 @@ import KeysView from './KeysView.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
-import RouteHistoryStrip from '@/features/ai-tools/RouteHistoryStrip.vue'
-import { aggregateRouteSLACounts, getRouteTimeline, type RouteTimelinePoint } from '@/features/ai-tools/routeTimeline'
+import ToolMonitorDetails from '@/features/channel-monitor-v2/ToolMonitorDetails.vue'
 import PricingDialog from '@/features/ai-tools/PricingDialog.vue'
 import ToolCarousel from '@/features/ai-tools/ToolCarousel.vue'
 import userGroupsAPI from '@/api/groups'
 import keysAPI from '@/api/keys'
 import { getLineSelectionMetrics, type LineSelectionMetric } from '@/features/monitor-v4/lineSelection'
 import { getHybridPerformanceSnapshot } from '@/features/monitor-v4/api'
-import { formatLineRate, resolveLineRate } from '@/components/keys/lineOptions'
-import { tools, configuredLines, routeCountHealth, routeHealth, routeHealthTone, routeSuccessLabel, compareQuality, rankWeightedRoutes, providerIcon, toolIdsForGroup } from '@/features/ai-tools/model'
+import { tools, configuredLines, routeHealth, compareQuality, rankWeightedRoutes, providerIcon, toolIdsForGroup } from '@/features/ai-tools/model'
 import { getDashboardWorkspaceSnapshot, setDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
 import type { ApiKey, Group } from '@/types'
-import type { MonitorV4Group, MonitorV4Window } from '@/features/monitor-v4/types'
+import type { MonitorRange } from '@/api/channelMonitorV2'
+import type { MonitorV4Group } from '@/features/monitor-v4/types'
 import '@/styles/xingqiao-ai.css'
 import '@/styles/xingqiao-merged-keys.css'
 
-const timelinePoints=ref<RouteTimelinePoint[]>([]),timelineLoading=ref(false),timelineError=ref(false)
-async function loadTimeline(window:MonitorV4Window,signal:AbortSignal){
- timelinePoints.value=[];timelineLoading.value=true;timelineError.value=false
- try{const points=await getRouteTimeline(window,signal,detailGranularity.value);if(!signal.aborted)timelinePoints.value=points}
- catch{if(!signal.aborted)timelineError.value=true}
- finally{if(!signal.aborted)timelineLoading.value=false}
-}
 const authStore=useAuthStore()
 const cacheUserId=String(authStore.user?.id||'')
 const cachedWorkspace=getDashboardWorkspaceSnapshot(cacheUserId)
@@ -105,15 +71,13 @@ const metricsGeneratedAt=ref<string|null>(cachedWorkspace?.metricsGeneratedAt||n
 const rankingMetricsGeneratedAt=ref<string|null>(cachedWorkspace?.rankingMetricsGeneratedAt||null)
 const loading=ref(false), loaded=ref(!!cachedWorkspace), workspaceError=ref(''), statsFailed=ref(false), statsError=ref(''), rankingFailed=ref(false)
 const keyRefreshVersion=ref(0)
-const detailWindow=ref<MonitorV4Window>('24h'), detailGranularity=ref<'hour'|'day'>('hour'), detailLoading=ref(false), detailError=ref(''), detailData=ref<MonitorV4Group[]>([])
-let loadController:AbortController|undefined, detailController:AbortController|undefined
-const detailCache=new Map<MonitorV4Window,MonitorV4Group[]>()
-let returnToDetailGroup:number|undefined
+const detailTitle=ref('')
+const detailDescription=ref('')
+const detailResume=ref<{range:MonitorRange;groupId:number;platform:string;scrollTop:number}>()
+let loadController:AbortController|undefined
 let detailsTrigger:HTMLElement|null=null, createTrigger:HTMLElement|null=null
 const metricsById=computed(()=>new Map(metrics.value.map(m=>[m.id,m])))
 const rankingMetricsById=computed(()=>new Map(rankingMetrics.value.map(m=>[m.id,m])))
-const detailSLACounts=computed(()=>timelineLoading.value || timelineError.value ? new Map<number,{request_count:number;success_count:number}>() : aggregateRouteSLACounts(timelinePoints.value))
-function detailSLAHealth(group:Group){const counts=detailSLACounts.value.get(group.id);return routeCountHealth(counts?.success_count,counts?.request_count)}
 const allGroups=computed(()=>{const all=new Map(groups.value.map(g=>[g.id,g]));for(const g of configuredLines(groups.value,keys.value))all.set(g.id,g);return [...all.values()]})
 const sort=(list:Group[], ms=metricsById.value)=>[...list].sort((a,b)=>compareQuality(a,b,ms,rates.value,clock.value,metricsGeneratedAt.value))
 const stateOf=(g:Group)=>routeHealth(statsFailed.value?undefined:metricsById.value.get(g.id),clock.value,metricsGeneratedAt.value)
@@ -137,10 +101,6 @@ let pricingTrigger:HTMLElement|null=null
 function openPricing(tool:ToolCard){pricingTrigger=document.activeElement as HTMLElement;pricingTool.value=tool}
 function closePricing(){pricingTool.value=null;nextTick(()=>pricingTrigger?.focus())}
 const selectedTool=ref<ToolCard|null>(null), createTool=ref<ToolCard|null>(null),createGroupId=ref<number>()
-const detailRows=computed(()=>[...(selectedTool.value?.groups||[])].sort((a,b)=>(resolveLineRate(a,rates.value)??Infinity)-(resolveLineRate(b,rates.value)??Infinity)))
-const detailBest=computed(()=>toolCards.value.find(tool=>tool.id===selectedTool.value?.id)?.best)
-const periods=[{value:'1h' as const,label:'近 1 小时'},{value:'24h' as const,label:'近 24 小时'},{value:'7d' as const,label:'近 7 天'}]
-const rateLabel=(g:Group)=>formatLineRate(resolveLineRate(g,rates.value))
 function cacheWorkspace(){setDashboardWorkspaceSnapshot({userId:cacheUserId,groups:groups.value,keys:keys.value,rates:rates.value,metrics:metrics.value,metricsGeneratedAt:metricsGeneratedAt.value,rankingMetrics:rankingMetrics.value,rankingMetricsGeneratedAt:rankingMetricsGeneratedAt.value})}
 async function loadAllKeys(signal:AbortSignal){const first=await keysAPI.list(1,100,undefined,{signal});const items=[...first.items];for(let page=2;page<=Math.ceil(first.total/100);page++){const next=await keysAPI.list(page,100,undefined,{signal});items.push(...next.items)}return items}
 async function loadWorkspace(){
@@ -165,36 +125,8 @@ async function loadWorkspace(){
     cacheWorkspace()
   }finally{if(!c.signal.aborted)loading.value=false}
 }
-async function openDetails(tool:ToolCard){detailsTrigger=document.activeElement as HTMLElement;selectedTool.value=tool;detailGranularity.value='hour';await loadDetails('24h')}
-function closeDetails(){detailController?.abort();selectedTool.value=null;nextTick(()=>detailsTrigger?.focus())}
-async function loadDetails(window:MonitorV4Window){
-  detailController?.abort();const c=new AbortController();detailController=c
-  detailWindow.value=window;void loadTimeline(window,c.signal)
-  detailLoading.value=true;detailError.value='';detailData.value=detailCache.get(window)||[]
-  try{
-    const result=await getHybridPerformanceSnapshot(window,c.signal)
-    if(c.signal.aborted)return
-    detailData.value=result.groups;detailCache.set(window,result.groups)
-    clock.value=Date.now()
-    if(window==='1h'){
-      metrics.value=result.groups;metricsGeneratedAt.value=result.generated_at
-      statsFailed.value=false;statsError.value=''
-    }
-    if(window==='24h'){
-      rankingMetrics.value=result.groups;rankingMetricsGeneratedAt.value=result.generated_at
-      rankingFailed.value=false
-    }
-    cacheWorkspace()
-  }catch{
-    if(!c.signal.aborted){
-      detailError.value=detailCache.has(window)?'统计刷新失败，保留上次成功数据。':'统计读取失败，请重试。'
-      if(window==='1h'){statsFailed.value=true;statsError.value='近 1 小时统计读取失败，请刷新重试。'}
-      if(window==='24h'){
-        rankingFailed.value=true;rankingMetrics.value=[];rankingMetricsGeneratedAt.value=null;cacheWorkspace()
-      }
-    }
-  }finally{if(!c.signal.aborted)detailLoading.value=false}
-}
+function openDetails(tool:ToolCard){detailDescription.value='';detailResume.value=undefined;detailsTrigger=document.activeElement as HTMLElement;detailTitle.value=`${tool.label} 线路详情`;selectedTool.value=tool}
+function closeDetails(){detailResume.value=undefined;selectedTool.value=null;nextTick(()=>detailsTrigger?.focus())}
 const selectionMetrics=ref(new Map<number,LineSelectionMetric>())
 const selectionGeneratedAt=ref<string|null>(null), selectionError=ref(false)
 let selectionController:AbortController|undefined
@@ -205,15 +137,21 @@ async function loadSelectionMetrics(){
  catch{if(!c.signal.aborted)selectionError.value=true}
 }
 function openCreate(tool:ToolCard,id?:number){void loadSelectionMetrics();createTrigger=document.activeElement as HTMLElement;createTool.value=tool;createGroupId.value=id??tool.best?.id}
-function restoreDetailFocus(){
-  if(returnToDetailGroup){document.querySelector<HTMLElement>(`[data-detail-group-id="${returnToDetailGroup}"]`)?.focus();returnToDetailGroup=undefined}
+function associateDetailGroup(id:number,resume?:{range:MonitorRange;groupId:number;platform:string;scrollTop:number}){
+  const tool=selectedTool.value
+  if(!tool || !tool.active.some(group=>group.id===id))return
+  detailResume.value=resume
+  openCreate(tool,id)
 }
 function closeCreate(){
-  returnToDetailGroup=selectedTool.value?createGroupId.value:undefined
   createTool.value=null
   if(!selectedTool.value)nextTick(()=>createTrigger?.focus())
 }
-async function keyCreated(key:ApiKey){keyRefreshVersion.value++;keys.value=[...keys.value.filter(k=>k.id!==key.id),key];createTool.value=null;await loadWorkspace();if(selectedTool.value)await loadDetails(detailWindow.value)}
+async function keyCreated(key:ApiKey){keyRefreshVersion.value++;keys.value=[...keys.value.filter(k=>k.id!==key.id),key];createTool.value=null;await loadWorkspace();}
 onMounted(()=>{void loadWorkspace();freshnessTimer=setInterval(()=>{clock.value=Date.now()},30000)})
-onBeforeUnmount(()=>{clearInterval(freshnessTimer);selectionController?.abort();loadController?.abort();detailController?.abort();})
+onBeforeUnmount(()=>{clearInterval(freshnessTimer);selectionController?.abort();loadController?.abort();})
 </script>
+
+<style>
+.xq-route-dialog > .modal-body { background: var(--xq-void); }
+</style>

@@ -48,6 +48,7 @@ func TestChannelMonitorV2RequestScopePostgres(t *testing.T) {
 	exec(`INSERT INTO ops_error_logs(created_at,request_id,status_code) VALUES($1,'source-floor',200)`, start.Add(-2*time.Hour))
 	migration("287_channel_monitor_v2_request_scope.sql")
 	migration("287_channel_monitor_v2_request_scope.sql") // Idempotent replay must preserve rows and progress.
+	migration("288_channel_monitor_v2_card_timeline_mode.sql")
 	exec(`INSERT INTO channel_monitor_v2_metrics_rollup(bucket_seconds,bucket_start,platform,group_id,model,success_requests,error_requests,request_type) VALUES(3600,$1,'openai',7,'legacy-boundary',5,95,-1)`, start.Add(-2*time.Hour))
 	exec(`INSERT INTO channel_monitor_v2_metrics_1m(bucket_start,platform,group_id,model,success_requests,error_requests,request_type) VALUES($1,'openai',7,'legacy-boundary',5,95,-1)`, start.Add(-2*time.Hour))
 	repo := &channelMonitorV2Repository{db: db}

@@ -62,10 +62,11 @@
 .xq-ai .card-bottom .tool-best{flex:1}
 .xq-ai .tool-association{width:100%;padding:12px;border-radius:10px;background:color-mix(in srgb,var(--xq-depth) 82%,var(--xq-surface));box-shadow:inset 0 2px 4px rgb(0 0 0 / 16%),0 1px 0 rgb(255 255 255 / 4%)}
 .xq-ai .tool-status{margin-bottom:16px}
-.xq-ai .card-bottom button{flex-shrink:0;min-height:36px;padding:0 10px;border-color:rgba(97,201,217,.46);background:linear-gradient(145deg,rgba(39,102,124,.90),rgba(20,66,89,.94));color:#8fe4eb;font-size:12px;font-weight:600;box-shadow:0 3px 6px rgb(0 0 0 / 22%),inset 0 1px 0 rgb(255 255 255 / 10%);transition:transform .14s,box-shadow .14s,background .14s}
-.xq-ai .card-bottom button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgb(0 0 0 / 26%),inset 0 1px 0 rgb(255 255 255 / 14%)}
-.xq-ai .card-bottom button:active:not(:disabled){transform:translateY(1px);box-shadow:0 1px 3px rgb(0 0 0 / 28%)}
-.xq-ai .card-bottom button:disabled{box-shadow:none;background:rgba(10,31,46,.58);border-color:rgba(52,103,124,.24);color:#557483;opacity:.58}
+.xq-button.associate-key{flex-shrink:0;min-height:36px;padding:0 10px;border-color:rgba(97,201,217,.46);background:linear-gradient(145deg,rgba(39,102,124,.90),rgba(20,66,89,.94));color:#8fe4eb;font-size:12px;font-weight:600;box-shadow:0 3px 6px rgb(0 0 0 / 22%),inset 0 1px 0 rgb(255 255 255 / 10%);transition:transform .14s,box-shadow .14s,background .14s}
+.xq-button.associate-key:focus-visible{outline:2px solid var(--xq-accent);outline-offset:2px}
+.xq-button.associate-key:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 8px rgb(0 0 0 / 26%),inset 0 1px 0 rgb(255 255 255 / 14%)}
+.xq-button.associate-key:active:not(:disabled){transform:translateY(1px);box-shadow:0 1px 3px rgb(0 0 0 / 28%)}
+.xq-button.associate-key:disabled{box-shadow:none;background:rgba(10,31,46,.58);border-color:rgba(52,103,124,.24);color:#557483;opacity:.58}
 .xq-dialog .table-scroll{overflow-x:auto;scrollbar-color:var(--xq-border) transparent;scrollbar-width:thin}
 .xq-ai .rate-badge,.xq-dialog .rate-badge{font-size:11px;padding:2px 6px;border-radius:5px;color:var(--xq-accent);background:rgba(97,201,217,.1);white-space:nowrap}
 .xq-ai .success-rate-tone,.xq-dialog .success-rate-tone{color:var(--xq-muted)}
@@ -142,11 +143,11 @@
 :root:not(.dark) .xq-ai .tool-card:hover { background: var(--xq-raised); border-color: var(--xq-accent); }
 :root:not(.dark) .xq-ai :is(.tool-type, .tool-status) { color: var(--xq-muted); }
 :root:not(.dark) .xq-ai .tool-association { background:color-mix(in srgb,var(--xq-depth) 65%,var(--xq-surface));box-shadow:inset 0 2px 4px rgb(24 59 69 / 10%),0 1px 0 rgb(255 255 255 / 65%); }
-:root:not(.dark) .xq-ai .card-bottom button { background:var(--xq-surface);color:var(--xq-text);border-color:var(--xq-border);box-shadow:0 3px 6px rgb(24 59 69 / 18%),inset 0 1px 0 rgb(255 255 255 / 90%); }
-:root:not(.dark) .xq-ai .card-bottom button:hover:not(:disabled) { box-shadow:0 5px 8px rgb(24 59 69 / 20%); }
-:root:not(.dark) .xq-ai .card-bottom button:active:not(:disabled) { box-shadow:0 1px 2px rgb(24 59 69 / 14%); }
-:root:not(.dark) .xq-ai .card-bottom button:disabled { background:var(--xq-depth);color:var(--xq-muted);box-shadow:none; }
-@media(prefers-reduced-motion:reduce){.xq-ai .card-bottom button{transition:none}}
+:root:not(.dark) .xq-button.associate-key { background:var(--xq-surface);color:var(--xq-text);border-color:var(--xq-border);box-shadow:0 3px 6px rgb(24 59 69 / 18%),inset 0 1px 0 rgb(255 255 255 / 90%); }
+:root:not(.dark) .xq-button.associate-key:hover:not(:disabled) { box-shadow:0 5px 8px rgb(24 59 69 / 20%); }
+:root:not(.dark) .xq-button.associate-key:active:not(:disabled) { box-shadow:0 1px 2px rgb(24 59 69 / 14%); }
+:root:not(.dark) .xq-button.associate-key:disabled { background:var(--xq-depth);color:var(--xq-muted);box-shadow:none; }
+@media(prefers-reduced-motion:reduce){.xq-button.associate-key{transition:none}}
 :root:not(.dark) .xq-button:hover:not(:disabled) { background: var(--xq-raised); }
 :root:not(.dark) :is(.xq-ai, .xq-dialog) ::selection { background: var(--xq-raised); color: var(--xq-text); }
 
@@ -159,3 +160,8 @@
 
 .xq-dialog .detail-granularity{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--xq-secondary)}
 .xq-dialog .detail-granularity select{background:var(--xq-surface);color:var(--xq-text);border:1px solid var(--xq-border);border-radius:8px;padding:7px 10px;min-height:36px}
+
+.xq-dialog .route-dialog-title{display:flex;align-items:center;gap:10px}
+.xq-dialog .route-dialog-title>.provider-logo{width:24px;height:24px;flex:none;object-fit:contain}
+
+.xq-route-dialog .modal-description{font-size:12px;line-height:1.6;color:var(--xq-secondary);margin:6px 0 0}

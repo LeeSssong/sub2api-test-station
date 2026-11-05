@@ -92,63 +92,17 @@ func channelMonitorV2SampleModelClause(filter service.ChannelMonitorV2Filter, cf
 	if len(filter.Models) == 0 {
 		return "", nil
 	}
-	selected := map[string]struct{}{}
-	other := false
+	selected := []string{}
 	for _, model := range filter.Models {
-		model = strings.TrimSpace(model)
-		if model == "" {
-			continue
-		}
-		if model == service.ChannelMonitorV2OtherModel {
-			other = true
-			continue
-		}
-		selected[model] = struct{}{}
-	}
-	selectedList := make([]string, 0, len(selected))
-	for model := range selected {
-		selectedList = append(selectedList, model)
-	}
-	sort.Strings(selectedList)
-
-	platforms := channelMonitorV2EnabledPlatforms(cfg)
-	if len(filter.Platforms) > 0 {
-		platforms = intersectStrings(platforms, filter.Platforms)
-	}
-	parts := make([]string, 0, len(platforms))
-	args := make([]any, 0, len(platforms)*2)
-	arg := firstArg
-	for _, platform := range platforms {
-		allow := channelMonitorV2PlatformAllowList(cfg, platform)
-		if len(allow) == 0 {
-			if len(selectedList) == 0 {
-				continue
-			}
-			args = append(args, platform, pq.Array(selectedList))
-			parts = append(parts, fmt.Sprintf("(%s.platform = $%d AND %s.model = ANY($%d))", alias, arg, alias, arg+1))
-			arg += 2
-			continue
-		}
-		exact := intersectStrings(allow, selectedList)
-		sub := make([]string, 0, 2)
-		if len(exact) > 0 {
-			args = append(args, platform, pq.Array(exact))
-			sub = append(sub, fmt.Sprintf("(%s.platform = $%d AND %s.model = ANY($%d))", alias, arg, alias, arg+1))
-			arg += 2
-		}
-		if other {
-			args = append(args, platform, pq.Array(allow))
-			sub = append(sub, fmt.Sprintf("(%s.platform = $%d AND NOT (%s.model = ANY($%d)))", alias, arg, alias, arg+1))
-			arg += 2
-		}
-		if len(sub) > 0 {
-			parts = append(parts, "("+strings.Join(sub, " OR ")+")")
+		if model = strings.TrimSpace(model); model != "" {
+			selected = append(selected, model)
 		}
 	}
-	if len(parts) == 0 {
+	if len(selected) == 0 {
 		return "FALSE", nil
 	}
-	return "(" + strings.Join(parts, " OR ") + ")", args
+	sort.Strings(selected)
+	return fmt.Sprintf("%s.model = ANY($%d)", alias, firstArg), []any{pq.Array(selected)}
 }
 
 func channelMonitorV2PlatformAllowList(cfg service.ChannelMonitorV2Config, platform string) []string {

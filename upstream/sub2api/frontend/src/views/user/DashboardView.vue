@@ -10,7 +10,7 @@
         <ToolCarousel :item-count="toolCards.length" :aria-busy="loading">
           <article v-for="tool in toolCards" :key="tool.id" class="tool-card">
             <header class="tool-card-header">
-              <div class="tool-card-identity"><h3 class="tool-title"><img class="provider-logo" :src="providerIcon(tool.platform)" alt="" /><span>{{ tool.label }}</span></h3><span class="tool-type">{{ tool.type }}</span></div>
+              <div class="tool-card-identity"><h3 class="tool-title"><PlatformIcon v-if="tool.id === 'claude'" platform="anthropic" class="provider-logo" /><img v-else class="provider-logo" :src="providerIcon(tool.platform)" alt="" /><span>{{ tool.label }}</span></h3><span class="tool-type">{{ tool.type }}</span></div>
               <button type="button" class="pricing-entry" :aria-label="`${tool.label} 价格与扣费说明`" @click="openPricing(tool)">扣费说明 <Icon name="externalLink" size="sm" /></button>
             </header>
             <button type="button" class="tool-status" :aria-label="`${tool.label} 线路详情`" :title="tool.healthSummary" aria-haspopup="dialog" :aria-expanded="selectedTool?.id===tool.id && !createTool" @click="openDetails(tool)">
@@ -29,8 +29,8 @@
       </template>
       <KeysView :refresh-version="keyRefreshVersion" :recommended-group-ids="recommendedGroupIds" @changed="loadWorkspace" />
       <BaseDialog brand-theme :show="!!selectedTool && !createTool" :title="detailTitle || `${selectedTool?.label||''} 线路详情`" :description="detailDescription" width="full" panel-class="xq-route-dialog" :close-on-click-outside="true" @close="closeDetails">
-        <template #title><span class="route-dialog-title"><img v-if="selectedTool" class="provider-logo" :src="providerIcon(selectedTool.platform)" alt="" /><span>{{ detailTitle || `${selectedTool?.label || ''} 线路详情` }}</span></span></template>
-        <ToolMonitorDetails v-if="selectedTool" :key="selectedTool.id" :tool-id="selectedTool.id" :tool-name="selectedTool.label" :groups="groups" :resume-association="detailResume" @title="detailTitle = $event" @description="detailDescription = $event" @associate="associateDetailGroup" />
+        <template #title><span class="route-dialog-title"><PlatformIcon v-if="selectedTool?.id === 'claude'" platform="anthropic" class="provider-logo" /><img v-else-if="selectedTool" class="provider-logo" :src="providerIcon(selectedTool.platform)" alt="" /><span>{{ detailTitle || `${selectedTool?.label || ''} 线路详情` }}</span></span></template>
+        <ToolRouteDetails v-if="selectedTool && !createTool" :key="selectedTool.id" :tool-id="selectedTool.id" :tool-name="selectedTool.label" :groups="groups" :resume-association="detailResume" @title="detailTitle = $event" @description="detailDescription = $event" @associate="associateDetailGroup" />
       </BaseDialog>
       <CreateLineKeyDialog :show="!!createTool" :tool-name="createTool?.label||''" :tool-id="createTool?.id" :groups="createTool?.active||[]" :metrics="selectionMetrics" :metrics-generated-at="selectionGeneratedAt" :metrics-error="selectionError" :recommended-group-ids="recommendedGroupIds" :rates="rates" :initial-group-id="createGroupId" @close="closeCreate" @created="keyCreated" />
       <PricingDialog :tool="pricingTool" :lines="pricingTool?.groups || []" :rates="rates" @close="closePricing" />
@@ -46,7 +46,8 @@ import KeysView from './KeysView.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import CreateLineKeyDialog from '@/features/ai-tools/CreateLineKeyDialog.vue'
-import ToolMonitorDetails from '@/features/channel-monitor-v2/ToolMonitorDetails.vue'
+import ToolRouteDetails from '@/features/ai-tools/ToolRouteDetails.vue'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import PricingDialog from '@/features/ai-tools/PricingDialog.vue'
 import ToolCarousel from '@/features/ai-tools/ToolCarousel.vue'
 import userGroupsAPI from '@/api/groups'

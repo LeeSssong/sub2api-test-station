@@ -280,7 +280,9 @@ type ChannelMonitorV3IncidentPage struct {
 
 // ChannelMonitorV3Viewer is the server-derived scope of one request.
 type ChannelMonitorV3Viewer struct {
-	Admin bool
+	// ToolGroups additionally restricts tool details, including public components.
+	ToolGroups map[int64]bool
+	Admin      bool
 	// AllowedGroups are the groups the user may bind keys to.
 	AllowedGroups map[int64]bool
 	// GroupRates are the user's own multipliers, shown instead of the group's.
@@ -290,6 +292,9 @@ type ChannelMonitorV3Viewer struct {
 // canSee hides components of deleted or disabled groups from users; admins
 // still see them, flagged as unavailable on the settings page.
 func (v ChannelMonitorV3Viewer) canSee(c ChannelMonitorV3Component) bool {
+	if v.ToolGroups != nil && !v.ToolGroups[c.GroupID] {
+		return false
+	}
 	if v.Admin {
 		return true
 	}

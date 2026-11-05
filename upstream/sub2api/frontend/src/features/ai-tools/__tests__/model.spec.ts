@@ -113,3 +113,7 @@ it('uses resolved platform classification and never restores a stale monitor ove
  expect(toolIdsForGroup({...group(1),tool_ids:['codex'],tool_mapping_source:'platform'} as Group,metric({tool_ids:['claude']}))).toEqual(['codex'])
  expect(toolIdsForGroup({...group(1),platform:'composite',tool_ids:[],tool_mapping_source:'unclassified'} as Group,metric({tool_ids:['claude']}))).toEqual([])
 })
+
+it('uses Claude in the user tool catalogue without changing its mapping identity',async()=>{
+ const { tools }=await import('../model');expect(tools.find(t=>t.id==='claude')).toMatchObject({label:'Claude',platform:'anthropic'})
+})

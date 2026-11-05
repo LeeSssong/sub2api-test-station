@@ -14,7 +14,7 @@ vi.mock('@/features/ai-tools/api',()=>({getGroupModels:mocks.models}))
 const groups=[{id:1,name:'GPT-Pro',platform:'openai',rate_multiplier:1,status:'active'},{id:2,name:'未关联线路',platform:'openai',rate_multiplier:.5,status:'active'}]
 const metric=(id:number)=>({id,tool_ids:['codex'],success_rate:98,request_count:100,success_count:98,ttft_p50_ms:2160,latency_p50_ms:6500,sla_request_count:100,sla_success_count:98,source_updated_at:new Date().toISOString()})
 const deferred=<T,>()=>{let resolve!:(value:T)=>void;let reject!:(reason?:unknown)=>void;const promise=new Promise<T>((res,rej)=>{resolve=res;reject=rej});return {promise,resolve,reject}}
-const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{ToolMonitorDetails:{name:'ToolMonitorDetails',props:['toolId','toolName','groups'],template:'<section data-testid="shared-monitor"><button @click="$emit(\'title\', \'分组 · 模型表现\')">models</button></section>'},KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title','description'],template:'<div v-if="show" role="dialog"><h3><slot name="title">{{title}}</slot></h3><p v-if="description" class="modal-description">{{description}}</p><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId','recommendedGroupIds','groups'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
+const make=()=>mount(Dashboard,{global:{plugins:[createI18n({legacy:false,locale:'zh',messages:{}})],stubs:{ToolRouteDetails:{name:'ToolRouteDetails',props:['toolId','toolName','groups'],template:'<section data-testid="shared-monitor"><button @click="$emit(\'title\', \'分组 · 模型表现\')">models</button></section>'},KeysView:{template:'<section id="my-keys" data-testid="merged-key-manager" />'},AppLayout:{template:'<div><slot/></div>'},BaseDialog:{props:['show','title','description'],template:'<div v-if="show" role="dialog"><h3><slot name="title">{{title}}</slot></h3><p v-if="description" class="modal-description">{{description}}</p><slot/><slot name="footer"/></div>'},CreateLineKeyDialog:{name:'CreateLineKeyDialog',props:['show','initialGroupId','recommendedGroupIds','groups'],template:'<div v-if="show" data-testid="create-key">{{initialGroupId}}</div>'}}}})
 beforeEach(()=>{vi.clearAllMocks();clearDashboardWorkspaceSnapshot();mocks.models.mockResolvedValue([{group_id:1,supported_models:['gpt-5.4','gpt-5.2'],official_pricing:{'gpt-5.4':{input_price:2.5e-6,cache_read_price:.25e-6,output_price:15e-6}}},{group_id:2,supported_models:['gpt-5.4','custom-model']},{group_id:99,supported_models:['private-model']}]);mocks.groups.mockResolvedValue(groups);mocks.rates.mockResolvedValue({});mocks.keys.mockResolvedValue({items:[{id:1,group_id:1,status:'inactive',group:groups[0]}],total:1});mocks.snapshot.mockResolvedValue({generated_at:new Date().toISOString(),groups:groups.map(g=>metric(g.id))})})
 describe('原型AI工具交互',()=>{
  it.each(['groups','rates'] as const)('keeps the key manager mounted when tool workspace %s fails',async(failure)=>{
@@ -113,7 +113,7 @@ describe('原型AI工具交互',()=>{
   expect(status.attributes('aria-expanded')).toBe('false')
   await status.trigger('click');await flushPromises()
   expect(status.attributes('aria-expanded')).toBe('true')
-  expect(w.findComponent({name:'ToolMonitorDetails'}).props('groups')).toHaveLength(5)
+  expect(w.findComponent({name:'ToolRouteDetails'}).props('groups')).toHaveLength(5)
   w.unmount()
  })
 
@@ -199,7 +199,7 @@ describe('Gemini 第五工具',()=>{
   const gemini={id:5,name:'Gemini 示例',platform:'gemini',rate_multiplier:1,status:'active'}
   mocks.groups.mockResolvedValue([...groups,gemini,{...gemini,id:6,status:'inactive'}])
   const w=make();await flushPromises()
-  expect(w.findAll('.tool-title').map(c=>c.text())).toEqual(['Codex','Claude Code','Gemini','DeepSeek','Grok'])
+  expect(w.findAll('.tool-title').map(c=>c.text())).toEqual(['Codex','Claude','Gemini','DeepSeek','Grok'])
   const card=w.findAll('.tool-card').find(c=>c.text().includes('Gemini'))!
   await card.get('.card-bottom button').trigger('click');await flushPromises()
   const dialog=w.findComponent({name:'CreateLineKeyDialog'})
@@ -218,7 +218,7 @@ describe('Gemini 第五工具',()=>{
  it('hosts V2 route and model content inside the existing tool dialog without requiring keys',async()=>{
   mocks.keys.mockResolvedValue({items:[],total:0})
   const w=make();await flushPromises();await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  const monitor=w.findComponent({name:'ToolMonitorDetails'})
+  const monitor=w.findComponent({name:'ToolRouteDetails'})
   expect(monitor.props('toolId')).toBe('codex');expect(monitor.props('groups')).toEqual(groups)
   expect(w.findAll('[role="dialog"]')).toHaveLength(1)
   await w.get('[data-testid="shared-monitor"] button').trigger('click');await flushPromises()
@@ -229,7 +229,7 @@ describe('Gemini 第五工具',()=>{
  it('opens the existing key dialog with the chosen detail group and returns on cancellation',async()=>{
   const w=make();await flushPromises()
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
-  w.findComponent({name:'ToolMonitorDetails'}).vm.$emit('associate',2);await flushPromises()
+  w.findComponent({name:'ToolRouteDetails'}).vm.$emit('associate',2);await flushPromises()
   expect(w.get('[data-testid="create-key"]').text()).toBe('2')
   expect(w.findAll('[role="dialog"]')).toHaveLength(0)
   w.findComponent({name:'CreateLineKeyDialog'}).vm.$emit('close');await flushPromises()
@@ -243,7 +243,7 @@ describe('Gemini 第五工具',()=>{
   const w=make();await flushPromises()
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
   for(const id of [99,3]){
-   w.findComponent({name:'ToolMonitorDetails'}).vm.$emit('associate',id);await flushPromises()
+   w.findComponent({name:'ToolRouteDetails'}).vm.$emit('associate',id);await flushPromises()
    expect(w.find('[data-testid="create-key"]').exists()).toBe(false)
    expect(w.find('[role="dialog"]').exists()).toBe(true)
   }
@@ -255,8 +255,19 @@ describe('Gemini 第五工具',()=>{
 it('places tool helper events under the dialog title rather than inside its heading',async()=>{
  const w=make();await flushPromises()
  await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
- w.findComponent({name:'ToolMonitorDetails'}).vm.$emit('description','线路辅助说明');await flushPromises()
+ w.findComponent({name:'ToolRouteDetails'}).vm.$emit('description','线路辅助说明');await flushPromises()
  expect(w.get('[role="dialog"] .modal-description').text()).toBe('线路辅助说明')
  expect(w.get('[role="dialog"] h3').text()).toBe('Codex 线路详情')
+ w.unmount()
+})
+
+it('uses the native radial Claude mark in both tool and detail heading',async()=>{
+ const w=make();await flushPromises()
+ const claude=w.findAll('.tool-card').find(card=>card.find('.tool-title').text()==='Claude')!
+ expect(claude.find('.provider-logo').element.tagName.toLowerCase()).toBe('svg')
+ expect(claude.find('.provider-logo path').exists()).toBe(true)
+ await claude.get('button[aria-label="Claude 线路详情"]').trigger('click');await flushPromises()
+ expect(w.get('.route-dialog-title').text()).toBe('Claude 线路详情')
+ expect(w.get('.route-dialog-title .provider-logo').element.tagName.toLowerCase()).toBe('svg')
  w.unmount()
 })

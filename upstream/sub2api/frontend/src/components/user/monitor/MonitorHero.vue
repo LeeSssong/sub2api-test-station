@@ -62,7 +62,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import AutoRefreshButton from '@/components/common/AutoRefreshButton.vue'
 export type MonitorWindow = '7d' | '15d' | '30d'
-export type OverallStatus = 'operational' | 'degraded'
+export type OverallStatus = 'operational' | 'degraded' | 'unknown'
 
 const props = defineProps<{
   overallStatus: OverallStatus
@@ -92,10 +92,12 @@ const windowOptions = computed<{ value: MonitorWindow; label: string }[]>(() => 
   { value: '30d', label: t('channelStatus.windowTab.30d') },
 ])
 
-const overallLabel = computed(() => t(`channelStatus.overall.${props.overallStatus}`))
+const overallLabel = computed(() => props.overallStatus === 'unknown' ? t('common.unknown') : t(`channelStatus.overall.${props.overallStatus}`))
 
 const overallChipClass = computed(() => {
   switch (props.overallStatus) {
+    case 'unknown':
+      return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
     case 'operational':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
     case 'degraded':
@@ -106,6 +108,8 @@ const overallChipClass = computed(() => {
 
 const overallDotClass = computed(() => {
   switch (props.overallStatus) {
+    case 'unknown':
+      return 'bg-gray-400'
     case 'operational':
       return 'bg-emerald-500 animate-pulse'
     case 'degraded':

@@ -45,7 +45,8 @@ vi.mock('vue-i18n', async (importOriginal) => {
         'channelMonitorV2.title': '渠道监控',
         'channelMonitorV2.updatedTo': '更新至 {time}',
         'channelMonitorV2.timeRange': '时间范围',
-        'channelMonitorV2.ranges.1h': '1小时',
+        'channelMonitorV2.ranges.90m': '近90分钟',
+        'channelMonitorV2.ranges.30d': '近30天',
         'channelMonitorV2.ranges.24h': '24h',
         'channelMonitorV2.ranges.7d': '7d',
         'channelMonitorV2.summaryAria': '整体汇总',
@@ -197,15 +198,18 @@ describe('ChannelStatusV2View operations layout', () => {
     await flushPromises()
 
     expect(apiMocks.getSnapshot).toHaveBeenCalledWith(expect.objectContaining({ range: '24h' }), false, expect.any(AbortSignal))
-    expect(apiMocks.getMatrix).toHaveBeenCalledWith(expect.objectContaining({ range: '24h' }), 'platform_group', false, expect.any(AbortSignal))
-    expect(wrapper.find('[data-test="range-1h"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('1小时')
-    expect(wrapper.text()).not.toContain('channelMonitorV2.ranges.1h')
-    expect(wrapper.find('[data-test="range-90m"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="range-30d"]').exists()).toBe(false)
+    expect(apiMocks.getMatrix).toHaveBeenCalledWith(expect.objectContaining({ range: '24h' }), 'platform_group', false, expect.any(AbortSignal), { recentSamples: true })
+    expect(wrapper.find('[data-test="range-90m"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('近90分钟')
+    expect(wrapper.text()).not.toContain('channelMonitorV2.ranges.90m')
+    expect(wrapper.find('[data-test="range-1h"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="range-30d"]').exists()).toBe(true)
     expect(apiMocks.getModels).not.toHaveBeenCalled()
     expect(apiMocks.getErrors).not.toHaveBeenCalled()
     expect(apiMocks.getUsers).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="monitor-details-toggle"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="monitor-layout-toggle"]').trigger('click')
+    await flushPromises()
     expect(wrapper.get('[data-test="monitor-details-toggle"]').attributes('aria-expanded')).toBe('false')
 
     await wrapper.get('[data-test="monitor-details-toggle"]').trigger('click')
@@ -221,6 +225,8 @@ describe('ChannelStatusV2View operations layout', () => {
   it('uses neutral copy for no traffic and keeps scored critical state red', async () => {
     apiMocks.getSnapshot.mockResolvedValue(payload(0, null))
     const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="monitor-layout-toggle"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('已就绪·暂无流量')
     expect(wrapper.text()).not.toContain('100.0%')
@@ -242,9 +248,18 @@ describe('ChannelStatusV2View operations layout', () => {
     wrapper.unmount()
   })
 
+  it.each([['90m','90m'],['30d','30d'],['1h','90m']])('normalizes deep-linked %s to %s in real reads', async (input, expected) => {
+    routeQuery.query={range:input}
+    const wrapper=mountView();await flushPromises()
+    expect(apiMocks.getSnapshot).toHaveBeenCalledWith(expect.objectContaining({range:expected}),false,expect.any(AbortSignal))
+    wrapper.unmount()
+  })
+
   it('opens detailed analysis for a legacy tab deep link', async () => {
     routeQuery.query = { tab: 'errors' }
     const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="monitor-layout-toggle"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="monitor-details-toggle"]').attributes('aria-expanded')).toBe('true')
     expect(apiMocks.getErrors).toHaveBeenCalledTimes(1)

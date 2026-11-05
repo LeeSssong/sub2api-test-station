@@ -55,10 +55,22 @@ func (s *ChannelMonitorService) BatchMonitorStatusSummary(
 //	1 次批量 latest（含 ping_latency_ms）；
 //	1 次批量 7d availability；
 //	1 次批量 timeline（主模型最近 N 条）。
-func (s *ChannelMonitorService) ListUserView(ctx context.Context) ([]*UserMonitorView, error) {
+func (s *ChannelMonitorService) ListUserView(ctx context.Context, scopes ...map[int64]bool) ([]*UserMonitorView, error) {
+	if len(scopes) > 0 && scopes[0] != nil && len(scopes[0]) == 0 {
+		return []*UserMonitorView{}, nil
+	}
 	monitors, err := s.repo.ListEnabled(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list enabled monitors: %w", err)
+	}
+	if len(scopes) > 0 && scopes[0] != nil {
+		allowed := make([]*ChannelMonitor, 0, len(monitors))
+		for _, m := range monitors {
+			if m.GroupID != nil && scopes[0][*m.GroupID] {
+				allowed = append(allowed, m)
+			}
+		}
+		monitors = allowed
 	}
 	if len(monitors) == 0 {
 		return []*UserMonitorView{}, nil
@@ -129,12 +141,12 @@ func pickLatest(rows []*ChannelMonitorLatest, model string) *ChannelMonitorLates
 
 // GetUserDetail 用户只读视图：单个监控详情（每个模型 7d/15d/30d 可用率与平均延迟）。
 // 不暴露 api_key。
-func (s *ChannelMonitorService) GetUserDetail(ctx context.Context, id int64) (*UserMonitorDetail, error) {
+func (s *ChannelMonitorService) GetUserDetail(ctx context.Context, id int64, scopes ...map[int64]bool) (*UserMonitorDetail, error) {
 	m, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if !m.Enabled {
+	if !m.Enabled || (len(scopes) > 0 && scopes[0] != nil && (m.GroupID == nil || !scopes[0][*m.GroupID])) {
 		return nil, ErrChannelMonitorNotFound
 	}
 
@@ -210,6 +222,7 @@ func buildStatusSummary(
 		}
 		if a, ok := availByModel[primary]; ok {
 			summary.Availability7d = a.AvailabilityPct
+			summary.HasSamples7d = a.TotalChecks > 0
 		}
 	}
 	for _, model := range extras {
@@ -243,6 +256,7 @@ func buildUserViewFromSummary(
 		PrimaryStatus:    summary.PrimaryStatus,
 		PrimaryLatencyMs: summary.PrimaryLatencyMs,
 		Availability7d:   summary.Availability7d,
+		HasSamples7d:     summary.HasSamples7d,
 		ExtraModels:      summary.ExtraModels,
 		Timeline:         buildTimelinePoints(timelineEntries),
 	}
@@ -286,13 +300,16 @@ func mergeModelDetails(
 		}
 		if a, ok := availMap[monitorAvailability7Days][model]; ok {
 			d.Availability7d = a.AvailabilityPct
+			d.HasSamples7d = a.TotalChecks > 0
 			d.AvgLatency7dMs = a.AvgLatencyMs
 		}
 		if a, ok := availMap[monitorAvailability15Days][model]; ok {
 			d.Availability15d = a.AvailabilityPct
+			d.HasSamples15d = a.TotalChecks > 0
 		}
 		if a, ok := availMap[monitorAvailability30Days][model]; ok {
 			d.Availability30d = a.AvailabilityPct
+			d.HasSamples30d = a.TotalChecks > 0
 		}
 		out = append(out, d)
 	}

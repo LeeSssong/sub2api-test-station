@@ -1,9 +1,9 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -19,7 +19,7 @@ type ChannelMonitorV2Handler struct {
 }
 
 type channelMonitorV2GroupAuthorizer interface {
-	GetAvailableGroups(ctx context.Context, userID int64) ([]service.Group, error)
+	channelMonitorToolAccess
 }
 
 func NewChannelMonitorV2Handler(svc *service.ChannelMonitorV2Service, apiKeyService *service.APIKeyService) *ChannelMonitorV2Handler {
@@ -193,6 +193,23 @@ func (h *ChannelMonitorV2Handler) users(c *gin.Context, admin bool) {
 }
 
 func (h *ChannelMonitorV2Handler) scopeFilter(c *gin.Context, filter *service.ChannelMonitorV2Filter, admin bool) bool {
+	// Tool details are narrower than both the account and admin monitor pages.
+	// A non-nil empty tool scope must remain restricted; it never means all groups.
+	if c != nil {
+		scope, ok := channelMonitorToolScope(c, h.apiKeyService)
+		if !ok {
+			return false
+		}
+		if scope != nil {
+			filter.RestrictGroups = true
+			filter.AllowedGroupIDs = make([]int64, 0, len(scope))
+			for id := range scope {
+				filter.AllowedGroupIDs = append(filter.AllowedGroupIDs, id)
+			}
+			sort.Slice(filter.AllowedGroupIDs, func(i, j int) bool { return filter.AllowedGroupIDs[i] < filter.AllowedGroupIDs[j] })
+			return true
+		}
+	}
 	if admin {
 		return true
 	}

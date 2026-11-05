@@ -16,6 +16,7 @@ import (
 type ChannelMonitorUserHandler struct {
 	monitorService *service.ChannelMonitorService
 	settingService *service.SettingService
+	access         channelMonitorToolAccess
 }
 
 // NewChannelMonitorUserHandler 创建 handler。
@@ -23,9 +24,11 @@ type ChannelMonitorUserHandler struct {
 func NewChannelMonitorUserHandler(
 	monitorService *service.ChannelMonitorService,
 	settingService *service.SettingService,
+	apiKeyService *service.APIKeyService,
 ) *ChannelMonitorUserHandler {
 	return &ChannelMonitorUserHandler{
 		monitorService: monitorService,
+		access:         apiKeyService,
 		settingService: settingService,
 	}
 }
@@ -55,12 +58,14 @@ type channelMonitorUserListItem struct {
 	ID                   int64                                `json:"id"`
 	Name                 string                               `json:"name"`
 	Provider             string                               `json:"provider"`
+	GroupID              *int64                               `json:"group_id,omitempty"`
 	GroupName            string                               `json:"group_name"`
 	PrimaryModel         string                               `json:"primary_model"`
 	PrimaryStatus        string                               `json:"primary_status"`
 	PrimaryLatencyMs     *int                                 `json:"primary_latency_ms"`
 	PrimaryPingLatencyMs *int                                 `json:"primary_ping_latency_ms"`
 	Availability7d       float64                              `json:"availability_7d"`
+	HasSamples7d         *bool                                `json:"has_samples_7d,omitempty"`
 	ExtraModels          []dto.ChannelMonitorExtraModelStatus `json:"extra_models"`
 	Timeline             []channelMonitorUserTimelinePoint    `json:"timeline"`
 	// LatestQuota 主模型最近配额快照；channel_monitor_show_quota=false 时
@@ -81,6 +86,7 @@ type channelMonitorUserDetailResponse struct {
 	ID        int64                         `json:"id"`
 	Name      string                        `json:"name"`
 	Provider  string                        `json:"provider"`
+	GroupID   *int64                        `json:"group_id,omitempty"`
 	GroupName string                        `json:"group_name"`
 	Models    []channelMonitorUserModelStat `json:"models"`
 }
@@ -93,6 +99,9 @@ type channelMonitorUserModelStat struct {
 	Availability15d float64 `json:"availability_15d"`
 	Availability30d float64 `json:"availability_30d"`
 	AvgLatency7dMs  *int    `json:"avg_latency_7d_ms"`
+	HasSamples7d    *bool   `json:"has_samples_7d,omitempty"`
+	HasSamples15d   *bool   `json:"has_samples_15d,omitempty"`
+	HasSamples30d   *bool   `json:"has_samples_30d,omitempty"`
 }
 
 func userMonitorViewToItem(v *service.UserMonitorView, includeQuota bool) channelMonitorUserListItem {
@@ -118,11 +127,13 @@ func userMonitorViewToItem(v *service.UserMonitorView, includeQuota bool) channe
 		Name:                 v.Name,
 		Provider:             v.Provider,
 		GroupName:            v.GroupName,
+		GroupID:              v.GroupID,
 		PrimaryModel:         v.PrimaryModel,
 		PrimaryStatus:        v.PrimaryStatus,
 		PrimaryLatencyMs:     v.PrimaryLatencyMs,
 		PrimaryPingLatencyMs: v.PrimaryPingLatencyMs,
 		Availability7d:       v.Availability7d,
+		HasSamples7d:         &v.HasSamples7d,
 		ExtraModels:          extras,
 		Timeline:             timeline,
 	}
@@ -143,6 +154,9 @@ func userMonitorDetailToResponse(d *service.UserMonitorDetail) *channelMonitorUs
 			Availability15d: m.Availability15d,
 			Availability30d: m.Availability30d,
 			AvgLatency7dMs:  m.AvgLatency7dMs,
+			HasSamples7d:    &m.HasSamples7d,
+			HasSamples15d:   &m.HasSamples15d,
+			HasSamples30d:   &m.HasSamples30d,
 		})
 	}
 	return &channelMonitorUserDetailResponse{
@@ -150,6 +164,7 @@ func userMonitorDetailToResponse(d *service.UserMonitorDetail) *channelMonitorUs
 		Name:      d.Name,
 		Provider:  d.Provider,
 		GroupName: d.GroupName,
+		GroupID:   d.GroupID,
 		Models:    models,
 	}
 }
@@ -162,7 +177,11 @@ func (h *ChannelMonitorUserHandler) List(c *gin.Context) {
 		response.Success(c, gin.H{"items": []channelMonitorUserListItem{}})
 		return
 	}
-	views, err := h.monitorService.ListUserView(c.Request.Context())
+	scope, ok := channelMonitorToolScope(c, h.access)
+	if !ok {
+		return
+	}
+	views, err := h.monitorService.ListUserView(c.Request.Context(), scope)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -186,7 +205,11 @@ func (h *ChannelMonitorUserHandler) GetStatus(c *gin.Context) {
 	if !ok {
 		return
 	}
-	detail, err := h.monitorService.GetUserDetail(c.Request.Context(), id)
+	scope, ok := channelMonitorToolScope(c, h.access)
+	if !ok {
+		return
+	}
+	detail, err := h.monitorService.GetUserDetail(c.Request.Context(), id, scope)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

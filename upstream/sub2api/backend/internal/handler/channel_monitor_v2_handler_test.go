@@ -23,6 +23,10 @@ func (s *channelMonitorV2GroupAuthorizerStub) GetAvailableGroups(_ context.Conte
 	return s.groups, s.err
 }
 
+func (s *channelMonitorV2GroupAuthorizerStub) GetGroupToolMappings(context.Context, []int64) (map[int64]service.GroupToolMapping, error) {
+	return nil, s.err
+}
+
 func TestChannelMonitorV2QueryListSupportsRepeatedAndCommaValues(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
 	c.Request = httptest.NewRequest("GET", "/?platform=openai,grok&platform=anthropic", nil)

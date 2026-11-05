@@ -2,7 +2,7 @@
 export default {
   channelMonitorV2: {
     originalCandy: {"title": "原渠道检测设置", "hint": "既有糖果探测任务继续按原配置运行。此处管理原渠道检测；检测规则与历史分别保留。", "reload": "重新载入", "conflict": "配置已被其他操作更新。请重新载入后再修改，避免覆盖新设置。"},
-    tool: {"associateKey": "关联密钥", "associateGroupKey": "为 {group} 关联密钥", "supportedModelCount": "支持 {count} 个模型", "modelCountLoading": "模型数量加载中…", "modelCountUnavailable": "模型数量暂不可用", "viewAllModels": "查看全部模型表现", "back": "返回 {tool} 线路详情", "period": "统计范围", "group": "监控分组", "clear": "清除筛选", "modelHint": "所选分组与时间范围内有请求的全部具体模型，按总请求量排序。", "loadError": "统计读取失败，请重试。", "retry": "重试", "loadingModels": "正在读取模型表现…", "noModels": "所选时间内暂无模型请求样本。", "passiveHint": "基于真实请求的缓存率、可用率与首 Token 表现。", "loading": "正在读取线路统计…", "noGroups": "该工具暂无纳入监控的线路。", "noSamples": "线路已纳入监控，所选时间内暂无请求样本。", "hour": "近 1 小时", "day": "近 24 小时", "week": "近 7 天", "allGroups": "全部监控分组", "models": "模型表现", "model": "模型", "lines": "线路详情", "viewAll": "查看全部"},
+    tool: {"noProbeSamples": "尚无探测记录，可用率暂不可用。", "settingsError": "监控配置读取失败，请重试。", "disabled": "渠道监控已关闭。", "unsupportedMode": "当前监控模式暂不支持线路详情。", "activeHint": "主动探测的状态、延迟与历史可用率。", "componentHint": "组件状态与历史；展示范围跟随后台配置。", "associateKey": "关联密钥", "associateGroupKey": "为 {group} 关联密钥", "supportedModelCount": "支持 {count} 个模型", "modelCountLoading": "模型数量加载中…", "modelCountUnavailable": "模型数量暂不可用", "viewAllModels": "查看全部模型表现", "back": "返回 {tool} 线路详情", "period": "统计范围", "group": "监控分组", "clear": "清除筛选", "modelHint": "所选分组与时间范围内有请求的全部具体模型，按总请求量排序。", "loadError": "统计读取失败，请重试。", "retry": "重试", "loadingModels": "正在读取模型表现…", "noModels": "所选时间内暂无模型请求样本。", "passiveHint": "基于真实请求的缓存率、可用率与首 Token 表现。", "loading": "正在读取线路统计…", "noGroups": "该工具暂无纳入监控的线路。", "noSamples": "线路已纳入监控，所选时间内暂无请求样本。", "hour": "近 1 小时", "day": "近 24 小时", "week": "近 7 天", "allGroups": "全部监控分组", "models": "模型表现", "model": "模型", "lines": "线路详情", "viewAll": "查看全部"},
     hybrid: {
       title: '分组性能监控', updated: '更新于 {time}', successRate: '成功率', monitoring: '持续监控', loadError: '该时间范围加载失败，请重试', retry: '重试',
       ttftP95: '首字 P95', latencyP95: '总耗时 P95', cacheHitRate: '缓存命中率', requestCount: '综合成功 {success}/{total}', realRequestCount: '真实请求成功 {success}/{total}', probeFallbackCount: '{count} 个空桶使用主动探测兜底', sampleCount: '基于 {count} 次调用', multiplier: '当前：{value}x倍率', empty: '暂无可见分组',
@@ -95,7 +95,9 @@ export default {
     currentUser: '当前用户',
     readiness: { noTraffic: '已就绪·暂无流量', observing: '待观察' },
     details: { title: '详细分析', description: '模型、错误分类与用户排行', expand: '展开详细分析', collapse: '收起详细分析' },
-    ranges: { '1h': '1小时', '24h': '24小时', '7d': '7天' },
+    ranges: {
+      '90m': '近90分钟',
+      '30d': '近30天', '1h': '1小时', '24h': '近24小时', '7d': '近7天' },
     filters: {
       platform: '平台', allPlatforms: '全部', group: '分组', allGroups: '全部', model: '模型', allModels: '全部',
       empty: '暂无可选项', selectedCount: '{count} 项', labelValue: '{label}：{value}'

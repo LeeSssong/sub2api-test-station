@@ -34,9 +34,10 @@ import { getGroupModels } from '@/features/ai-tools/api'
 import Icon from '@/components/icons/Icon.vue'
 import MonitorStatusCards from './MonitorStatusCards.vue'
 import MonitorModelPerformance from './MonitorModelPerformance.vue'
+import { monitorPeriods } from './ranges'
 import { type MonitorCardTimelineMode, hasMonitorSamples } from './monitorCards'
 const props = defineProps<{ toolId: string; toolName: string; groups: Group[]; resumeAssociation?: { range: MonitorRange; groupId: number; platform: string; scrollTop: number } }>()
-const emit = defineEmits<{ title: [string]; description: [string]; associate: [number, { range: MonitorRange; groupId: number; platform: string; scrollTop: number }] }>()
+const emit = defineEmits<{ 'load-error': []; title: [string]; description: [string]; associate: [number, { range: MonitorRange; groupId: number; platform: string; scrollTop: number }] }>()
 const { t } = useI18n()
 const surface = ref<HTMLElement>()
 const range = ref<MonitorRange>(props.resumeAssociation?.range || '24h')
@@ -50,7 +51,7 @@ const now = ref(Date.now()), countdown = ref(300)
 let refreshSeconds = 300, timer: ReturnType<typeof setInterval> | undefined
 let lineRequest = 0, modelRequest = 0, lineController: AbortController | undefined, modelController: AbortController | undefined
 let savedScroll = 0, returnGroupId: number | undefined, returnPlatform: string | undefined, loadedRange: MonitorRange = '24h'
-const periods = [{ value: '1h' as const, label: 'channelMonitorV2.tool.hour' }, { value: '24h' as const, label: 'channelMonitorV2.tool.day' }, { value: '7d' as const, label: 'channelMonitorV2.tool.week' }]
+const periods = monitorPeriods
 // Use authorized native group metadata and the shared mapping. Keys are irrelevant.
 const toolGroups = computed(() => props.groups.filter(group => toolIdsForGroup(group).includes(props.toolId)))
 const associableGroupIds = computed(() => toolGroups.value.filter(group => group.status === 'active').map(group => group.id))
@@ -77,7 +78,7 @@ async function restoreAssociationEntry() {
   Array.from(entries || []).find(entry => entry.dataset.associateGroupId === String(resume.groupId) && entry.dataset.associatePlatform === resume.platform)?.focus({ preventScroll: true })
 }
 function filter(groupIds = toolGroups.value.map(group => group.id)): MonitorFilter {
-  return { range: range.value, platforms: [], groupIds, models: [] }
+  return { range: range.value, toolId: props.toolId, platforms: [], groupIds, models: [] }
 }
 function scrollContainer() { return surface.value?.closest<HTMLElement>('.modal-body') || surface.value }
 async function loadSupportedModelCounts(groupIds: number[], signal: AbortSignal, request: number) {
@@ -113,7 +114,7 @@ async function loadLines() {
     timelineMode.value = snapshot.config?.card_timeline_mode || 'samples'
     refreshSeconds = snapshot.config?.refresh_interval_seconds || 300
     countdown.value = refreshSeconds
-  } catch { if (!controller.signal.aborted && request === lineRequest) error.value = true }
+  } catch { if (!controller.signal.aborted && request === lineRequest) { error.value = true; emit('load-error') } }
   finally { if (request === lineRequest) { loading.value = false; if (!error.value && rows.value.length) await restoreAssociationEntry() } }
 }
 async function loadModels() {
@@ -125,7 +126,7 @@ async function loadModels() {
   try {
     const result = await getModels(filter([id]), false, controller.signal)
     if (!controller.signal.aborted && request === modelRequest && selectedGroup.value?.group_id === id) modelRows.value = result.items.filter(row => hasMonitorSamples(row.metrics))
-  } catch { if (!controller.signal.aborted && request === modelRequest) modelsError.value = true }
+  } catch { if (!controller.signal.aborted && request === modelRequest) { modelsError.value = true; emit('load-error') } }
   finally { if (request === modelRequest) modelsLoading.value = false }
 }
 function openModels(row: MonitorMatrixRow) {

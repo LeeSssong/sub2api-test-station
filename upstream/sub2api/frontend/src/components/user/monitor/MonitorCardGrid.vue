@@ -38,6 +38,7 @@
       <MonitorCard
         v-for="item in items"
         :key="item.id"
+        :data-monitor-id="item.id"
         :item="item"
         :window="window"
         :availability-value="resolveAvailability(item)"
@@ -60,6 +61,7 @@ const props = defineProps<{
   countdownSeconds: number
   loading: boolean
   detailCache: Record<number, UserMonitorDetail>
+  hideUnobserved?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -70,12 +72,14 @@ const { t } = useI18n()
 
 function resolveAvailability(item: UserMonitorView): number | null {
   if (props.window === '7d') {
+    if (props.hideUnobserved && item.has_samples_7d !== true) return null
     return item.availability_7d ?? null
   }
   const detail = props.detailCache[item.id]
   if (!detail) return null
   const primary = detail.models.find(m => m.model === item.primary_model)
   if (!primary) return null
+  if (props.hideUnobserved && primary[`has_samples_${props.window}`] !== true) return null
   return props.window === '15d' ? primary.availability_15d ?? null : primary.availability_30d ?? null
 }
 </script>

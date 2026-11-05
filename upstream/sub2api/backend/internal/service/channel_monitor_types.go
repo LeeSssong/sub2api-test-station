@@ -163,6 +163,7 @@ type UserMonitorView struct {
 	PrimaryLatencyMs     *int
 	PrimaryPingLatencyMs *int    // 主模型最近一次 ping 延迟
 	Availability7d       float64 // 0-100
+	HasSamples7d         bool    // derived from the 7-day aggregate, not latest status
 	ExtraModels          []ExtraModelStatus
 	Timeline             []UserMonitorTimelinePoint // 主模型最近 N 个历史点（按 checked_at DESC，最新在前）
 	// LatestQuota 主模型最近一次配额快照；channel_monitor_show_quota=false
@@ -204,6 +205,9 @@ type ModelDetail struct {
 	Availability7d  float64 // 0-100
 	Availability15d float64
 	Availability30d float64
+	HasSamples7d    bool // derived from each window's existing TotalChecks
+	HasSamples15d   bool
+	HasSamples30d   bool
 	AvgLatency7dMs  *int
 }
 
@@ -258,6 +262,7 @@ type MonitorStatusSummary struct {
 	PrimaryStatus    string // 空字符串表示无历史
 	PrimaryLatencyMs *int
 	Availability7d   float64 // 0-100，无历史时为 0
+	HasSamples7d     bool
 	ExtraModels      []ExtraModelStatus
 	LatestQuota      *domain.MonitorQuotaSnapshot // 主模型最近配额快照（配额模式）
 }

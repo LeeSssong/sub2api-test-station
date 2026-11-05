@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../client'
-import { getMatrix, repeatedArrayParamsSerializer } from '../channelMonitorV2'
+import { getSnapshot, getModels, getMatrix, repeatedArrayParamsSerializer } from '../channelMonitorV2'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -41,4 +41,13 @@ describe('channel monitor V2 query serialization', () => {
       params: expect.objectContaining({ range: '90m', group_by: 'platform_group', recent_samples: 1 }),
     }))
   })
+})
+
+it('sends the tool identity on snapshot, matrix and model reads',async()=>{
+ const get=vi.spyOn(apiClient,'get').mockResolvedValue({data:{}})
+ const filter={range:'30d' as const,platforms:[],groupIds:[7],models:[],toolId:'claude'}
+ await getSnapshot(filter);await getMatrix(filter,'platform_group');await getModels(filter)
+ expect(get.mock.calls.map(([url,config])=>[url,config?.params?.tool_id])).toEqual([
+  ['/channel-monitor-v2/snapshot','claude'],['/channel-monitor-v2/matrix','claude'],['/channel-monitor-v2/models','claude']
+ ])
 })

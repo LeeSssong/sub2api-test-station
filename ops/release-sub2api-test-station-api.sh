@@ -50,6 +50,22 @@ git diff --name-only "$scope_base" HEAD >/dev/null || fail 'cannot determine rel
 # The embedded brand icon handler only reads existing public settings.
 while IFS= read -r path; do
   case "$path" in
+    # ISSUE-FIX-004: reviewed native modes, tool scope and sample presence.
+    upstream/sub2api/backend/cmd/server/wire_gen.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_user_handler.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler_test.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler_test.go|\
+    upstream/sub2api/backend/internal/service/channel_monitor_aggregator.go|\
+    upstream/sub2api/backend/internal/service/channel_monitor_types.go|\
+    upstream/sub2api/backend/internal/service/channel_monitor_v3.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_sample_presence_test.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope_test.go|\
+    upstream/sub2api/backend/internal/handler/channel_monitor_v2_tool_scope_test.go|\
+    upstream/sub2api/backend/internal/service/channel_monitor_sample_presence_test.go)
+      [[ "$update_worker" == true ]] || fail 'native monitor mode changes require a worker update' ;;
     # ISSUE-FIX-004: exact saved timeline migration and its direct integration tests.
     upstream/sub2api/backend/migrations/288_channel_monitor_v2_card_timeline_mode.sql|\
     upstream/sub2api/backend/internal/handler/channel_monitor_v2_postgres_test.go|\
@@ -826,7 +842,10 @@ PY
   printf 'test_station_api_release stage=reused_build binary_source_commit=%s\n' "$binary_commit"
 else
   printf 'test_station_api_release stage=frontend_build\n'
-  (cd "$root/upstream/sub2api/frontend"; pnpm_config_verify_deps_before_run=false pnpm run build)
+  # Use installed tools without package-manager dependency reconciliation at release time.
+  (cd "$root/upstream/sub2api/frontend";
+    ./node_modules/.bin/vitest run src/i18n/__tests__/localeKeyCompleteness.spec.ts &&
+    ./node_modules/.bin/vue-tsc -b && ./node_modules/.bin/vite build)
   printf 'test_station_api_release stage=embedded_server_build\n'
   version=$(cat "$root/upstream/sub2api/backend/cmd/server/VERSION")
   build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)

@@ -25,12 +25,15 @@ export interface UserMonitorView {
   id: number
   name: string
   provider: Provider
+  group_id?: number | null
   group_name: string
   primary_model: string
   primary_status: MonitorStatus
   primary_latency_ms: number | null
   primary_ping_latency_ms: number | null
   availability_7d: number
+  /** Window sample presence supplied by the server; never inferred from latest status. */
+  has_samples_7d?: boolean
   extra_models: UserMonitorExtraModel[]
   timeline: MonitorTimelinePoint[]
   /**
@@ -49,8 +52,12 @@ export interface UserMonitorModelDetail {
   latest_status: MonitorStatus
   latest_latency_ms: number | null
   availability_7d: number
+  /** Window sample presence supplied by the server; never inferred from latest status. */
+  has_samples_7d?: boolean
   availability_15d: number
   availability_30d: number
+  has_samples_15d?: boolean
+  has_samples_30d?: boolean
   avg_latency_7d_ms: number | null
 }
 
@@ -58,6 +65,7 @@ export interface UserMonitorDetail {
   id: number
   name: string
   provider: Provider
+  group_id?: number | null
   group_name: string
   models: UserMonitorModelDetail[]
 }
@@ -65,9 +73,10 @@ export interface UserMonitorDetail {
 /**
  * List all monitor views available to the current user.
  */
-export async function list(options?: { signal?: AbortSignal }): Promise<UserMonitorListResponse> {
+export async function list(options?: { signal?: AbortSignal; toolId?: string }): Promise<UserMonitorListResponse> {
   const { data } = await apiClient.get<UserMonitorListResponse>('/channel-monitors', {
     signal: options?.signal,
+    params: options?.toolId ? { tool_id: options.toolId } : undefined,
   })
   return data
 }
@@ -75,8 +84,8 @@ export async function list(options?: { signal?: AbortSignal }): Promise<UserMoni
 /**
  * Get detailed status (multi-window availability + latency) for a single monitor.
  */
-export async function status(id: number): Promise<UserMonitorDetail> {
-  const { data } = await apiClient.get<UserMonitorDetail>(`/channel-monitors/${id}/status`)
+export async function status(id: number, options?: { signal?: AbortSignal; toolId?: string }): Promise<UserMonitorDetail> {
+  const { data } = await apiClient.get<UserMonitorDetail>(`/channel-monitors/${id}/status`, { signal: options?.signal, params: options?.toolId ? { tool_id: options.toolId } : undefined })
   return data
 }
 

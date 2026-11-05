@@ -501,6 +501,7 @@
 </template>
 
 <script setup lang="ts">
+import { monitorPeriods, parseMonitorRange } from '@/features/channel-monitor-v2/ranges'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -571,11 +572,7 @@ const showThroughput = computed(() => isAdmin.value || !isChannelMonitorThroughp
 /** Admins always see ranking; users honor the hide-user-ranking system setting. */
 const showUserRanking = computed(() => isAdmin.value || !isChannelMonitorUserRankingHidden())
 
-const ranges = computed(() => [
-  { value: '1h' as MonitorRange, label: t('channelMonitorV2.ranges.1h') },
-  { value: '24h' as MonitorRange, label: t('channelMonitorV2.ranges.24h') },
-  { value: '7d' as MonitorRange, label: t('channelMonitorV2.ranges.7d') },
-])
+const ranges = computed(() => monitorPeriods.map(period => ({ value: period.value, label: t(period.label) })))
 const tabs = computed(() => {
   const items: Array<{ value: Tab; label: string }> = [
     { value: 'models', label: t('channelMonitorV2.tabs.models') },
@@ -720,7 +717,7 @@ function csv(value: unknown) {
   return typeof value === 'string' ? value.split(',').filter(Boolean) : []
 }
 function parseRange(value: unknown): MonitorRange {
-  return ['1h', '24h', '7d'].includes(String(value)) ? (value as MonitorRange) : '24h'
+  return parseMonitorRange(value)
 }
 function parseMatrixGroupBy(value: unknown): MonitorMatrixGroupBy {
   const allowed: MonitorMatrixGroupBy[] = [

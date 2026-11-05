@@ -52,6 +52,28 @@ printf '%s' "$scope_base"
         self.assertEqual(result.stdout, 'ordinary-predecessor')
 
 
+class FrontendBuildTests(unittest.TestCase):
+    def test_installed_tools_run_locale_types_then_bundle_without_install(self):
+        shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()
+        build = shell.split("printf 'test_station_api_release stage=frontend_build\\n'", 1)[1].split(
+            "printf 'test_station_api_release stage=embedded_server_build", 1)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            binaries = root / 'upstream/sub2api/frontend/node_modules/.bin'
+            binaries.mkdir(parents=True)
+            for name in ('vitest', 'vue-tsc', 'vite'):
+                tool = binaries / name
+                tool.write_text('#!/bin/sh\n' + f'echo "{name} $*" >> "$BUILD_TRACE"\n')
+                tool.chmod(0o755)
+            trace = root / 'trace'
+            result = subprocess.run(['bash', '-eu', '-c', build], capture_output=True, text=True,
+                env=dict(os.environ, root=str(root), BUILD_TRACE=str(trace)))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(trace.read_text().splitlines(), [
+                'vitest run src/i18n/__tests__/localeKeyCompleteness.spec.ts',
+                'vue-tsc -b', 'vite build'])
+
+
 class ReleaseBundleTests(unittest.TestCase):
     def test_bundle_contains_resources_required_by_runtime_image(self):
         shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()
@@ -87,6 +109,20 @@ class ReleaseScopeTests(unittest.TestCase):
         script = 'fail(){ echo "$1" >&2; exit 1; }; git(){ if [[ "$*" == *--diff-filter=D* ]]; then printf "%s\\n" "$DELETED_MIGRATION"; else printf "%s\\n" "$CHANGED_PATHS"; fi; }; ' + gate
         return subprocess.run(['bash', '-c', script], capture_output=True, text=True,
             env=dict(os.environ, CHANGED_PATHS='\n'.join(paths), update_worker=str(update_worker).lower(), previous='old', root=str(ROOT), DELETED_MIGRATION='upstream/sub2api/backend/migrations/266_quality_traffic_snapshots.sql' if deleted_migration else ''))
+
+    def test_004_native_modes_scope_requires_worker_and_excludes_neighbors(self):
+        paths = ['upstream/sub2api/backend/cmd/server/wire_gen.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_user_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler_test.go', 'upstream/sub2api/backend/internal/service/channel_monitor_aggregator.go', 'upstream/sub2api/backend/internal/service/channel_monitor_types.go', 'upstream/sub2api/backend/internal/service/channel_monitor_v3.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_sample_presence_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_tool_scope_test.go', 'upstream/sub2api/backend/internal/service/channel_monitor_sample_presence_test.go']
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertNotEqual(self.check_scope([path]).returncode, 0)
+                result = self.check_scope([path], True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        for path in (
+            "upstream/sub2api/backend/internal/handler/channel_monitor_unreviewed.go",
+            "upstream/sub2api/backend/internal/service/channel_monitor_persistence.go",
+            "upstream/sub2api/backend/migrations/289_unreviewed.sql",
+        ):
+            self.assertNotEqual(self.check_scope([path], True).returncode, 0)
 
     def test_frontend_design_rules_allow_api_only_release_without_widening_runtime_scope(self):
         result = self.check_scope(['upstream/sub2api/frontend/DESIGN.md',

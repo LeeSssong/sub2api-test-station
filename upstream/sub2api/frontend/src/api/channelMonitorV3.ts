@@ -210,17 +210,17 @@ export interface MonitorV3Settings {
 const base = (admin: boolean) => (admin ? '/admin/channel-monitor-v3' : '/channel-monitor-v3')
 
 /** `end` (unix seconds) selects an older window by its last slot. */
-export async function getStatus(end: number | null, admin = false, signal?: AbortSignal) {
+export async function getStatus(end: number | null, admin = false, signal?: AbortSignal, toolId?: string) {
   const { data } = await apiClient.get<MonitorV3StatusPage>(`${base(admin)}/status`, {
-    params: end ? { end } : undefined,
+    params: { ...(end ? { end } : {}), ...(toolId ? { tool_id: toolId } : {}) },
     signal,
   })
   return data
 }
 
-export async function getIncidents(page: number, pageSize: number, admin = false, signal?: AbortSignal) {
+export async function getIncidents(page: number, pageSize: number, admin = false, signal?: AbortSignal, toolId?: string) {
   const { data } = await apiClient.get<MonitorV3IncidentPage>(`${base(admin)}/incidents`, {
-    params: { page, page_size: pageSize },
+    params: { page, page_size: pageSize, ...(toolId ? { tool_id: toolId } : {}) },
     signal,
   })
   return data

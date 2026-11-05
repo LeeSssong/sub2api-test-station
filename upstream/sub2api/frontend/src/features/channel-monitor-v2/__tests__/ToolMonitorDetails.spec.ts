@@ -20,7 +20,7 @@ const make = (toolId='codex', attached=false) => mount(ToolMonitorDetails,{attac
 beforeEach(()=>{vi.clearAllMocks();api.catalog.mockResolvedValue([{group_id:1,supported_models:['a','b','c']},{group_id:2,supported_models:[]}]);api.snapshot.mockResolvedValue({config:{enabled:true,refresh_interval_seconds:300,platforms:[],group_ids:[]}});api.matrix.mockImplementation(async ()=>({items:[row(1),row(2),row(3)],coverage:{}}));api.models.mockResolvedValue({items:[{platform:'openai',model:'unlisted-one',metrics:metric,health:{}},{platform:'openai',model:'unlisted-two',metrics:metric,health:{}}]})})
 it('keeps refresh and range requests in the full tool mapping without group filtering',async()=>{
  const w=make();await flushPromises()
- expect(api.matrix.mock.calls[0][0]).toMatchObject({groupIds:[1,2],platforms:[],models:[]})
+ expect(api.matrix.mock.calls[0][0]).toMatchObject({toolId:'codex',groupIds:[1,2],platforms:[],models:[]})
  expect(w.text()).not.toContain('Claude')
  expect(w.findAll('[data-testid="monitor-group-card"]')).toHaveLength(2)
  expect(w.find('[data-testid="tool-monitor-group"]').exists()).toBe(false)
@@ -36,7 +36,7 @@ it('shows full group model data in the same surface and returns with period and 
  await w.get('[data-range="7d"]').trigger('click');await flushPromises()
  const trigger=w.findAll('[data-testid="view-group-models"]')[1]
  await trigger.trigger('click');await flushPromises()
- expect(api.models.mock.calls.at(-1)?.[0]).toEqual({range:'7d',groupIds:[2],platforms:[],models:[]})
+ expect(api.models.mock.calls.at(-1)?.[0]).toEqual({range:'7d',toolId:'codex',groupIds:[2],platforms:[],models:[]})
  expect(w.text()).toContain('unlisted-one');expect(w.text()).toContain('unlisted-two')
  expect(w.find('[role="dialog"]').exists()).toBe(false)
  expect(w.text()).toContain('0.00%');expect(w.text().indexOf('unlisted-one')).toBeLessThan(w.text().indexOf('unlisted-two'))
@@ -246,4 +246,19 @@ it('passes the current helper text to the dialog header without repeating it in 
  await w.get('[data-testid="tool-monitor-back"]').trigger('click');await flushPromises()
  expect(w.emitted('description')?.at(-1)).toEqual([zh.channelMonitorV2.tool.passiveHint])
  w.unmount()
+})
+
+it('offers four shared V2 periods and retains 30d through models and association resume',async()=>{
+ const w=make();await flushPromises()
+ expect(w.findAll('[data-range]').map(b=>b.attributes('data-range'))).toEqual(['90m','24h','7d','30d'])
+ expect(w.get('[data-range="24h"]').attributes('aria-pressed')).toBe('true')
+ await w.get('[data-range="90m"]').trigger('click');await flushPromises()
+ expect(api.matrix.mock.calls.at(-1)?.[0].range).toBe('90m')
+ await w.get('[data-range="30d"]').trigger('click');await flushPromises()
+ await w.findAll('[data-testid="view-group-models"]')[0].trigger('click');await flushPromises()
+ expect(api.models.mock.calls.at(-1)?.[0].range).toBe('30d')
+ await w.get('[data-testid="tool-monitor-back"]').trigger('click');await flushPromises()
+ expect(w.get('[data-range="30d"]').attributes('aria-pressed')).toBe('true')
+ await w.setProps({resumeAssociation:{range:'30d',groupId:1,platform:'openai',scrollTop:0}});await flushPromises()
+ expect(api.matrix.mock.calls.at(-1)?.[0].range).toBe('30d');w.unmount()
 })

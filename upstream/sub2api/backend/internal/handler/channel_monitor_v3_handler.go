@@ -19,7 +19,7 @@ type ChannelMonitorV3Handler struct {
 }
 
 type channelMonitorV3GroupAccess interface {
-	GetAvailableGroups(ctx context.Context, userID int64) ([]service.Group, error)
+	channelMonitorToolAccess
 	GetUserGroupRates(ctx context.Context, userID int64) (map[int64]float64, error)
 }
 
@@ -35,7 +35,11 @@ func NewChannelMonitorV3Handler(svc *service.ChannelMonitorV3Service, apiKeyServ
 // every enabled component with diagnostics, users see public components and
 // those of groups they can use, priced at their own multiplier.
 func (h *ChannelMonitorV3Handler) viewer(c *gin.Context) (service.ChannelMonitorV3Viewer, bool) {
-	if channelMonitorV2IsAdmin(c) {
+	scope, scopedOK := channelMonitorToolScope(c, h.access)
+	if !scopedOK {
+		return service.ChannelMonitorV3Viewer{}, false
+	}
+	if channelMonitorV2IsAdmin(c) && scope == nil {
 		return service.ChannelMonitorV3Viewer{Admin: true}, true
 	}
 	subject, ok := middleware.GetAuthSubjectFromContext(c)
@@ -47,14 +51,21 @@ func (h *ChannelMonitorV3Handler) viewer(c *gin.Context) (service.ChannelMonitor
 		response.Error(c, http.StatusInternalServerError, "channel monitor group authorization unavailable")
 		return service.ChannelMonitorV3Viewer{}, false
 	}
-	groups, err := h.access.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	var groups []service.Group
+	var err error
+	if scope == nil {
+		groups, err = h.access.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return service.ChannelMonitorV3Viewer{}, false
 	}
-	viewer := service.ChannelMonitorV3Viewer{AllowedGroups: make(map[int64]bool, len(groups))}
+	viewer := service.ChannelMonitorV3Viewer{ToolGroups: scope, AllowedGroups: make(map[int64]bool, len(groups))}
 	for i := range groups {
 		viewer.AllowedGroups[groups[i].ID] = true
+	}
+	if scope != nil {
+		viewer.AllowedGroups = scope
 	}
 	if viewer.GroupRates, err = h.access.GetUserGroupRates(c.Request.Context(), subject.UserID); err != nil {
 		response.ErrorFrom(c, err)

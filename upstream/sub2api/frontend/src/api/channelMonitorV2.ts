@@ -1,6 +1,6 @@
 import { apiClient } from './client'
 
-export type MonitorRange = '1h' | '24h' | '7d'
+export type MonitorRange = '90m' | '24h' | '7d' | '30d'
 export type HealthState = 'unknown' | 'healthy' | 'warning' | 'critical'
 /** Fine-grained score band for multi-stop green→yellow→red gradients (score0..score10). */
 export type HealthScoreBand =
@@ -19,6 +19,7 @@ export type HealthScoreBand =
 export type MonitorMatrixGroupBy = 'platform' | 'platform_group' | 'platform_model' | 'platform_group_model'
 
 export interface MonitorFilter {
+  toolId?: string
   range: MonitorRange
   platforms: string[]
   groupIds: number[]
@@ -248,6 +249,7 @@ export interface MonitorUserRow {
 function params(filter: MonitorFilter) {
   return {
     range: filter.range,
+    ...(filter.toolId ? { tool_id: filter.toolId } : {}),
     platform: filter.platforms.length ? filter.platforms : undefined,
     group_id: filter.groupIds.length ? filter.groupIds : undefined,
     model: filter.models.length ? filter.models : undefined,

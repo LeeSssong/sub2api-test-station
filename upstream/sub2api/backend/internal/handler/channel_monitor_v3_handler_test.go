@@ -54,9 +54,10 @@ func (r *monitorV3HandlerRepo) RangeFacts(context.Context, []int64, time.Time, t
 func (r *monitorV3HandlerRepo) DataThrough(context.Context) (*time.Time, error) { return nil, nil }
 
 type monitorV3AccessStub struct {
-	groups []service.Group
-	rates  map[int64]float64
-	err    error
+	mappings map[int64]service.GroupToolMapping
+	groups   []service.Group
+	rates    map[int64]float64
+	err      error
 }
 
 func (s *monitorV3AccessStub) GetAvailableGroups(context.Context, int64) ([]service.Group, error) {
@@ -64,6 +65,10 @@ func (s *monitorV3AccessStub) GetAvailableGroups(context.Context, int64) ([]serv
 }
 func (s *monitorV3AccessStub) GetUserGroupRates(context.Context, int64) (map[int64]float64, error) {
 	return s.rates, nil
+}
+
+func (s *monitorV3AccessStub) GetGroupToolMappings(context.Context, []int64) (map[int64]service.GroupToolMapping, error) {
+	return s.mappings, s.err
 }
 
 type monitorModeSetterStub struct{ modes []string }

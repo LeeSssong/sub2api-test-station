@@ -103,6 +103,13 @@ class ReleaseBundleTests(unittest.TestCase):
 
 
 class ReleaseScopeTests(unittest.TestCase):
+    def test_update_ui_index_is_not_an_api_runtime_input_and_neighbors_stay_excluded(self):
+        result = self.check_scope(['infra/sub2api-update-ui/index.html'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for path in ['infra/sub2api-update-ui/unreviewed.js', 'infra/independent-test-station/compose.yaml']:
+            with self.subTest(path=path):
+                self.assertNotEqual(self.check_scope([path]).returncode, 0)
+
     def check_scope(self, paths, update_worker=False, deleted_migration=False, mapping_diff=""):
         shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()
         gate = shell[shell.index('while IFS= read -r path; do'):shell.index('binary_commit=$commit')]

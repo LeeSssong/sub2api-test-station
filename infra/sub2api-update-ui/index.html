@@ -1,3 +1,9 @@
 {{ httpInclude "/__sub2api-official-index" }}
+<!-- Keep embedded key management scrollable on application versions with the legacy standalone-key lock. -->
+<style id="xingqiao-ai-workspace-scroll-fix">
+.user-app-shell .user-workspace:has(> [data-testid="ai-tools-workspace"]) {
+  overflow-y: auto;
+}
+</style>
 <link rel="stylesheet" href="/xingqiao-update-ui.css?v=20260807-2">
 <script src="/xingqiao-update-ui.js?v=20260807-2" defer></script>

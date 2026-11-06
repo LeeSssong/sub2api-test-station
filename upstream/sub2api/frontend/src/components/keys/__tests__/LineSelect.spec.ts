@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import type { Group } from '@/types'
-import type { MonitorV4Group } from '@/features/monitor-v4/types'
+import type { LineSelectionMetric } from '@/features/monitor-v4/lineSelection'
 import LineSelect from '../LineSelect.vue'
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 
 const group = { id: 1, name: 'GPT Plus', platform: 'openai', status: 'active', rate_multiplier: 1.2 } as Group
-const metric = { sla_request_count:100,sla_success_count:97,success_rate: 97, ttft_p50_ms: 2160 } as MonitorV4Group
+const metric = { has_samples:true,health:'healthy',availability_health:'healthy',error_rate:.03, ttft_p50_ms: 2160 } as LineSelectionMetric
 const wrappers: Array<ReturnType<typeof mount>> = []
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); document.body.innerHTML = ''; vi.useRealTimers() })
 
@@ -21,7 +21,7 @@ describe('shared line selector', () => {
     vi.setSystemTime(new Date('2026-10-05T00:00:01Z'))
     await wrapper.setProps({ metrics: new Map([[1, metric]]), metricsGeneratedAt: new Date().toISOString() })
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
-    expect(document.querySelector('.line-status')?.textContent).toContain('正常运行')
+    expect(document.querySelector('.line-status')?.textContent).toContain('正常')
   })
   it('expires displayed health without requiring a prop update', async () => {
     vi.useFakeTimers()
@@ -29,7 +29,7 @@ describe('shared line selector', () => {
     const wrapper = mount(LineSelect, { attachTo: document.body, props: { modelValue: null, groups: [group], rates: {}, metrics: new Map([[1, metric]]), metricsGeneratedAt: new Date().toISOString(), linkedCounts: new Map() } })
     wrappers.push(wrapper)
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
-    expect(document.querySelector('.line-status')?.textContent).toContain('正常运行')
+    expect(document.querySelector('.line-status')?.textContent).toContain('正常')
     vi.advanceTimersByTime(8 * 60 * 1000)
     await nextTick()
     expect(document.querySelector('.line-status')?.textContent).toContain('统计已过期')
@@ -80,12 +80,12 @@ describe('shared line selector', () => {
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
     await nextTick()
     expect(document.body.textContent).toContain('0.8x倍率')
-    expect(document.body.textContent).toContain('正常运行')
+    expect(document.body.textContent).toContain('正常')
     expect(document.body.textContent).not.toContain('关联密钥')
-    expect(document.body.textContent).toContain('97%')
-    expect(document.body.textContent).toContain('2.16s')
+    expect(document.body.textContent).toContain('97.0%')
+    expect(document.body.textContent).toContain('2.2s')
     expect(document.querySelector('.xq-line-select-dropdown')).not.toBeNull()
-    expect(document.querySelector('.line-status')?.textContent).toContain('正常运行')
+    expect(document.querySelector('.line-status')?.textContent).toContain('正常')
     expect(document.querySelector('.line-rate')?.textContent).toContain('0.8x倍率')
     const option = document.querySelector('[role="option"]') as HTMLElement
     option.click()
@@ -116,7 +116,15 @@ it('renders full description and metric hover text including no samples', async 
  wrappers.push(wrapper)
  await wrapper.get('[aria-label="选择线路"]').trigger('click')
  expect(document.querySelector('.line-description')?.textContent).toBe('完整描述，不截断')
- expect(document.querySelector('[title="近24小时可用性"]')?.textContent).toContain('可用性 —')
- expect(document.querySelector('[title="近24小时首字响应中位数（P50）"]')?.textContent).toContain('首字 —')
+ expect(document.querySelector('[title="当前监控暂无此线路统计"]')?.textContent).toContain('可用性 —')
+ expect(document.querySelector('[title="当前监控暂无此线路首字统计"]')?.textContent).toContain('首字 —')
  expect(document.body.textContent).not.toContain('关联密钥')
+})
+
+it('renders the source range and missing-TTFT explanation in the real dropdown',async()=>{
+ const wrapper=mount(LineSelect,{attachTo:document.body,props:{modelValue:null,groups:[group],rates:{},metrics:new Map([[1,{source:'v1',has_samples:true,health:'healthy',status_label:'正常',availability_percent:99.5,availability_label:'可用性 · 近7天',availability_title:'近7天主动探测可用率',ttft_p50_ms:null,ttft_title:'当前监控未提供首字统计'} as LineSelectionMetric]])}})
+ wrappers.push(wrapper)
+ await wrapper.get('[aria-label="选择线路"]').trigger('click')
+ expect(document.querySelector('[role="listbox"]')?.textContent).toContain('可用性 · 近7天')
+ expect(document.querySelector('[title="当前监控未提供首字统计"]')?.textContent).toContain('首字')
 })

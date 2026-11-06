@@ -1243,7 +1243,7 @@
                 </span>
               </div>
               <p v-if="option.description" class="keys-line-popup-description">{{ option.description }}</p>
-              <div class="keys-line-popup-metrics"><span title="近24小时可用性">可用性 <span :data-tone="option.successTone">{{ option.successLabel }}</span></span> · <span title="近24小时首字响应中位数（P50）">首字 <span :class="option.ttftSeverity ? LATENCY_TEXT_CLASSES[option.ttftSeverity] : ''">{{ option.ttftLabel }}</span></span></div>
+              <div class="keys-line-popup-metrics"><span :title="option.availabilityTitle">{{ option.availabilityLabel }} <span :data-tone="option.successTone">{{ option.successLabel }}</span></span> · <span :title="option.ttftTitle">首字 <span :class="option.ttftSeverity ? LATENCY_TEXT_CLASSES[option.ttftSeverity] : ''">{{ option.ttftLabel }}</span></span></div>
               <small v-if="option.unavailableReason">不可选：{{ option.unavailableReason }}</small>
             </div>
           </button>
@@ -1263,6 +1263,7 @@
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
 	import { useClipboard } from '@/composables/useClipboard'
+import { useLineSelectionRefresh } from '@/features/monitor-v4/useLineSelectionRefresh'
 
 const { t } = useI18n()
 import { useRoute } from 'vue-router'
@@ -1849,7 +1850,7 @@ async function loadLineMetrics() {
   const controller = new AbortController()
   lineMetricsController = controller
   try {
-    const snapshot = await getLineSelectionMetrics(controller.signal)
+    const snapshot = await getLineSelectionMetrics(controller.signal, groups.value.map(group => group.id))
     if (disposed || controller.signal.aborted || lineMetricsController !== controller) return
     lineMetrics.value = new Map(snapshot.groups.map(group => [group.id, group]))
     lineMetricsGeneratedAt.value = snapshot.generated_at
@@ -1864,6 +1865,7 @@ async function loadLineMetrics() {
 }
 
 async function loadLineContext() { await loadLineMetrics() }
+useLineSelectionRefresh(() => showCreateModal.value || showEditModal.value || groupSelectorKeyId.value !== null, loadLineMetrics)
 
 watch([showCreateModal, showEditModal], ([create, edit]) => {
   if (create || edit) void loadLineContext()

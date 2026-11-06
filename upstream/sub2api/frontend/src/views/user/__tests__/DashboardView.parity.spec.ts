@@ -2,6 +2,7 @@ import { createI18n } from 'vue-i18n'
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Dashboard from '../DashboardView.vue'
+import { getLineSelectionMetrics } from '@/features/monitor-v4/lineSelection'
 import { clearDashboardWorkspaceSnapshot } from '@/features/ai-tools/workspaceCache'
 const mocks=vi.hoisted(()=>({timeline:vi.fn().mockResolvedValue([]),groups:vi.fn(),rates:vi.fn(),keys:vi.fn(),snapshot:vi.fn(),models:vi.fn(),push:vi.fn(),authUser:{id:7}}))
 vi.mock('vue-router',()=>({useRouter:()=>({push:mocks.push})}))
@@ -54,6 +55,7 @@ describe('原型AI工具交互',()=>{
   expect(w.get('.tool-card .card-bottom').element.firstElementChild?.className).toBe('tool-best')
   await w.get('.tool-card .card-bottom button').trigger('click');await flushPromises()
   expect(w.get('[data-testid="create-key"]').text()).toBe('2')
+  expect(getLineSelectionMetrics).toHaveBeenLastCalledWith(expect.any(AbortSignal), expect.arrayContaining([1, 2]), 'codex')
   w.findComponent({name:'CreateLineKeyDialog'}).vm.$emit('close');await flushPromises()
   w.unmount()
  })
@@ -231,6 +233,7 @@ describe('Gemini 第五工具',()=>{
   await w.get('button[aria-label="Codex 线路详情"]').trigger('click');await flushPromises()
   w.findComponent({name:'ToolRouteDetails'}).vm.$emit('associate',2);await flushPromises()
   expect(w.get('[data-testid="create-key"]').text()).toBe('2')
+  expect(getLineSelectionMetrics).toHaveBeenLastCalledWith(expect.any(AbortSignal), expect.arrayContaining([1, 2]), 'codex')
   expect(w.findAll('[role="dialog"]')).toHaveLength(0)
   w.findComponent({name:'CreateLineKeyDialog'}).vm.$emit('close');await flushPromises()
   expect(w.find('[data-testid="create-key"]').exists()).toBe(false)

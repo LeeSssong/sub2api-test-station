@@ -133,6 +133,7 @@ func TestChannelMonitorV3StatusScopesOrdinaryUsersServerSide(t *testing.T) {
 	require.Len(t, status.Categories, 1)
 	require.Len(t, status.Categories[0].Components, 1, "a group the user cannot use stays hidden")
 	mine := status.Categories[0].Components[0]
+	require.EqualValues(t, 4, mine.GroupID, "authorized group mapping reaches the user API")
 	require.InDelta(t, 0.15, *mine.Multiplier, 1e-9)
 	last := mine.Cells[len(mine.Cells)-1]
 	require.NotNil(t, last)

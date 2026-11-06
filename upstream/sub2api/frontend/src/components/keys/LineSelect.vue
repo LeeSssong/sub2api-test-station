@@ -35,8 +35,8 @@
         </div>
         <p v-if="line(option).description" class="line-description">{{ line(option).description }}</p>
         <div class="line-option-meta">
-          <span title="近24小时可用性">可用性 <span class="line-success-rate" :data-tone="line(option).successTone">{{ line(option).successLabel }}</span></span>
-          <span title="近24小时首字响应中位数（P50）">首字 <span :class="line(option).ttftSeverity ? LATENCY_TEXT_CLASSES[line(option).ttftSeverity!] : 'line-no-data'">{{ line(option).ttftLabel }}</span></span>
+          <span :title="line(option).availabilityTitle">{{ line(option).availabilityLabel }} <span class="line-success-rate" :data-tone="line(option).successTone">{{ line(option).successLabel }}</span></span>
+          <span :title="line(option).ttftTitle">首字 <span :class="line(option).ttftSeverity ? LATENCY_TEXT_CLASSES[line(option).ttftSeverity!] : 'line-no-data'">{{ line(option).ttftLabel }}</span></span>
         </div>
         <small v-if="line(option).unavailableReason" class="line-unavailable">不可选：{{ line(option).unavailableReason }}</small>
       </div>

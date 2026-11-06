@@ -351,8 +351,8 @@ export function isAuthenticated(): boolean {
  * Get public settings (no auth required)
  * @returns Public settings including registration and Turnstile config
  */
-export async function getPublicSettings(): Promise<PublicSettings> {
-  const { data } = await apiClient.get<PublicSettings>('/settings/public')
+export async function getPublicSettings(signal?: AbortSignal): Promise<PublicSettings> {
+  const { data } = await apiClient.get<PublicSettings>('/settings/public', { signal })
   return data
 }
 

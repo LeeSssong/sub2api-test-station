@@ -782,7 +782,8 @@ func (s *ChannelMonitorV3Service) componentStatus(cfg ChannelMonitorV3Config, co
 		}
 		item.Multiplier = &rate
 	}
-	if viewer.Admin {
+	// Public visibility alone does not grant access to the group mapping.
+	if viewer.Admin || viewer.AllowedGroups[component.GroupID] {
 		item.GroupID = component.GroupID
 	}
 	return item

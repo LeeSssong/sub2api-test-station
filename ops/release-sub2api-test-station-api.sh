@@ -50,16 +50,25 @@ git diff --name-only "$scope_base" HEAD >/dev/null || fail 'cannot determine rel
 # The embedded brand icon handler only reads existing public settings.
 while IFS= read -r path; do
   case "$path" in
+    # Authorized group IDs are a read-only response projection, not a worker change.
+    # Allow exactly this reviewed patch; every other V3 service change keeps the worker gate.
+    upstream/sub2api/backend/internal/service/channel_monitor_v3.go)
+      if [[ "$update_worker" != true ]]; then
+        mapping_diff=$(git diff --no-ext-diff --unified=0 "$scope_base" HEAD -- "$path" |
+          sed '/^diff --git /d; /^index /d; /^--- /d; /^+++ /d; /^@@ /d')
+        reviewed_mapping=$'-\tif viewer.Admin {\n+\t// Public visibility alone does not grant access to the group mapping.\n+\tif viewer.Admin || viewer.AllowedGroups[component.GroupID] {'
+        [[ "$mapping_diff" == "$reviewed_mapping" ]] || fail 'native monitor mode changes require a worker update'
+      fi ;;
+    upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler_test.go|\
+    upstream/sub2api/backend/internal/service/channel_monitor_v3_test.go) ;;
     # ISSUE-FIX-004: reviewed native modes, tool scope and sample presence.
     upstream/sub2api/backend/cmd/server/wire_gen.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_user_handler.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler_test.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler.go|\
-    upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler_test.go|\
     upstream/sub2api/backend/internal/service/channel_monitor_aggregator.go|\
     upstream/sub2api/backend/internal/service/channel_monitor_types.go|\
-    upstream/sub2api/backend/internal/service/channel_monitor_v3.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_sample_presence_test.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope.go|\
     upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope_test.go|\

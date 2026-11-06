@@ -3,12 +3,12 @@ import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CreateLineKeyDialog from '../CreateLineKeyDialog.vue'
 import type { Group } from '@/types'
-import type { MonitorV4Group } from '@/features/monitor-v4/types'
+import type { LineSelectionMetric } from '@/features/monitor-v4/lineSelection'
 const { create } = vi.hoisted(() => ({ create: vi.fn() }))
 vi.mock('@/api/keys', () => ({ keysAPI: { create } }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 const groups = [{id: 1, name: 'GPT Plus', platform: 'openai', status: 'active', rate_multiplier: 1}, {id: 2, name: 'GPT Budget', platform: 'openai', status: 'active', rate_multiplier: .2}] as Group[]
-function render(initialGroupId?: number, attached = false) { return mount(CreateLineKeyDialog, {attachTo: attached ? document.body : undefined, props: { show: true, toolName: 'Codex', groups, metrics: new Map([[1, {sla_request_count:100,sla_success_count:97,success_rate: 97, ttft_p50_ms: 2160} as MonitorV4Group]]), linkedCounts: new Map([[1, 2]]), rates: {}, initialGroupId }, global: {stubs: { BaseDialog: {template: '<div><slot/><slot name="footer"/></div>'}, Teleport: true }}}) }
+function render(initialGroupId?: number, attached = false) { return mount(CreateLineKeyDialog, {attachTo: attached ? document.body : undefined, props: { show: true, toolName: 'Codex', groups, metrics: new Map([[1, {has_samples:true,health:'healthy',availability_health:'healthy',error_rate:.03, ttft_p50_ms: 2160} as LineSelectionMetric]]), linkedCounts: new Map([[1, 2]]), rates: {}, initialGroupId }, global: {stubs: { BaseDialog: {template: '<div><slot/><slot name="footer"/></div>'}, Teleport: true }}}) }
 beforeEach(() => create.mockReset())
 describe('create line key', () => {
   it('applies one type and color hierarchy to all seven field labels and their controls', () => {
@@ -26,8 +26,8 @@ describe('create line key', () => {
     const wrapper = render()
     await wrapper.get('[aria-label="选择线路"]').trigger('click')
     expect(wrapper.text()).not.toContain('关联密钥')
-    expect(wrapper.text()).toContain('97%')
-    expect(wrapper.text()).toContain('2.16s')
+    expect(wrapper.text()).toContain('97.0%')
+    expect(wrapper.text()).toContain('2.2s')
     await wrapper.get('[aria-label="搜索Codex线路"]').setValue('Plus')
     expect(wrapper.findAll('[role="option"]')).toHaveLength(1)
     await wrapper.get('[role="option"]').trigger('click')

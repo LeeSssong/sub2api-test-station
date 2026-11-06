@@ -40,6 +40,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useLineSelectionRefresh } from '@/features/monitor-v4/useLineSelectionRefresh'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import KeysView from './KeysView.vue'
@@ -131,13 +132,14 @@ function closeDetails(){detailResume.value=undefined;selectedTool.value=null;nex
 const selectionMetrics=ref(new Map<number,LineSelectionMetric>())
 const selectionGeneratedAt=ref<string|null>(null), selectionError=ref(false)
 let selectionController:AbortController|undefined
-async function loadSelectionMetrics(){
+async function loadSelectionMetrics(tool:ToolCard){
  selectionController?.abort();const c=new AbortController();selectionController=c
  selectionMetrics.value=new Map();selectionGeneratedAt.value=null;selectionError.value=false
- try{const s=await getLineSelectionMetrics(c.signal);if(c.signal.aborted)return;selectionMetrics.value=new Map(s.groups.map(g=>[g.id,g]));selectionGeneratedAt.value=s.generated_at}
+ try{const s=await getLineSelectionMetrics(c.signal,tool.active.map(group=>group.id),tool.id);if(c.signal.aborted)return;selectionMetrics.value=new Map(s.groups.map(g=>[g.id,g]));selectionGeneratedAt.value=s.generated_at}
  catch{if(!c.signal.aborted)selectionError.value=true}
 }
-function openCreate(tool:ToolCard,id?:number){void loadSelectionMetrics();createTrigger=document.activeElement as HTMLElement;createTool.value=tool;createGroupId.value=id??tool.best?.id}
+function openCreate(tool:ToolCard,id?:number){void loadSelectionMetrics(tool);createTrigger=document.activeElement as HTMLElement;createTool.value=tool;createGroupId.value=id??tool.best?.id}
+useLineSelectionRefresh(()=>!!createTool.value,async()=>{if(createTool.value)await loadSelectionMetrics(createTool.value)})
 function associateDetailGroup(id:number,resume?:{range:MonitorRange;groupId:number;platform:string;scrollTop:number}){
   const tool=selectedTool.value
   if(!tool || !tool.active.some(group=>group.id===id))return

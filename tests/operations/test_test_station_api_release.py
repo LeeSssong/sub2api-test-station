@@ -103,15 +103,15 @@ class ReleaseBundleTests(unittest.TestCase):
 
 
 class ReleaseScopeTests(unittest.TestCase):
-    def check_scope(self, paths, update_worker=False, deleted_migration=False):
+    def check_scope(self, paths, update_worker=False, deleted_migration=False, mapping_diff=""):
         shell = (ROOT / 'ops/release-sub2api-test-station-api.sh').read_text()
         gate = shell[shell.index('while IFS= read -r path; do'):shell.index('binary_commit=$commit')]
-        script = 'fail(){ echo "$1" >&2; exit 1; }; git(){ if [[ "$*" == *--diff-filter=D* ]]; then printf "%s\\n" "$DELETED_MIGRATION"; else printf "%s\\n" "$CHANGED_PATHS"; fi; }; ' + gate
+        script = 'fail(){ echo "$1" >&2; exit 1; }; git(){ if [[ "$*" == *--unified=0* ]]; then printf "%s\\n" "$MAPPING_DIFF"; elif [[ "$*" == *--diff-filter=D* ]]; then printf "%s\\n" "$DELETED_MIGRATION"; else printf "%s\\n" "$CHANGED_PATHS"; fi; }; ' + gate
         return subprocess.run(['bash', '-c', script], capture_output=True, text=True,
-            env=dict(os.environ, CHANGED_PATHS='\n'.join(paths), update_worker=str(update_worker).lower(), previous='old', root=str(ROOT), DELETED_MIGRATION='upstream/sub2api/backend/migrations/266_quality_traffic_snapshots.sql' if deleted_migration else ''))
+            env=dict(os.environ, MAPPING_DIFF=mapping_diff, CHANGED_PATHS='\n'.join(paths), update_worker=str(update_worker).lower(), previous='old', root=str(ROOT), DELETED_MIGRATION='upstream/sub2api/backend/migrations/266_quality_traffic_snapshots.sql' if deleted_migration else ''))
 
     def test_004_native_modes_scope_requires_worker_and_excludes_neighbors(self):
-        paths = ['upstream/sub2api/backend/cmd/server/wire_gen.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_user_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler_test.go', 'upstream/sub2api/backend/internal/service/channel_monitor_aggregator.go', 'upstream/sub2api/backend/internal/service/channel_monitor_types.go', 'upstream/sub2api/backend/internal/service/channel_monitor_v3.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_sample_presence_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_tool_scope_test.go', 'upstream/sub2api/backend/internal/service/channel_monitor_sample_presence_test.go']
+        paths = ['upstream/sub2api/backend/cmd/server/wire_gen.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_user_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_handler_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler.go', 'upstream/sub2api/backend/internal/service/channel_monitor_aggregator.go', 'upstream/sub2api/backend/internal/service/channel_monitor_types.go', 'upstream/sub2api/backend/internal/service/channel_monitor_v3.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_sample_presence_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_tool_scope_test.go', 'upstream/sub2api/backend/internal/handler/channel_monitor_v2_tool_scope_test.go', 'upstream/sub2api/backend/internal/service/channel_monitor_sample_presence_test.go']
         for path in paths:
             with self.subTest(path=path):
                 self.assertNotEqual(self.check_scope([path]).returncode, 0)
@@ -123,6 +123,20 @@ class ReleaseScopeTests(unittest.TestCase):
             "upstream/sub2api/backend/migrations/289_unreviewed.sql",
         ):
             self.assertNotEqual(self.check_scope([path], True).returncode, 0)
+
+    def test_authorized_v3_mapping_only_allows_api_without_worker(self):
+        path = 'upstream/sub2api/backend/internal/service/channel_monitor_v3.go'
+        reviewed = ('-\tif viewer.Admin {\n'
+                    '+\t// Public visibility alone does not grant access to the group mapping.\n'
+                    '+\tif viewer.Admin || viewer.AllowedGroups[component.GroupID] {')
+        self.assertEqual(self.check_scope([path], mapping_diff=reviewed).returncode, 0)
+        for diff in ('', reviewed + '\n+unreviewedWorkerChange()',
+                     reviewed.replace('viewer.AllowedGroups[component.GroupID]', 'true')):
+            with self.subTest(diff=diff):
+                self.assertNotEqual(self.check_scope([path], mapping_diff=diff).returncode, 0)
+        tests = ['upstream/sub2api/backend/internal/handler/channel_monitor_v3_handler_test.go',
+                 'upstream/sub2api/backend/internal/service/channel_monitor_v3_test.go']
+        self.assertEqual(self.check_scope(tests).returncode, 0)
 
     def test_frontend_design_rules_allow_api_only_release_without_widening_runtime_scope(self):
         result = self.check_scope(['upstream/sub2api/frontend/DESIGN.md',

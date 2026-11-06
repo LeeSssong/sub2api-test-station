@@ -3,14 +3,14 @@ import { nextTick } from 'vue'
 import { beforeEach, expect, it, vi } from 'vitest'
 import MonitorSettingsPanel from '../MonitorSettingsPanel.vue'
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), groups: vi.fn(), error: vi.fn() }))
+const mocks = vi.hoisted(() => ({ get: vi.fn(), update: vi.fn(), groups: vi.fn(), activeGroups: vi.fn(), error: vi.fn() }))
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
-  return { ...actual, useI18n: () => ({ t: (key: string) => key, te: () => false }) }
+  return { ...actual, useI18n: () => ({ t: (key: string, params?: { count: number }) => params ? `${key}:${params.count}` : key, te: () => false }) }
 })
 vi.mock('@/utils/featureFlags', () => ({ isChannelMonitorV2Mode: () => true, getChannelMonitorMode: () => 'v2' }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: mocks.error, showSuccess: vi.fn(), cachedPublicSettings: null }) }))
-vi.mock('@/api/admin', () => ({ adminAPI: { groups: { getAllIncludingInactive: mocks.groups } } }))
+vi.mock('@/api/admin', () => ({ adminAPI: { groups: { getAllIncludingInactive: mocks.groups, getAll: mocks.activeGroups } } }))
 vi.mock('@/api/channelMonitorV2', () => ({ getConfig: mocks.get, updateConfig: mocks.update, MONITOR_ERROR_CATEGORIES: ['timeout'] }))
 
 const factory = ['anthropic', 'openai', 'grok', 'kiro', 'gemini', 'antigravity']
@@ -33,14 +33,61 @@ beforeEach(() => {
   mocks.get.mockReset()
   mocks.update.mockReset()
   mocks.groups.mockReset()
+  mocks.activeGroups.mockReset()
+  mocks.activeGroups.mockImplementation(() => mocks.groups())
   mocks.error.mockReset()
+})
+
+it('shows only active groups with their public/exclusive type and counts only visible selections', async () => {
+  const initial = { ...config(), group_ids: [7, 9] }
+  mocks.get.mockResolvedValue(initial)
+  mocks.groups.mockResolvedValue([
+    { id: 7, name: 'Public active', platform: 'openai', status: 'active', is_exclusive: false },
+    { id: 8, name: 'Exclusive active', platform: 'anthropic', status: 'active', is_exclusive: true },
+    { id: 9, name: 'Inactive selected', platform: 'openai', status: 'inactive', is_exclusive: true },
+  ])
+  mocks.update.mockImplementation(async payload => ({ ...payload, version: 4 }))
+  const w = mount(MonitorSettingsPanel, { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } })
+  try {
+    await flushPromises()
+    const groupSection = w.findAll('.card').find(card => card.text().includes('channelMonitorV2.settings.groupsTitle'))!
+    expect(groupSection.text()).not.toContain('Inactive selected')
+    expect(mocks.activeGroups).toHaveBeenCalledOnce()
+    const publicRow = groupSection.findAll('label').find(row => row.text().includes('Public active'))!
+    const exclusiveRow = groupSection.findAll('label').find(row => row.text().includes('Exclusive active'))!
+    expect(publicRow.text()).toContain('admin.groups.public')
+    expect(exclusiveRow.text()).toContain('admin.groups.exclusive')
+    expect(groupSection.text()).toContain('channelMonitorV2.settings.groupsSelected:1')
+    await exclusiveRow.get('input').setValue(true)
+    expect(groupSection.text()).toContain('channelMonitorV2.settings.groupsSelected:2')
+    await w.get('header button.btn-primary').trigger('click')
+    await flushPromises()
+    expect(mocks.update.mock.calls[0][0].group_ids).toEqual([7, 8, 9])
+    await groupSection.get('button').trigger('click')
+    expect(groupSection.text()).toContain('channelMonitorV2.settings.groupsAll')
+    expect(groupSection.findAll('input').every(input => !(input.element as HTMLInputElement).checked)).toBe(true)
+  } finally { w.unmount() }
+})
+
+it('shows an empty list when all groups are inactive without rewriting saved selections', async () => {
+  mocks.get.mockResolvedValue({ ...config(), group_ids: [9] })
+  mocks.groups.mockResolvedValue([{ id: 9, name: 'Disabled', platform: 'openai', status: 'inactive', is_exclusive: false }])
+  const w = mount(MonitorSettingsPanel, { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } })
+  try {
+    await flushPromises()
+    expect(w.text()).not.toContain('Disabled')
+    expect(w.text()).toContain('channelMonitorV2.settings.groupsEmpty')
+    expect(w.text()).toContain('channelMonitorV2.settings.groupsSelected:0')
+    expect(w.get('header button.btn-primary').attributes('disabled')).toBeDefined()
+    expect(mocks.update).not.toHaveBeenCalled()
+  } finally { w.unmount() }
 })
 
 it('adds supported and custom platforms, reorders them, and deletes only a disabled custom platform', async () => {
   mocks.get.mockResolvedValue(config())
   mocks.groups.mockResolvedValue([
-    { id: 9, name: 'DS', platform: 'deepseek' },
-    { id: 11, name: 'Legacy', platform: 'custom_gw' },
+    { id: 9, name: 'DS', platform: 'deepseek', status: 'active', is_exclusive: false },
+    { id: 11, name: 'Legacy', platform: 'custom_gw', status: 'active', is_exclusive: true },
   ])
   mocks.update.mockImplementation(async (payload) => ({ ...payload, version: 4 }))
   const wrapper = mount(MonitorSettingsPanel, { global: { stubs: { Toggle: true, Icon: true, RouterLink: true } } })

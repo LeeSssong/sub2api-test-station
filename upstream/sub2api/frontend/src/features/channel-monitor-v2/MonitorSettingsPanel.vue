@@ -168,7 +168,7 @@
             <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
               {{
                 draft.group_ids.length
-                  ? t('channelMonitorV2.settings.groupsSelected', { count: draft.group_ids.length })
+                  ? t('channelMonitorV2.settings.groupsSelected', { count: selectedGroupCount })
                   : t('channelMonitorV2.settings.groupsAll')
               }}
             </p>
@@ -195,7 +195,12 @@
                 :checked="draft.group_ids.includes(group.id)"
                 @change="toggleGroup(group.id)"
               />
-              <span class="min-w-0 flex-1 truncate font-medium text-gray-800 dark:text-gray-100">{{ group.name }}</span>
+              <span class="min-w-0 flex-1">
+                <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="min-w-0 truncate font-medium text-gray-800 dark:text-gray-100" :title="group.name">{{ group.name }}</span>
+                  <span :class="['badge shrink-0', group.is_exclusive ? 'badge-primary' : 'badge-gray']">{{ group.is_exclusive ? t('admin.groups.exclusive') : t('admin.groups.public') }}</span>
+                </span>
+              </span>
               <small class="shrink-0 text-xs text-gray-400">{{ platformLabel(group.platform) }} · #{{ group.id }}</small>
             </label>
           </div>
@@ -343,6 +348,7 @@ const conflicted = ref(false)
 const draft = ref<MonitorConfig | null>(null)
 const original = ref('')
 const groups = ref<AdminGroup[]>([])
+const selectedGroupCount = computed(() => groups.value.filter(group => draft.value?.group_ids.includes(group.id)).length)
 const selectedCandidate = ref('')
 const customPlatform = ref('')
 
@@ -513,10 +519,10 @@ async function load() {
   if (loading.value && draft.value) return
   loading.value = true
   try {
-    const [value, groupRows] = await Promise.all([getConfig(), adminAPI.groups.getAllIncludingInactive()])
+    const [value, groupRows] = await Promise.all([getConfig(), adminAPI.groups.getAll()])
     const normalized = normalizeConfig(value)
     draft.value = structuredClone(normalized)
-    groups.value = groupRows
+    groups.value = groupRows.filter(group => group.status === 'active')
     original.value = JSON.stringify(normalized)
     conflicted.value = false
   } catch (error) {

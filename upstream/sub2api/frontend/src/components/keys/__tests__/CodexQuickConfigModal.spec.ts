@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { saveAs } from 'file-saver'
 import CodexQuickConfigModal from '../CodexQuickConfigModal.vue'
 import zhDashboard from '@/i18n/locales/zh/dashboard'
+import enDashboard from '@/i18n/locales/en/dashboard'
 
 const fetchCodexModelsManifest = vi.hoisted(() => vi.fn())
 
@@ -21,6 +22,10 @@ vi.mock('vue-i18n', () => ({
       : key
   })
 }))
+
+beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+})
 
 function mountModal() {
   return mount(CodexQuickConfigModal, {
@@ -201,8 +206,7 @@ it('copies the Mac first-run command on an insecure HTTP site without Clipboard 
   } })
   fetchCodexModelsManifest.mockResolvedValue({content: '{"models":[]}', modelCount: 0})
   const wrapper = mountModal(); await flushPromises()
-  const runInstruction = wrapper.get('[data-testid="quick-config-run-instruction"]').text()
-  expect(runInstruction).toContain('macRun')
+  expect(wrapper.get('[data-testid="quick-config-mac-steps"]').findAll('li')).toHaveLength(3)
   const macInstructions = zhDashboard.keys.quickConfigureModal
   expect(macInstructions.macRun).toContain('没有执行权限')
   expect(macInstructions.macRun).toContain('终端')
@@ -215,4 +219,107 @@ it('copies the Mac first-run command on an insecure HTTP site without Clipboard 
   expect(wrapper.get('[data-testid="quick-config-copy-startup"]').text()).toContain('copied')
   wrapper.unmount()
   delete (document as Document & { execCommand?: unknown }).execCommand
+})
+
+
+describe('independent macOS tutorial', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Macintosh' })
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    fetchCodexModelsManifest.mockResolvedValue({ content: '{"models":[]}', modelCount: 0 })
+  })
+
+  it('offers the approved video and exact three steps, without the repeated Mac instructions/footer', async () => {
+    const wrapper = mountModal(); await flushPromises()
+    const video = wrapper.get('video')
+    expect(video.attributes('controls')).toBeDefined()
+    expect(video.attributes('autoplay')).toBeUndefined()
+    expect(video.attributes('src')).toMatch(/macos-top-caption-voice\.mp4/)
+    expect(wrapper.get('[data-testid="quick-config-mac-steps"]').findAll('li')).toHaveLength(3)
+    expect(wrapper.find('[data-testid="quick-config-run-instruction"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('quickConfigureModal.downloadHint')
+    expect(wrapper.text()).toContain('quickConfigureModal.runPrerequisite')
+    const zh = zhDashboard.keys.quickConfigureModal
+    expect([zh.macStep1, zh.macStep2, zh.macStep3]).toEqual([
+      '下载脚本后，复制首次启动命令',
+      '按 ⌘空格打开「终端」，粘贴命令并回车，再选择刚下载的脚本。',
+      '输入 1 连接星桥，看到「配置已保存」后重新打开 Codex'
+    ])
+    expect(zh.macFirstRun).toBe('若 macOS 提示无法验证开发者，请先在「系统设置 → 隐私与安全性」确认来源，再选择「仍要打开」。')
+    expect(enDashboard.keys.quickConfigureModal.macStep2).toContain('Terminal')
+    wrapper.unmount()
+  })
+
+  it('preserves the actual video, expanded preview, scroll and focus when copying repeatedly', async () => {
+    const wrapper = mount(CodexQuickConfigModal, { attachTo: document.body, props: { show: true, apiKey: 'sk-test', baseUrl: 'https://example.com' } })
+    await flushPromises()
+    const button = wrapper.get('[data-testid="quick-config-copy-startup"]').element as HTMLButtonElement
+    const body = wrapper.element as HTMLElement, video = wrapper.get('video').element as HTMLVideoElement
+    const details = wrapper.get('details').element as HTMLDetailsElement
+    details.open = true; body.scrollTop = 250; video.currentTime = 8; button.focus()
+    for (let i = 0; i < 2; i++) {
+      await wrapper.get('[data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
+      expect(wrapper.get('video').element).toBe(video)
+      expect(wrapper.get('[data-testid="quick-config-copy-startup"]').element).toBe(button)
+      expect(document.activeElement).toBe(button)
+      expect(body.scrollTop).toBe(250)
+      expect(video.currentTime).toBe(8)
+      expect(details.open).toBe(true)
+    }
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(expect.stringContaining('/usr/bin/osascript'))
+    expect(wrapper.emitted('close')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('restores the copy button focus after the real HTTP clipboard fallback', async () => {
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: false })
+    const exec = vi.fn(() => true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
+    const wrapper = mount(CodexQuickConfigModal, { attachTo: document.body, props: { show: true, apiKey: 'sk-test', baseUrl: 'https://example.com' } })
+    await flushPromises()
+    const button = wrapper.get('[data-testid="quick-config-copy-startup"]').element as HTMLButtonElement
+    button.focus(); const video = wrapper.get('video').element
+    await wrapper.get('[data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
+    expect(exec).toHaveBeenCalledWith('copy')
+    expect(document.activeElement).toBe(button)
+    expect(wrapper.get('video').element).toBe(video)
+    wrapper.unmount()
+    delete (document as Document & { execCommand?: unknown }).execCommand
+  })
+
+  it('pauses the old video on system switch, close and hidden props; other OS text remains', async () => {
+    const wrapper = mountModal(); await flushPromises()
+    const video = wrapper.get('video').element as HTMLVideoElement
+    const pause = vi.spyOn(video, 'pause')
+    await wrapper.get('[data-testid="quick-config-windows-tab"]').trigger('click')
+    expect(pause).toHaveBeenCalled()
+    expect(wrapper.find('video').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="quick-config-run-instruction"]').text()).toContain('windowsRun')
+    await wrapper.get('[data-testid="quick-config-linux-tab"]').trigger('click')
+    expect(wrapper.get('[data-testid="quick-config-run-instruction"]').text()).toContain('linuxRun')
+    await wrapper.get('[data-testid="quick-config-unix-tab"]').trigger('click')
+    const fresh = wrapper.get('video').element as HTMLVideoElement
+    const freshPause = vi.spyOn(fresh, 'pause')
+    await wrapper.get('[data-testid="quick-config-close"]').trigger('click')
+    expect(freshPause).toHaveBeenCalled()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    freshPause.mockClear(); await wrapper.setProps({ show: false })
+    expect(freshPause).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps steps and real copying/download available when both media and optional catalog fail', async () => {
+    fetchCodexModelsManifest.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountModal(); await flushPromises()
+    const steps = wrapper.get('[data-testid="quick-config-mac-steps"]').element
+    await wrapper.get('video').trigger('error')
+    expect(wrapper.get('[data-testid="quick-config-video-error"]').text()).toContain('videoUnavailable')
+    expect(wrapper.get('[data-testid="quick-config-mac-steps"]').element).toBe(steps)
+    await wrapper.get('[data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
+    expect(navigator.clipboard.writeText).toHaveBeenCalled()
+    await wrapper.get('[data-testid="quick-config-download"]').trigger('click')
+    expect(vi.mocked(saveAs).mock.calls.at(-1)?.[1]).toBe('xingqiao-codex-config.command')
+    wrapper.unmount()
+  })
 })

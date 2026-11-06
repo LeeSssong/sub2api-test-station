@@ -3,7 +3,8 @@
     :show="show"
     :title="t('keys.quickConfigureModal.title')"
     width="wide"
-    @close="emit('close')"
+    content-class="!max-w-[680px]"
+    @close="close"
   >
     <div class="space-y-4">
       <div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
@@ -13,9 +14,10 @@
         </p>
       </div>
 
-      <p class="text-sm text-gray-600 dark:text-gray-400">
-        {{ t('keys.quickConfigureModal.description') }}
-      </p>
+      <details class="text-sm text-gray-600 dark:text-gray-400">
+        <summary class="cursor-pointer">{{ t('keys.quickConfigureModal.aboutScript') }}</summary>
+        <p class="mt-2">{{ t('keys.quickConfigureModal.description') }}</p>
+      </details>
 
       <div class="grid grid-cols-3 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700" role="tablist">
         <button
@@ -103,22 +105,47 @@
         <p>{{ t(`keys.quickConfigureModal.${actionStatus}Message`) }}</p>
       </div>
 
-      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-dark-700 dark:bg-dark-800/50 dark:text-gray-300">
-        <p class="font-medium text-gray-900 dark:text-white">{{ t('keys.quickConfigureModal.runTitle') }}</p>
-        <p data-testid="quick-config-run-instruction" class="mt-1 text-sm">{{ runInstruction }}</p>
+      <section class="config-run border-t border-gray-200 pt-5 dark:border-dark-700">
+        <h4 class="mb-2 font-medium text-gray-900 dark:text-white">{{ t('keys.quickConfigureModal.runTitle') }}</h4>
+        <p class="mb-4 text-sm text-gray-900 dark:text-white">{{ t('keys.quickConfigureModal.runPrerequisite') }}</p>
         <template v-if="activePlatform === 'mac'">
-          <p class="mt-2">{{ t('keys.quickConfigureModal.macFirstRun') }}</p>
-          <button type="button" class="btn btn-secondary mt-2" data-testid="quick-config-copy-startup" @click="copyMacStartup">
+          <div class="mb-2 flex flex-wrap justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span>{{ t('keys.quickConfigureModal.macVideoTitle') }}</span>
+            <span>{{ t('keys.quickConfigureModal.videoDuration') }}</span>
+          </div>
+          <video
+            ref="tutorialVideo"
+            :src="macTutorialUrl"
+            controls
+            playsinline
+            preload="metadata"
+            tabindex="0"
+            :aria-label="t('keys.quickConfigureModal.macVideoTitle')"
+            class="config-tutorial-video"
+            @error="videoFailed = true"
+          />
+          <p v-if="videoFailed" role="status" data-testid="quick-config-video-error" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            {{ t('keys.quickConfigureModal.videoUnavailable') }}
+            <button type="button" class="btn btn-secondary mt-2" @click="retryVideo">{{ t('keys.quickConfigureModal.retryVideo') }}</button>
+          </p>
+          <ol data-testid="quick-config-mac-steps" class="config-run-steps">
+            <li>{{ t('keys.quickConfigureModal.macStep1') }}</li>
+            <li>{{ t('keys.quickConfigureModal.macStep2') }}</li>
+            <li>{{ t('keys.quickConfigureModal.macStep3') }}</li>
+          </ol>
+          <p class="mb-3 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t('keys.quickConfigureModal.macFirstRun') }}</p>
+          <button type="button" class="btn btn-secondary" data-testid="quick-config-copy-startup" @click="copyMacStartup">
             {{ t(startupCopied ? 'keys.quickConfigureModal.copied' : 'keys.quickConfigureModal.copyStartup') }}
           </button>
         </template>
+        <p v-else data-testid="quick-config-run-instruction" class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ runInstruction }}</p>
         <code v-if="activePlatform === 'unix'" class="mt-1 block break-all text-xs">{{ runCommand }}</code>
-      </div>
+      </section>
     </div>
 
     <template #footer>
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.quickConfigureModal.downloadHint') }}</p>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center" :class="activePlatform === 'mac' ? 'sm:justify-end' : 'sm:justify-between'">
+        <p v-if="activePlatform !== 'mac'" class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.quickConfigureModal.downloadHint') }}</p>
         <div class="flex shrink-0 justify-end gap-3">
           <button
             type="button"
@@ -130,7 +157,7 @@
             <Icon name="download" size="sm" />
             {{ t('keys.quickConfigureModal.download') }}
           </button>
-          <button type="button" class="btn btn-secondary" @click="emit('close')">
+          <button type="button" class="btn btn-secondary" data-testid="quick-config-close" @click="close">
             {{ t('common.close') }}
           </button>
         </div>
@@ -146,6 +173,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import macTutorialUrl from '@/assets/tutorials/macos-top-caption-voice.mp4'
 import { fetchCodexModelsManifest } from '@/api/codex'
 import { codexCatalogErrorDetails } from '@/utils/codexCatalogError'
 import {
@@ -180,6 +208,8 @@ const catalogModelCount = ref(0)
 const catalogError = ref<ReturnType<typeof codexCatalogErrorDetails> | null>(null)
 const errorCopied = ref(false)
 const startupCopied = ref(false)
+const tutorialVideo = ref<HTMLVideoElement | null>(null)
+const videoFailed = ref(false)
 let catalogController: AbortController | null = null
 let catalogRequestID = 0
 
@@ -227,7 +257,10 @@ const tabClass = (selected: boolean) => [
 
 watch(() => [props.show, props.apiKey, props.baseUrl, props.platform] as const, () => {
   copied.value = false
+  startupCopied.value = false
+  videoFailed.value = false
   actionStatus.value = null
+  if (!props.show) pauseTutorial()
   resetCatalog()
   if (props.show) {
     activePlatform.value = detectPlatform()
@@ -236,11 +269,28 @@ watch(() => [props.show, props.apiKey, props.baseUrl, props.platform] as const, 
 }, { immediate: true })
 
 watch(activePlatform, () => {
+  pauseTutorial()
   copied.value = false
+  startupCopied.value = false
+  videoFailed.value = false
   actionStatus.value = null
-})
+}, { flush: 'sync' })
 
-onBeforeUnmount(resetCatalog)
+onBeforeUnmount(() => { pauseTutorial(); resetCatalog() })
+
+function pauseTutorial() {
+  tutorialVideo.value?.pause()
+}
+
+function close() {
+  pauseTutorial()
+  emit('close')
+}
+
+function retryVideo() {
+  videoFailed.value = false
+  tutorialVideo.value?.load()
+}
 
 function resetCatalog() {
   catalogController?.abort()
@@ -290,8 +340,14 @@ async function copyCatalogError() {
 }
 
 async function copyMacStartup() {
+  const trigger = document.activeElement as HTMLElement | null
   try { if (!await copyToClipboard(macStartupCommand)) throw new Error('Copy failed'); startupCopied.value = true }
   catch { actionStatus.value = 'error' }
+  finally {
+    // The HTTP clipboard fallback removes its temporary focused textarea.
+    // Restore only that lost focus; do not steal focus from another control.
+    if (trigger?.isConnected && document.activeElement === document.body) trigger.focus({ preventScroll: true })
+  }
 }
 
 async function copyScript() {
@@ -318,3 +374,12 @@ function downloadScript() {
   }
 }
 </script>
+
+
+<style scoped>
+.config-tutorial-video { display: block; width: 100%; aspect-ratio: 1662 / 1470; object-fit: contain; max-height: 360px; background: #000; border-radius: 8px; }
+.config-run-steps { counter-reset: run-step; list-style: none; margin: 14px 0 10px; padding: 0; font-size: 13px; line-height: 1.8; }
+.config-run-steps li { counter-increment: run-step; position: relative; padding-left: 2em; margin: 6px 0; overflow-wrap: break-word; }
+.config-run-steps li::before { content: counter(run-step) "、"; position: absolute; left: 0; top: 0; }
+@media (max-width: 700px) { .config-tutorial-video { max-height: none; } }
+</style>

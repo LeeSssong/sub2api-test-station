@@ -159,6 +159,8 @@ while IFS= read -r path; do
     upstream/sub2api/backend/internal/service/monitor_v4_line_metrics_test.go) ;;
     # The separate update UI HTML is not copied into the embedded API build or bundle.
     infra/sub2api-update-ui/index.html) ;;
+    # Notice route compatibility shares existing API handlers; the test has no worker input.
+    upstream/sub2api/backend/internal/server/routes/announcement_compat_routes_test.go) ;;
     upstream/sub2api/frontend/src/*|upstream/sub2api/frontend/DESIGN.md|docs/*|ops/*|tests/*|artifacts/*) ;;
     upstream/sub2api/backend/internal/service/payment_config_limits.go|\
     upstream/sub2api/backend/internal/service/payment_config_limits_test.go|\

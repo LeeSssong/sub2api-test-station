@@ -235,6 +235,13 @@ class ReleaseScopeTests(unittest.TestCase):
         result = self.check_scope(['upstream/sub2api/backend/' + path for path in paths])
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_notice_route_compatibility_test_allows_api_only_release(self):
+        path = 'upstream/sub2api/backend/internal/server/routes/announcement_compat_routes_test.go'
+        result = self.check_scope([path])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(self.check_scope([
+            'upstream/sub2api/backend/internal/server/routes/unreviewed.go']).returncode, 0)
+
     def test_line_check_rate_limit_allows_only_reviewed_api_files(self):
         paths = ['internal/middleware/line_check_rate_limiter.go',
                  'internal/server/middleware/line_check_rate_limit.go',

@@ -124,9 +124,10 @@ func RegisterUserRoutes(
 			usage.POST("/dashboard/api-keys-usage", h.Usage.DashboardAPIKeysUsage)
 		}
 
-		// 公告（用户可见）
-		announcements := authenticated.Group("/announcements")
-		{
+		// 公告（用户可见）。兼容部分网络链路过滤 announcements 路径的情况，
+		// 两个入口共用鉴权、限流和处理逻辑，保留旧客户端兼容性。
+		for _, path := range []string{"/announcements", "/notices"} {
+			announcements := authenticated.Group(path)
 			announcements.GET("", h.Announcement.List)
 			announcements.POST("/:id/read", h.Announcement.MarkRead)
 		}

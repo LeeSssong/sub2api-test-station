@@ -6,14 +6,14 @@ import { apiClient } from './client'
 import type { UserAnnouncement } from '@/types'
 
 export async function list(unreadOnly: boolean = false): Promise<UserAnnouncement[]> {
-  const { data } = await apiClient.get<UserAnnouncement[]>('/announcements', {
+  const { data } = await apiClient.get<UserAnnouncement[]>('/notices', {
     params: unreadOnly ? { unread_only: 1 } : {}
   })
   return data
 }
 
 export async function markRead(id: number): Promise<{ message: string }> {
-  const { data } = await apiClient.post<{ message: string }>(`/announcements/${id}/read`)
+  const { data } = await apiClient.post<{ message: string }>(`/notices/${id}/read`)
   return data
 }
 

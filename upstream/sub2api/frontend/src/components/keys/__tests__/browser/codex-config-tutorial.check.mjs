@@ -20,7 +20,7 @@ try {
     await page.goto(`${origin}/src/components/keys/__tests__/browser/codex-config-tutorial.html`)
     await page.locator('[data-testid="quick-config-catalog-ready"]').waitFor()
     await page.waitForFunction(() => document.querySelector('video')?.readyState >= 3)
-    assert.deepEqual(await page.locator('[data-testid="quick-config-mac-steps"] li').allTextContents(), steps)
+    assert.deepEqual(await page.locator('[data-testid="quick-config-steps"] li').allTextContents(), steps)
     assert.equal(await page.locator('[data-testid="quick-config-run-instruction"]').count(), 0)
     assert.equal(await page.locator('[data-guide], .driver-popover, .config-confirmation').count(), 0)
     const video = page.locator('video'), button = page.locator('[data-testid="quick-config-copy-startup"]')
@@ -56,24 +56,86 @@ try {
     await page.waitForFunction(() => document.fullscreenElement?.tagName === 'VIDEO'); await page.evaluate(() => document.exitFullscreen())
     const downloadEvent = page.waitForEvent('download'); await page.locator('[data-testid="quick-config-download"]').click(); const download = await downloadEvent
     assert.equal(download.suggestedFilename(), 'xingqiao-codex-config.command'); const content = fs.readFileSync(await download.path(), 'utf8'); assert.ok(content.includes('CATALOG_PAYLOAD=') && content.includes('sk-preview-invalid-not-a-key') === false) // key lives in the generated base64 payload
+    const mediaSize = await video.evaluate(v => ({ width: v.getBoundingClientRect().width, height: v.getBoundingClientRect().height }))
+    const osLayouts = []
+    async function verifyOtherPlatform(platform, filename) {
+      assert.equal(await page.locator('video').count(), 0)
+      const placeholder = page.locator('[data-testid="quick-config-video-placeholder"]')
+      assert.equal(await placeholder.innerText(), '')
+      assert.ok((await placeholder.getAttribute('aria-label')).includes(platform === 'windows' ? 'Windows' : 'Linux'))
+      const size = await placeholder.evaluate(v => ({ width: v.getBoundingClientRect().width, height: v.getBoundingClientRect().height }))
+      assert.ok(Math.abs(size.width - mediaSize.width) <= 1 && Math.abs(size.height - mediaSize.height) <= 1)
+      assert.equal(await page.locator('[data-testid="quick-config-steps"] li').count(), 3)
+      assert.equal(await page.locator('[data-testid="quick-config-run-instruction"]').count(), 0)
+      assert.equal(await page.locator('.config-run > [data-testid="quick-config-copy-startup"]').count(), 1)
+      assert.equal(await page.locator('.modal-footer [data-testid="quick-config-copy-startup"]').count(), 0)
+      await page.locator('[data-testid="quick-config-copy-startup"]').click()
+      const command = await page.evaluate(() => navigator.clipboard.readText())
+      if (platform === 'linux') {
+        assert.equal(command, 'bash sub2api-codex-config.sh')
+      } else {
+        assert.ok(command.includes('System.Windows.Forms.OpenFileDialog') && command.includes('DialogResult]::OK') && command.includes('& $xq_script.FileName'))
+        assert.ok((await page.locator('[data-testid="quick-config-steps"]').innerText()).includes('Windows PowerShell'))
+      }
+      await page.locator('[data-testid="quick-config-steps"]').scrollIntoViewIfNeeded()
+      const overflow = await page.locator('.modal-body').evaluate(e => ({ body: e.scrollWidth > e.clientWidth + 1, viewport: document.documentElement.scrollWidth > innerWidth }))
+      assert.ok(!overflow.body && !overflow.viewport)
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: path.join(out, name + '-' + platform + '.png') })
+      const downloadEvent = page.waitForEvent('download')
+      await page.locator('[data-testid="quick-config-download"]').click()
+      const download = await downloadEvent
+      assert.equal(download.suggestedFilename(), filename)
+      const content = fs.readFileSync(await download.path(), 'utf8')
+      assert.ok(platform === 'windows' ? content.startsWith('@echo off\r\n') : content.includes('PAYLOAD='))
+      osLayouts.push({ platform, mediaSize: size, threeSteps: true, overflow, realDownload: filename, startupCopy: true, realClipboardVerified: true })
+    }
     await video.evaluate(v => v.play()); const old = await video.elementHandle(); await page.locator('[data-testid="quick-config-windows-tab"]').click(); assert.equal(await old.evaluate(v => v.paused), true)
-    assert.equal(await page.locator('video').count(), 0); assert.ok((await page.locator('[data-testid="quick-config-run-instruction"]').innerText()).includes('.cmd'))
-    await page.locator('[data-testid="quick-config-linux-tab"]').click(); assert.ok((await page.locator('[data-testid="quick-config-run-instruction"]').innerText()).includes('目录'))
+    await verifyOtherPlatform('windows', 'sub2api-codex-config.cmd')
+    await page.locator('[data-testid="quick-config-linux-tab"]').click()
+    await verifyOtherPlatform('linux', 'sub2api-codex-config.sh')
     await page.locator('[data-testid="quick-config-unix-tab"]').click(); await page.waitForFunction(() => document.querySelector('video')?.readyState >= 3); const closing = await page.locator('video').elementHandle(); await closing.evaluate(v => { v.muted = true; return v.play() }); await page.locator('[data-testid="quick-config-close"]').click(); assert.equal(await closing.evaluate(v => v.paused), true); await page.locator('#preview-reopen').click(); await page.locator('video').waitFor()
     assert.equal(await page.locator('[data-testid="quick-config-copy-startup"]').innerText(), '复制首次启动命令')
     // Actual failed media request, with a failed optional catalog: written steps and native copy/download stay available.
     await page.route('**/macos-top-caption-voice.mp4*', r => r.request().resourceType() === 'media' ? r.abort() : r.continue())
     await page.goto(`${origin}/src/components/keys/__tests__/browser/codex-config-tutorial.html?catalog=error`)
     await page.locator('[data-testid="quick-config-video-error"]').waitFor(); await page.locator('[data-testid="quick-config-catalog-error"]').waitFor()
-    assert.deepEqual(await page.locator('[data-testid="quick-config-mac-steps"] li').allTextContents(), steps)
+    assert.deepEqual(await page.locator('[data-testid="quick-config-steps"] li').allTextContents(), steps)
     await page.locator('[data-testid="quick-config-copy-startup"]').click(); await page.waitForFunction(() => document.querySelector('[data-testid="quick-config-copy-startup"]').textContent.includes('已复制'))
     assert.equal(await page.locator('[data-testid="quick-config-download"]').isEnabled(), true)
     await page.unroute('**/macos-top-caption-voice.mp4*'); await page.getByRole('button', { name: '重试加载' }).click(); await page.waitForFunction(() => document.querySelector('video')?.readyState >= 3)
     assert.equal(await page.locator('[data-testid="quick-config-video-error"]').count(), 0)
+    // Compare the three systems with their original inline startup-button placement.
+    await page.goto(origin + '/src/components/keys/__tests__/browser/codex-config-tutorial.html')
+    await page.locator('[data-testid="quick-config-catalog-ready"]').waitFor()
+    const systems = [['mac', 'unix'], ['windows', 'windows'], ['linux', 'linux']]
+    const startupPositions = []
+    for (const [platform, tab] of systems) {
+      await page.locator('[data-testid="quick-config-' + tab + '-tab"]').click()
+      if (platform === 'mac') {
+        await page.waitForFunction(() => document.querySelector('video')?.readyState >= 3)
+        await page.locator('video').evaluate(async v => {
+          v.currentTime = 8
+          await new Promise(r => v.addEventListener('seeked', r, { once: true }))
+        })
+      }
+      // Scroll the tutorial to its end so its original inline button is fully shown.
+      await page.locator('.modal-body').evaluate(e => { e.scrollTop = e.scrollHeight })
+      const position = await page.locator('[data-testid="quick-config-copy-startup"]').evaluate(e => {
+        const r = e.getBoundingClientRect(), section = e.closest('.config-run'), sr = section.getBoundingClientRect(), footer = document.querySelector('.modal-footer').getBoundingClientRect(), steps = section.querySelector('ol').getBoundingClientRect()
+        return { inTutorial: section.lastElementChild === e, outsideFooter: !e.closest('.modal-footer'), leftAligned: Math.abs(r.left - sr.left) <= 1, belowSteps: r.top >= steps.bottom, aboveFooter: r.bottom <= footer.top, fullyVisible: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('button') === e }
+      })
+      assert.ok(Object.values(position).every(Boolean), name + '/' + platform + ': startup button must stay below tutorial at its original left position')
+      assert.equal(await page.locator('.modal-footer [data-testid="quick-config-copy-startup"]').count(), 0)
+      startupPositions.push({ platform, ...position })
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: path.join(out, name + (platform === 'mac' ? '' : '-' + platform) + '.png') })
+    }
+    osLayouts.push({ startupPositions })
     assert.equal(external.length, 0)
-    checks.push({ name, viewport: { width, height }, mediaSha256, continuity, overflow, fullscreen: 'VIDEO', realDownload: true, switchAndClosePause: true, mediaAndCatalogFailureRecovery: true, external })
+    checks.push({ name, viewport: { width, height }, mediaSha256, continuity, overflow, osLayouts, fullscreen: 'VIDEO', realDownload: true, switchAndClosePause: true, mediaAndCatalogFailureRecovery: true, external })
     await context.close()
   }
-  const page = await browser.newPage(); await page.goto(`${origin}/src/components/keys/__tests__/browser/codex-config-tutorial.html?locale=en`); await page.locator('video').waitFor(); assert.equal(await page.locator('[data-testid="quick-config-mac-steps"] li').count(), 3); assert.ok((await page.locator('[data-testid="quick-config-mac-steps"]').innerText()).includes('Terminal')); assert.ok((await page.locator('body').innerText()).includes('Chinese audio')); await page.close()
+  const page = await browser.newPage(); await page.goto(`${origin}/src/components/keys/__tests__/browser/codex-config-tutorial.html?locale=en`); await page.locator('video').waitFor(); assert.equal(await page.locator('[data-testid="quick-config-steps"] li').count(), 3); assert.ok((await page.locator('[data-testid="quick-config-steps"]').innerText()).includes('Terminal')); assert.ok((await page.locator('body').innerText()).includes('Chinese audio')); await page.close()
   assert.equal(errors.length, 0); fs.writeFileSync(path.join(out, 'browser-verification.json'), JSON.stringify({ checks, english: true, errors, limits: ['Chromium desktop and 390 viewport; not Safari or a physical device', 'Invalid demo key/local catalog fixture; no script executed or live account request'] }, null, 2)); console.log(JSON.stringify({ passed: checks.map(c => c.name), english: true, errors }))
 } finally { await browser.close() }

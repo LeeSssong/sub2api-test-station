@@ -12,7 +12,7 @@ vi.mock('@/i18n', () => ({ i18n: { global: { t: (key: string) => key } } }))
 vi.mock('@/api/codex', () => ({ fetchCodexModelsManifest }))
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 vi.mock('@/components/common/BaseDialog.vue', () => ({
-  default: { template: '<div><slot /><slot name="footer" /></div>' }
+  default: { template: '<div><slot /><footer><slot name="footer" /></footer></div>' }
 }))
 vi.mock('@/components/icons/Icon.vue', () => ({ default: { template: '<span />' } }))
 vi.mock('vue-i18n', () => ({
@@ -206,7 +206,7 @@ it('copies the Mac first-run command on an insecure HTTP site without Clipboard 
   } })
   fetchCodexModelsManifest.mockResolvedValue({content: '{"models":[]}', modelCount: 0})
   const wrapper = mountModal(); await flushPromises()
-  expect(wrapper.get('[data-testid="quick-config-mac-steps"]').findAll('li')).toHaveLength(3)
+  expect(wrapper.get('[data-testid="quick-config-steps"]').findAll('li')).toHaveLength(3)
   const macInstructions = zhDashboard.keys.quickConfigureModal
   expect(macInstructions.macRun).toContain('没有执行权限')
   expect(macInstructions.macRun).toContain('终端')
@@ -222,6 +222,79 @@ it('copies the Mac first-run command on an insecure HTTP site without Clipboard 
 })
 
 
+describe('unified operating-system tutorial layout', () => {
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Macintosh' })
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockResolvedValue(undefined) } })
+    fetchCodexModelsManifest.mockResolvedValue({ content: '{"models":[]}', modelCount: 0 })
+  })
+
+  it.each([['windows', 'windows'], ['linux', 'linux']])('reserves an empty video area and three steps for %s', async (tab, platform) => {
+    const wrapper = mountModal(); await flushPromises()
+    await wrapper.get('[data-testid="quick-config-' + tab + '-tab"]').trigger('click')
+    const placeholder = wrapper.get('[data-testid="quick-config-video-placeholder"]')
+    expect(placeholder.text()).toBe('')
+    expect(placeholder.classes()).toContain('config-tutorial-video')
+    expect(placeholder.attributes('aria-label')).toContain('videoReserved')
+    expect(wrapper.find('video').exists()).toBe(false)
+    const steps = wrapper.get('[data-testid="quick-config-steps"]')
+    expect(steps.findAll('li')).toHaveLength(3)
+    expect(steps.text()).toContain(platform + 'Step1')
+    expect(steps.text()).toContain(platform + 'Step2')
+    expect(steps.text()).toContain(platform + 'Step3')
+    expect(wrapper.text()).toContain(platform + 'VideoTitle')
+    expect(wrapper.text()).not.toContain('quickConfigureModal.downloadHint')
+    expect(wrapper.find('[data-testid="quick-config-run-instruction"]').exists()).toBe(false)
+    expect(wrapper.get('.config-run > [data-testid="quick-config-copy-startup"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it.each(['unix', 'windows', 'linux'])('keeps the %s startup button below the tutorial instead of in the footer', async (tab) => {
+    const wrapper = mountModal(); await flushPromises()
+    await wrapper.get('[data-testid="quick-config-' + tab + '-tab"]').trigger('click')
+    const button = wrapper.get('.config-run > [data-testid="quick-config-copy-startup"]')
+    expect(button.element).toBe(wrapper.get('.config-run').element.lastElementChild)
+    expect(button.classes()).toEqual(['btn', 'btn-secondary'])
+    expect(wrapper.find('footer [data-testid="quick-config-copy-startup"]').exists()).toBe(false)
+    expect(wrapper.get('footer [data-testid="quick-config-download"]').exists()).toBe(true)
+    expect(wrapper.get('footer [data-testid="quick-config-close"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('copies a Windows command that lets the user select the downloaded CMD script', async () => {
+    const wrapper = mountModal(); await flushPromises()
+    await wrapper.get('[data-testid="quick-config-windows-tab"]').trigger('click')
+    await wrapper.get('.config-run > [data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
+    const command = vi.mocked(navigator.clipboard.writeText).mock.lastCall?.[0]
+    expect(command).toContain('Add-Type -AssemblyName System.Windows.Forms')
+    expect(command).toContain('System.Windows.Forms.OpenFileDialog')
+    expect(command).toContain('*.cmd')
+    expect(command).toContain('DialogResult]::OK')
+    expect(command).toContain('& $xq_script.FileName')
+    expect(command).not.toContain('sk-test')
+    expect(zhDashboard.keys.quickConfigureModal.windowsStep1).toContain('复制首次启动命令')
+    expect(zhDashboard.keys.quickConfigureModal.windowsStep2).toContain('PowerShell')
+    expect(zhDashboard.keys.quickConfigureModal.windowsFirstRun).not.toContain('无需复制')
+    wrapper.unmount()
+  })
+
+  it('copies the Linux command and resets feedback when switching systems', async () => {
+    const wrapper = mountModal(); await flushPromises()
+    await wrapper.get('[data-testid="quick-config-linux-tab"]').trigger('click')
+    expect(wrapper.get('[data-testid="quick-config-run-command"]').text()).toBe('bash sub2api-codex-config.sh')
+    await wrapper.get('[data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith('bash sub2api-codex-config.sh')
+    expect(wrapper.get('[data-testid="quick-config-copy-startup"]').text()).toContain('copied')
+    await wrapper.get('[data-testid="quick-config-unix-tab"]').trigger('click')
+    expect(wrapper.get('[data-testid="quick-config-copy-startup"]').text()).toContain('copyStartup')
+    expect(wrapper.find('[data-testid="quick-config-video-placeholder"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
+    expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith(expect.stringContaining('/usr/bin/osascript'))
+    wrapper.unmount()
+  })
+})
+
 describe('independent macOS tutorial', () => {
   beforeEach(() => {
     Object.defineProperty(navigator, 'userAgent', { configurable: true, value: 'Macintosh' })
@@ -236,7 +309,7 @@ describe('independent macOS tutorial', () => {
     expect(video.attributes('controls')).toBeDefined()
     expect(video.attributes('autoplay')).toBeUndefined()
     expect(video.attributes('src')).toMatch(/macos-top-caption-voice\.mp4/)
-    expect(wrapper.get('[data-testid="quick-config-mac-steps"]').findAll('li')).toHaveLength(3)
+    expect(wrapper.get('[data-testid="quick-config-steps"]').findAll('li')).toHaveLength(3)
     expect(wrapper.find('[data-testid="quick-config-run-instruction"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('quickConfigureModal.downloadHint')
     expect(wrapper.text()).toContain('quickConfigureModal.runPrerequisite')
@@ -295,9 +368,9 @@ describe('independent macOS tutorial', () => {
     await wrapper.get('[data-testid="quick-config-windows-tab"]').trigger('click')
     expect(pause).toHaveBeenCalled()
     expect(wrapper.find('video').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="quick-config-run-instruction"]').text()).toContain('windowsRun')
+    expect(wrapper.get('[data-testid="quick-config-steps"]').text()).toContain('windowsStep2')
     await wrapper.get('[data-testid="quick-config-linux-tab"]').trigger('click')
-    expect(wrapper.get('[data-testid="quick-config-run-instruction"]').text()).toContain('linuxRun')
+    expect(wrapper.get('[data-testid="quick-config-steps"]').text()).toContain('linuxStep2')
     await wrapper.get('[data-testid="quick-config-unix-tab"]').trigger('click')
     const fresh = wrapper.get('video').element as HTMLVideoElement
     const freshPause = vi.spyOn(fresh, 'pause')
@@ -312,10 +385,10 @@ describe('independent macOS tutorial', () => {
   it('keeps steps and real copying/download available when both media and optional catalog fail', async () => {
     fetchCodexModelsManifest.mockRejectedValueOnce(new Error('offline'))
     const wrapper = mountModal(); await flushPromises()
-    const steps = wrapper.get('[data-testid="quick-config-mac-steps"]').element
+    const steps = wrapper.get('[data-testid="quick-config-steps"]').element
     await wrapper.get('video').trigger('error')
     expect(wrapper.get('[data-testid="quick-config-video-error"]').text()).toContain('videoUnavailable')
-    expect(wrapper.get('[data-testid="quick-config-mac-steps"]').element).toBe(steps)
+    expect(wrapper.get('[data-testid="quick-config-steps"]').element).toBe(steps)
     await wrapper.get('[data-testid="quick-config-copy-startup"]').trigger('click'); await flushPromises()
     expect(navigator.clipboard.writeText).toHaveBeenCalled()
     await wrapper.get('[data-testid="quick-config-download"]').trigger('click')

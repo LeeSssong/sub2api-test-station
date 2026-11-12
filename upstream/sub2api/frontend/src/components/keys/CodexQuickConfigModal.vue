@@ -108,44 +108,46 @@
       <section class="config-run border-t border-gray-200 pt-5 dark:border-dark-700">
         <h4 class="mb-2 font-medium text-gray-900 dark:text-white">{{ t('keys.quickConfigureModal.runTitle') }}</h4>
         <p class="mb-4 text-sm text-gray-900 dark:text-white">{{ t('keys.quickConfigureModal.runPrerequisite') }}</p>
-        <template v-if="activePlatform === 'mac'">
-          <div class="mb-2 flex flex-wrap justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
-            <span>{{ t('keys.quickConfigureModal.macVideoTitle') }}</span>
-            <span>{{ t('keys.quickConfigureModal.videoDuration') }}</span>
-          </div>
-          <video
-            ref="tutorialVideo"
-            :src="macTutorialUrl"
-            controls
-            playsinline
-            preload="metadata"
-            tabindex="0"
-            :aria-label="t('keys.quickConfigureModal.macVideoTitle')"
-            class="config-tutorial-video"
-            @error="videoFailed = true"
-          />
-          <p v-if="videoFailed" role="status" data-testid="quick-config-video-error" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            {{ t('keys.quickConfigureModal.videoUnavailable') }}
-            <button type="button" class="btn btn-secondary mt-2" @click="retryVideo">{{ t('keys.quickConfigureModal.retryVideo') }}</button>
-          </p>
-          <ol data-testid="quick-config-mac-steps" class="config-run-steps">
-            <li>{{ t('keys.quickConfigureModal.macStep1') }}</li>
-            <li>{{ t('keys.quickConfigureModal.macStep2') }}</li>
-            <li>{{ t('keys.quickConfigureModal.macStep3') }}</li>
-          </ol>
-          <p class="mb-3 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t('keys.quickConfigureModal.macFirstRun') }}</p>
-          <button type="button" class="btn btn-secondary" data-testid="quick-config-copy-startup" @click="copyMacStartup">
-            {{ t(startupCopied ? 'keys.quickConfigureModal.copied' : 'keys.quickConfigureModal.copyStartup') }}
-          </button>
-        </template>
-        <p v-else data-testid="quick-config-run-instruction" class="mt-1 text-sm text-gray-600 dark:text-gray-300">{{ runInstruction }}</p>
-        <code v-if="activePlatform === 'unix'" class="mt-1 block break-all text-xs">{{ runCommand }}</code>
+        <div class="mb-2 flex flex-wrap justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+          <span>{{ t('keys.quickConfigureModal.' + tutorialPlatform + 'VideoTitle') }}</span>
+          <span v-if="activePlatform === 'mac'">{{ t('keys.quickConfigureModal.videoDuration') }}</span>
+        </div>
+        <video
+          v-if="activePlatform === 'mac'"
+          ref="tutorialVideo"
+          :src="macTutorialUrl"
+          controls
+          playsinline
+          preload="metadata"
+          tabindex="0"
+          :aria-label="t('keys.quickConfigureModal.macVideoTitle')"
+          class="config-tutorial-video"
+          @error="videoFailed = true"
+        />
+        <div
+          v-else
+          class="config-tutorial-video"
+          data-testid="quick-config-video-placeholder"
+          role="img"
+          :aria-label="t('keys.quickConfigureModal.videoReserved', { platform: activePlatform === 'windows' ? 'Windows' : 'Linux' })"
+        />
+        <p v-if="videoFailed" role="status" data-testid="quick-config-video-error" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          {{ t('keys.quickConfigureModal.videoUnavailable') }}
+          <button type="button" class="btn btn-secondary mt-2" @click="retryVideo">{{ t('keys.quickConfigureModal.retryVideo') }}</button>
+        </p>
+        <ol data-testid="quick-config-steps" class="config-run-steps">
+          <li v-for="(step, index) in tutorialSteps" :key="index">{{ step }}</li>
+        </ol>
+        <p class="mb-3 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{{ t('keys.quickConfigureModal.' + (activePlatform === 'mac' ? 'macFirstRun' : activePlatform === 'windows' ? 'windowsFirstRun' : 'switchOptions')) }}</p>
+        <code v-if="activePlatform === 'unix'" data-testid="quick-config-run-command" class="mb-3 block break-all text-xs">{{ runCommand }}</code>
+        <button type="button" class="btn btn-secondary" data-testid="quick-config-copy-startup" @click="copyStartup">
+          {{ t(startupCopied ? 'keys.quickConfigureModal.copied' : 'keys.quickConfigureModal.copyStartup') }}
+        </button>
       </section>
     </div>
 
     <template #footer>
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center" :class="activePlatform === 'mac' ? 'sm:justify-end' : 'sm:justify-between'">
-        <p v-if="activePlatform !== 'mac'" class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.quickConfigureModal.downloadHint') }}</p>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <div class="flex shrink-0 justify-end gap-3">
           <button
             type="button"
@@ -231,6 +233,8 @@ const fileName = computed(() => activePlatform.value === 'windows'
 const runCommand = computed(() => `bash ${fileName.value}`)
 // The file is selected by the user: no glob that could execute an older download.
 const macStartupCommand = `xq_script=$(/usr/bin/osascript -e 'POSIX path of (choose file with prompt "选择刚下载的星桥 .command 脚本" default location (path to downloads folder))') && chmod u+x "$xq_script" && /bin/bash "$xq_script"`
+// Windows PowerShell selects the exact download, including renamed files.
+const windowsStartupCommand = `Add-Type -AssemblyName System.Windows.Forms; $xq_script = New-Object System.Windows.Forms.OpenFileDialog; $xq_script.Title = '选择刚下载的星桥 .cmd 脚本'; $xq_script.Filter = 'Windows 配置脚本 (*.cmd)|*.cmd'; if ($xq_script.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { & $xq_script.FileName }; $xq_script.Dispose()`
 const catalogFailure = computed(() => {
   const error = catalogError.value
   const reason = error?.balance ? t('keys.quickConfigureModal.insufficientBalance')
@@ -244,8 +248,9 @@ const catalogDiagnostics = computed(() => {
   return [catalogFailure.value, error?.message, error?.status ? `HTTP ${error.status}` : '', error?.code,
     error?.requestId ? `Request ID: ${error.requestId}` : '', '/v1/models'].filter(Boolean).join('\n')
 })
-const runInstruction = computed(() => t(`keys.quickConfigureModal.${activePlatform.value === 'windows' ? 'windowsRun' : activePlatform.value === 'mac' ? 'macRun' : 'linuxRun'}`))
 
+const tutorialPlatform = computed(() => activePlatform.value === 'unix' ? 'linux' : activePlatform.value)
+const tutorialSteps = computed(() => [1, 2, 3].map(step => t('keys.quickConfigureModal.' + tutorialPlatform.value + 'Step' + step)))
 const scriptReady = computed(() => props.show && Boolean(props.apiKey))
 
 const tabClass = (selected: boolean) => [
@@ -339,9 +344,10 @@ async function copyCatalogError() {
   catch { actionStatus.value = 'error' }
 }
 
-async function copyMacStartup() {
+async function copyStartup() {
+  const command = activePlatform.value === 'mac' ? macStartupCommand : activePlatform.value === 'unix' ? runCommand.value : windowsStartupCommand
   const trigger = document.activeElement as HTMLElement | null
-  try { if (!await copyToClipboard(macStartupCommand)) throw new Error('Copy failed'); startupCopied.value = true }
+  try { if (!await copyToClipboard(command)) throw new Error('Copy failed'); startupCopied.value = true }
   catch { actionStatus.value = 'error' }
   finally {
     // The HTTP clipboard fallback removes its temporary focused textarea.

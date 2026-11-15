@@ -157,9 +157,9 @@
             @click="downloadScript"
           >
             <Icon name="download" size="sm" />
-            {{ t('keys.quickConfigureModal.download') }}
+            {{ t('keys.quickConfigureModal.' + (activePlatform === 'windows' ? 'windowsDownload' : activePlatform === 'mac' ? 'macDownload' : 'linuxDownload')) }}
           </button>
-          <button type="button" class="btn btn-secondary" data-testid="quick-config-close" @click="close">
+          <button type="button" class="btn btn-secondary shrink-0 whitespace-nowrap" data-testid="quick-config-close" @click="close">
             {{ t('common.close') }}
           </button>
         </div>
